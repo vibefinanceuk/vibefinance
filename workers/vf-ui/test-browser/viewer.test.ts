@@ -6986,6 +6986,15 @@ describe("the Coding column, and coding only a Non-PO line — decision 0537", (
     expect(pop.querySelector("input")).toBeNull();
   });
 
+  it("opens an editable line's pop-out with no stray text under the heading (the \"null\" 0537 shipped)", async () => {
+    await openWith(POMATCH);
+    codingButtons()[1].click();
+    await new Promise((r) => setTimeout(r, 10));
+    const pop = document.querySelector(".codingpopout") as HTMLElement;
+    expect(pop.querySelector(".codinglocked")).toBeNull();
+    expect(pop.textContent).not.toContain("null");
+  });
+
   it("leaves a Non-PO invoice's lines codable, as ever", async () => {
     await openWith(null);
     expect(codingButtons().every((b) => !b.classList.contains("locked"))).toBe(true);

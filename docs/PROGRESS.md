@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 28 September 2026 (decision 0537). A living document: what
+Last updated 28 September 2026 (decision 0538). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,10 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Coding pop-out: stray "null" removed (0538)
+- 0537's read-only note printed "null" on every codable line. `vf-ui`
+  only.
 
 ### Invoice lines: Coding column and Non-PO lines (0537)
 - Coding has its own column (fixing the Match chip overlap). On a PO

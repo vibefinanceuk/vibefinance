@@ -1455,7 +1455,8 @@ async function openLineCodingPopout(line, { lockedNote = null } = {}) {
         el("h3", { text: t("viewer.coding.heading") }),
         actionLink("close", { onclick: close }),
       ]),
-      lockedNote ? el("p", { class: "codinglocked", text: lockedNote }) : null,
+      // Spread, not `: null` — `el()` appends a null child as the text "null".
+      ...(lockedNote ? [el("p", { class: "codinglocked", text: lockedNote })] : []),
       el("div", { class: "editgrid" }, [...companyCodeRow, ...fieldRows]),
       el("div", { class: "codingresults" }, [resultsLabel, resultsList]),
     ]),
