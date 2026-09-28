@@ -808,6 +808,7 @@ const KEYS_THE_INTERFACE_USES = [
   "apsetup.costobject.both",
   "apsetup.costobject.both.help",
   "apsetup.costobject.savefailed",
+  "viewer.coding.complete",
   "pomatch.why.lines",
   // Decision 0533 — how much of each PO line is used.
   "pomatch.lineuse",

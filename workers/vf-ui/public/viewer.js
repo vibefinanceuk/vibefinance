@@ -984,12 +984,17 @@ function lineRow(line, index) {
       (() => {
         // Decision 0537 — on a PO invoice only a Non-PO line is coded by hand.
         const lockedNote = codingLockedNote(line);
+        const coded = !lockedNote && lineIsCoded(line);
         const button = el("button", {
           // `codingbtn` — decision 0511: what `markOne` marks when this
           // line's coding is not on Account Coding's own lists, since
           // the coding fields themselves live in the pop-out, not here.
-          class: `rm codingbtn${lockedNote ? " locked" : ""}`,
-          title: lockedNote ? `${t("action.coding")} — ${lockedNote}` : t("action.coding"),
+          class: `rm codingbtn${lockedNote ? " locked" : coded ? " coded" : ""}`,
+          title: lockedNote
+            ? `${t("action.coding")} — ${lockedNote}`
+            : coded
+              ? `${t("action.coding")} — ${t("viewer.coding.complete")}`
+              : t("action.coding"),
           onclick: () => openLineCodingPopout(line, { lockedNote }),
         });
         button.append(icon("coding"));
@@ -1632,6 +1637,26 @@ function codingLockedNote(line) {
   if (summary?.state === "nonpo") return null;
   if (summary?.poLine) return t("viewer.coding.frompo").replace("{n}", String(summary.poLine.lineNumber));
   return t("viewer.coding.needsnonpo");
+}
+
+/**
+ * **Is this line's coding complete — decision 0541**, for the Coding
+ * button's green state. Every coding field this stage shows (hidden
+ * ones never reach `lineFields`) holds a value, with Cost Centre and
+ * Project counted as one under AP Setup's either/or rule (0540). A line
+ * whose coding fields are all hidden here is not "coded" by this test.
+ * What the line holds now, saved or not; a value not on the lists is
+ * taken back off by `markOne` (0511).
+ */
+function lineIsCoded(line) {
+  const shown = CODING_PICKER_FIELDS.map((s) => s.field).filter((f) => lineFields.some((spec) => spec.field === f));
+  if (shown.length === 0) return false;
+  const has = (f) => !!String(line[f] ?? "").trim();
+  const objects = ["BT-133", "coding.project"];
+  if (stored.costObjectRule === "exclusive" && shown.some((f) => objects.includes(f))) {
+    return objects.some(has) && shown.filter((f) => !objects.includes(f)).every(has);
+  }
+  return shown.every(has);
 }
 
 function renderLines() {
@@ -2764,6 +2789,8 @@ function markOne(entry, severity, reason) {
         const button = row.querySelector(".codingbtn");
         if (!button) continue;
         button.classList.add("danger");
+        // Decision 0541 — a value not on the lists is not coded, whatever else the line holds.
+        button.classList.remove("coded");
         button.title = `${t("action.coding")} — ${reason}`;
       }
     }

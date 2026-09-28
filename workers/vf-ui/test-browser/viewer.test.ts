@@ -7191,3 +7191,85 @@ describe("Cost centre OR project in the Coding pop-out — decision 0540", () =>
     expect(document.getElementById("viewer-note")?.textContent).toBe("Not saved. A line carries a cost centre or a project, not both (line 1).");
   });
 });
+
+describe("the Coding button shows a line is coded — decision 0541", () => {
+  const STR = {
+    ...STRINGS,
+    strings: { ...STRINGS.strings, "action.coding": "Coding", "viewer.coding.complete": "coded", "check.account_coding": "Not on the Account Coding lists" },
+  };
+  const FIELDS_CODING = {
+    fields: [
+      { field: "BT-131", visibility: "edit", type: "number", line: true, description: "line net" },
+      { field: "BT-133", visibility: "edit", type: "text", line: true, description: "cost centre" },
+      { field: "coding.project", visibility: "edit", type: "text", line: true, description: "project" },
+      { field: "coding.gl_code", visibility: "read", type: "text", line: true, description: "gl" },
+    ],
+  };
+  async function openWith(lines: Record<string, unknown>[], extra: Record<string, unknown> = {}) {
+    mountShell();
+    stubFetch({
+      "/api/code-lists": { fields: {} },
+      "/api/ui-strings": STR,
+      "/api/field-visibility": FIELDS_CODING,
+      "/api/invoices/inv-1": {
+        facts: {},
+        lines: lines.map((facts, i) => ({ lineNumber: i + 1, facts: { "BT-131": 10, ...facts } })),
+        validation: { passed: true, checked: [], failures: [] },
+        costObjectRule: "exclusive",
+        ...extra,
+      },
+      "/api/invoices/inv-1/document-url": { url: null },
+      "/api/documents/inv-1/activity": { items: [] },
+    });
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { openViewer } = await import("/viewer.js");
+    await openViewer(TASK, () => {});
+  }
+  const buttons = () => [...document.querySelectorAll("#lines .codingbtn")] as HTMLButtonElement[];
+
+  it("marks a line coded once every coding field shown here holds a value, cost centre or project counting as one", async () => {
+    await openWith([
+      { "BT-133": "cc1", "coding.gl_code": "gl1" },
+      { "coding.project": "PRJ-1", "coding.gl_code": "gl1" },
+      { "BT-133": "cc1" },
+      {},
+    ]);
+    expect(buttons().map((b) => b.classList.contains("coded"))).toEqual([true, true, false, false]);
+    expect(buttons()[0].title).toBe("Coding — coded");
+    expect(buttons()[2].title).toBe("Coding");
+  });
+
+  it("with both allowed, needs each of them", async () => {
+    await openWith([{ "BT-133": "cc1", "coding.gl_code": "gl1" }, { "BT-133": "cc1", "coding.project": "PRJ-1", "coding.gl_code": "gl1" }], {
+      costObjectRule: "both",
+    });
+    expect(buttons().map((b) => b.classList.contains("coded"))).toEqual([false, true]);
+  });
+
+  it("is not coded while a value is not on the Account Coding lists", async () => {
+    await openWith([{ "BT-133": "SUPPLIER-REF", "coding.gl_code": "gl1" }], {
+      validation: {
+        passed: false,
+        checked: ["account_coding"],
+        failures: ["account_coding"],
+        involves: [{ check: "account_coding", fields: ["BT-133"], line: 1, value: "SUPPLIER-REF", severity: "danger" }],
+      },
+    });
+    expect(buttons()[0].classList.contains("coded")).toBe(false);
+    expect(buttons()[0].classList.contains("danger")).toBe(true);
+  });
+
+  it("never marks a PO-matched line, whose coding comes from the PO (0537)", async () => {
+    await openWith([{ "BT-133": "cc1", "coding.gl_code": "gl1" }], {
+      facts: { "BT-13": "PO-A" },
+      poMatch: {
+        orderNumber: "PO-A",
+        held: true,
+        lines: [{ lineNumber: 1, state: "matched", supplierReference: "1", poLine: { lineNumber: 1, name: "X", quantity: 1, unit: null, price: 10, amount: 10 }, use: null, result: {}, pairing: null }],
+      },
+    });
+    expect(buttons()[0].classList.contains("locked")).toBe(true);
+    expect(buttons()[0].classList.contains("coded")).toBe(false);
+  });
+});

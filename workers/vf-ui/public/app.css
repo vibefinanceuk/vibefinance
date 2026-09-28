@@ -2677,9 +2677,18 @@
     min-width: 0; padding: 8px 10px; border-radius: var(--radius);
     background: var(--surface-1); border: 0.5px solid var(--border);
   }
-  .codingfield.set { background: var(--bg-success); border-color: color-mix(in srgb, var(--text-success) 30%, transparent); }
+  /*
+    **Day's pale green in both moods — decision 0541**, the operator's
+    choice after seeing both: the fixed `--severity-ok-*` pair (0400),
+    not `--bg-success`, which turns dark green at Night. The card's own
+    label and tick take fixed colours too, since Night's light text
+    would vanish on it; the inputs inside keep their own surfaces.
+  */
+  .codingfield.set { background: var(--severity-ok-bg); border-color: color-mix(in srgb, var(--border-success) 45%, transparent); }
   .codingfieldhead { display: flex; justify-content: space-between; margin-bottom: 5px; font-size: var(--text-sm); color: var(--text-muted); }
+  .codingfield.set .codingfieldhead { color: color-mix(in srgb, var(--severity-value-text) 62%, transparent); }
   .codingfieldstatus { color: var(--text-success); font-weight: 700; }
+  .codingfield.set .codingfieldstatus { color: var(--severity-ok-text); }
   .codingfield .readonly { box-sizing: border-box; width: 100%; min-height: 34px; }
   .codingfoot {
     flex: none; display: flex; justify-content: space-between; align-items: center; gap: 12px;
@@ -3914,6 +3923,16 @@
     background: var(--severity-danger-bg);
     border-color: var(--border-danger);
   }
+  /*
+    **Coded — decision 0541.** The operator: "change the icon on the
+    invoice line such that the icon has a bold green outline and a
+    green fill". The tag's own outline drawn heavier in green, its body
+    filled with the same pale green as a set field card, the same in
+    both moods. Its tick stays unfilled.
+  */
+  .codingcol .codingbtn.coded { color: var(--border-success); }
+  .codingcol .codingbtn.coded svg { stroke-width: 2.4; }
+  .codingcol .codingbtn.coded svg path:first-child { fill: var(--severity-ok-bg); }
 
   .kf.warning input,
   .kf.warning select,

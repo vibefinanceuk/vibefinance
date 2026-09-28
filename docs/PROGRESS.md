@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 28 September 2026 (decision 0540). A living document: what
+Last updated 28 September 2026 (decision 0541). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,11 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Coded: pale green in both moods, and a green Coding icon (0541)
+- Set Coding fields use Day's pale green at Night too; a fully coded
+  line's Coding icon has a bold green outline and pale green fill.
+  `vf-ui`, `vf-licence` migration `0196`.
 
 ### Cost centre OR project on a line (0540)
 - AP Setup option, default "one or the other": the Coding pop-out shows
