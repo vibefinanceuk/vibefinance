@@ -39,8 +39,14 @@ import { handleKeyInvoiceFields } from "./key-fields-route.js";
  * wrongly carrying a PO number is rare enough to be its own decision.
  */
 
-/** Who may open the panel: the Matching stage's own permission, or Validation's. */
-export const PO_PANEL_PERMISSIONS = ["AP.Match", "AP.Validate"] as const;
+/**
+ * Who may open the panel: the Matching stage's own permission,
+ * Validation's, or AP Review's. **AP Review added by decision 0531**: a
+ * task returned from AP Review to Matching keeps `AP.Review` (see
+ * `task-list-route.ts`), so its holder is the person working the
+ * Matching task and needs the panel.
+ */
+export const PO_PANEL_PERMISSIONS = ["AP.Match", "AP.Validate", "AP.Review"] as const;
 
 function num(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) return value;

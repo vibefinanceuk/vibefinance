@@ -244,7 +244,30 @@ export async function handleReturnToStage(
     .prepare("SELECT required_permission FROM process_stages WHERE id = ?")
     .bind(stageId)
     .first<{ required_permission: string | null }>();
-  const newTaskRequiredPermission = targetStage?.required_permission ?? task.required_permission;
+  /**
+   * **Then the permission the target stage's own last task on this
+   * invoice carried — decision 0531.** Found live: the Matching stage
+   * declares no permission, so a task returned there from AP Review
+   * fell straight to the returning task's `AP.Review`, and landed with
+   * the AP Matching team needing AP Review's permission. The task that
+   * worked this invoice at Matching before (raised by a Matching rule,
+   * so `AP.Match`) is the better answer: the same kind of work, done at
+   * the same stage, on the same invoice. The returning task's own
+   * permission stays the last resort.
+   */
+  const previousAtTarget = targetStage?.required_permission
+    ? null
+    : await db
+        .prepare(
+          `SELECT t.required_permission FROM tasks t
+           JOIN stage_visits v ON v.id = t.stage_visit_id
+           WHERE v.process_instance_id = ? AND t.stage_id = ? AND t.id != ?
+           ORDER BY t.created_at DESC, t.rowid DESC LIMIT 1`
+        )
+        .bind(instance.id, stageId, task.id)
+        .first<{ required_permission: string }>();
+  const newTaskRequiredPermission =
+    targetStage?.required_permission ?? previousAtTarget?.required_permission ?? task.required_permission;
 
   const newTaskId = crypto.randomUUID();
   await db

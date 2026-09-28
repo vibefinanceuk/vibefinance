@@ -964,3 +964,58 @@ describe("real, server-side pagination — decision 0449", () => {
     expect(body.counts).toEqual({ mine: 1, available: 1, locked: 1 });
   });
 });
+
+describe("offersPoMatching — decision 0531", () => {
+  /**
+   * Found live: a task returned to Matching from AP Review keeps
+   * AP.Review, so decision 0530's AP.Match-only test hid the PO
+   * matching button on it. The stage's own rules now decide.
+   */
+  async function ruleOn(stageId: string, ruleId: string, compiled: unknown, enabled = 1) {
+    const ruleSetId = `rs-${stageId}`;
+    await env.DB.prepare("INSERT OR IGNORE INTO rule_sets (id, name, mode, status) VALUES (?, ?, 'all_matches', 'active')")
+      .bind(ruleSetId, ruleSetId)
+      .run();
+    await env.DB.prepare("UPDATE process_stages SET rule_set_id = ? WHERE id = ?").bind(ruleSetId, stageId).run();
+    await env.DB.prepare("INSERT INTO rules (id, rule_set_id, sort_order, enabled) VALUES (?, ?, 0, ?)")
+      .bind(ruleId, ruleSetId, enabled)
+      .run();
+    await env.DB.prepare(
+      "INSERT INTO rule_versions (rule_id, version, source_text, compiled_json, compiled_by) VALUES (?, 1, 'a rule', ?, 'test')"
+    )
+      .bind(ruleId, JSON.stringify(compiled))
+      .run();
+  }
+  const poRule = { conditions: { all: [{ fact: "po.line_matched", operator: "equals", value: false }] }, actions: [] };
+  const otherRule = { conditions: { all: [{ fact: "BT-112", operator: "gt", value: 100 }] }, actions: [] };
+
+  it("is true at a stage whose rules test PO matching facts, whatever the task requires", async () => {
+    await ruleOn("approval", "r-po", poRule);
+    await seedInstance("inv-1", "approval", "v-1");
+    await seedTask("t-1", "approval", "v-1", { user: "alice" });
+    await env.DB.prepare("UPDATE tasks SET required_permission = 'AP.Review' WHERE id = 't-1'").run();
+
+    expect((await list("alice"))[0].offersPoMatching).toBe(true);
+  });
+
+  it("is false at a stage whose rules test nothing about POs, or only through a disabled rule", async () => {
+    await ruleOn("validation", "r-other", otherRule);
+    await ruleOn("approval", "r-po-off", poRule, 0);
+    await seedInstance("inv-1", "validation", "v-1");
+    await seedTask("t-1", "validation", "v-1", { user: "alice" });
+    await seedInstance("inv-2", "approval", "v-2");
+    await seedTask("t-2", "approval", "v-2", { user: "alice" });
+
+    const tasks = await list("alice");
+    expect(tasks.find((t) => t.id === "t-1")?.offersPoMatching).toBe(false);
+    expect(tasks.find((t) => t.id === "t-2")?.offersPoMatching).toBe(false);
+  });
+
+  it("is still true on any task requiring AP.Match", async () => {
+    await seedInstance("inv-1", "validation", "v-1");
+    await seedTask("t-1", "validation", "v-1", { user: "alice" });
+    await env.DB.prepare("UPDATE tasks SET required_permission = 'AP.Match' WHERE id = 't-1'").run();
+
+    expect((await list("alice"))[0].offersPoMatching).toBe(true);
+  });
+});

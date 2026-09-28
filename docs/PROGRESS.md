@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 28 September 2026 (decision 0530). A living document: what
+Last updated 28 September 2026 (decision 0531). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,16 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### PO matching button follows the stage (0531)
+- The button now shows on any task at a stage whose rules test PO
+  matching facts (`offersPoMatching`), not only on `AP.Match` tasks: a
+  task returned to Matching from AP Review keeps `AP.Review`. The
+  panel's routes accept `AP.Review` too.
+- A return to a stage that declares no permission now takes the
+  permission that stage's earlier task on the same invoice carried
+  (at Matching, `AP.Match`), before falling back to the returning
+  task's.
 
 ### PO matching panel, phase 1 (0530)
 - A **PO matching** button on Matching-stage tasks opens a panel: the

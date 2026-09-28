@@ -1,12 +1,6 @@
 # 0530 — The Matching stage's PO matching panel, phase 1
 
-**Status: built and tested locally, not yet pushed or deployed.** This
-session has no push access, so it is delivered as a git bundle. It
-touches `vf-app`, `vf-ui` and `vf-licence`, and needs **two migrations,
-each applied as its own step**: `vf-app` `0093` and `vf-licence` `0188`.
-**Apply `vf-app` `0093` before deploying `vf-app`**: without it, "Use
-this PO" changes the invoice's PO number and then fails writing the
-Timeline event.
+**Status: pushed (`eadde7b`), deployed, and both migrations (`vf-app` `0093`, `vf-licence` `0188`) applied, as confirmed by the operator on 28 September.** Its button did not appear on the live Matching task; decision 0531 fixes that.
 
 ## What was asked
 

@@ -753,6 +753,17 @@ describe("the action row (decision 0122)", () => {
     expect(labels).not.toContain("PO matching");
   });
 
+  it("offers PO matching wherever the server says the stage matches, whatever the task's permission (decision 0531)", async () => {
+    // Found live: a task returned to Matching from AP Review keeps AP.Review.
+    stubFetch(OPEN);
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { openViewer } = await import("/viewer.js");
+    await openViewer({ ...TASK, actions: ["complete"], requiredPermission: "AP.Review", offersPoMatching: true }, () => {});
+    const labels = [...document.querySelectorAll(".actionlink span")].map((n) => n.textContent);
+    expect(labels).toContain("PO matching");
+  });
+
   it("keeps the generic 'Complete' label for every task that isn't a Business Approver's", async () => {
     await openWith(["complete"]);
     const labels = [...document.querySelectorAll(".actionlink span")].map((n) => n.textContent);

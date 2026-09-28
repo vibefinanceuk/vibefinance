@@ -2241,13 +2241,15 @@ function taskActionButtons(task, onClose) {
         })
       ),
     /**
-     * **PO matching — decision 0530.** Offered on a Matching-stage task,
-     * which is one carrying `AP.Match` (the permission every standard
-     * matching rule's task requires, 0474). Not a server action: it
-     * opens a panel, and what the panel may change is decided by its
-     * own routes. A re-link redraws the document with its new BT-13.
+     * **PO matching — decisions 0530/0531.** Offered on a Matching-stage
+     * task. 0530 read that off `AP.Match` alone; 0531 found a task
+     * returned to Matching from AP Review keeps `AP.Review`, so the
+     * server now says per task (`offersPoMatching`: the stage's rules
+     * test PO matching facts). `AP.Match` still counts on its own. Not a
+     * server action: it opens a panel, and what the panel may change is
+     * decided by its own routes. A re-link redraws the document.
      */
-    ...(task.requiredPermission === "AP.Match" && task.subject?.id
+    ...((task.offersPoMatching || task.requiredPermission === "AP.Match") && task.subject?.id
       ? [
           actionLink("po_matching", {
             onclick: () => openPoMatchingPanel(task.subject.id, { onRelinked: () => openViewer(task, onClose) }),

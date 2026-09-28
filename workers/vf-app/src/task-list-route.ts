@@ -83,6 +83,12 @@ export interface TaskRow {
   stageSequence: number | null;
   processId: string | null;
   requiredPermission: string;
+  /**
+   * Whether the viewer offers the PO matching panel on this task —
+   * decisions 0530/0531. True at a stage whose rules test the PO
+   * matching facts, or on any task requiring `AP.Match`.
+   */
+  offersPoMatching: boolean;
   /** The unit of the document this is about — decision 0202. */
   orgUnitId: string | null;
   ownership: Ownership;
@@ -703,6 +709,35 @@ export async function handleListMyTasks(
   // `approvalMode`'s own guard above already applies.
   const discardAllowedCache = new Map<string, boolean>();
 
+  /**
+   * **Stages where PO matching happens — decision 0531.** Decision 0530
+   * offered the panel only on a task requiring `AP.Match`. Found live: a
+   * task *returned* to Matching from AP Review keeps AP Review's
+   * permission, because a return takes the target stage's own
+   * `required_permission` and falls back to the returning task's when
+   * the stage has none (`return-route.ts`). So the panel follows the
+   * stage instead: any stage whose rule set (or a unit's override of
+   * it, 0197) has an enabled rule whose current version tests a `po.*`
+   * fact. One query per list, not per task.
+   */
+  const poMatchingStages = new Set(
+    (
+      await db
+        .prepare(
+          `SELECT DISTINCT s.id AS stage_id
+           FROM process_stages s
+           JOIN rules r ON r.enabled = 1 AND (
+             r.rule_set_id = s.rule_set_id
+             OR r.rule_set_id IN (SELECT o.rule_set_id FROM stage_rule_set_overrides o WHERE o.stage_id = s.id)
+           )
+           JOIN rule_versions rv ON rv.rule_id = r.id
+             AND rv.version = (SELECT MAX(version) FROM rule_versions WHERE rule_id = r.id)
+           WHERE rv.compiled_json LIKE '%"po.%'`
+        )
+        .all<{ stage_id: string }>()
+    ).results.map((r) => r.stage_id)
+  );
+
   const tasks: TaskRow[] = [];
   for (const row of rows.results) {
     const ownership = ownershipOf(row, userId);
@@ -742,6 +777,7 @@ export async function handleListMyTasks(
       stageSequence: row.stage_sequence,
       processId: row.process_id,
       requiredPermission: row.required_permission,
+      offersPoMatching: row.required_permission === "AP.Match" || poMatchingStages.has(row.stage_id),
       orgUnitId: row.org_unit_id,
       ownership,
       actions: actionsFor(row, ownership, permissions, offerRouteToApprover, discardAllowed),

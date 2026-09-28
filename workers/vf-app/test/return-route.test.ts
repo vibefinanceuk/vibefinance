@@ -239,6 +239,27 @@ describe("returning to an earlier stage", () => {
     }>();
     expect(newTask?.required_permission).toBe("AP.Approve");
   });
+
+  it("uses the permission the target stage's own earlier task carried, when the stage declares none (decision 0531)", async () => {
+    // Found live: returned from AP Review to Matching, the task kept AP.Review.
+    const { taskId } = await atApproval();
+    await env.DB.prepare(
+      "INSERT INTO tasks (id, stage_id, stage_visit_id, owner_user_id, required_permission, status) VALUES ('task-coding', 's-coding', 'v-coding', 'u-sarah', 'AP.Code', 'completed')"
+    ).run();
+    await grant("u-dan", ["AP.Approve", "AP.Return"]);
+
+    await handleReturnToStage(
+      env.DB,
+      taskId,
+      { stageId: "s-coding", reason: "wrong code", assignToUser: "u-sarah" },
+      DAN
+    );
+
+    const newTask = await env.DB.prepare(
+      "SELECT required_permission FROM tasks WHERE stage_id = 's-coding' AND id != 'task-coding'"
+    ).first<{ required_permission: string }>();
+    expect(newTask?.required_permission).toBe("AP.Code");
+  });
 });
 
 describe("where a task can be returned to (decision 0490)", () => {
