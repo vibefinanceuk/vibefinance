@@ -158,6 +158,39 @@ export async function storeInvoiceDocument(
   return { id, invoiceId: params.invoiceId, documentType: params.documentType, r2Key: params.key };
 }
 
+/**
+ * **An invoice document that is already in R2 — decision 0555.**
+ *
+ * A message part (the attachment as it arrived) is stored before the
+ * invoice exists. When capture then makes an invoice of it, this points
+ * the invoice's `original` at that same object instead of uploading the
+ * bytes a second time: one object, two references, and R2 holds each
+ * file once. The content type is the one detection concluded (0069),
+ * which is what the viewer serves, whatever the sender's mail client
+ * labelled the attachment.
+ */
+export async function referenceStoredDocument(
+  db: D1Database,
+  params: {
+    invoiceId: string;
+    documentType: DocumentType;
+    contentType: string;
+    key: string;
+    routeMessageId: string;
+    partSeq: number;
+  }
+): Promise<StoreDocumentResult> {
+  const id = crypto.randomUUID();
+  await db
+    .prepare(
+      `INSERT INTO invoice_documents (id, invoice_id, r2_key, document_type, content_type, route_message_id, part_seq)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`
+    )
+    .bind(id, params.invoiceId, params.key, params.documentType, params.contentType, params.routeMessageId, params.partSeq)
+    .run();
+  return { id, invoiceId: params.invoiceId, documentType: params.documentType, r2Key: params.key };
+}
+
 export interface RetrievedDocument {
   bytes: ArrayBuffer;
   contentType: string;

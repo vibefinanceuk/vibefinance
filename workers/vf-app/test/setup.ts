@@ -109,6 +109,7 @@ import invoiceLineCodingSplitsSql from "../../../migrations/0102_invoice_line_co
 import taskSplitRowsSql from "../../../migrations/0103_task_split_rows.sql?raw";
 import erpExportsSql from "../../../migrations/0104_erp_exports.sql?raw";
 import erpExportUndoSql from "../../../migrations/0105_erp_export_undo.sql?raw";
+import routeMessagesSql from "../../../migrations/0106_route_messages.sql?raw";
 
 // Another known divergence from production, on top of the one below:
 // D1's exec() splits its input by newline and executes each non-empty
@@ -153,7 +154,11 @@ function toOneStatementPerLine(sql: string): string {
 // first (children before parents, for the foreign keys) so each test
 // gets a genuinely clean schema regardless of what the pool does or
 // does not reset.
-const TABLES_IN_DROP_ORDER = ["erp_export_rows", "erp_export_invoices", "erp_exports", "invoice_line_coding_splits", "invoice_line_po_pairings", "cost_centre_gl_codes", "document_comments",
+const TABLES_IN_DROP_ORDER = [
+  // Routes, slice 1 (decision 0555): invoice_documents now references
+  // route_messages, so both go first, invoice_documents before it.
+  "route_message_items", "route_message_events", "route_message_parts", "invoice_documents", "route_messages",
+  "erp_export_rows", "erp_export_invoices", "erp_exports", "invoice_line_coding_splits", "invoice_line_po_pairings", "cost_centre_gl_codes", "document_comments",
   // Matching Exceptions and Business User (decision 0468/migration
   // 0078) — references invoice_headers and org_users, so it sits here
   // with document_comments, the other table dropped early for exactly
@@ -170,7 +175,6 @@ const TABLES_IN_DROP_ORDER = ["erp_export_rows", "erp_export_invoices", "erp_exp
   "pending_document_pages",
   "pending_documents",
   "custom_fields",
-  "invoice_documents",
   "stage_rule_set_overrides",
   "stage_field_visibility_overrides",
   "cost_centres",
@@ -397,6 +401,7 @@ export async function applyTestSchema(): Promise<void> {
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(taskSplitRowsSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(erpExportsSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(erpExportUndoSql)));
+  await env.DB.exec(toOneStatementPerLine(stripSqlComments(routeMessagesSql)));
 }
 
 /**

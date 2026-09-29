@@ -13,10 +13,12 @@ import type { ExtractionModel } from "./extraction.js";
 import { parseUblInvoice, UblParseError } from "@vibefinance/shared";
 import {
   storeInvoiceDocument,
+  referenceStoredDocument,
   computeDocumentKey,
   contentTypeForDetection,
   extForContentType,
 } from "./document-storage.js";
+import type { StoredPart } from "./route-messages.js";
 
 /**
  * Capture addressed to a SOURCE — decision 0063.
@@ -178,24 +180,41 @@ async function retainOriginal(
     attempted: readonly { test: string; outcome: string }[];
     embeddedXml?: string;
   },
-  issueDate?: string
+  issueDate?: string,
+  stored?: StoredPart
 ): Promise<RetentionOutcome> {
   if (!bucket) return { retained: false, reason: "no R2 bucket is bound" };
   if (!customerId) return { retained: false, reason: "CUSTOMER_ID is not configured" };
 
   const contentType = contentTypeForDetection(detection);
-  const key = computeDocumentKey(customerId, invoiceId, extForContentType(contentType), issueDate);
+  const key = stored?.r2Key ?? computeDocumentKey(customerId, invoiceId, extForContentType(contentType), issueDate);
   try {
-    // Copied into a fresh buffer: the caller's view may be a subarray of
-    // a larger allocation, and R2 would otherwise store the whole thing.
-    const body = bytes.slice().buffer as ArrayBuffer;
-    await storeInvoiceDocument(bucket, db, {
-      invoiceId,
-      documentType: "original",
-      contentType,
-      key,
-      bytes: body,
-    });
+    if (stored) {
+      /**
+       * **Already in R2 — decision 0555.** The attachment was stored as
+       * a message part before anything read it, so the invoice points
+       * at that object rather than uploading the same bytes again.
+       */
+      await referenceStoredDocument(db, {
+        invoiceId,
+        documentType: "original",
+        contentType,
+        key,
+        routeMessageId: stored.routeMessageId,
+        partSeq: stored.partSeq,
+      });
+    } else {
+      // Copied into a fresh buffer: the caller's view may be a subarray of
+      // a larger allocation, and R2 would otherwise store the whole thing.
+      const body = bytes.slice().buffer as ArrayBuffer;
+      await storeInvoiceDocument(bucket, db, {
+        invoiceId,
+        documentType: "original",
+        contentType,
+        key,
+        bytes: body,
+      });
+    }
     /**
      * **And a rendering, where the original is XML** — decision 0205.
      *
@@ -301,7 +320,10 @@ export async function handleCaptureFromSource(
   model: ExtractionModel,
   idOverride?: string,
   bucket?: R2Bucket,
-  customerId?: string
+  customerId?: string,
+  // Decision 0555: where the document already sits in R2, as a message
+  // part, so retention points at it rather than storing it again.
+  stored?: StoredPart
 ): Promise<RouteResult> {
   const source = await db
     .prepare("SELECT id, process_id, name, default_org_unit_id FROM sources WHERE id = ?")
@@ -321,7 +343,7 @@ export async function handleCaptureFromSource(
     // Not an error. An undetectable document is an invoice with no
     // facts, which reaches Validation and waits for a person to key it
     // or reject it (decision 0055 section 7).
-    return captureWithoutFacts(db, source, attempted, detection.attempted, bytes, idOverride, bucket, customerId);
+    return captureWithoutFacts(db, source, attempted, detection.attempted, bytes, idOverride, bucket, customerId, stored);
   }
 
   let channel = await channelFor(db, source.process_id, detection.structure);
@@ -417,7 +439,8 @@ export async function handleCaptureFromSource(
         bytes,
         idOverride,
         bucket,
-        customerId
+        customerId,
+        stored
       );
     }
   }
@@ -664,7 +687,7 @@ export async function handleCaptureFromSource(
   }
 
   const retention = invoiceId
-    ? await retainOriginal(bucket, db, customerId, invoiceId, bytes, detection)
+    ? await retainOriginal(bucket, db, customerId, invoiceId, bytes, detection, undefined, stored)
     : { retained: false, reason: "the handler returned no invoice id" };
 
   return withIntakeFacts(result, detection.structure, attempted, retention);
@@ -749,7 +772,8 @@ async function captureWithoutFacts(
   bytes: Uint8Array,
   idOverride?: string,
   bucket?: R2Bucket,
-  customerId?: string
+  customerId?: string,
+  stored?: StoredPart
 ): Promise<RouteResult> {
   // Any structural channel of this process will do as the row's home:
   // the document has no structure, and the alternative is inventing a
@@ -1035,7 +1059,7 @@ async function captureWithoutFacts(
   }
 
   const retention = invoiceId
-    ? await retainOriginal(bucket, db, customerId, invoiceId, bytes, { structure: null, attempted: detail })
+    ? await retainOriginal(bucket, db, customerId, invoiceId, bytes, { structure: null, attempted: detail }, undefined, stored)
     : { retained: false, reason: "the handler returned no invoice id" };
 
   return {

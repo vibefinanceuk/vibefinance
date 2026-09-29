@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 29 September 2026 (decision 0554). A living document: what
+Last updated 29 September 2026 (decision 0555). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,14 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Routes, slice 1: every email stored before it is read (0555)
+- Each email a Source receives is a route message (`MSG-…`): the email and
+  each attachment go to R2 first, then capture runs. Outcome delivered,
+  partial or failed, with the part that failed and each attachment's reason.
+- D1 holds only what happened; R2 holds each file once: an invoice's
+  original points at its attachment's object. Design:
+  `docs/design/routes-phase1-data-model.md`. Nothing on screen yet.
 
 ### Undo an ERP export in the app's own pop-out (0554)
 - The browser's prompt replaced by the same pop-out as Discard and Return:

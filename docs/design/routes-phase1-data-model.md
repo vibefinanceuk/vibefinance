@@ -137,7 +137,7 @@ One row for everything that passes through an instance, in or out.
 | `instance_id` | TEXT → `route_instances.id` | |
 | `route_id`, `route_version` | | The version that last handled it |
 | `direction` | TEXT | `in` or `out` |
-| `status` | TEXT | `received`, `translated`, `delivered`, `failed`, `dismissed`; out adds `sent`, `acknowledged`, `undone` |
+| `status` | TEXT | `received`, `delivered`, `partial` (some attachments captured, some not: added in 0555), `failed`, `dismissed`; out adds `sent`, `acknowledged`, `undone` |
 | `failed_part` | TEXT NULL | `gateway`, `format`, `translation`, `delivery` |
 | `error_code` | TEXT NULL | Stable, for grouping ("the same problem stopped 1 other message") |
 | `error_text` | TEXT NULL | Plain language: what went wrong and how to fix it |
@@ -290,7 +290,7 @@ Each slice is a decision on its own, delivered and tested live as now.
 
 | Slice | What | Visible to the customer |
 | --- | --- | --- |
-| **1. Store first** | `route_messages`, parts, events, items; the email Source stores every message and attachment before reading it; `invoice_documents` points at the part | Nothing changes on screen; nothing that arrives is lost any more |
+| **1. Store first** (built, 0555) | `route_messages`, parts, events, items; the email Source stores every message and attachment before reading it; `invoice_documents` points at the part | Nothing changes on screen; nothing that arrives is lost any more |
 | **2. Route monitor** | The monitor screen, message detail, originals, `Integration.Monitor`; the four counts | IT can see every email and why one failed |
 | **3. Routes and instances** | `routes`, versions, instances, `route_role`; the backfill in section 4; the Routes screen (standard routes, read-only) and Process routes replacing Sources | Sources become Process routes; the menu changes once |
 | **4. ERP as a Destination** | The export's eligibility from the exit stage; each export an outbound message; once-only per instance; the Destination panel | The ERP export appears as a Destination, with its failures in the monitor |

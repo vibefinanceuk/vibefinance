@@ -1,5 +1,15 @@
 import { handleCaptureFromSource } from "./source-capture-route.js";
 import type { ExtractionModel } from "./extraction.js";
+import {
+  addRouteEvent,
+  finishRouteMessage,
+  linkRouteItem,
+  openRouteMessage,
+  routePartKey,
+  setPartOutcome,
+  storeRoutePart,
+  type StoredPart,
+} from "./route-messages.js";
 
 /**
  * Invoices arriving by email — decision 0146.
@@ -75,10 +85,7 @@ async function sourceFor(db: D1Database, address: string) {
  * gives a stream and nothing else, and a MIME parser is a dependency
  * this needs one function from.
  */
-async function attachmentsOf(
-  message: EmailMessage
-): Promise<{ filename: string; contentType: string; bytes: Uint8Array }[]> {
-  const raw = await new Response(message.raw).text();
+function attachmentsOf(raw: string): { filename: string; contentType: string; bytes: Uint8Array }[] {
 
   const boundaryMatch = raw.match(/boundary="?([^"\r\n;]+)"?/i);
   if (!boundaryMatch) return [];
@@ -216,7 +223,61 @@ export async function handleInboundEmail(
   bucket?: R2Bucket,
   customerId?: string
 ): Promise<void> {
+  /**
+   * **Read once, as bytes — decision 0555.** The raw stream can be read
+   * only once, and the email itself is now kept, so it is read as the
+   * bytes that arrived (at most 25MB, Cloudflare's own cap) and the
+   * attachments are cut from that same copy.
+   */
+  const rawBytes = new Uint8Array(await new Response(message.raw).arrayBuffer());
+  const raw = new TextDecoder().decode(rawBytes);
+  const receivedAt = new Date().toISOString();
   const source = await sourceFor(db, message.to);
+
+  /**
+   * **The message is recorded before anything is decided about it**,
+   * and — where a source claims the address — stored in R2 before
+   * anything reads it. Everything below adds to this record.
+   *
+   * **Not stored for an address nothing claims.** Such mail belongs to
+   * no process, so no retention rule covers it, and keeping every
+   * message sent to any address would make the bucket a sink for
+   * whatever anyone mails. The row is still written: that it arrived,
+   * from whom, and that it was refused.
+   */
+  const messageId = await openRouteMessage(db, {
+    instanceId: source?.id ?? null,
+    direction: "in",
+    counterparty: message.from,
+    recipient: message.to.toLowerCase(),
+    subject: subjectOf(raw),
+    bytes: rawBytes.length,
+    receivedAt,
+  });
+  const canStore = !!(messageId && source && bucket && customerId);
+  if (messageId && source) {
+    if (canStore) {
+      const original = await storeRoutePart(bucket!, db, {
+        messageId,
+        seq: 0,
+        role: "original",
+        filename: "message.eml",
+        contentType: "message/rfc822",
+        bytes: rawBytes,
+        key: routePartKey(customerId!, source.id, messageId, receivedAt, 0, "message.eml"),
+      });
+      await addRouteEvent(
+        db,
+        messageId,
+        "stored" in original ? "original_stored" : "original_not_stored",
+        { partSeq: 0, ...("reason" in original ? { detail: original.reason } : {}) }
+      );
+    } else {
+      await addRouteEvent(db, messageId, "original_not_stored", {
+        detail: !bucket ? "no R2 bucket is bound" : "CUSTOMER_ID is not configured",
+      });
+    }
+  }
 
   if (!source) {
     // An address a routing rule delivers to and no source claims. The
@@ -227,12 +288,28 @@ export async function handleInboundEmail(
     // without this the message leaves no trace on the customer's side
     // at all.
     await record(db, message, "rejected", "no_such_address", null);
+    if (messageId) {
+      await finishRouteMessage(db, messageId, {
+        status: "failed",
+        failedPart: "gateway",
+        errorCode: "no_such_address",
+        errorText: `No source receives mail for ${message.to.toLowerCase()}.`,
+      });
+    }
     message.setReject("That address does not accept invoices.");
     return;
   }
 
   if (source.status === "retired") {
     await record(db, message, "rejected", "source_retired", source.id);
+    if (messageId) {
+      await finishRouteMessage(db, messageId, {
+        status: "failed",
+        failedPart: "gateway",
+        errorCode: "source_retired",
+        errorText: `${source.name} is retired and no longer receives invoices.`,
+      });
+    }
     // **Retiring a source must remove its routing rule** (decision
     // 0130). Until it does, this is the guard that makes the status
     // true rather than decorative.
@@ -240,10 +317,18 @@ export async function handleInboundEmail(
     return;
   }
 
-  const attachments = await attachmentsOf(message);
+  const attachments = attachmentsOf(raw);
 
   if (attachments.length === 0) {
     await record(db, message, "rejected", "no_attachment", source.id);
+    if (messageId) {
+      await finishRouteMessage(db, messageId, {
+        status: "failed",
+        failedPart: "format",
+        errorCode: "no_attachment",
+        errorText: "The message carried no PDF, XML or image attachment.",
+      });
+    }
     message.setReject(
       "No invoice was attached. Please attach the invoice as a PDF, XML or image."
     );
@@ -256,7 +341,31 @@ export async function handleInboundEmail(
    * would lose two silently.
    */
   const failures: string[] = [];
-  for (const attachment of attachments) {
+  for (const [index, attachment] of attachments.entries()) {
+    const seq = index + 1;
+
+    /**
+     * **Stored before it is read — decision 0555.** Each attachment is
+     * its own R2 object, so the invoice it becomes can point at it
+     * (`referenceStoredDocument`) and the viewer can serve it directly.
+     * If storing fails, capture keeps the old path and stores the
+     * invoice's own copy, as it did before this slice.
+     */
+    let stored: StoredPart | undefined;
+    if (canStore) {
+      const part = await storeRoutePart(bucket!, db, {
+        messageId: messageId!,
+        seq,
+        role: "attachment",
+        filename: attachment.filename,
+        contentType: attachment.contentType,
+        bytes: attachment.bytes,
+        key: routePartKey(customerId!, source.id, messageId!, receivedAt, seq, attachment.filename),
+      });
+      if ("stored" in part) stored = part.stored;
+      else await addRouteEvent(db, messageId!, "attachment_not_stored", { partSeq: seq, detail: part.reason });
+    }
+
     const result = await handleCaptureFromSource(
       db,
       source.id,
@@ -264,7 +373,8 @@ export async function handleInboundEmail(
       model,
       undefined,
       bucket,
-      customerId
+      customerId,
+      stored
     );
     if (result.status >= 400) {
       /**
@@ -282,6 +392,15 @@ export async function handleInboundEmail(
        */
       const why = (result.body as { error?: string } | undefined)?.error;
       failures.push(why ? `${attachment.filename}: ${why}` : attachment.filename);
+      if (messageId) {
+        if (stored) await setPartOutcome(db, messageId, seq, "failed", why ?? null);
+        await addRouteEvent(db, messageId, "capture_failed", { partSeq: seq, detail: why ?? attachment.filename });
+      }
+    } else if (messageId) {
+      const invoiceId = (result.body as { id?: string } | undefined)?.id;
+      if (stored) await setPartOutcome(db, messageId, seq, "captured", null);
+      if (invoiceId) await linkRouteItem(db, messageId, invoiceId, seq);
+      await addRouteEvent(db, messageId, "captured", { partSeq: seq, ...(invoiceId ? { detail: invoiceId } : {}) });
     }
   }
 
@@ -302,12 +421,33 @@ export async function handleInboundEmail(
       attachments.length,
       0
     );
+    if (messageId) {
+      await finishRouteMessage(db, messageId, {
+        status: "failed",
+        failedPart: "translation",
+        errorCode: "unreadable",
+        errorText: failures.join(" · ") || "No attachment could be read as an invoice.",
+      });
+    }
     message.setReject("The attached file could not be read as an invoice.");
     return;
   }
 
   await record(db, message, "captured", null, source.id, attachments.length, captured);
+  if (messageId) await finishRouteMessage(db, messageId, { status: failures.length > 0 ? "partial" : "delivered" });
   await markReceiving(db, source.id);
+}
+
+/**
+ * The message's subject, for the monitor to list it by. Headers only:
+ * the first blank line ends them. Folded lines are joined, and an
+ * encoded subject is shown as sent rather than decoded here.
+ */
+function subjectOf(raw: string): string | null {
+  const headerEnd = raw.search(/\r?\n\r?\n/);
+  const headers = (headerEnd === -1 ? raw : raw.slice(0, headerEnd)).replace(/\r?\n[ \t]+/g, " ");
+  const subject = headers.match(/^subject:[ \t]*(.*)$/im)?.[1]?.trim();
+  return subject ? subject.slice(0, 300) : null;
 }
 
 /**
