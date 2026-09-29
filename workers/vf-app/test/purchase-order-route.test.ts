@@ -923,6 +923,27 @@ describe("Invoiced (Part) / Invoiced (Full), derived from real invoices — deci
     expect((result.body as { order: { effective_status: string } }).order.effective_status).toBe("active");
   });
 
+  it("leaves an invoice's Non-PO lines out of what it has used (decision 0544)", async () => {
+    await handleIngestPurchaseOrder(env.DB, ORDER()); // payable_amount 864
+    // 900 in total, 750 net: 600 of goods and 150 of freight marked Non-PO.
+    await env.DB.prepare("INSERT INTO invoice_headers (id, facts_json) VALUES ('inv-1', ?)")
+      .bind(JSON.stringify({ "BT-13": "PO-34500", "BT-112": 900, "BT-106": 750 }))
+      .run();
+    await env.DB.prepare("INSERT INTO invoice_lines (id, invoice_id, line_number, facts_json) VALUES ('l1', 'inv-1', 1, ?), ('l2', 'inv-1', 2, ?)")
+      .bind(JSON.stringify({ "BT-131": 600 }), JSON.stringify({ "BT-131": 150 }))
+      .run();
+    const status = async () => ((await handleGetPurchaseOrder(env.DB, "PO-34500")).body as { order: { effective_status: string } }).order.effective_status;
+    expect(await status()).toBe("invoiced_full");
+
+    await env.DB.prepare("INSERT INTO org_users (id, email, name) VALUES ('u-1', 'u@x.com', 'U')").run();
+    await env.DB.prepare(
+      `INSERT INTO invoice_line_po_pairings (invoice_id, line_number, order_number, po_line_number, paired_by, paired_at, kind)
+       VALUES ('inv-1', 2, 'PO-34500', NULL, 'u-1', '2026-09-29', 'non_po')`
+    ).run();
+    // 900 less 150 grossed up by 900/750 = 720, under 864.
+    expect(await status()).toBe("invoiced_part");
+  });
+
   it("an order whose matching invoices reach its own total is Invoiced (Full)", async () => {
     await handleIngestPurchaseOrder(env.DB, ORDER()); // payable_amount 864
     await seedInvoice("inv-1", "PO-34500", 500);

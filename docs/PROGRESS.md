@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 28 September 2026 (decision 0543). A living document: what
+Last updated 29 September 2026 (decision 0544). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,12 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### PO header check leaves Non-PO lines out (0544)
+- An invoice's use of its PO is its total less its Non-PO lines (grossed
+  up for VAT), in the header check, other invoices' consumption, the
+  panel's usage bar, PO search and the Purchase Orders screen.
+  `vf-licence` migration `0199`.
 
 ### GL codes per cost centre, and the invoice's project reference (0543)
 - A cost centre may be linked to the GL codes it can be charged with

@@ -520,3 +520,71 @@ describe("a Non-PO line on a PO invoice — decision 0537", () => {
     expect((await lineFacts(3))["BT-133"]).toBeUndefined();
   });
 });
+
+describe("the invoice-level PO check leaves Non-PO lines out — decision 0544", () => {
+  // PO-F: 1,200 for 10 × 100. INV-F: 1,440 in total, 1,200 net: the goods (1,000, PO line 1) and 200 of freight.
+  beforeEach(async () => {
+    await po("po-f", "PO-F", "GB111", 1200);
+    await poLine("po-f", 1, "Chairs", 10, 100);
+    await invoice(
+      "inv-f",
+      { "BT-1": "INV-F", "BT-13": "PO-F", "BT-112": 1440, "BT-106": 1200, "BT-31": "GB111" },
+      [
+        { "BT-153": "Chairs", "BT-129": 10, "BT-131": 1000, "BT-132": "1" },
+        { "BT-153": "Freight", "BT-131": 200 },
+      ]
+    );
+  });
+  const markFreightNonPo = (invoiceId = "inv-f", order = "PO-F") =>
+    env.DB.prepare(
+      `INSERT INTO invoice_line_po_pairings (invoice_id, line_number, order_number, po_line_number, paired_by, paired_at, kind)
+       VALUES (?, 2, ?, NULL, 'u-dan', '2026-09-29', 'non_po')`
+    )
+      .bind(invoiceId, order)
+      .run();
+
+  it("matches once the freight line is marked Non-PO: its gross (200 × 1,440/1,200 = 240) no longer counts against the PO", async () => {
+    let header = (await loadLiveInvoiceFacts(env.DB, "inv-f"))!.facts;
+    expect(header["po.matched"]).toBe(false);
+    expect(header["po.variance_pct"]).toBe(20);
+
+    await markFreightNonPo();
+    header = (await loadLiveInvoiceFacts(env.DB, "inv-f"))!.facts;
+    expect(header["po.matched"]).toBe(true);
+    expect(header["po.variance_pct"]).toBe(0);
+  });
+
+  it("shows the same in the panel: this invoice's share of the PO, and what its Non-PO lines added", async () => {
+    await markFreightNonPo();
+    const view = (await handleGetPoMatchView(env.DB, "inv-f", "u-dan")).body as {
+      header: { matched: boolean };
+      usage: { thisInvoice: number; nonPoExcluded: number; left: number };
+    };
+    expect(view.header.matched).toBe(true);
+    expect(view.usage).toMatchObject({ thisInvoice: 1200, nonPoExcluded: 240, left: 0 });
+  });
+
+  it("counts another invoice's use of the PO the same way", async () => {
+    await markFreightNonPo();
+    await invoice("inv-g", { "BT-1": "INV-G", "BT-13": "PO-F", "BT-112": 12 }, [{ "BT-131": 10, "BT-132": "1" }]);
+    const view = (await handleGetPoMatchView(env.DB, "inv-g", "u-dan")).body as { usage: { invoicedByOthers: number; otherInvoices: { number: string; amount: number }[] } };
+    expect(view.usage.invoicedByOthers).toBe(1200);
+    expect(view.usage.otherInvoices).toEqual([expect.objectContaining({ number: "INV-F", amount: 1200 })]);
+  });
+
+  it("gives the same answer in code and in SQL, with and without a net total", async () => {
+    const { poShareOfTotal, poShareSql } = await import("../src/po-matching.js");
+    await markFreightNonPo();
+    // Without BT-106 the lines' own nets (1,200) scale it.
+    await invoice("inv-h", { "BT-13": "PO-F", "BT-112": 1440 }, [{ "BT-131": 1000 }, { "BT-131": 200 }]);
+    await markFreightNonPo("inv-h");
+    const sql = await env.DB.prepare(`SELECT h.id, ${poShareSql("h")} AS share FROM invoice_headers h WHERE h.id IN ('inv-f', 'inv-h', 'inv-1') ORDER BY h.id`).all<{ id: string; share: number }>();
+    expect(sql.results).toEqual([
+      { id: "inv-1", share: poShareOfTotal(1735, 1735, 0) },
+      { id: "inv-f", share: poShareOfTotal(1440, 1200, 200) },
+      { id: "inv-h", share: poShareOfTotal(1440, 1200, 200) },
+    ]);
+    expect(poShareOfTotal(1440, 1200, 200)).toBe(1200);
+    expect(poShareOfTotal(100, undefined, 30)).toBe(70);
+  });
+});

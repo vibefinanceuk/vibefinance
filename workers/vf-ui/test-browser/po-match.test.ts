@@ -108,6 +108,7 @@ const STRINGS = {
     "pomatch.legend.nonpo": "Grey: Non-PO line, not on the order and coded by hand",
     "pomatch.codingcleared": "Line {n} now has a PO line, so the coding keyed on it was removed.",
     "pomatch.pop.nonpo": "Not on the order. Coded by hand in the Coding column, like a Non-PO invoice line.",
+    "pomatch.nonpoexcluded": "This invoice's Non-PO lines ({amount} with VAT) are left out.",
     "purchaseorders.status.active": "Active",
     "purchaseorders.status.invoicedpart": "Invoiced (Part)",
     "purchaseorders.status.closed": "Closed",
@@ -575,5 +576,15 @@ describe("a Non-PO line — decision 0537", () => {
     expect(matchLegend()).toContain("Grey: Non-PO line");
     openLineMatchPopout({ orderNumber: "PO-A", held: true, lines: [line] }, line);
     expect(document.querySelector(".pmlinepop")?.textContent).toContain("Coded by hand in the Coding column");
+  });
+});
+
+describe("the usage bar leaves Non-PO lines out — decision 0544", () => {
+  it("says how much this invoice's Non-PO lines added, and nothing when there are none", async () => {
+    await open({ ...VIEW, usage: { ...VIEW.usage, thisInvoice: 1500, nonPoExcluded: 235, left: 564 } });
+    expect(panel().querySelector(".pmnonponote")?.textContent).toBe("This invoice's Non-PO lines (235.00 with VAT) are left out.");
+    document.body.innerHTML = "";
+    await open(VIEW);
+    expect(panel().querySelector(".pmnonponote")).toBeNull();
   });
 });

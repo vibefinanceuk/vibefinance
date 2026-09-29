@@ -1,7 +1,7 @@
 import type { InvoiceFacts } from "@vibefinance/shared";
 import { CODING_FIELD_LISTS } from "./coding-validation.js";
 import type { RouteResult } from "./org-route.js";
-import { computePoLineMatch, computePoMatch, getOrgMatchingConfig, loadPoConsumption, type PoConsumption } from "./po-matching.js";
+import { computePoLineMatch, computePoMatch, getOrgMatchingConfig, loadPoConsumption, poShareOfTotal, poShareSql, type PoConsumption } from "./po-matching.js";
 import { unitsWherePermitted, isWithinScope, unitClause } from "./enforce.js";
 import { handleKeyInvoiceFields } from "./key-fields-route.js";
 import { activePairings, loadPairings } from "./po-pairings.js";
@@ -143,7 +143,7 @@ async function invoicedByOthers(db: D1Database, orderNumber: string, invoiceId: 
   const rows = await db
     .prepare(
       `SELECT h.id, json_extract(h.facts_json, '$."BT-1"') AS number,
-              CAST(json_extract(h.facts_json, '$."BT-112"') AS REAL) AS amount
+              ${poShareSql("h")} AS amount
        FROM invoice_headers h
        WHERE json_extract(h.facts_json, '$."BT-13"') = ? AND h.id != ?
          AND NOT EXISTS (
@@ -373,10 +373,21 @@ export async function handleGetPoMatchView(db: D1Database, invoiceId: string, us
   );
 
   const referenced = new Set(lines.map((l) => l.poLine?.lineNumber).filter((n) => n !== undefined));
-  const header = po && consumption ? await computePoMatch(db, headerFacts, orgConfig, consumption) : { matched: false, variancePct: undefined };
+  /**
+   * **This invoice's share of the PO — decision 0544**: its total less
+   * its Non-PO lines (grossed up by its own total-to-net ratio), the same
+   * `poShareOfTotal` the Matching rules read, so the panel's bar and the
+   * header verdict agree.
+   */
+  const total = num(facts["BT-112"]) ?? 0;
+  const nonPoNet = lines.filter((l) => l.nonPo).reduce((s, l) => s + (l.amount ?? 0), 0);
+  const netAll = num(facts["BT-106"]) || lines.reduce((s, l) => s + (l.amount ?? 0), 0) || undefined;
+  const thisInvoice = poShareOfTotal(total, netAll, nonPoNet);
+  const header = po && consumption
+    ? await computePoMatch(db, headerFacts, orgConfig, consumption, nonPoNet ? thisInvoice : undefined)
+    : { matched: false, variancePct: undefined };
   const others = consumption?.invoices ?? [];
   const byOthers = consumption?.headerAmount ?? 0;
-  const thisInvoice = num(facts["BT-112"]) ?? 0;
 
   return {
     status: 200,
@@ -420,6 +431,8 @@ export async function handleGetPoMatchView(db: D1Database, invoiceId: string, us
             invoicedByOthers: byOthers,
             otherInvoices: others,
             thisInvoice,
+            // Decision 0544 — what this invoice's Non-PO lines add to its total, left out above.
+            nonPoExcluded: Math.round((total - thisInvoice) * 100) / 100,
             left: po.payable_amount === null ? null : po.payable_amount - byOthers - thisInvoice,
           }
         : null,

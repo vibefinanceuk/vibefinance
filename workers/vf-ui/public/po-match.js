@@ -142,6 +142,8 @@ function usageSection(view) {
       node("span", {}, [node("i", { class: "left" }), `${t("pomatch.left")} `, node("b", { class: over ? "pmover" : undefined, text: money(u.left) })]),
       node("span", { class: "muted", text: fill("pomatch.of", { total: `${money(u.poTotal)}${view.po.currency ? ` ${view.po.currency}` : ""}` }) }),
     ]),
+    // Decision 0544 — this invoice's Non-PO lines are not part of what it takes from the PO.
+    u.nonPoExcluded > 0 ? node("p", { class: "muted sm pmnonponote", text: fill("pomatch.nonpoexcluded", { amount: money(u.nonPoExcluded) }) }) : null,
   ]);
 }
 

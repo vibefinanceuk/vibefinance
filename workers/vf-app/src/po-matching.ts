@@ -69,6 +69,35 @@ export interface PoConsumption {
 /** The instance states whose invoice will never be paid, so never counts as having used a PO. */
 const UNPAID_INSTANCE_STATUSES = ["archived", "returned_manually"];
 
+/**
+ * **What an invoice takes from its PO — decision 0544.** Its total
+ * (BT-112) less its Non-PO lines (0537: freight, carriage, anything the
+ * order never covered). The operator: a large freight line must not
+ * push the invoice-level PO check over tolerance.
+ *
+ * A Non-PO line carries a net amount (BT-131) and the total is gross, so
+ * the line is grossed up by the invoice's own gross-to-net ratio (BT-112
+ * over BT-106, or over the sum of its line nets when BT-106 is absent),
+ * taking its VAT with it. With no net to scale by, the net is taken as
+ * it is. This function and `PO_SHARE_SQL` below are the one definition,
+ * in code and in SQL; a test holds them to the same answer.
+ */
+export function poShareOfTotal(total: number, net: number | undefined, nonPoNet: number): number {
+  if (nonPoNet === 0) return total;
+  return total - (net !== undefined && net > 0 ? (nonPoNet * total) / net : nonPoNet);
+}
+
+/** `poShareOfTotal` in SQL, for invoice header alias `h`. */
+export function poShareSql(h = "h"): string {
+  const total = `CAST(json_extract(${h}.facts_json, '$."BT-112"') AS REAL)`;
+  const net = `COALESCE(NULLIF(CAST(json_extract(${h}.facts_json, '$."BT-106"') AS REAL), 0),
+      (SELECT SUM(CAST(json_extract(l2.facts_json, '$."BT-131"') AS REAL)) FROM invoice_lines l2 WHERE l2.invoice_id = ${h}.id))`;
+  const nonPo = `COALESCE((SELECT SUM(CAST(json_extract(np.facts_json, '$."BT-131"') AS REAL))
+      FROM invoice_lines np JOIN invoice_line_po_pairings pp ON pp.invoice_id = np.invoice_id AND pp.line_number = np.line_number
+      WHERE np.invoice_id = ${h}.id AND pp.kind = 'non_po' AND pp.order_number = json_extract(${h}.facts_json, '$."BT-13"')), 0)`;
+  return `(${total} - CASE WHEN ${nonPo} = 0 THEN 0 WHEN ${net} > 0 THEN ${nonPo} * ${total} / ${net} ELSE ${nonPo} END)`;
+}
+
 export async function loadPoConsumption(
   db: D1Database,
   orderNumber: string,
@@ -78,7 +107,7 @@ export async function loadPoConsumption(
     await db
       .prepare(
         `SELECT h.id, json_extract(h.facts_json, '$."BT-1"') AS number,
-                CAST(json_extract(h.facts_json, '$."BT-112"') AS REAL) AS amount
+                ${poShareSql("h")} AS amount
          FROM invoice_headers h
          WHERE json_extract(h.facts_json, '$."BT-13"') = ? AND h.id != ?
            AND NOT EXISTS (
@@ -252,7 +281,9 @@ export async function computePoMatch(
   db: D1Database,
   headerFacts: InvoiceFacts,
   orgConfig: OrgMatchingConfig = DEFAULT_ORG_MATCHING_CONFIG,
-  consumption: PoConsumption = NO_CONSUMPTION
+  consumption: PoConsumption = NO_CONSUMPTION,
+  /** Decision 0544 — this invoice's total less its Non-PO lines (`poShareOfTotal`); BT-112 when absent. */
+  poTotal?: number
 ): Promise<PoHeaderMatch> {
   const orderNumber = toText(headerFacts["BT-13"]);
   if (!orderNumber) return { matched: false, variancePct: undefined };
@@ -270,7 +301,7 @@ export async function computePoMatch(
    * what other invoices have already taken (`consumption`), by more
    * than the tolerance; less is a partial invoice, not a mismatch.
    */
-  const invoiceTotal = toNumber(headerFacts["BT-112"]);
+  const invoiceTotal = poTotal ?? toNumber(headerFacts["BT-112"]);
   const payable = order.payable_amount ?? undefined;
   const variance = excessPct(invoiceTotal, payable === undefined ? undefined : payable - consumption.headerAmount, payable);
   if (variance === undefined) return { matched: false, variancePct: undefined };
@@ -434,6 +465,20 @@ export async function computePoLineMatch(
 }
 
 /**
+ * This invoice's `poShareOfTotal` from its lines as they stand, the Non-PO
+ * ones marked `po.line_non_po` by `applySavedPairings` — decision 0544.
+ * `undefined` when it has no total, or no Non-PO lines.
+ */
+export function invoicePoTotal(headerFacts: InvoiceFacts, lines: InvoiceFacts[]): number | undefined {
+  const total = toNumber(headerFacts["BT-112"]);
+  if (total === undefined) return undefined;
+  const nonPoNet = lines.filter((l) => l["po.line_non_po"] === true).reduce((s, l) => s + (toNumber(l["BT-131"]) ?? 0), 0);
+  if (nonPoNet === 0) return undefined;
+  const net = toNumber(headerFacts["BT-106"]) || lines.reduce((s, l) => s + (toNumber(l["BT-131"]) ?? 0), 0) || undefined;
+  return poShareOfTotal(total, net, nonPoNet);
+}
+
+/**
  * Merges header-level po.* facts into `headerFacts`, and line-level
  * po.line_* facts into every entry of `lines`, computed fresh against
  * whatever purchase order data exists right now.
@@ -463,7 +508,7 @@ export async function mergePoMatchFacts(
   const consumption =
     orderNumber && options.invoiceId ? await loadPoConsumption(db, orderNumber, options.invoiceId) : NO_CONSUMPTION;
 
-  const header = await computePoMatch(db, headerFacts, orgConfig, consumption);
+  const header = await computePoMatch(db, headerFacts, orgConfig, consumption, invoicePoTotal(headerFacts, lines));
   const mergedHeaderFacts: InvoiceFacts = {
     ...headerFacts,
     "po.matched": header.matched,

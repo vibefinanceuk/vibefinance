@@ -821,6 +821,7 @@ const KEYS_THE_INTERFACE_USES = [
   "apsetup.codingglcodes.help",
   "viewer.coding.invalid.wrong_cost_centre",
   "viewer.coding.sug.invoice",
+  "pomatch.nonpoexcluded",
   "pomatch.why.lines",
   // Decision 0533 — how much of each PO line is used.
   "pomatch.lineuse",
