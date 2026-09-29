@@ -183,6 +183,8 @@ export const DERIVED_FIELDS = [
   "supplier.matchOption",
   "supplier.amountTolerancePct",
   "supplier.quantityTolerancePct",
+  // Decision 0547 — the site's spend is project-only expenditure.
+  "supplier.projectOnly",
   "provenance.keyed",
   "extraction.confidence",
   "invoice.duplicate_confidence",
@@ -313,6 +315,7 @@ export const INVOICE_FIELD_TYPES: Record<string, FieldType> = {
   "supplier.matchOption": "text",
   "supplier.amountTolerancePct": "number",
   "supplier.quantityTolerancePct": "number",
+  "supplier.projectOnly": "boolean",
   "provenance.keyed": "text",
   "extraction.confidence": "number",
   "invoice.duplicate_confidence": "number",
@@ -532,6 +535,8 @@ export const DERIVED_FIELD_DESCRIPTIONS: Record<DerivedField, string> = {
     "how far an invoice's amount may differ from what it is matched against before the match fails, as a percentage agreed with this supplier. Absent where no supplier matched or none was agreed.",
   "supplier.quantityTolerancePct":
     "the same for quantity. Kept apart from the amount tolerance because a supplier who may over-deliver by five percent has not thereby agreed to over-charge by five percent.",
+  "supplier.projectOnly":
+    "true where this invoice's supplier site is marked on the Suppliers screen as project-only expenditure: every line a person codes needs a project, never a cost centre alone. Read from the supplier as it is set now. Absent when no supplier is attached.",
   "supplier.awaitingErp":
     "true where this invoice's supplier is recorded here but has no ERP identifier yet. **This is the new-supplier process, as a fact a rule can test**: somebody received an invoice, wrote down who sent it, and the ERP record does not exist — so the invoice cannot be paid however complete our own record is. Decision 0209's argument survives in this field rather than in a NOT NULL: matched means we recognise them, and payable means the ERP can. False where no supplier matched at all, which is a different question with its own field.",
   "supplier.onHold":

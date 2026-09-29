@@ -228,6 +228,22 @@ describe("a suggestion per line, from this supplier's lines like it (decision 05
     expect((await suggest("inv-t")).lines["1"]).toMatchObject({ count: 1, total: 2 });
   });
 
+  it("for a project-only supplier site, draws only on lines that carried a project and never suggests a cost centre (decision 0547)", async () => {
+    await env.DB.prepare("INSERT INTO coding_list_entries (list_type_id, id, name) VALUES ('project', 'PRJ-1', 'Fit-out')").run();
+    await codedLine("GB-P", "Pallet delivery, York", { "coding.project": "PRJ-1", "coding.commodity_code": "cm-frt" });
+    await codedLine("GB-P", "Pallet delivery, Hull", { "BT-133": "cc-log", "coding.commodity_code": "cm-frt" });
+    await codedLine("GB-P", "Pallet delivery, Leeds", { "BT-133": "cc-log", "coding.commodity_code": "cm-frt" });
+    await target("inv-t", "GB-P", ["Pallet delivery, Wakefield"]);
+    // Off: the cost centre the majority used.
+    expect((await suggest("inv-t")).lines["1"]?.values["BT-133"]).toBe("cc-log");
+
+    await env.DB.prepare("INSERT INTO suppliers (id, erp_identifier, name, project_only) VALUES ('sup-p', '40500', 'Pallets Ltd', 1)").run();
+    await env.DB.prepare("UPDATE invoice_headers SET supplier_id = 'sup-p' WHERE id = 'inv-t'").run();
+    const line = (await suggest("inv-t")).lines["1"];
+    expect(line.values).toEqual({ "coding.project": "PRJ-1", "coding.commodity_code": "cm-frt" });
+    expect(line).toMatchObject({ count: 1, total: 1 });
+  });
+
   describe("the project the invoice names (BT-11) — decision 0543", () => {
     beforeEach(async () => {
       await env.DB.prepare(

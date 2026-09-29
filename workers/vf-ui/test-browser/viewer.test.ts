@@ -7087,7 +7087,12 @@ describe("Cost centre OR project in the Coding pop-out — decision 0540", () =>
       { field: "coding.commodity_code", visibility: "edit", type: "text", line: true, description: "commodity" },
     ],
   };
-  function stubAll(lineFacts: Record<string, unknown>, extra: Record<string, unknown> = {}, bodies: { path: string; body: unknown }[] = []) {
+  function stubAll(
+    lineFacts: Record<string, unknown>,
+    extra: Record<string, unknown> = {},
+    bodies: { path: string; body: unknown }[] = [],
+    invoiceExtra: Record<string, unknown> = {}
+  ) {
     vi.stubGlobal(
       "fetch",
       vi.fn(async (url: string, init?: RequestInit) => {
@@ -7104,6 +7109,7 @@ describe("Cost centre OR project in the Coding pop-out — decision 0540", () =>
             buyer: { unitId: "UK01", unitName: "Acme UK", entityName: "Acme UK", vatId: "GB1" },
             orgUnitId: "UK01",
             costObjectRule: "exclusive",
+            ...invoiceExtra,
           },
           "/api/invoices/inv-1/document-url": { url: null },
           "/api/invoices/inv-1/progress": { inProcess: false, stages: [] },
@@ -7218,6 +7224,62 @@ describe("Cost centre OR project in the Coding pop-out — decision 0540", () =>
     saveButton.click();
     await new Promise((r) => setTimeout(r, 0));
     expect(document.getElementById("viewer-note")?.textContent).toBe("Not saved. A line carries a cost centre or a project, not both (line 1).");
+  });
+
+  describe("a project-only supplier site — decision 0547", () => {
+    const PO_STR = {
+      "viewer.coding.projectonly": "This supplier's spend is project-only: code the line to a project.",
+      "viewer.coding.projectonly.hascc": "Choosing a project removes cost centre {cc}.",
+    };
+    beforeEach(() => {
+      Object.assign(STR.strings, PO_STR);
+    });
+
+    it("shows Project alone, with no switch and no Cost centre card, and says why", async () => {
+      stubAll({}, {}, [], { supplierProjectOnly: true });
+      await openCoding();
+      expect(switchButtons()).toEqual([]);
+      const object = document.querySelector(".popout .codingfield.codingobject.projectonly") as HTMLElement;
+      expect(object.querySelector(".codingfieldlabel")?.textContent).toBe("Project");
+      expect(object.querySelector(".codingprojectonly")?.textContent).toBe("This supplier's spend is project-only: code the line to a project.");
+      const labels = [...document.querySelectorAll(".popout .codingfieldlabel")].map((l) => l.textContent);
+      expect(labels).not.toContain("Cost centre");
+      // Project is where the cursor starts.
+      expect(document.activeElement).toBe(object.querySelector(".searchbox"));
+    });
+
+    it("names a cost centre the line already holds, and choosing a project removes it", async () => {
+      const bodies: { path: string; body: unknown }[] = [];
+      stubAll({ "BT-133": "cc1" }, {}, bodies, { supplierProjectOnly: true });
+      await openCoding();
+      expect(document.querySelector(".popout .codingprojectonly")?.textContent).toContain("Choosing a project removes cost centre cc1.");
+      const box = document.querySelector(".popout .codingobject .searchbox") as HTMLInputElement;
+      box.value = "fit";
+      box.oninput?.(new Event("input"));
+      await new Promise((r) => setTimeout(r, 0));
+      ([...document.querySelectorAll(".popout .searchresult")].find((r) => r.textContent?.includes("Fit-out")) as HTMLButtonElement).click();
+      await save();
+      const line = (bodies.find((b) => b.path === "/api/invoices/inv-1/key")?.body as { lines: { facts: Record<string, unknown> }[] }).lines[0];
+      expect(line.facts["coding.project"]).toBe("PRJ-1");
+      expect(line.facts["BT-133"]).toBeUndefined();
+    });
+
+    it("is not coded (no green cue) with a cost centre alone", async () => {
+      stubAll({ "BT-133": "cc1", "coding.commodity_code": "cm1" }, {}, [], { supplierProjectOnly: true });
+      await openCoding();
+      expect(document.querySelector("#lines .codingbtn")?.classList.contains("coded")).toBe(false);
+    });
+
+    it("is coded (green cue) with a project", async () => {
+      stubAll({ "coding.project": "PRJ-1", "coding.commodity_code": "cm1" }, {}, [], { supplierProjectOnly: true });
+      // Not openCoding(): a coded line's button is titled "Coding — coded".
+      const { loadStrings } = await import("/strings.js");
+      await loadStrings();
+      const { openViewer } = await import("/viewer.js");
+      await openViewer(TASK, () => {});
+      await new Promise((r) => setTimeout(r, 0));
+      expect(document.querySelector("#lines .codingbtn")?.classList.contains("coded")).toBe(true);
+    });
   });
 });
 

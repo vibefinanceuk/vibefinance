@@ -803,7 +803,7 @@ export async function handleListSuppliers(
       `SELECT s.id, s.erp_identifier, s.erp_site_identifier, s.name, s.vat_id, s.electronic_address,
               s.country, s.payment_terms, s.on_hold, s.hold_reason, s.match_option, s.status,
               s.is_pay_site, s.is_procurement_site, s.address_line, s.city, s.postal_code, s.email, s.phone,
-              s.org_unit_id, u.name AS org_unit_name
+              s.org_unit_id, u.name AS org_unit_name, s.project_only
        FROM suppliers s
        LEFT JOIN org_units u ON u.id = s.org_unit_id
        WHERE 1 = 1 ${clause.sql} ${search_.sql} ${status_.sql}
@@ -833,6 +833,7 @@ export async function handleListSuppliers(
       phone: string | null;
       org_unit_id: string | null;
       org_unit_name: string | null;
+      project_only: number;
     }>();
 
   const load = await db
@@ -864,6 +865,8 @@ export async function handleListSuppliers(
         phone: r.phone,
         orgUnitId: r.org_unit_id,
         orgUnitName: r.org_unit_name,
+        // Decision 0547.
+        projectOnly: r.project_only === 1,
       })),
       /**
        * **Null where nothing was ever loaded**, which a screen must say
@@ -1280,6 +1283,23 @@ export async function handleUpdateSupplier(
     touched[column as AuditedField] = stored;
   }
 
+  /**
+   * **Project-only expenditure — decision 0547.** Unlike every field
+   * above, this one is VibeFinance's own: the ERP has no such setting,
+   * so the next load leaves it as set here.
+   */
+  let projectOnlyBefore: number | null = null;
+  if ("projectOnly" in body) {
+    if (typeof body.projectOnly !== "boolean") {
+      return { status: 400, body: { error: "projectOnly must be true or false" } };
+    }
+    const row = await db.prepare("SELECT project_only FROM suppliers WHERE id = ?").bind(supplierId).first<{ project_only: number }>();
+    projectOnlyBefore = row?.project_only ?? 0;
+    sets.push("project_only = ?");
+    values.push(body.projectOnly ? 1 : 0);
+    touched.project_only = body.projectOnly;
+  }
+
   if (sets.length === 0) return { status: 400, body: { error: "nothing to change" } };
 
   await db
@@ -1287,7 +1307,12 @@ export async function handleUpdateSupplier(
     .bind(...values, supplierId)
     .run();
 
-  await recordSupplierFieldChanges(db, supplierId, diffSupplierFields(supplier, touched), changedBy);
+  await recordSupplierFieldChanges(
+    db,
+    supplierId,
+    diffSupplierFields({ ...supplier, ...(projectOnlyBefore !== null ? { project_only: projectOnlyBefore } : {}) }, touched),
+    changedBy
+  );
 
   return { status: 200, body: { id: supplierId, changedBy } };
 }

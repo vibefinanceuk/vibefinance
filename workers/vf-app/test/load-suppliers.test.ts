@@ -1659,6 +1659,21 @@ describe("the general field-change history — decision 0427", () => {
 
       expect(await changes(id)).toEqual([]);
     });
+
+    it("sets a site as project-only expenditure, records it, lists it, and a reload leaves it — decision 0547", async () => {
+      const id = await seedOne();
+      expect(((await handleListSuppliers(env.DB)).body as { suppliers: { projectOnly: boolean }[] }).suppliers[0].projectOnly).toBe(false);
+
+      expect((await handleUpdateSupplier(env.DB, id, { projectOnly: true }, "bob")).status).toBe(200);
+      expect(await changes(id)).toContainEqual({ field: "project_only", old_value: "0", new_value: "1", changed_by: "bob" });
+
+      // The ERP has no such setting: the next load rewrites the details, never this.
+      await load(`${HEADER}\n40100,Acme Widgets Ltd,GB123456789,GB,Net 45`);
+      const listed = ((await handleListSuppliers(env.DB)).body as { suppliers: { name: string; projectOnly: boolean }[] }).suppliers[0];
+      expect(listed).toMatchObject({ name: "Acme Widgets Ltd", projectOnly: true });
+
+      expect((await handleUpdateSupplier(env.DB, id, { projectOnly: "yes" }, "bob")).status).toBe(400);
+    });
   });
 
   describe("holding, releasing, and deactivating (handleSetSupplierState)", () => {

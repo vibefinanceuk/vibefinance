@@ -1304,6 +1304,9 @@
     align-self: end;
   }
   .editgrid > input:not([type="checkbox"]) { width: 100%; }
+  /* Decision 0547 — the supplier site's project-only tick, below its details. */
+  .supplierprojectonly { margin: 12px 0 0; }
+  .supplierprojectonly p { margin: 2px 0 0 24px; }
   /*
     **The same bug decision 0282 already fixed once, in a different
     grid.** Return Reasons' own "Active" checkbox (decision 0498) sits
@@ -2716,6 +2719,8 @@
   .radiochoice > span { display: grid; gap: 2px; }
   /* Decision 0540 — Cost centre OR Project: one full-width card, a two-way switch at its head. */
   .codingfield.codingobject { grid-column: 1 / -1; }
+  /* Decision 0547 — a project-only supplier site. */
+  .codingprojectonly { margin: 2px 0 6px; }
   .codingswitch { display: inline-flex; border: 0.5px solid var(--border); border-radius: 999px; overflow: hidden; background: var(--surface-0); }
   .codingswitch button {
     border: none; background: transparent; padding: 3px 12px; font: inherit; font-size: var(--text-sm); color: var(--text-secondary); cursor: pointer;

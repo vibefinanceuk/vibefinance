@@ -1,3 +1,4 @@
+import { supplierProjectOnly } from "./supplier-project-only.js";
 import type { InvoiceFacts } from "@vibefinance/shared";
 import { getCostObjectRule } from "./coding-config-route.js";
 import type { RouteResult } from "./org-route.js";
@@ -252,9 +253,18 @@ export async function handleCodingSuggestions(db: D1Database, invoiceId: string)
   // Decision 0540 — with the either/or rule on, a line that held both is no example to follow.
   const eitherOr = (await getCostObjectRule(db)) === "exclusive";
   // No identified supplier: no history to draw on. Not an error.
+  /**
+   * **A project-only supplier site — decision 0547.** Under the either/or
+   * rule its lines are coded to a project, so only earlier lines that
+   * carried a project are examples to follow, and a cost centre is never
+   * suggested (the pop-out does not offer one).
+   */
+  const projectOnly = eitherOr && (await supplierProjectOnly(db, invoiceId)) === true;
   const history = header.supplier_vat_id
     ? (await supplierHistory(db, header.supplier_vat_id, invoiceId)).filter(
-        (h) => !eitherOr || !(h.values["BT-133"] && h.values["coding.project"])
+        (h) =>
+          (!eitherOr || !(h.values["BT-133"] && h.values["coding.project"])) &&
+          (!projectOnly || !!h.values["coding.project"])
       )
     : [];
   const projectReference = text(headerFacts["BT-11"]);
@@ -307,6 +317,7 @@ export async function handleCodingSuggestions(db: D1Database, invoiceId: string)
      * linked to another company, is dropped rather than offered.
      */
     const values = { ...found.values };
+    if (projectOnly) delete values["BT-133"];
     for (const problem of await checkLineCoding(db, header.org_unit_id, values)) delete values[problem.field];
     if (Object.keys(values).length === 0) continue;
 

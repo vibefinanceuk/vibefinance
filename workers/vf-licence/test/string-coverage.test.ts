@@ -828,6 +828,14 @@ const KEYS_THE_INTERFACE_USES = [
   "pomatch.onholdwarn.reason",
   "pomatch.closedwarn",
   "matching.standardrule.po_status.name",
+  // Decision 0547
+  "suppliers.projectonly",
+  "suppliers.projectonly.hint",
+  "suppliers.projectonly.short",
+  "viewer.coding.projectonly",
+  "viewer.coding.projectonly.hascc",
+  "viewer.coding.invalid.project_required",
+  "viewer.coding.invalid.project_only",
   "pomatch.why.lines",
   // Decision 0533 — how much of each PO line is used.
   "pomatch.lineuse",

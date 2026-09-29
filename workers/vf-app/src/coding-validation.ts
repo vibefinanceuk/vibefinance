@@ -1,3 +1,4 @@
+import { supplierProjectOnly } from "./supplier-project-only.js";
 import type { InvoiceFacts } from "@vibefinance/shared";
 import { mergeProjectBudgetFacts } from "./project-budget.js";
 import { getCostObjectRule } from "./coding-config-route.js";
@@ -307,7 +308,7 @@ export interface CodingGap {
    * `field` is `cost_object` ("cost centre or project") when the
    * either/or rule is on, and `both` says a line holds the two together.
    */
-  reason: "missing" | "both" | CodingProblemReason;
+  reason: "missing" | "both" | "project_required" | "project_only" | CodingProblemReason;
 }
 
 /**
@@ -402,6 +403,21 @@ export async function codingGapsForTask(db: D1Database, taskId: string): Promise
     (await getCostObjectRule(db)) === "exclusive" && required.some((f) => COST_OBJECTS.includes(f));
   if (eitherOr) required = required.filter((f) => !COST_OBJECTS.includes(f));
 
+  /**
+   * **A project-only supplier site — decision 0547.** Where this stage
+   * lets a person set the project, every coded line needs one. Under
+   * "one or the other" a cost centre is not the other half of the
+   * choice for this supplier: a line holding one is told to use a
+   * project instead (`project_only`), and one holding neither needs a
+   * project (`project_required`), not "cost centre or project". Under
+   * "both allowed" the project is already required wherever it is
+   * editable (0513), and a cost centre stays optional.
+   */
+  const projectOnly =
+    eitherOr &&
+    visibility.some((f) => f.field === "coding.project" && f.visibility === "edit") &&
+    (await supplierProjectOnly(db, task.subject_id)) === true;
+
   const lines = await db
     .prepare("SELECT line_number, facts_json FROM invoice_lines WHERE invoice_id = ? ORDER BY line_number")
     .bind(task.subject_id)
@@ -425,7 +441,11 @@ export async function codingGapsForTask(db: D1Database, taskId: string): Promise
       if (blank(field)) gaps.push({ line: row.line_number, field, reason: "missing" });
     }
     const checked = new Set(required);
-    if (eitherOr) {
+    if (projectOnly) {
+      if (blank("coding.project")) gaps.push({ line: row.line_number, field: "coding.project", reason: "project_required" });
+      else checked.add("coding.project");
+      if (!blank("BT-133")) gaps.push({ line: row.line_number, field: "BT-133", reason: "project_only" });
+    } else if (eitherOr) {
       const held = COST_OBJECTS.filter((f) => !blank(f));
       if (held.length === 0) gaps.push({ line: row.line_number, field: "cost_object", reason: "missing" });
       if (held.length === 2) gaps.push({ line: row.line_number, field: "cost_object", reason: "both" });

@@ -104,6 +104,7 @@ import poPairingNonPoSql from "../../../migrations/0096_po_pairing_non_po.sql?ra
 import orgCodingConfigSql from "../../../migrations/0098_org_coding_config.sql?raw";
 import codingEntryStatusBudgetSql from "../../../migrations/0099_coding_entry_status_and_budget.sql?raw";
 import costCentreGlCodesSql from "../../../migrations/0100_cost_centre_gl_codes.sql?raw";
+import supplierProjectOnlySql from "../../../migrations/0101_supplier_project_only.sql?raw";
 
 // Another known divergence from production, on top of the one below:
 // D1's exec() splits its input by newline and executes each non-empty
@@ -387,6 +388,7 @@ export async function applyTestSchema(): Promise<void> {
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(orgCodingConfigSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(codingEntryStatusBudgetSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(costCentreGlCodesSql)));
+  await env.DB.exec(toOneStatementPerLine(stripSqlComments(supplierProjectOnlySql)));
 }
 
 /**

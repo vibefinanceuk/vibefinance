@@ -811,3 +811,64 @@ describe("the status ring stays independent of pagination — decision 0378", ()
     expect(document.body.textContent).toContain("No status data to show yet.");
   });
 });
+
+describe("project-only expenditure, per supplier site — decision 0547", () => {
+  const SITE = { id: "s1", erpIdentifier: "E1", erpSiteIdentifier: "LEEDS", name: "Fit-out Co", status: "active", onHold: false, projectOnly: false };
+
+  async function openDetail(site: Record<string, unknown>, fedByLoad = true) {
+    stubFetch({ suppliers: [site], lastLoad: null, fedByLoad });
+    const inner = globalThis.fetch as unknown as (url: string, init?: RequestInit) => Promise<Response>;
+    const sent: { method: string; path: string; body: unknown }[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        const path = String(url).split("?")[0];
+        if (init?.method === "PUT") {
+          sent.push({ method: "PUT", path, body: JSON.parse(String(init.body)) });
+          return { ok: true, json: async () => ({ id: "s1" }) } as Response;
+        }
+        return inner(url, init);
+      })
+    );
+    Object.assign(STRINGS.strings, {
+      "suppliers.projectonly": "Project-only expenditure",
+      "suppliers.projectonly.hint": "Every line coded on this site's invoices needs a project.",
+      "suppliers.projectonly.short": "Project only",
+    });
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { open } = await import("/suppliers.js");
+    await open();
+    return sent;
+  }
+  const save = () =>
+    ([...document.querySelectorAll(".popout .cardhead button")].find((b) => b.getAttribute("title") === "Save") as HTMLButtonElement).click();
+
+  it("shows the setting on the site's row, beside what the site is for", async () => {
+    await openDetail({ ...SITE, projectOnly: true, isPaySite: true });
+    const cells = [...document.querySelectorAll("tbody tr td")].map((td) => td.textContent ?? "");
+    expect(cells.find((c) => c.endsWith("Project only"))).toMatch(/^(Pay|suppliers.pay), Project only$/);
+  });
+
+  it("is a tick in the site's pop-out, saved on its own without the ERP-master warning", async () => {
+    const sent = await openDetail(SITE);
+    (document.querySelector("tbody tr") as HTMLElement).click();
+    const box = document.getElementById("supplierprojectonly") as HTMLInputElement;
+    expect(box.checked).toBe(false);
+    expect(box.closest("label")?.textContent).toContain("Project-only expenditure");
+    box.checked = true;
+    save();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(sent).toEqual([{ method: "PUT", path: "/api/suppliers/s1", body: { projectOnly: true } }]);
+  });
+
+  it("goes with the details when they changed too", async () => {
+    const sent = await openDetail(SITE, false);
+    (document.querySelector("tbody tr") as HTMLElement).click();
+    const name = [...document.querySelectorAll(".popout .editgrid input")][1] as HTMLInputElement;
+    name.value = "Fit-out Company";
+    save();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(sent[0].body).toMatchObject({ name: "Fit-out Company", projectOnly: false });
+  });
+});

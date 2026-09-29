@@ -1,3 +1,4 @@
+import { supplierProjectOnly } from "./supplier-project-only.js";
 import type { InvoiceFacts } from "@vibefinance/shared";
 import { getCostObjectRule } from "./coding-config-route.js";
 import { lineMatchSummary } from "./po-line-summary.js";
@@ -713,6 +714,8 @@ export async function handleGetInvoice(
       poMatch: await lineMatchSummary(db, invoice.id, facts),
       // Decision 0540 — so the Coding pop-out shows Cost centre and Project as one either/or card.
       costObjectRule: await getCostObjectRule(db),
+      // Decision 0547 — a project-only supplier site: the pop-out opens on Project and hides Cost centre.
+      supplierProjectOnly: (await supplierProjectOnly(db, invoice.id)) === true,
       /**
        * **Who we matched this to** — decision 0219.
        *

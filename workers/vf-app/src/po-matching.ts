@@ -1,3 +1,4 @@
+import { supplierProjectOnly } from "./supplier-project-only.js";
 import type { InvoiceFacts } from "@vibefinance/shared";
 
 /**
@@ -532,6 +533,15 @@ export async function mergePoMatchFacts(
     ...(header.status !== undefined ? { "po.status": header.status } : {}),
     ...(header.holdReason ? { "po.hold_reason": header.holdReason } : {}),
   };
+  /**
+   * Decision 0547 — `supplier.projectOnly`, read live. Here because this
+   * is the header merge every evaluation path already runs with the
+   * invoice's id; absent when no supplier is attached.
+   */
+  if (options.invoiceId) {
+    const projectOnly = await supplierProjectOnly(db, options.invoiceId);
+    if (projectOnly !== null) mergedHeaderFacts["supplier.projectOnly"] = projectOnly;
+  }
 
   const mergedLines = await Promise.all(
     lines.map(async (line) => {

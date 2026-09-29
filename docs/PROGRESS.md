@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 29 September 2026 (decision 0546). A living document: what
+Last updated 29 September 2026 (decision 0547). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,14 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### A supplier site can be project-only expenditure (0547)
+- `suppliers.project_only`, set on the Suppliers screen and kept through
+  supplier loads; read live.
+- Under "one or the other": Complete needs a project on every coded
+  line, the Coding pop-out shows Project alone, suggestions never offer
+  a cost centre. `supplier.projectOnly` for rules.
+- Full reasoning and verification counts in decision 0547.
 
 ### Real quotes in the Timeline's rule entries (0546)
 - Migration 0078 had stored "\u2018" literally; `vf-licence` 0201 puts

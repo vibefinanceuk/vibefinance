@@ -510,6 +510,18 @@ function openSupplier(s) {
     })
   );
 
+  /**
+   * **Project-only expenditure — decision 0547.** VibeFinance's own
+   * setting for this site, not the ERP's, so the note says a load leaves
+   * it alone (unlike every field above).
+   */
+  const projectOnlyBox = el("input", { type: "checkbox", id: "supplierprojectonly" });
+  projectOnlyBox.checked = s.projectOnly === true;
+  const projectOnlyRow = el("div", { class: "supplierprojectonly" }, [
+    el("label", { for: "supplierprojectonly" }, [projectOnlyBox, ` ${t("suppliers.projectonly")}`]),
+    el("p", { class: "muted sm", text: t("suppliers.projectonly.hint") }),
+  ]);
+
   async function send(method, body, onOk) {
     problem.textContent = "";
     try {
@@ -544,6 +556,14 @@ function openSupplier(s) {
       const body = Object.fromEntries(
         Object.entries(fields).map(([k, input]) => [k, input.value.trim() || null])
       );
+      body.projectOnly = projectOnlyBox.checked;
+
+      // Decision 0547 — only the project-only tick changed: nothing the next load overwrites, so no warning.
+      const detailsChanged = Object.entries(fields).some(([k, input]) => input.value.trim() !== String(s[k] ?? "").trim());
+      if (!detailsChanged) {
+        send("PUT", { projectOnly: body.projectOnly }, reload);
+        return;
+      }
 
       if (!fedByLoad) {
         send("PUT", body, reload);
@@ -656,6 +676,7 @@ function openSupplier(s) {
        */
       s.erpIdentifier ? null : el("div", { class: "warn", text: t("suppliers.awaitingerp") }),
       form,
+      projectOnlyRow,
       problem,
     ].filter(Boolean)
   );
@@ -782,7 +803,12 @@ function supplierRows() {
    * and shows nothing rather than a guess.
    */
   const purpose = (s) =>
-    [s.isPaySite ? t("suppliers.pay") : null, s.isProcurementSite ? t("suppliers.procurement") : null]
+    [
+      s.isPaySite ? t("suppliers.pay") : null,
+      s.isProcurementSite ? t("suppliers.procurement") : null,
+      // Decision 0547 — what the site's spend is for, alongside what the site is for.
+      s.projectOnly ? t("suppliers.projectonly.short") : null,
+    ]
       .filter(Boolean)
       .join(", ") || "—";
 

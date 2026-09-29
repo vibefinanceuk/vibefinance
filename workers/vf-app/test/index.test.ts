@@ -2464,6 +2464,43 @@ describe("process instances and stage visits, through the real router (decision 
     expect((await completeAsTestUser(codingTaskId)).status).toBe(200);
   });
 
+  it("Complete — decision 0547: a project-only supplier site needs a project on every coded line, never a cost centre", async () => {
+    const { codingTaskId } = await seedUncodedLineWithCodingEditable();
+    await env.DB.prepare("INSERT INTO field_visibility (field, visibility, sort_order) VALUES ('coding.project', 'edit', 1)").run();
+    await env.DB.prepare("INSERT INTO cost_centres (id, name) VALUES ('cc1', 'Marketing')").run();
+    await env.DB.prepare("INSERT INTO coding_list_entries (list_type_id, id, name) VALUES ('project', 'PRJ-1', 'Fit-out')").run();
+    await env.DB.prepare("INSERT INTO suppliers (id, erp_identifier, name, project_only) VALUES ('sup-p', '40500', 'Fit-out Contractors', 1)").run();
+    await env.DB.prepare("UPDATE invoice_headers SET supplier_id = 'sup-p' WHERE id = 'real-inv-manual'").run();
+    const setLine = (facts: Record<string, unknown>) =>
+      env.DB.prepare("UPDATE invoice_lines SET facts_json = ? WHERE invoice_id = 'real-inv-manual'").bind(JSON.stringify({ "BT-131": 3000, ...facts })).run();
+    const gaps = async () => ((await (await completeAsTestUser(codingTaskId)).json()) as { gaps?: unknown[] }).gaps;
+
+    // Not "cost centre or project": a project, by name.
+    expect(await gaps()).toEqual([{ line: 1, field: "coding.project", reason: "project_required" }]);
+    // A cost centre is not the other half of the choice for this supplier.
+    await setLine({ "BT-133": "cc1" });
+    expect(await gaps()).toEqual([
+      { line: 1, field: "coding.project", reason: "project_required" },
+      { line: 1, field: "BT-133", reason: "project_only" },
+    ]);
+    // The project is still checked against its list (0511).
+    await setLine({ "coding.project": "PRJ-TYPO" });
+    expect(await gaps()).toEqual([{ line: 1, field: "coding.project", reason: "not_on_list" }]);
+    await setLine({ "coding.project": "PRJ-1" });
+    expect((await completeAsTestUser(codingTaskId)).status).toBe(200);
+  });
+
+  it("Complete — decision 0547: with the setting off, a cost centre alone completes, as before", async () => {
+    const { codingTaskId } = await seedUncodedLineWithCodingEditable();
+    await env.DB.prepare("INSERT INTO field_visibility (field, visibility, sort_order) VALUES ('coding.project', 'edit', 1)").run();
+    await env.DB.prepare("INSERT INTO cost_centres (id, name) VALUES ('cc1', 'Marketing')").run();
+    await env.DB.prepare("INSERT INTO suppliers (id, erp_identifier, name, project_only) VALUES ('sup-p', '40500', 'Fit-out Contractors', 0)").run();
+    await env.DB.prepare("UPDATE invoice_headers SET supplier_id = 'sup-p' WHERE id = 'real-inv-manual'").run();
+    await env.DB.prepare("UPDATE invoice_lines SET facts_json = ? WHERE invoice_id = 'real-inv-manual'").bind(JSON.stringify({ "BT-131": 3000, "BT-133": "cc1" })).run();
+    // Off: a cost centre alone completes, as 0540 set.
+    expect((await completeAsTestUser(codingTaskId)).status).toBe(200);
+  });
+
   it("Complete — decision 0514: a non-PO invoice at an offered stage is still refused, as 0513 set", async () => {
     const { codingTaskId } = await seedUncodedLineWithCodingEditable();
     expect((await completeAsTestUser(codingTaskId)).status).toBe(422);

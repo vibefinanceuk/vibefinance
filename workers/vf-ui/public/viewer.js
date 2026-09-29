@@ -304,6 +304,8 @@ export async function loadInvoice(invoiceId) {
        * the server would accept; the server enforces the rule either way.
        */
       costObjectRule: body.costObjectRule === "exclusive" ? "exclusive" : "both",
+      // Decision 0547 — the supplier site's spend is project-only expenditure.
+      supplierProjectOnly: body.supplierProjectOnly === true,
     };
     // **What is wrong on arrival**, not only after saving. Somebody
     // opening a document with three failures should be told, rather
@@ -1352,7 +1354,15 @@ async function openLineCodingPopout(line, { lockedNote = null } = {}) {
    */
   const COST_OBJECTS = { cost_centre: "BT-133", project: "coding.project" };
   const eitherOr = stored.costObjectRule === "exclusive";
-  let objectKind = chosen["coding.project"] && !chosen["BT-133"] ? "project" : "cost_centre";
+  /**
+   * **A project-only supplier site — decision 0547.** Under the
+   * either/or rule the card shows Project alone, with no switch: a cost
+   * centre is not a choice for this supplier. A cost centre the line
+   * already holds (the supplier's own BT-133, say) is named, and goes
+   * when a project is chosen.
+   */
+  const projectOnly = eitherOr && stored.supplierProjectOnly === true;
+  let objectKind = projectOnly || (chosen["coding.project"] && !chosen["BT-133"]) ? "project" : "cost_centre";
   const clearOtherObject = (field) => {
     if (!eitherOr || !Object.values(COST_OBJECTS).includes(field)) return;
     const other = field === "BT-133" ? "coding.project" : "BT-133";
@@ -1487,6 +1497,8 @@ async function openLineCodingPopout(line, { lockedNote = null } = {}) {
       },
     });
     if (spec.field === "BT-133") costCentreInput = picker.querySelector(".searchbox");
+    // Decision 0547 — with no Cost centre card, Project is the one focused on open.
+    if (spec.field === "coding.project" && projectOnly) costCentreInput = picker.querySelector(".searchbox");
     box.append(picker);
     if (spec.field === "coding.project") {
       box.append(budgetSlot);
@@ -1501,6 +1513,16 @@ async function openLineCodingPopout(line, { lockedNote = null } = {}) {
     const box = card(spec);
     box.classList.add("codingobject");
     const status = box.querySelector(".codingfieldstatus");
+    if (projectOnly) {
+      box.classList.add("projectonly");
+      box.firstChild.after(
+        el("div", { class: "codingprojectonly muted sm" }, [
+          t("viewer.coding.projectonly"),
+          ...(chosen["BT-133"] ? [" ", el("span", { class: "pmwarntext", text: t("viewer.coding.projectonly.hascc").replace("{cc}", chosen["BT-133"]) })] : []),
+        ])
+      );
+      return box;
+    }
     const toggle = el(
       "div",
       { class: "codingswitch", role: "group", "aria-label": t("field.cost_object") },
@@ -1726,6 +1748,10 @@ function lineIsCoded(line) {
   if (shown.length === 0) return false;
   const has = (f) => !!String(line[f] ?? "").trim();
   const objects = ["BT-133", "coding.project"];
+  // Decision 0547 — a project-only supplier's line is coded when it has a project and no cost centre.
+  if (stored.costObjectRule === "exclusive" && stored.supplierProjectOnly && shown.includes("coding.project")) {
+    return has("coding.project") && !has("BT-133") && shown.filter((f) => !objects.includes(f)).every(has);
+  }
   if (stored.costObjectRule === "exclusive" && shown.some((f) => objects.includes(f))) {
     return objects.some(has) && shown.filter((f) => !objects.includes(f)).every(has);
   }

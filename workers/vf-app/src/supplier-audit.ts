@@ -50,6 +50,8 @@ export const AUDITED_FIELDS = [
   "phone",
   "status",
   "org_unit_id",
+  // Decision 0547 — VibeFinance's own setting, set by hand only.
+  "project_only",
 ] as const;
 
 export type AuditedField = (typeof AUDITED_FIELDS)[number];
