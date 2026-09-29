@@ -1710,7 +1710,8 @@ async function openLineCodingPopout(line, { lockedNote = null } = {}) {
               class: k === kind ? "on" : "",
               "aria-pressed": String(k === kind),
               text: t(`field.${field.toLowerCase()}`),
-              disabled: canSplit ? undefined : "disabled",
+              // Only when locked: el() sets every prop as an attribute, and any `disabled` attribute disables (0549).
+              ...(canSplit ? {} : { disabled: "disabled" }),
               onclick: () => {
                 if (k === kindOf()) return;
                 row._kind = k;
@@ -1860,7 +1861,8 @@ async function openLineCodingPopout(line, { lockedNote = null } = {}) {
           class: mode === splitMode ? "on" : "",
           "aria-pressed": String(mode === splitMode),
           text: t(key),
-          disabled: canSplit ? undefined : "disabled",
+          // Only when locked: el() sets every prop as an attribute, and any `disabled` attribute disables (0549).
+              ...(canSplit ? {} : { disabled: "disabled" }),
           onclick: () => {
             if (mode === splitMode) return;
             const now = splitState().amounts;
@@ -1886,7 +1888,8 @@ async function openLineCodingPopout(line, { lockedNote = null } = {}) {
         class: "splitvalue",
         "aria-label": `${t("viewer.coding.split.row").replace("{n}", String(i + 1))} ${t(splitMode === "pct" ? "viewer.coding.split.share" : "viewer.coding.split.amount")}`,
         value: splitMode === "pct" ? row.sharePct ?? "" : row.amount || row.amount === 0 ? String(row.amount) : "",
-        disabled: canSplit ? undefined : "disabled",
+        // Only when locked: el() sets every prop as an attribute, and any `disabled` attribute disables (0549).
+              ...(canSplit ? {} : { disabled: "disabled" }),
       });
       input.oninput = () => {
         const v = input.value.trim() === "" ? null : Number(input.value);

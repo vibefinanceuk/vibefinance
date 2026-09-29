@@ -7577,10 +7577,12 @@ describe("split coding in the Coding pop-out — decision 0548", () => {
   const shares = () => [...document.querySelectorAll(".popout .splitvalue")] as HTMLInputElement[];
   const total = () => document.querySelector(".popout .splittotal") as HTMLElement;
   const done = () => [...document.querySelectorAll(".popout button.primary")].find((b) => b.textContent === "Done") as HTMLButtonElement;
+  // Typed, as a person would: a disabled input would refuse this (decision 0549).
   const setShare = (i: number, v: string) => {
     const input = shares()[i];
+    expect(input.disabled).toBe(false);
     input.value = v;
-    input.oninput?.(new Event("input"));
+    input.dispatchEvent(new Event("input"));
   };
   const save = async () => {
     const saveButton = [...document.querySelectorAll(".actionlink")].find((a) => a.querySelector("span")?.textContent === "Save") as HTMLButtonElement;
@@ -7694,6 +7696,38 @@ describe("split coding in the Coding pop-out — decision 0548", () => {
     await settle();
     expect(shares().map((i) => i.value)).toEqual(["60", "40"]);
     expect([...document.querySelectorAll(".popout .splitcomputed")].map((c) => c.textContent)).toEqual(["7,200.00", "4,800.00"]);
+  });
+
+  it("can be changed where coding is editable: shares, By % | By amount and each row's switch all open (decision 0549)", async () => {
+    stubSplit({ facts: {}, splits: ROWS });
+    await openCoding();
+    const controls = [...document.querySelectorAll(".popout .codingsplit input, .popout .codingsplit button")] as (HTMLInputElement | HTMLButtonElement)[];
+    expect(controls.length).toBeGreaterThan(0);
+    expect(controls.filter((c) => c.hasAttribute("disabled"))).toEqual([]);
+
+    // By amount: a real click, and the amounts become what is typed.
+    const byAmount = [...document.querySelectorAll(".popout .splithead .codingswitch button")].find((b) => b.textContent === "By amount") as HTMLButtonElement;
+    byAmount.click();
+    await settle();
+    expect(shares().map((i) => i.value)).toEqual(["6000", "3600", "2400"]);
+    setShare(0, "7000");
+    setShare(2, "1400");
+    expect(total().classList.contains("ok")).toBe(true);
+    expect([...document.querySelectorAll(".popout .splitcomputed")].map((c) => c.textContent)).toEqual(["58.33%", "30%", "11.67%"]);
+
+    // A row's own switch turns it to a project.
+    const rowSwitch = document.querySelectorAll(".popout .splittable tbody tr")[0].querySelectorAll(".codingswitch button")[1] as HTMLButtonElement;
+    rowSwitch.click();
+    await settle();
+    expect(document.querySelectorAll(".popout .splittable tbody tr")[0].querySelector(".codingswitch button.on")?.textContent).toBe("Project");
+  });
+
+  it("is read-only where coding is not editable", async () => {
+    stubSplit({ facts: {}, splits: ROWS }, {
+      "/api/field-visibility": { fields: FIELDS_SPLIT.fields.map((f) => (f.field === "BT-131" ? f : { ...f, visibility: "read" })) },
+    });
+    await openCoding();
+    expect(shares().every((i) => i.disabled)).toBe(true);
   });
 
   it("says why a split was not saved, in the reader's words", async () => {

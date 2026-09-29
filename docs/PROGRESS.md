@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 29 September 2026 (decision 0548). A living document: what
+Last updated 29 September 2026 (decision 0549). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,11 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Split coding's controls unlocked (0549)
+- The share inputs and both switches carried `disabled="undefined"` from
+  `el()`, locking them for everyone; now only when read-only. Tests type
+  and click.
 
 ### Split coding (0548)
 - A line's cost shared across 2–10 rows, each with a cost centre or
