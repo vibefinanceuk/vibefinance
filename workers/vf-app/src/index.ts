@@ -192,6 +192,7 @@ import {
 import { handleGetRetention, handleSetRetention, handleListBeyondRetention } from "./retention-route.js";
 import { handleCaptureFromSource } from "./source-capture-route.js";
 import { handleInboundEmail, handleListInboundEmail, type EmailMessage } from "./inbound-email.js";
+import { handleGetRouteMessage, handleListRouteMessages, routeMessagePart } from "./route-monitor-route.js";
 import { handleKeyInvoiceFields } from "./key-fields-route.js";
 import { handleReturnToStage, handleReturnToSupplier, handleDiscard, handleReturnTargets } from "./return-route.js";
 import {
@@ -1626,6 +1627,33 @@ export default {
         return json(result.body, result.status);
       }
       return json({ error: "method not allowed" }, 405);
+    }
+
+    /**
+     * **The Route monitor — decision 0556.** `Integration.Monitor`, not
+     * scoped by unit (a mailbox serves the whole customer). The list with
+     * its counts, one message's detail, and one stored part as a download.
+     */
+    if (pathname === "/route-messages" || /^\/route-messages\/[^/]+(\/parts\/\d+)?$/.test(pathname)) {
+      const { db } = resolveTenant(request, env);
+      const auth = await authenticatePerson(db, request, env);
+      if (!auth.user) return json({ error: auth.reason }, 401);
+      if (!(await hasPermission(db, auth.user.id, "Integration.Monitor"))) {
+        return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
+      }
+      if (request.method !== "GET") return json({ error: "method not allowed" }, 405);
+      if (pathname === "/route-messages") {
+        const result = await handleListRouteMessages(db, url.searchParams);
+        return json(result.body, result.status);
+      }
+      const partMatch = pathname.match(/^\/route-messages\/([^/]+)\/parts\/(\d+)$/);
+      if (partMatch) {
+        const result = await routeMessagePart(db, env.DOCUMENTS, decodeURIComponent(partMatch[1]), Number(partMatch[2]));
+        return result instanceof Response ? result : json(result.body, result.status);
+      }
+      const idMatch = pathname.match(/^\/route-messages\/([^/]+)$/);
+      const result = await handleGetRouteMessage(db, decodeURIComponent(idMatch![1]));
+      return json(result.body, result.status);
     }
 
     if (pathname === "/accruals" && request.method === "GET") {

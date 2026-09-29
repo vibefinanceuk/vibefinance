@@ -234,6 +234,10 @@ const PROXIED_TO_INSTANCE: RegExp[] = [
   // The ERP export — decision 0552: the list, a new export, and each export's CSV file.
   /^\/erp-exports$/,
   /^\/erp-exports\/[^/]+\/csv$/,
+  // The Route monitor — decision 0556: the list, one message, one stored file.
+  /^\/route-messages$/,
+  /^\/route-messages\/[^/]+$/,
+  /^\/route-messages\/[^/]+\/parts\/\d+$/,
   // Decision 0553 — undoing an export.
   /^\/erp-exports\/[^/]+\/undo$/,
   /^\/invoices\/[^/]+\/document-url$/,

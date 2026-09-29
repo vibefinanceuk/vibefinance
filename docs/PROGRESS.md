@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 29 September 2026 (decision 0555). A living document: what
+Last updated 29 September 2026 (decision 0556). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,13 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Routes, slice 2: the Route monitor (0556)
+- A new screen under Integration, for the new `Integration.Monitor`
+  permission (an IT team, without AP work): today's counts, every message
+  with filters, and one message opened: which of the route's parts it got
+  through, what went wrong in words and what to do, the technical detail,
+  the invoices it made, its original files to download, and its history.
 
 ### Routes, slice 1: every email stored before it is read (0555)
 - Each email a Source receives is a route message (`MSG-…`): the email and

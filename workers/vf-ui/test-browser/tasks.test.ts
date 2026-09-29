@@ -458,6 +458,30 @@ describe("the flat nav, permission-filtered (decisions 0274 and 0276)", () => {
     expect(items.find((a) => a.textContent === "Processes")?.className).toMatch(/navhue1\b/);
   });
 
+  it("adds the Route monitor after the ERP export for someone holding Integration.Monitor — decision 0556", async () => {
+    Object.assign(STRINGS.strings, {
+      "nav.group.integration": "Integration",
+      "nav.groupshort.integration": "INT",
+      "nav.erpexport": "ERP export",
+      "nav.routemonitor": "Route monitor",
+    });
+    stubFetch({
+      "/api/ui-strings": STRINGS,
+      "/api/whoami": { id: "u-it", name: "IT", permissions: ["Integration.Monitor"] },
+      "/api/tasks": { tasks: [], counts: {} },
+      "/api/dashboard": { cards: [], usingDefault: true },
+    });
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { start } = await import("/tasks.js");
+    await start();
+    const items = [...document.querySelectorAll(".navitem")];
+    // An IT team member sees the monitor alone, under Integration, and no ERP export.
+    expect(items.map((a) => a.textContent)).toContain("Route monitor");
+    expect(items.map((a) => a.textContent)).not.toContain("ERP export");
+    expect([...document.querySelectorAll(".navgroup .navgrouplong")].map((h) => h.textContent)).toContain("Integration");
+  });
+
   it("never shows a heading with nothing unlocked beneath it — decision 0346", async () => {
     /**
      * **The exact edge case grouping creates** — "Supplier

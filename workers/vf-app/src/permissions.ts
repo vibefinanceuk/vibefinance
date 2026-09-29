@@ -247,6 +247,19 @@ const PROCUREMENT_PERMISSIONS = ["Procurement.Collaborate", "Procurement.Approve
 const EXPENSE_PERMISSIONS = ["Expense.Submit", "Expense.Approve", "Expense.Review"] as const;
 
 /**
+ * **Integration — decision 0556.** The Routes framework's own
+ * permissions (`docs/design/routes-phase1-data-model.md` 3.10).
+ *
+ * `Integration.Monitor`: the Route monitor, each message's detail and
+ * its stored original. For a customer's own IT team, who look after the
+ * connections without approving or coding anything, so it is not folded
+ * into `Admin.Configure` or any `AP.*`. `Integration.Configure`, for
+ * routes and instances, comes with slice 3, when there is something to
+ * configure.
+ */
+const INTEGRATION_PERMISSIONS = ["Integration.Monitor"] as const;
+
+/**
  * Administrative capabilities. UserManagement, ConfigManagement, and
  * RuleManagement all have real routes behind them today
  * (POST /org/users and friends; POST /org/units and /org/profiles;
@@ -321,6 +334,7 @@ export const PERMISSIONS = [
   ...EXPENSE_PERMISSIONS,
   ...SUPPLIER_MAINTENANCE_PERMISSIONS,
   ...PROCUREMENT_PERMISSIONS,
+  ...INTEGRATION_PERMISSIONS,
   ...ADMIN_PERMISSIONS,
   ...SYSTEM_PERMISSIONS,
 ] as const;
@@ -379,6 +393,8 @@ export const PERMISSION_DESCRIPTIONS: Record<Permission, string> = {
 
   "Procurement.Collaborate": "View an invoice you've been added to, and post to its chat — decision 0470",
   "Procurement.Approve": "Business Approver — hold and complete an approval task, e.g. a Non-PO invoice routed to its collaborators — decision 0471",
+
+  "Integration.Monitor": "See the Route monitor: every message your routes received, where one failed and why, and its original as it arrived (decision 0556)",
 
   "Admin.Configure": "Configure sources, ledgers, cost centres, and other setup screens",
   "Admin.UserManagement": "Create people, and assign or revoke their roles",

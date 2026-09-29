@@ -89,6 +89,8 @@ export default defineConfig({
       "/purchase-orders.js": resolve(__dirname, "public/purchase-orders.js"),
       // The ERP export screen — decision 0552.
       "/erp-export.js": resolve(__dirname, "public/erp-export.js"),
+      // The Route monitor — decision 0556.
+      "/route-monitor.js": resolve(__dirname, "public/route-monitor.js"),
       "/dashboard.js": resolve(__dirname, "public/dashboard.js"),
       "/workload.js": resolve(__dirname, "public/workload.js"),
       "/workload-open-tasks.js": resolve(__dirname, "public/workload-open-tasks.js"),

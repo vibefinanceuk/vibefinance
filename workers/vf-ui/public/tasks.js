@@ -715,6 +715,10 @@ async function go(screen) {
   } else if (screen === "purchaseorders") {
     const { open } = await import("/purchase-orders.js");
     await open();
+  } else if (screen === "routemonitor") {
+    // The Route monitor — decision 0556.
+    const { open } = await import("/route-monitor.js");
+    await open();
   } else if (screen === "erpexport") {
     // The ERP export — decision 0552.
     const { open } = await import("/erp-export.js");
@@ -824,6 +828,8 @@ const NAV_PERMISSIONS = {
   purchaseorders: "Admin.Configure",
   // The ERP export — decision 0552: its own permission, scoped by unit.
   erpexport: "AP.Export",
+  // The Route monitor — decision 0556: for a customer's own IT team.
+  routemonitor: "Integration.Monitor",
   /**
    * **Either standing opens it, decision 0321** — extending decision
    * 0320's own `Admin.Configure` correction rather than reverting it:
@@ -931,7 +937,12 @@ export function frame(main) {
      */
     {
       heading: "integration",
-      screens: [["erpexport", "download"]],
+      // The Route monitor (decision 0556) after it, last in the menu, so no
+      // existing screen changes colour (0527).
+      screens: [
+        ["erpexport", "download"],
+        ["routemonitor", "systemalert"],
+      ],
     },
   ];
   /**

@@ -4824,6 +4824,35 @@ describe("/coding-config, through the real router (decision 0540)", () => {
   });
 });
 
+describe("the Route monitor, through the real router (decision 0556)", () => {
+  it("needs Integration.Monitor, lists, reads one message, and 404s what does not exist", async () => {
+    const without = await seedUserWithPermissions(["AP.Review", "Admin.Configure"]);
+    expect((await SELF.fetch("https://example.com/route-messages", { headers: { Authorization: `Bearer ${without}` } })).status).toBe(403);
+
+    const monitor = await seedUserWithPermissions(["Integration.Monitor"]);
+    const headers = { Authorization: `Bearer ${monitor}` };
+    await env.DB.prepare(
+      "INSERT INTO route_messages (id, instance_id, direction, status, failed_part, error_code, received_at) VALUES ('MSG-R1', NULL, 'in', 'failed', 'gateway', 'no_such_address', ?)"
+    )
+      .bind(new Date().toISOString())
+      .run();
+
+    const listed = await SELF.fetch("https://example.com/route-messages?status=failed", { headers });
+    expect(listed.status).toBe(200);
+    const body = (await listed.json()) as { messages: { id: string }[]; summary: { failedOpen: number } };
+    expect(body.messages.map((m) => m.id)).toEqual(["MSG-R1"]);
+    expect(body.summary.failedOpen).toBe(1);
+
+    const one = await SELF.fetch("https://example.com/route-messages/MSG-R1", { headers });
+    expect(one.status).toBe(200);
+    expect(((await one.json()) as { message: { errorCode: string } }).message.errorCode).toBe("no_such_address");
+
+    expect((await SELF.fetch("https://example.com/route-messages/MSG-NOPE", { headers })).status).toBe(404);
+    expect((await SELF.fetch("https://example.com/route-messages/MSG-R1/parts/0", { headers })).status).toBe(404);
+    expect((await SELF.fetch("https://example.com/route-messages", { method: "POST", headers })).status).toBe(405);
+  });
+});
+
 describe("the ERP export, through the real router (decision 0552)", () => {
   it("needs AP.Export, lists, refuses an empty export, and 404s an unknown file", async () => {
     const without = await seedUserWithPermissions(["AP.Review"]);
