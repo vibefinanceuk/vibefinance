@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import stringsSql from "../../vf-licence/migrations/0207_route_monitor_strings.sql?raw";
+import destinationStringsSql from "../../vf-licence/migrations/0209_erp_destination_strings.sql?raw";
 
 /**
  * The Route monitor — decision 0556. Four counts, the messages with
@@ -12,7 +13,9 @@ import stringsSql from "../../vf-licence/migrations/0207_route_monitor_strings.s
  */
 
 const strings: Record<string, string> = { "action.close": "Close" };
-for (const m of stringsSql.matchAll(/\('([^']+)', 'en', '((?:[^']|'')*)'\)/g)) strings[m[1]] = m[2].replace(/''/g, "'");
+for (const sql of [stringsSql, destinationStringsSql]) {
+  for (const m of sql.matchAll(/\('([^']+)', 'en', '((?:[^']|'')*)'\)/g)) strings[m[1]] = m[2].replace(/''/g, "'");
+}
 
 function mountShell() {
   document.body.innerHTML = `<main id="shell"></main><main id="viewer" hidden></main>`;
@@ -249,5 +252,88 @@ describe("which of the route's parts a message got through", () => {
     expect(partStates({ status: "failed", failedPart: "gateway" })).toEqual(["bad", "idle", "idle", "idle", "idle"]);
     expect(partStates({ status: "failed", failedPart: "format" })).toEqual(["ok", "bad", "idle", "idle", "idle"]);
     expect(partStates({ status: "received" })).toEqual(["ok", "idle", "idle", "idle", "idle"]);
+  });
+});
+
+describe("an export, as a message sent out — decision 0558", () => {
+  const OUT = {
+    id: "MSG-AA11-BB22-CC33",
+    sourceId: "erp-ap",
+    sourceName: "ERP",
+    direction: "out",
+    status: "dismissed",
+    failedPart: "delivery",
+    errorCode: "undone",
+    counterparty: null,
+    recipient: "ERP",
+    subject: "Export of 12 invoices",
+    receivedAt: TODAY,
+    attachments: 0,
+    captured: 0,
+    invoices: 12,
+    firstInvoice: "INV-1",
+  };
+  const OUT_DETAIL = {
+    message: { ...OUT, errorText: "The ERP rejected the file: GL code 1610 is closed" },
+    parts: [{ seq: 1, role: "sent", filename: "vibefinance-erp-export-202609291031-aa11bb22.csv", contentType: "text/csv; charset=utf-8", bytes: 4096, outcome: null, reason: null }],
+    events: [
+      { seq: 1, at: TODAY, event: "exported", partSeq: null, detail: null, actorName: "Olga" },
+      { seq: 2, at: TODAY, event: "delivered", partSeq: null, detail: null, actorName: null },
+      { seq: 3, at: TODAY, event: "undone", partSeq: null, detail: "GL code", actorName: "Olga" },
+    ],
+    invoices: [{ invoiceId: "inv-1", number: "INV-1", supplierName: "Kingsway" }],
+  };
+
+  function stubOut(calls: Call[]) {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        const [path, query = ""] = String(url).split("?");
+        calls.push({ method: init?.method ?? "GET", path, query });
+        if (path === "/api/ui-strings") return { ok: true, json: async () => ({ locale: "en", strings }) } as Response;
+        if (path === "/api/route-messages")
+          return { ok: true, json: async () => ({ ...LIST, destinations: [{ id: "erp-ap", name: "ERP", status: "active" }], messages: [OUT, LIST.messages[1]] }) } as Response;
+        if (path === `/api/route-messages/${OUT.id}`) return { ok: true, json: async () => OUT_DETAIL } as Response;
+        throw new Error(`no stub for ${path}`);
+      })
+    );
+  }
+
+  it("lists it as sent out, undone, with the Destination to filter by", async () => {
+    const calls: Call[] = [];
+    stubOut(calls);
+    await open();
+    const row = document.querySelector(".rmtable tbody tr") as HTMLElement;
+    expect(row.textContent).toContain("sent out");
+    expect(row.textContent).toContain("→ 12 invoices sent");
+    expect(row.querySelector(".rmpill")?.textContent).toBe("Undone");
+    expect(row.classList.contains("bad")).toBe(false);
+    ([...document.querySelectorAll(".rmchip")].find((c) => c.textContent === "ERP") as HTMLButtonElement).click();
+    await settle();
+    // The filter is the module's own state, kept from the tests before: only the route matters here.
+    expect(calls.at(-1)?.query).toContain("source=erp-ap");
+  });
+
+  it("opens it the other way round: process to gateway, undone in amber, the file sent and who did what", async () => {
+    stubOut([]);
+    await open();
+    (document.querySelector(".rmtable tbody tr") as HTMLElement).click();
+    await settle();
+    const chain = [...document.querySelectorAll(".rmpart")].map((p) => [p.querySelector(".k")?.textContent, p.className.split(" ")[1]]);
+    expect(chain).toEqual([
+      ["Process", "ok"],
+      ["EN 16931", "ok"],
+      ["Translation", "ok"],
+      ["Format", "ok"],
+      ["Gateway", "bad"],
+    ]);
+    expect(document.querySelector(".rmexplain.done .h")?.textContent).toBe("This export was undone");
+    expect(text(".rmtech")).toContain("reason    The ERP rejected the file: GL code 1610 is closed");
+    expect(text(".rmdetail")).toContain("What was sent");
+    expect([...document.querySelectorAll(".rmorig")].map((o) => o.textContent)).toEqual(["vibefinance-erp-export-202609291031-aa11bb22.csv4 KB"]);
+    const history = [...document.querySelectorAll(".rmhistory li")].map((li) =>
+      (li.textContent ?? "").slice((li.querySelector(".rmtime")?.textContent ?? "").length).trim()
+    );
+    expect(history).toEqual(["Exported · by Olga", "Delivered", "Undone · by Olga"]);
   });
 });

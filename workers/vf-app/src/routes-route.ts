@@ -1,5 +1,8 @@
 import type { RouteResult } from "./org-route.js";
 import { eligibleInvoiceIds } from "./erp-export-route.js";
+import { processEnds } from "./process-ends.js";
+
+export { processEnds };
 
 /**
  * **Routes and where they are placed — decision 0557**, slice 3 of
@@ -120,40 +123,6 @@ export async function handleListRoutes(db: D1Database): Promise<RouteResult> {
   };
 }
 
-/**
- * A process's entry and exit stages — decision 0557.
- *
- * Stored on the process (migration 0107). **A stored stage that the
- * process's current version no longer has is not used**: a draft
- * published since may have removed it. Then, as for a process created
- * after 0107, the first and last stages of the current version stand in.
- */
-export async function processEnds(
-  db: D1Database,
-  processId: string
-): Promise<{ stages: { id: string; name: string; sequence: number }[]; entryStageId: string | null; exitStageId: string | null }> {
-  const process = await db
-    .prepare("SELECT version, entry_stage_id, exit_stage_id FROM processes WHERE id = ?")
-    .bind(processId)
-    .first<{ version: number; entry_stage_id: string | null; exit_stage_id: string | null }>();
-  if (!process) return { stages: [], entryStageId: null, exitStageId: null };
-  const stages = await db
-    .prepare(
-      `SELECT s.id, s.name, v.sequence FROM process_stage_versions v
-       JOIN process_stages s ON s.id = v.stage_id
-       WHERE v.process_id = ? AND v.version = ? ORDER BY v.sequence`
-    )
-    .bind(processId, process.version)
-    .all<{ id: string; name: string; sequence: number }>();
-  const list = stages.results;
-  const has = (id: string | null) => id !== null && list.some((s) => s.id === id);
-  return {
-    stages: list,
-    entryStageId: has(process.entry_stage_id) ? process.entry_stage_id : list.at(0)?.id ?? null,
-    exitStageId: has(process.exit_stage_id) ? process.exit_stage_id : list.at(-1)?.id ?? null,
-  };
-}
-
 export async function handleProcessRoutes(
   db: D1Database,
   params: URLSearchParams,
@@ -207,12 +176,12 @@ export async function handleProcessRoutes(
     .all<{ id: string; name: string; status: string; route_id: string; route_name: string }>();
 
   /**
-   * **What is waiting for the ERP**, for the ERP Destination's card: the
-   * ERP export's own count of payment-eligible invoices not yet exported
-   * (0552), every unit. The export is not per process until slice 4, so
-   * neither is this.
+   * **What is waiting for the ERP**, for the ERP Destination's card: this
+   * process's payment-eligible invoices not yet exported, counted the way
+   * the export takes them (0558). A paused Destination's are still
+   * counted, as waiting for it to resume.
    */
-  const erpWaiting = (await eligibleInvoiceIds(db, null)).length;
+  const erpWaiting = (await eligibleInvoiceIds(db, null, chosen.id, true)).length;
 
   const version = (routeId: string) => {
     const v = versions.get(routeId);
@@ -255,4 +224,37 @@ export async function handleProcessRoutes(
       })),
     },
   };
+}
+
+
+/**
+ * `PATCH /route-instances/:id` — **pause or resume a Destination —
+ * decision 0558.** A paused ERP Destination takes nothing: its process's
+ * invoices stay ready, and the export leaves them until it is resumed.
+ *
+ * Destinations only. A Source instance is a source, paused and retired
+ * through the Sources actions it always had.
+ */
+export async function handleSetInstanceStatus(
+  db: D1Database,
+  instanceId: string,
+  body: Record<string, unknown>
+): Promise<RouteResult> {
+  const status = body.status;
+  if (status !== "active" && status !== "paused") {
+    return { status: 400, body: { error: "status must be active or paused", reason: "invalid_status" } };
+  }
+  const instance = await db
+    .prepare("SELECT id, source_id, status FROM route_instances WHERE id = ?")
+    .bind(instanceId)
+    .first<{ id: string; source_id: string | null; status: string | null }>();
+  if (!instance) return { status: 404, body: { error: `route instance ${instanceId} does not exist` } };
+  if (instance.source_id) {
+    return { status: 409, body: { error: "a Source instance is changed through its source", reason: "is_source" } };
+  }
+  if (instance.status === "retired") {
+    return { status: 409, body: { error: "a retired Destination cannot be resumed", reason: "retired" } };
+  }
+  await db.prepare("UPDATE route_instances SET status = ? WHERE id = ?").bind(status, instanceId).run();
+  return { status: 200, body: { id: instanceId, status } };
 }

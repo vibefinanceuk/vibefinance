@@ -4840,6 +4840,24 @@ describe("routes and process routes, through the real router (decision 0557)", (
   });
 });
 
+describe("pausing a Destination, through the real router (decision 0558)", () => {
+  it("needs Admin.Configure, and pauses", async () => {
+    await env.DB.prepare("INSERT INTO processes (id, name) VALUES ('ap-p', 'AP')").run();
+    await env.DB.prepare("INSERT INTO route_instances (id, route_id, process_id, name, status) VALUES ('erp-ap-p', 'erp-csv', 'ap-p', 'ERP', 'active')").run();
+    const init = (key: string) => ({
+      method: "PATCH",
+      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ status: "paused" }),
+    });
+    const monitor = await seedUserWithPermissions(["Integration.Monitor"]);
+    expect((await SELF.fetch("https://example.com/route-instances/erp-ap-p", init(monitor))).status).toBe(403);
+    const admin = await seedUserWithPermissions(["Admin.Configure"]);
+    const paused = await SELF.fetch("https://example.com/route-instances/erp-ap-p", init(admin));
+    expect(paused.status).toBe(200);
+    expect(await paused.json()).toEqual({ id: "erp-ap-p", status: "paused" });
+  });
+});
+
 describe("the Route monitor, through the real router (decision 0556)", () => {
   it("needs Integration.Monitor, lists, reads one message, and 404s what does not exist", async () => {
     const without = await seedUserWithPermissions(["AP.Review", "Admin.Configure"]);

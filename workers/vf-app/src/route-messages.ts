@@ -125,6 +125,40 @@ export async function openRouteMessage(
 }
 
 /**
+ * **Opens an outbound message — decision 0558.** On a Destination
+ * instance (`destination_id`), never a source, as 0108's invariant
+ * holds. Returns its id, or null when it could not be written.
+ */
+export async function openOutboundMessage(
+  db: D1Database,
+  params: {
+    destinationId: string;
+    erpExportId?: string | null;
+    recipient: string | null;
+    subject: string | null;
+    bytes: number;
+    receivedAt: string;
+    actor?: string;
+  }
+): Promise<string | null> {
+  const id = newMessageId();
+  try {
+    await db
+      .prepare(
+        `INSERT INTO route_messages
+           (id, destination_id, erp_export_id, direction, status, recipient, subject, bytes, received_at)
+         VALUES (?, ?, ?, 'out', 'received', ?, ?, ?, ?)`
+      )
+      .bind(id, params.destinationId, params.erpExportId ?? null, params.recipient, params.subject, params.bytes, params.receivedAt)
+      .run();
+    await addRouteEvent(db, id, "exported", params.actor ? { actor: params.actor } : {});
+    return id;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Stores one part: R2 first, then the D1 row — decision 0035's order.
  *
  * A reference written before its object would point at nothing if the

@@ -22,6 +22,15 @@ let selectedId = null;
 let detail = null;
 
 const PARTS = ["gateway", "format", "translation", "model", "process"];
+/**
+ * **The same five parts, the other way round — decision 0558.** An
+ * outbound message starts in the process and ends at the gateway: the
+ * ERP's file download, for the ERP export.
+ */
+const PARTS_OUT = ["process", "model", "translation", "format", "gateway"];
+const partsFor = (message) => (message.direction === "out" ? PARTS_OUT : PARTS);
+/** Undone is a dismissed export, and says so (0558). */
+const statusKey = (m) => (m.status === "dismissed" && m.errorCode === "undone" ? "undone" : m.status);
 
 async function getJson(path) {
   try {
@@ -68,8 +77,9 @@ function size(bytes) {
 
 const STATUS_PILL = { delivered: "ok", partial: "warn", failed: "bad", received: "q", dismissed: "q" };
 
-function statusPill(status) {
-  return el("span", { class: `rmpill ${STATUS_PILL[status] ?? "q"}`, text: t(`routemonitor.status.${status}`) });
+function statusPill(m) {
+  const key = statusKey(m);
+  return el("span", { class: `rmpill ${key === "undone" ? "warn" : STATUS_PILL[m.status] ?? "q"}`, text: t(`routemonitor.status.${key}`) });
 }
 
 /**
@@ -79,13 +89,16 @@ function statusPill(status) {
  * with its translation only partly done.
  */
 export function partStates(message) {
-  const failedAt = message.status === "failed" ? PARTS.indexOf(message.failedPart) : -1;
-  return PARTS.map((part, i) => {
+  const parts = partsFor(message);
+  // A failed message, or a dismissed one that failed first (an undone
+  // export failed at delivery): the part it failed at, and nothing after.
+  const failedAt = message.status === "failed" || (message.status === "dismissed" && message.failedPart) ? parts.indexOf(message.failedPart === "delivery" ? "gateway" : message.failedPart) : -1;
+  return parts.map((part, i) => {
     if (message.status === "delivered" || message.status === "partial") {
       return part === "translation" && message.status === "partial" ? "warn" : "ok";
     }
     if (failedAt >= 0) return i < failedAt ? "ok" : i === failedAt ? "bad" : "idle";
-    // Still in progress: only the gateway is known to be done.
+    // Still in progress: only the first part is known to be done.
     return i === 0 ? "ok" : "idle";
   });
 }
@@ -138,6 +151,8 @@ function filters() {
   return el("div", { class: "rmfilters" }, [
     chip(t("routemonitor.filter.allsources"), filter.source === "", () => refilter({ source: "" })),
     ...data.sources.map((s) => chip(s.name, filter.source === s.id, () => refilter({ source: s.id }))),
+    // Decision 0558: the Destinations messages go out on, too.
+    ...(data.destinations ?? []).map((d) => chip(d.name, filter.source === d.id, () => refilter({ source: d.id }))),
     chip(t("routemonitor.filter.unclaimed"), filter.source === "none", () => refilter({ source: "none" })),
     el("span", { class: "rmsep" }),
     chip(t("routemonitor.filter.failedonly"), filter.failedOnly, () => refilter({ failedOnly: !filter.failedOnly })),
@@ -148,6 +163,11 @@ function filters() {
 
 /** What a message made, in a few words: "→ invoice INV-7", "no invoice made", "2 invoices". */
 function outcomeLine(m) {
+  if (m.direction === "out") {
+    return m.invoices === 1 && m.firstInvoice
+      ? t("routemonitor.made.sentone").replace("{number}", m.firstInvoice)
+      : t("routemonitor.made.sent").replace("{n}", String(m.invoices));
+  }
   if (m.invoices === 1 && m.firstInvoice) return t("routemonitor.made.one").replace("{number}", m.firstInvoice);
   if (m.invoices > 1) return t("routemonitor.made.many").replace("{n}", String(m.invoices));
   return t("routemonitor.made.none");
@@ -181,14 +201,17 @@ function messagesPanel() {
             el("td", { class: "rmtime", text: when(m.receivedAt) }),
             el("td", {}, [
               el("div", { text: m.sourceName ?? t("routemonitor.unclaimed") }),
-              el("div", { class: "muted sm", text: t("routemonitor.from").replace("{who}", m.counterparty ?? "—") }),
+              el("div", {
+                class: "muted sm",
+                text: m.direction === "out" ? t("routemonitor.sentout") : t("routemonitor.from").replace("{who}", m.counterparty ?? "—"),
+              }),
             ]),
             el("td", {}, [
               el("div", { text: m.subject || t("routemonitor.nosubject") }),
               el("div", { class: "muted sm", text: outcomeLine(m) }),
             ]),
             el("td", {}, [
-              statusPill(m.status),
+              statusPill(m),
               ...(m.failedPart ? [el("div", { class: "muted sm", text: t(`routemonitor.at.${m.failedPart}`) })] : []),
             ]),
           ]);
@@ -208,7 +231,7 @@ function chain(message) {
   return el(
     "div",
     { class: "rmchain" },
-    PARTS.map((part, i) =>
+    partsFor(message).map((part, i) =>
       el("div", { class: `rmpart ${states[i]}` }, [
         el("div", { class: "k", text: t(`routemonitor.part.${part}`) }),
         el("div", { class: "d", text: t(`routemonitor.state.${states[i]}`) }),
@@ -223,12 +246,14 @@ function chain(message) {
  * the server's own reason below it in the technical detail.
  */
 function explanation(message) {
-  if (message.status !== "failed" && message.status !== "partial") return [];
+  const undone = statusKey(message) === "undone";
+  if (message.status !== "failed" && message.status !== "partial" && !undone) return [];
   const code = message.status === "partial" ? "partial" : message.errorCode ?? "unknown";
   const known = t(`routemonitor.error.${code}.title`) !== `routemonitor.error.${code}.title`;
   const key = known ? code : "unknown";
   return [
-    el("div", { class: "rmexplain" }, [
+    // An undone export is dealt with, not waiting: amber, not red (0558).
+    el("div", { class: `rmexplain${undone ? " done" : ""}` }, [
       el("div", { class: "h", text: t(`routemonitor.error.${key}.title`) }),
       el("p", { text: t(`routemonitor.error.${key}.body`) }),
       el("p", {}, [el("b", { text: `${t("routemonitor.tofix")} ` }), t(`routemonitor.error.${key}.fix`)]),
@@ -271,7 +296,7 @@ function detailPanel() {
     ...technical(message, parts),
     ...(invoices.length > 0
       ? [
-          el("h4", { class: "rmh4", text: t("routemonitor.invoices") }),
+          el("h4", { class: "rmh4", text: t(message.direction === "out" ? "routemonitor.invoicessent" : "routemonitor.invoices") }),
           el(
             "ul",
             { class: "rmlist" },
@@ -281,7 +306,7 @@ function detailPanel() {
           ),
         ]
       : []),
-    el("h4", { class: "rmh4", text: t("routemonitor.originals") }),
+    el("h4", { class: "rmh4", text: t(message.direction === "out" ? "routemonitor.sent" : "routemonitor.originals") }),
     parts.length === 0
       ? el("p", { class: "muted sm", text: t("routemonitor.nooriginals") })
       : el(
@@ -305,6 +330,8 @@ function detailPanel() {
         el("li", {}, [
           el("span", { class: "rmtime", text: when(e.at) }),
           ` ${t(`routemonitor.event.${e.event}`)}`,
+          // Who, for what a person did: an export made or undone (0558).
+          ...(e.actorName ? [el("span", { class: "muted", text: ` · ${t("routemonitor.by").replace("{who}", e.actorName)}` })] : []),
           ...(e.partSeq ? [el("span", { class: "muted", text: ` · ${t("routemonitor.partn").replace("{n}", String(e.partSeq))}` })] : []),
         ])
       )

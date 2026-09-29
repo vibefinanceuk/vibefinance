@@ -68,16 +68,18 @@ export async function handleListRouteMessages(
 
   const where = ["m.received_at >= ?"];
   const binds: unknown[] = [since];
-  if (source === "none") where.push("m.instance_id IS NULL");
+  // Decision 0558: a route is a source or a Destination; unclaimed mail
+  // is inbound with neither.
+  if (source === "none") where.push("m.direction = 'in' AND m.instance_id IS NULL");
   else if (source) {
-    where.push("m.instance_id = ?");
-    binds.push(source);
+    where.push("(m.instance_id = ? OR m.destination_id = ?)");
+    binds.push(source, source);
   }
   if (failedOnly) where.push("m.status IN ('failed', 'partial')");
 
   const rows = await db
     .prepare(
-      `SELECT m.id, m.instance_id, s.name AS source_name, m.direction, m.status, m.failed_part,
+      `SELECT m.id, COALESCE(m.instance_id, m.destination_id) AS instance_id, COALESCE(s.name, d.name) AS source_name, m.direction, m.status, m.failed_part,
               m.error_code, m.counterparty, m.recipient, m.subject, m.received_at,
               (SELECT count(*) FROM route_message_parts p WHERE p.message_id = m.id AND p.role = 'attachment') AS attachments,
               (SELECT count(*) FROM route_message_parts p WHERE p.message_id = m.id AND p.outcome = 'captured') AS captured,
@@ -87,6 +89,7 @@ export async function handleListRouteMessages(
               (SELECT count(*) FROM route_message_items i WHERE i.message_id = m.id) AS invoices
        FROM route_messages m
        LEFT JOIN sources s ON s.id = m.instance_id
+       LEFT JOIN route_instances d ON d.id = m.destination_id
        WHERE ${where.join(" AND ")}
        ORDER BY m.received_at DESC, m.id DESC
        LIMIT 200`
@@ -120,6 +123,14 @@ export async function handleListRouteMessages(
   const sources = await db
     .prepare("SELECT id, name, status FROM sources WHERE mechanism = 'email' ORDER BY name")
     .all<{ id: string; name: string; status: string }>();
+  // Decision 0558: the Destinations messages go out on, to filter by too.
+  const destinations = await db
+    .prepare(
+      `SELECT i.id, i.name, i.status, p.name AS process_name FROM route_instances i
+       JOIN processes p ON p.id = i.process_id
+       WHERE i.source_id IS NULL ORDER BY p.name, i.name`
+    )
+    .all<{ id: string; name: string; status: string; process_name: string }>();
 
   return {
     status: 200,
@@ -132,6 +143,12 @@ export async function handleListRouteMessages(
         waitingOverHour: summary?.waiting ?? 0,
       },
       sources: sources.results.map((s) => ({ id: s.id, name: s.name, status: s.status })),
+      destinations: destinations.results.map((d) => ({
+        id: d.id,
+        // Named with its process where there is more than one ERP.
+        name: destinations.results.filter((o) => o.name === d.name).length > 1 ? `${d.name} · ${d.process_name}` : d.name,
+        status: d.status,
+      })),
       messages: rows.results.map((r) => ({
         id: r.id,
         sourceId: r.instance_id,
@@ -157,8 +174,11 @@ export async function handleListRouteMessages(
 export async function handleGetRouteMessage(db: D1Database, id: string): Promise<RouteResult> {
   const m = await db
     .prepare(
-      `SELECT m.*, s.name AS source_name FROM route_messages m
-       LEFT JOIN sources s ON s.id = m.instance_id WHERE m.id = ?`
+      `SELECT m.*, COALESCE(s.name, d.name) AS source_name, COALESCE(m.instance_id, m.destination_id) AS route_instance
+       FROM route_messages m
+       LEFT JOIN sources s ON s.id = m.instance_id
+       LEFT JOIN route_instances d ON d.id = m.destination_id
+       WHERE m.id = ?`
     )
     .bind(id)
     .first<Record<string, unknown>>();
@@ -182,9 +202,13 @@ export async function handleGetRouteMessage(db: D1Database, id: string): Promise
       stored_at: string;
     }>();
   const events = await db
-    .prepare("SELECT seq, at, event, part_seq, detail FROM route_message_events WHERE message_id = ? ORDER BY seq")
+    .prepare(
+      `SELECT e.seq, e.at, e.event, e.part_seq, e.detail, u.name AS actor_name
+       FROM route_message_events e LEFT JOIN org_users u ON u.id = e.actor
+       WHERE e.message_id = ? ORDER BY e.seq`
+    )
     .bind(id)
-    .all<{ seq: number; at: string; event: string; part_seq: number | null; detail: string | null }>();
+    .all<{ seq: number; at: string; event: string; part_seq: number | null; detail: string | null; actor_name: string | null }>();
   const items = await db
     .prepare(
       `SELECT i.item_id, i.part_seq, h.invoice_number,
@@ -202,7 +226,7 @@ export async function handleGetRouteMessage(db: D1Database, id: string): Promise
     body: {
       message: {
         id: m.id,
-        sourceId: m.instance_id,
+        sourceId: m.route_instance,
         sourceName: m.source_name,
         direction: m.direction,
         status: m.status,
@@ -229,7 +253,8 @@ export async function handleGetRouteMessage(db: D1Database, id: string): Promise
         reason: p.reason,
         storedAt: p.stored_at,
       })),
-      events: events.results.map((e) => ({ seq: e.seq, at: e.at, event: e.event, partSeq: e.part_seq, detail: e.detail })),
+      // Who did it, for what a person did (an export made or undone, 0558).
+      events: events.results.map((e) => ({ seq: e.seq, at: e.at, event: e.event, partSeq: e.part_seq, detail: e.detail, actorName: e.actor_name })),
       invoices: items.results.map((i) => ({
         invoiceId: i.item_id,
         partSeq: i.part_seq,

@@ -1,4 +1,13 @@
 import type { InvoiceFacts } from "@vibefinance/shared";
+import { exitStageIds } from "./process-ends.js";
+import {
+  addRouteEvent,
+  finishRouteMessage,
+  linkRouteItem,
+  openOutboundMessage,
+  routePartKey,
+  storeRoutePart,
+} from "./route-messages.js";
 import type { RouteResult } from "./org-route.js";
 import { loadSplits } from "./coding-splits.js";
 import { activePairings, loadPairings } from "./po-pairings.js";
@@ -83,19 +92,45 @@ function money(v: unknown): string {
  * The invoices a new export would take, in the units this person may
  * export: payment-eligible and never exported.
  */
-export async function eligibleInvoiceIds(db: D1Database, units: string[] | null): Promise<string[]> {
+/**
+ * **Read from each process's exit stage — decision 0558.** Until slice 4
+ * of the Routes design, "at its final stage" meant the stage with the
+ * highest sequence ever created in the process. Now it is the process's
+ * declared exit stage (0557), the stage its ERP Destination reads from:
+ * the same stage today, and no longer wrong once someone adds a stage
+ * after Payment Eligible or publishes a version without it.
+ *
+ * **A paused ERP Destination takes nothing.** Its process's invoices
+ * wait, ready, until it is resumed.
+ *
+ * `processId` narrows to one process, for its Destination's own count;
+ * `ignorePause` counts a paused Destination's invoices too, as what it
+ * would take once resumed.
+ */
+export async function eligibleInvoiceIds(
+  db: D1Database,
+  units: string[] | null,
+  processId?: string,
+  ignorePause = false
+): Promise<string[]> {
   const clause = unitClause({ units }, "h.org_unit_id");
+  const exits = await exitStageIds(db);
+  const exitSql = exits.length === 0 ? "0" : `pi.current_stage_id IN (${exits.map(() => "?").join(", ")})`;
+  const processSql = processId ? "AND pi.process_id = ?" : "";
   const rows = await db
     .prepare(
       `SELECT DISTINCT h.id AS id, h.issue_date AS issue_date
        FROM invoice_headers h
        JOIN process_instances pi ON pi.subject_type = 'invoice' AND pi.subject_id = h.id
-       LEFT JOIN process_stages s ON s.id = pi.current_stage_id
        WHERE (
            pi.status = 'completed'
-           OR (pi.status = 'in_progress'
-               AND s.sequence = (SELECT max(s2.sequence) FROM process_stages s2 WHERE s2.process_id = pi.process_id))
+           OR (pi.status = 'in_progress' AND ${exitSql})
          )
+         ${processSql}
+         ${ignorePause ? "" : `AND NOT EXISTS (
+           SELECT 1 FROM route_instances d
+           WHERE d.process_id = pi.process_id AND d.route_id = 'erp-csv' AND d.status != 'active'
+         )`}
          AND NOT EXISTS (
            SELECT 1 FROM process_instances other
            WHERE other.subject_type = 'invoice' AND other.subject_id = h.id
@@ -105,7 +140,7 @@ export async function eligibleInvoiceIds(db: D1Database, units: string[] | null)
          ${clause.sql}
        ORDER BY h.issue_date, h.id`
     )
-    .bind(...NOT_PAYABLE, ...clause.binds)
+    .bind(...exits, ...(processId ? [processId] : []), ...NOT_PAYABLE, ...clause.binds)
     .all<{ id: string }>();
   return rows.results.map((r) => r.id);
 }
@@ -349,7 +384,13 @@ export async function handleListErpExports(db: D1Database, userId: string, curre
  * an invoice another export took a moment earlier fails the whole batch
  * (its primary key), rather than going twice.
  */
-export async function handleCreateErpExport(db: D1Database, userId: string, currentOrg: string | null = null): Promise<RouteResult> {
+export async function handleCreateErpExport(
+  db: D1Database,
+  userId: string,
+  currentOrg: string | null = null,
+  bucket?: R2Bucket,
+  customerId?: string
+): Promise<RouteResult> {
   const units = await exportUnits(db, userId, currentOrg);
   const ids = await eligibleInvoiceIds(db, units);
   if (ids.length === 0) {
@@ -377,7 +418,97 @@ export async function handleCreateErpExport(db: D1Database, userId: string, curr
   } catch {
     return { status: 409, body: { error: "Another export took some of these invoices just now. Try again.", reason: "export_conflict" } };
   }
-  return { status: 201, body: { id: exportId, invoiceCount: ids.length, rowCount: rows.length } };
+  const messages = await recordExportMessages(db, userId, exportId, rows, bucket, customerId);
+  return { status: 201, body: { id: exportId, invoiceCount: ids.length, rowCount: rows.length, messages } };
+}
+
+/**
+ * **The export as its Destination's messages — decision 0558.**
+ *
+ * One outbound message for each process whose invoices the export took,
+ * on that process's ERP Destination, so the Route monitor shows each
+ * export where it went out, with the invoices it carried. The file each
+ * message carried is kept in R2 as its `sent` part (the process's own
+ * rows), so what reached the ERP can be shown exactly, as an original is
+ * for a message coming in. D1 keeps the rows as before, for the ERP
+ * export screen's own download.
+ *
+ * **Recording never undoes an export.** The export is already made; a
+ * failure here is left out of the monitor, not turned into a refusal.
+ */
+async function recordExportMessages(
+  db: D1Database,
+  userId: string,
+  exportId: string,
+  rows: { invoiceId: string; row: ErpExportRow }[],
+  bucket?: R2Bucket,
+  customerId?: string
+): Promise<string[]> {
+  const made: string[] = [];
+  try {
+    const invoiceIds = [...new Set(rows.map((r) => r.invoiceId))];
+    const processOf = new Map<string, string>();
+    for (const id of invoiceIds) {
+      const pi = await db
+        .prepare(
+          `SELECT process_id FROM process_instances WHERE subject_type = 'invoice' AND subject_id = ?
+           ORDER BY CASE status WHEN 'in_progress' THEN 0 WHEN 'completed' THEN 1 ELSE 2 END, created_at DESC LIMIT 1`
+        )
+        .bind(id)
+        .first<{ process_id: string }>();
+      if (pi) processOf.set(id, pi.process_id);
+    }
+    const byProcess = new Map<string, { invoiceId: string; row: ErpExportRow }[]>();
+    for (const r of rows) {
+      const p = processOf.get(r.invoiceId);
+      if (!p) continue;
+      byProcess.set(p, [...(byProcess.get(p) ?? []), r]);
+    }
+    const x = await db.prepare("SELECT created_at FROM erp_exports WHERE id = ?").bind(exportId).first<{ created_at: string }>();
+    const stamp = (x?.created_at ?? "").slice(0, 16).replace(/[-: ]/g, "").replace("T", "");
+    for (const [processId, processRows] of byProcess) {
+      const destinationId = `erp-${processId}`;
+      await db
+        .prepare(
+          `INSERT OR IGNORE INTO route_instances (id, route_id, process_id, name, status) VALUES (?, 'erp-csv', ?, 'ERP', 'active')`
+        )
+        .bind(destinationId, processId)
+        .run();
+      const invoices = [...new Set(processRows.map((r) => r.invoiceId))];
+      const csv = toCsv(processRows.map((r) => r.row));
+      const bytes = new TextEncoder().encode(csv);
+      const receivedAt = new Date().toISOString();
+      const id = await openOutboundMessage(db, {
+        destinationId,
+        erpExportId: exportId,
+        recipient: "ERP",
+        subject: invoices.length === 1 ? "Export of 1 invoice" : `Export of ${invoices.length} invoices`,
+        bytes: bytes.length,
+        receivedAt,
+        actor: userId,
+      });
+      if (!id) continue;
+      made.push(id);
+      if (bucket && customerId) {
+        const filename = `vibefinance-erp-export-${stamp}-${exportId.slice(0, 8)}.csv`;
+        const part = await storeRoutePart(bucket, db, {
+          messageId: id,
+          seq: 1,
+          role: "sent",
+          filename,
+          contentType: "text/csv; charset=utf-8",
+          bytes,
+          key: routePartKey(customerId, destinationId, id, receivedAt, 1, filename),
+        });
+        if ("reason" in part) await addRouteEvent(db, id, "file_not_stored", { partSeq: 1, detail: part.reason });
+      }
+      for (const invoiceId of invoices) await linkRouteItem(db, id, invoiceId, null);
+      await finishRouteMessage(db, id, { status: "delivered" });
+    }
+  } catch {
+    // Deliberately silent: see above.
+  }
+  return made;
 }
 
 /** `GET /erp-exports/:id/csv` — the export's own rows, as they were taken. */
@@ -437,6 +568,21 @@ export async function handleUndoErpExport(
         "UPDATE erp_exports SET reversed_at = strftime('%Y-%m-%d %H:%M:%f', 'now'), reversed_by = ?, reverse_reason = ? WHERE id = ? AND reversed_at IS NULL"
       )
       .bind(userId, reason, exportId),
+    /**
+     * **And its messages are closed — decision 0558.** Undone because
+     * the ERP would not take the file, so each is marked as failing at
+     * delivery with the reason, and dismissed rather than failed: it is
+     * dealt with (its invoices are ready to go again), not waiting for
+     * someone to fix it.
+     */
+    db
+      .prepare(
+        `UPDATE route_messages SET status = 'dismissed', failed_part = 'delivery', error_code = 'undone', error_text = ?
+         WHERE erp_export_id = ? AND status != 'dismissed'`
+      )
+      .bind(reason, exportId),
   ]);
+  const messages = await db.prepare("SELECT id FROM route_messages WHERE erp_export_id = ?").bind(exportId).all<{ id: string }>();
+  for (const m of messages.results) await addRouteEvent(db, m.id, "undone", { detail: reason, actor: userId });
   return { status: 200, body: { id: exportId, invoicesReleased: count?.n ?? 0 } };
 }

@@ -79,7 +79,7 @@ function sourceState(s, full = false) {
 
 function card(kind, item, lines, state) {
   const isSelected = selected?.kind === kind && selected.id === item.id;
-  const retired = item.status === "retired" || (kind === "source" && !item.route?.live);
+  const retired = item.status === "retired" || item.status === "paused" || (kind === "source" && !item.route?.live);
   const node = el(
     "button",
     { type: "button", class: `prcard${retired ? " dim" : ""}${isSelected ? " sel" : ""}`, style: `height:${CARD_HEIGHT}px` },
@@ -156,7 +156,10 @@ function flow() {
       "destination",
       d,
       [`${d.routeName} · v${d.route?.version ?? "—"}`, t(`routes.gw.${d.route?.deliveryGateway}`)],
-      d.waiting === null || d.waiting === undefined ? [] : [pill(d.waiting > 0 ? "warn" : "q", t("processroutes.waiting").replace("{n}", String(d.waiting)))]
+      [
+        ...(d.status === "paused" ? [pill("warn", t("processroutes.status.paused"))] : []),
+        ...(d.waiting === null || d.waiting === undefined ? [] : [pill(d.waiting > 0 ? "warn" : "q", t("processroutes.waiting").replace("{n}", String(d.waiting)))]),
+      ]
     )
   );
 
@@ -233,7 +236,36 @@ function sourcePanel(s) {
   ]);
 }
 
+/**
+ * **Pause or resume the Destination — decision 0558.** Paused, it takes
+ * nothing: its process's invoices stay ready, and the ERP export leaves
+ * them until it is resumed.
+ */
+async function setDestinationStatus(d, status) {
+  try {
+    const response = await fetch(`/api/route-instances/${encodeURIComponent(d.id)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status }),
+    });
+    if (!response.ok) {
+      const note = document.getElementById("sources-note");
+      if (note) note.textContent = t("processroutes.pausefailed");
+      return;
+    }
+    await load();
+    render();
+  } catch {
+    const note = document.getElementById("sources-note");
+    if (note) note.textContent = t("processroutes.pausefailed");
+  }
+}
+
 function destinationPanel(d) {
+  const pauseOrResume =
+    d.status === "paused"
+      ? actionLink("release", { primary: true, label: t("processroutes.resume"), onclick: () => setDestinationStatus(d, "active") })
+      : actionLink("paused", { label: t("processroutes.pause"), onclick: () => setDestinationStatus(d, "paused") });
   const openExport = actionLink("download", {
     label: t("processroutes.openexport"),
     onclick: async () => {
@@ -244,7 +276,7 @@ function destinationPanel(d) {
   return el("div", { class: "panel prdetail" }, [
     el("div", { class: "cardhead" }, [
       el("h3", { text: `${t("processroutes.destinationtitle")}: ${d.name}` }),
-      el("div", { class: "statebuttons" }, [openExport, actionLink("close", { onclick: () => { selected = null; render(); } })]),
+      el("div", { class: "statebuttons" }, [pauseOrResume, openExport, actionLink("close", { onclick: () => { selected = null; render(); } })]),
     ]),
     el("p", { class: "muted sm", text: t("processroutes.destsub").replace("{route}", d.routeName).replace("{process}", data.process.name) }),
     el("div", { class: "prfields" }, [
@@ -255,9 +287,9 @@ function destinationPanel(d) {
       el("div", { class: "l", text: t("processroutes.field.gateway") }),
       el("div", { text: t(`routes.gw.${d.route?.deliveryGateway}`) }),
       el("div", { class: "l", text: t("processroutes.field.status") }),
-      el("div", {}, [pill(d.status === "active" ? "ok" : "q", t(`processroutes.status.${d.status}`))]),
+      el("div", {}, [pill(d.status === "active" ? "ok" : "warn", t(`processroutes.status.${d.status}`))]),
     ]),
-    el("p", { class: "muted sm", text: t("processroutes.erpnote") }),
+    el("p", { class: "muted sm", text: t(d.status === "paused" ? "processroutes.pausednote" : "processroutes.erpnote") }),
   ]);
 }
 
@@ -380,6 +412,8 @@ function render() {
 
 export async function open() {
   setCurrentScreen("processroutes");
+  // A fresh visit opens on the flow alone, whatever was chosen last time.
+  selected = null;
   setSourcesRefresh(async () => {
     await load();
     render();

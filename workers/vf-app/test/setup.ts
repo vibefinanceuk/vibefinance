@@ -111,6 +111,7 @@ import erpExportsSql from "../../../migrations/0104_erp_exports.sql?raw";
 import erpExportUndoSql from "../../../migrations/0105_erp_export_undo.sql?raw";
 import routeMessagesSql from "../../../migrations/0106_route_messages.sql?raw";
 import routesAndInstancesSql from "../../../migrations/0107_routes_and_instances.sql?raw";
+import erpDestinationMessagesSql from "../../../migrations/0108_erp_destination_messages.sql?raw";
 
 // Another known divergence from production, on top of the one below:
 // D1's exec() splits its input by newline and executes each non-empty
@@ -416,6 +417,7 @@ export async function applyTestSchema(): Promise<void> {
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(erpExportUndoSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(routeMessagesSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(routesAndInstancesSql)));
+  await env.DB.exec(toOneStatementPerLine(stripSqlComments(erpDestinationMessagesSql)));
 }
 
 /**

@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import stringsSql from "../../vf-licence/migrations/0208_routes_and_process_routes_strings.sql?raw";
+import destinationStringsSql from "../../vf-licence/migrations/0209_erp_destination_strings.sql?raw";
 
 /**
  * **Routes and Process routes — decision 0557.** The standard routes with
@@ -33,7 +34,11 @@ const strings: Record<string, string> = {
   "mechanism.file_import": "File import",
   "mechanism.edi": "EDI",
 };
-for (const m of stringsSql.matchAll(/\('([^']+)', 'en', '((?:[^']|'')*)'\)/g)) strings[m[1]] = m[2].replace(/''/g, "'");
+for (const sql of [stringsSql, destinationStringsSql]) {
+  for (const m of sql.matchAll(/\('([^']+)', 'en', '((?:[^']|'')*)'\)/g)) strings[m[1]] = m[2].replace(/''/g, "'");
+}
+// 0209 updates the ERP note rather than inserting it.
+strings["processroutes.erpnote"] = "Invoices reaching Payment Eligible are exported from the ERP export screen, each once, as a CSV file. Each export shows in the Route monitor as a message sent out on this Destination.";
 
 const V = (gw: string, fin: string, tr: string, fout: string, gwo: string, status = "live") => ({
   version: 1,
@@ -93,6 +98,7 @@ function stub(calls: Call[], extra: Record<string, unknown> = {}) {
       if (path === "/api/org/units") return { ok: true, json: async () => ({ units: [] }) } as Response;
       if (path === "/api/processes/ap/sources" && method === "POST") return { ok: true, status: 201, json: async () => ({}) } as Response;
       if (/^\/api\/sources\/[^/]+\/email$/.test(path)) return { ok: true, json: async () => ({}) } as Response;
+      if (path === "/api/route-instances/erp-ap" && method === "PATCH") return { ok: true, json: async () => ({ id: "erp-ap", status: "paused" }) } as Response;
       throw new Error(`no stub for ${method} ${path}`);
     })
   );
@@ -218,7 +224,31 @@ describe("Process routes — decision 0557", () => {
     expect(text(".prdetail h3")).toBe("Destination: ERP");
     expect(text(".prdetail")).toContain("Payment Eligible · approved, coded and matched");
     expect(text(".prdetail")).toContain("File download");
-    expect([...document.querySelectorAll(".prdetail .statebuttons button")].map((b) => b.textContent)).toEqual(["Open ERP export", "Close"]);
+    expect([...document.querySelectorAll(".prdetail .statebuttons button")].map((b) => b.textContent)).toEqual(["Pause", "Open ERP export", "Close"]);
+    expect(text(".prdetail")).toContain("shows in the Route monitor");
+  });
+
+  it("pauses the ERP Destination, and a paused one offers Resume and says what waits — decision 0558", async () => {
+    const calls: Call[] = [];
+    stub(calls);
+    await openScreen("/process-routes.js");
+    ([...document.querySelectorAll(".prcard")].at(-1) as HTMLElement).click();
+    await settle();
+    ([...document.querySelectorAll(".prdetail .statebuttons button")].find((b) => b.textContent === "Pause") as HTMLElement).click();
+    await settle();
+    const patch = calls.find((c) => c.method === "PATCH");
+    expect(patch).toMatchObject({ path: "/api/route-instances/erp-ap" });
+    expect(JSON.parse(patch!.body!)).toEqual({ status: "paused" });
+
+    stub([], { "/api/process-routes": { ...FLOW, destinations: [{ ...FLOW.destinations[0], status: "paused" }] } });
+    await openScreen("/process-routes.js");
+    const erp = [...document.querySelectorAll(".prcard")].at(-1) as HTMLElement;
+    expect(erp.classList.contains("dim")).toBe(true);
+    expect(erp.textContent).toContain("Paused");
+    erp.click();
+    await settle();
+    expect([...document.querySelectorAll(".prdetail .statebuttons button")].map((b) => b.textContent)).toEqual(["Resume", "Open ERP export", "Close"]);
+    expect(text(".prdetail")).toContain("Paused: nothing is exported for this process.");
   });
 
   it("adds a source to this process from its name and how it arrives", async () => {

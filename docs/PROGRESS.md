@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 29 September 2026 (decision 0557). A living document: what
+Last updated 29 September 2026 (decision 0558). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,13 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Routes, slice 4: the ERP export as a Destination (0558)
+- Payment-eligible reads each process's exit stage; the ERP Destination can
+  be paused and resumed on Process routes.
+- Each export is a message sent out in the Route monitor, with its invoices
+  and the file it carried (kept in R2); undone exports are closed with
+  their reason; earlier exports are backfilled as messages.
 
 ### Routes, slice 3: routes, instances, and Process routes (0557)
 - Six standard routes (Email in and HTTPS in live; SFTP, file import and
