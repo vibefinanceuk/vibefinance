@@ -43,6 +43,12 @@ const STRINGS = {
     "erpexport.undoneby": "by {who}, {when}",
     "erpexport.undonemsg": "Export undone: {n} invoices are back in Ready to export.",
     "erpexport.undofailed": "The export could not be undone. Try again.",
+    "erpexport.undotitle": "Undo this export",
+    "erpexport.undoexplain": "The export of {when} is undone: its {n} invoices go back to Ready to export, to be exported again. The file stays in Past exports.",
+    "erpexport.undolabel": "Why is it being undone?",
+    "erpexport.undoplaceholder": "For example: the ERP rejected the file",
+    "action.close": "Close",
+    "erpexport.undoneedsreason": "Give a reason. It shows on the Timeline of each invoice in the export.",
   },
 };
 
@@ -150,27 +156,74 @@ describe("the ERP export screen — decision 0552", () => {
   });
 });
 
-describe("undoing an export — decision 0553", () => {
-  it("asks why, undoes it, and says the invoices are back", async () => {
+describe("undoing an export, in the app's own pop-out — decisions 0553 and 0554", () => {
+  const undoButton = () => [...document.querySelectorAll(".erphistory button")].find((b) => b.textContent === "Undo") as HTMLButtonElement;
+  const pop = () => document.querySelector(".popout.erpundopop") as HTMLElement | null;
+  const popButton = (label: string) => [...(pop()?.querySelectorAll(".cardhead button") ?? [])].find((b) => b.textContent === label) as HTMLButtonElement;
+
+  it("opens the app's pop-out, never the browser's prompt, saying what will happen", async () => {
+    stub(PENDING, []);
+    const prompt = vi.spyOn(window, "prompt");
+    await open();
+    undoButton().click();
+    expect(prompt).not.toHaveBeenCalled();
+    expect(pop()?.getAttribute("role")).toBe("dialog");
+    expect(pop()?.querySelector("h3")?.textContent).toBe("Undo this export");
+    expect(pop()?.textContent).toContain("The export of 2026-09-28 10:15 is undone: its 5 invoices go back to Ready to export");
+    expect(pop()?.querySelector("label")?.textContent).toBe("Why is it being undone?");
+    expect(document.activeElement).toBe(pop()?.querySelector("textarea"));
+    expect([...(pop()?.querySelectorAll(".cardhead button") ?? [])].map((b) => b.textContent)).toEqual(["Undo", "Close"]);
+  });
+
+  it("asks for a reason in the pop-out rather than calling the server without one", async () => {
     const calls: Call[] = [];
     stub(PENDING, calls);
-    const prompt = vi.spyOn(window, "prompt").mockReturnValue("ERP rejected the file");
     await open();
-    const undo = [...document.querySelectorAll(".erphistory button")].find((b) => b.textContent === "Undo") as HTMLButtonElement;
-    undo.click();
+    undoButton().click();
+    popButton("Undo").click();
     await settle();
-    expect(prompt).toHaveBeenCalledWith("Undo this export? Its 5 invoices go back to Ready to export. Why?");
+    const error = pop()?.querySelector(".warn") as HTMLElement;
+    expect(error.hidden).toBe(false);
+    expect(error.textContent).toBe("Give a reason. It shows on the Timeline of each invoice in the export.");
+    expect(calls.some((c) => c.path.endsWith("/undo"))).toBe(false);
+  });
+
+  it("undoes it with the reason typed, closes, and says the invoices are back", async () => {
+    const calls: Call[] = [];
+    const bodies: unknown[] = [];
+    stub(PENDING, calls);
+    const inner = globalThis.fetch as unknown as (url: string, init?: RequestInit) => Promise<Response>;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        if (String(url).includes("/undo")) bodies.push(JSON.parse(String(init?.body)));
+        return inner(url, init);
+      })
+    );
+    await open();
+    undoButton().click();
+    (pop()!.querySelector("textarea") as HTMLTextAreaElement).value = "  ERP rejected the file  ";
+    popButton("Undo").click();
+    await settle();
     expect(calls.map((c) => `${c.method} ${c.path}`)).toContain("POST /api/erp-exports/x-0/undo");
+    expect(bodies).toEqual([{ reason: "ERP rejected the file" }]);
+    expect(pop()).toBeNull();
     expect(document.getElementById("erpexport-note")?.textContent).toBe("Export undone: 5 invoices are back in Ready to export.");
   });
 
-  it("does nothing when no reason is given", async () => {
+  it("closes without undoing, by Close, by Escape, or by clicking outside", async () => {
     const calls: Call[] = [];
     stub(PENDING, calls);
-    vi.spyOn(window, "prompt").mockReturnValue("  ");
     await open();
-    ([...document.querySelectorAll(".erphistory button")].find((b) => b.textContent === "Undo") as HTMLButtonElement).click();
-    await settle();
+    undoButton().click();
+    popButton("Close").click();
+    expect(pop()).toBeNull();
+    undoButton().click();
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    expect(pop()).toBeNull();
+    undoButton().click();
+    (document.querySelector(".backdrop") as HTMLElement).click();
+    expect(pop()).toBeNull();
     expect(calls.some((c) => c.path.endsWith("/undo"))).toBe(false);
   });
 

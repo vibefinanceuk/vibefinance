@@ -866,6 +866,12 @@ const KEYS_THE_INTERFACE_USES = [
   "viewer.coding.split.waits",
   "viewer.coding.split.wholeline",
   "viewer.onsplit",
+  // Decision 0554
+  "erpexport.undoexplain",
+  "erpexport.undolabel",
+  "erpexport.undoneedsreason",
+  "erpexport.undoplaceholder",
+  "erpexport.undotitle",
   // Decision 0553
   "activity.erpexported",
   "activity.erpexportundone",

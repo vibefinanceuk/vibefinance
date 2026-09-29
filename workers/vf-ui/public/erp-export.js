@@ -71,31 +71,90 @@ async function download(id) {
 }
 
 /**
- * **Undo an export — decision 0553.** For when the file failed to import
- * on the ERP side: its invoices go back to Ready to export, and the
- * export stays in the list, marked undone, still downloadable. A reason
- * is asked for, and shows on each invoice's Timeline.
+ * **Undo an export — decisions 0553 and 0554.** For when the file failed
+ * to import on the ERP side: its invoices go back to Ready to export,
+ * and the export stays in the list, marked undone, still downloadable.
+ *
+ * **The app's own pop-out, not the browser's prompt — decision 0554.**
+ * Reported live: the browser's native box did not look like the rest of
+ * the screen. The same `.backdrop`/`.popout` shape as Discard, Return
+ * and Return To Supplier (decisions 0490, 0498), which were each moved
+ * off the native prompt for the same reason: a heading with the action
+ * and Close, what will happen, a reason box, and a message in place of
+ * a round trip when the reason is left empty. Escape closes it.
  */
-async function undo(x) {
-  const reason = window.prompt(t("erpexport.undoprompt").replace("{n}", String(x.invoiceCount)));
-  if (reason === null || reason.trim() === "") return;
-  try {
-    const response = await fetch(withOrg(`/api/erp-exports/${encodeURIComponent(x.id)}/undo`), {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ reason: reason.trim() }),
-    });
-    const body = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      note(body.error ?? t("erpexport.undofailed"));
+function openUndoPicker(x) {
+  const reasonBox = el("textarea", { class: "erpundoreason", placeholder: t("erpexport.undoplaceholder") });
+  const errorBox = el("div", { class: "warn sm", hidden: "hidden" });
+  const onKey = (event) => {
+    if (event.key === "Escape") close();
+  };
+  const close = () => {
+    backdrop.remove();
+    document.removeEventListener("keydown", onKey);
+  };
+  let busyUndo = false;
+
+  const doUndo = async () => {
+    if (busyUndo) return;
+    errorBox.hidden = true;
+    const reason = reasonBox.value.trim();
+    if (reason === "") {
+      errorBox.hidden = false;
+      errorBox.textContent = t("erpexport.undoneedsreason");
+      reasonBox.focus();
       return;
     }
-    await load();
-    render();
-    note(t("erpexport.undonemsg").replace("{n}", String(body.invoicesReleased)), { success: true });
-  } catch {
-    note(t("erpexport.undofailed"));
-  }
+    busyUndo = true;
+    try {
+      const response = await fetch(withOrg(`/api/erp-exports/${encodeURIComponent(x.id)}/undo`), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        errorBox.hidden = false;
+        errorBox.textContent = body.error ?? t("erpexport.undofailed");
+        return;
+      }
+      close();
+      await load();
+      render();
+      note(t("erpexport.undonemsg").replace("{n}", String(body.invoicesReleased)), { success: true });
+    } catch {
+      errorBox.hidden = false;
+      errorBox.textContent = t("erpexport.undofailed");
+    } finally {
+      busyUndo = false;
+    }
+  };
+
+  const box = el("div", { class: "popout erpundopop", role: "dialog", "aria-label": t("erpexport.undotitle") }, [
+    el("div", { class: "cardhead" }, [
+      el("h3", { text: t("erpexport.undotitle") }),
+      el("div", { class: "statebuttons" }, [
+        actionLink("return", { label: t("erpexport.undo"), primary: true, onclick: doUndo }),
+        actionLink("close", { onclick: close }),
+      ]),
+    ]),
+    el("p", {
+      class: "muted sm",
+      text: t("erpexport.undoexplain")
+        .replace("{n}", String(x.invoiceCount))
+        .replace("{when}", String(x.createdAt ?? "").slice(0, 16).replace("T", " ")),
+    }),
+    el("div", { class: "kf" }, [el("label", { text: t("erpexport.undolabel") }), reasonBox]),
+    errorBox,
+  ]);
+
+  const backdrop = el("div", { class: "backdrop" }, [box]);
+  backdrop.onclick = (e) => {
+    if (e.target === backdrop) close();
+  };
+  document.addEventListener("keydown", onKey);
+  document.body.append(backdrop);
+  reasonBox.focus();
 }
 
 async function exportNow() {
@@ -199,7 +258,7 @@ function historyPanel() {
                 el("td", { class: "num" }, [
                   el("div", { class: "erpactions" }, [
                     actionLink("download", { onclick: () => download(x.id) }),
-                    ...(x.undone ? [] : [actionLink("return", { label: t("erpexport.undo"), onclick: () => undo(x) })]),
+                    ...(x.undone ? [] : [actionLink("return", { label: t("erpexport.undo"), onclick: () => openUndoPicker(x) })]),
                   ]),
                 ]),
               ])

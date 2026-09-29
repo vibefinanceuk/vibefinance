@@ -4708,3 +4708,6 @@
 .erptable tr.erpundone td { color: var(--text-secondary); }
 .erpundonenote { margin-top: 3px; }
 .erpundonepill { display: inline-block; padding: 1px 8px; border-radius: 999px; font-weight: 600; background: var(--severity-warning-bg); color: var(--severity-warning-text); }
+/* Decision 0554 — Undo an ERP export: the app's own pop-out, sized like Discard's. */
+.popout.erpundopop { width: min(520px, 100%); }
+.popout.erpundopop textarea.erpundoreason { width: 100%; min-height: 84px; box-sizing: border-box; resize: vertical; }
