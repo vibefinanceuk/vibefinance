@@ -6,6 +6,7 @@ import {
   linkRouteItem,
   openRouteMessage,
   routePartKey,
+  setPartFormat,
   setPartOutcome,
   storeRoutePart,
   type StoredPart,
@@ -293,9 +294,31 @@ export async function captureAttachmentPart(
     }
     return { captured: false, ...(why ? { why } : {}) };
   }
-  const invoiceId = (result.body as { id?: string } | undefined)?.id;
+  const body = result.body as
+    | {
+        id?: string;
+        format?: string;
+        syntax?: string;
+        en16931?: { failed: Array<{ rule: string; detail?: string }> } | null;
+      }
+    | undefined;
+  const invoiceId = body?.id;
   if (messageId) {
     if (stored) await setPartOutcome(db, messageId, seq, "captured", null);
+    // Decision 0560: what it was, and what the EN 16931 checks found.
+    if (stored && body?.format && body.syntax) {
+      await setPartFormat(db, messageId, seq, {
+        format: body.format,
+        syntax: body.syntax,
+        failed: body.en16931 ? body.en16931.failed : null,
+      });
+      if (body.en16931 && body.en16931.failed.length > 0) {
+        await addRouteEvent(db, messageId, "en16931_failed", {
+          partSeq: seq,
+          detail: body.en16931.failed.map((f) => f.rule).join(", "),
+        });
+      }
+    }
     if (invoiceId) await linkRouteItem(db, messageId, invoiceId, seq);
     await addRouteEvent(db, messageId, "captured", { partSeq: seq, ...(invoiceId ? { detail: invoiceId } : {}) });
   }

@@ -100,6 +100,30 @@ export async function handleListRoutes(db: D1Database): Promise<RouteResult> {
     )
     .all<{ route_id: string; name: string }>();
 
+  /**
+   * **What each Source route has received, by format — decision 0560.**
+   * The last 30 days of attachments, counted by the format recognised in
+   * each (`format` on the part), whether it came inside a PDF, and how
+   * many broke an EN 16931 rule. An attachment with no format was read
+   * as a picture (`picture`) or not read at all (`unread`).
+   */
+  const formatRows = await db
+    .prepare(
+      `SELECT i.route_id,
+              COALESCE(p.format, CASE WHEN p.outcome = 'captured' THEN 'picture' ELSE 'unread' END) AS format,
+              CASE WHEN p.format IS NOT NULL AND (lower(p.content_type) LIKE '%pdf%' OR lower(p.filename) LIKE '%.pdf') THEN 1 ELSE 0 END AS in_pdf,
+              count(*) AS received,
+              sum(CASE WHEN p.en16931_failed IS NOT NULL AND p.en16931_failed != '[]' THEN 1 ELSE 0 END) AS failing
+       FROM route_message_parts p
+       JOIN route_messages m ON m.id = p.message_id
+       JOIN route_instances i ON i.source_id = m.instance_id
+       WHERE p.role = 'attachment' AND m.direction = 'in'
+         AND m.received_at >= strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-30 days')
+       GROUP BY 1, 2, 3
+       ORDER BY received DESC`
+    )
+    .all<{ route_id: string; format: string; in_pdf: number; received: number; failing: number }>();
+
   return {
     status: 200,
     body: {
@@ -117,6 +141,9 @@ export async function handleListRoutes(db: D1Database): Promise<RouteResult> {
           processes: r.processes,
           instances: r.instances,
           placedIn: processNames.results.filter((p) => p.route_id === r.id).map((p) => p.name),
+          formats30d: formatRows.results
+            .filter((f) => f.route_id === r.id)
+            .map((f) => ({ format: f.format, inPdf: f.in_pdf === 1, received: f.received, failing: f.failing ?? 0 })),
         };
       }),
     },

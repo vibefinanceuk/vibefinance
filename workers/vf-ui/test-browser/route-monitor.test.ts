@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import stringsSql from "../../vf-licence/migrations/0207_route_monitor_strings.sql?raw";
 import destinationStringsSql from "../../vf-licence/migrations/0209_erp_destination_strings.sql?raw";
 import fixStringsSql from "../../vf-licence/migrations/0210_route_fix_and_tell_strings.sql?raw";
+import formatStringsSql from "../../vf-licence/migrations/0211_formats_and_en16931_strings.sql?raw";
 
 /**
  * The Route monitor — decision 0556. Four counts, the messages with
@@ -14,7 +15,7 @@ import fixStringsSql from "../../vf-licence/migrations/0210_route_fix_and_tell_s
  */
 
 const strings: Record<string, string> = { "action.close": "Close", "action.save": "Save" };
-for (const sql of [stringsSql, destinationStringsSql, fixStringsSql]) {
+for (const sql of [stringsSql, destinationStringsSql, fixStringsSql, formatStringsSql]) {
   for (const m of sql.matchAll(/\('([^']+)', 'en', '((?:[^']|'')*)'\)/g)) strings[m[1]] = m[2].replace(/''/g, "'");
 }
 
@@ -474,5 +475,57 @@ describe("fix and tell — decision 0559", () => {
     click("Add alert", pop.querySelector(".rmalertform") as HTMLElement);
     await settle();
     expect(pop.textContent).toContain("Only a Source can go quiet: choose a Source, or leave that unticked.");
+  });
+});
+
+describe("e-invoice checks — decision 0560", () => {
+  async function checksFor(parts: unknown[]) {
+    stub([]);
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { formatChecks } = await import("/route-monitor.js");
+    const host = document.createElement("div");
+    host.append(...formatChecks(parts));
+    document.body.append(host);
+    return host;
+  }
+
+  it("names each rule an attachment broke, in words, with what the check found", async () => {
+    const host = await checksFor([
+      { seq: 0, role: "original", filename: "message.eml", format: null, syntax: null, en16931Failed: null },
+      {
+        seq: 1,
+        role: "attachment",
+        filename: "Rechnung_88241.xml",
+        format: "xrechnung",
+        syntax: "cii",
+        en16931Failed: [{ rule: "BR-CO-16", detail: "BT-115 700.00, expected 649.74" }, { rule: "BR-DE-15" }],
+      },
+    ]);
+    expect(host.querySelector("h4")?.textContent).toBe("E-invoice checks");
+    expect(host.querySelectorAll(".rmfmt")).toHaveLength(1);
+    expect(host.querySelector(".rmfmtname")?.textContent).toBe("Rechnung_88241.xml: XRechnung (CII)");
+    expect(host.querySelector(".rmpill")?.textContent).toBe("2 rules broken");
+    expect([...host.querySelectorAll(".rmrules li")].map((li) => li.textContent)).toEqual([
+      "BR-CO-16 The amount due (BT-115) does not follow from the total, the amount paid and rounding. · BT-115 700.00, expected 649.74",
+      "BR-DE-15 An XRechnung must give the buyer reference (BT-10), such as a Leitweg-ID.",
+    ]);
+    expect(host.textContent).toContain("The invoice was still delivered to the process.");
+  });
+
+  it("says when one passed, and when one was not checked", async () => {
+    const host = await checksFor([
+      { seq: 1, role: "attachment", filename: "a.pdf", format: "en16931", syntax: "cii", en16931Failed: [] },
+      { seq: 2, role: "attachment", filename: "b.pdf", format: "factur_x_minimum", syntax: "cii", en16931Failed: null },
+    ]);
+    const checks = [...host.querySelectorAll(".rmfmt")];
+    expect(checks.map((c) => c.querySelector(".rmpill")?.textContent)).toEqual(["Passed EN 16931", "Not checked"]);
+    expect(checks[1].querySelector(".rmfmtname")?.textContent).toBe("b.pdf: Factur-X / ZUGFeRD MINIMUM (CII)");
+    expect(checks[1].textContent).toContain("is not a full invoice");
+  });
+
+  it("shows nothing for a message with no e-invoice in it", async () => {
+    const host = await checksFor(DETAIL.parts);
+    expect(host.children).toHaveLength(0);
   });
 });

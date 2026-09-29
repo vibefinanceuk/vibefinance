@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import stringsSql from "../../vf-licence/migrations/0208_routes_and_process_routes_strings.sql?raw";
 import destinationStringsSql from "../../vf-licence/migrations/0209_erp_destination_strings.sql?raw";
+import formatStringsSql from "../../vf-licence/migrations/0211_formats_and_en16931_strings.sql?raw";
 
 /**
  * **Routes and Process routes — decision 0557.** The standard routes with
@@ -34,7 +35,7 @@ const strings: Record<string, string> = {
   "mechanism.file_import": "File import",
   "mechanism.edi": "EDI",
 };
-for (const sql of [stringsSql, destinationStringsSql]) {
+for (const sql of [stringsSql, destinationStringsSql, formatStringsSql]) {
   for (const m of sql.matchAll(/\('([^']+)', 'en', '((?:[^']|'')*)'\)/g)) strings[m[1]] = m[2].replace(/''/g, "'");
 }
 // 0209 updates the ERP note rather than inserting it.
@@ -159,6 +160,67 @@ describe("Routes — decision 0557", () => {
     expect(parts().map((p) => p[1])).toEqual(["A VibeFinance process", "EN 16931 invoice", "ERP CSV layout", "CSV file", "File download"]);
     expect(parts()[1][2]).toBe(true);
     expect(text(".rtdetail")).toContain("Reads from the process's last stage");
+  });
+});
+
+describe("Receiving formats — decision 0560", () => {
+  const withFormats = {
+    routes: ROUTES.routes.map((r) =>
+      r.id === "email-in"
+        ? {
+            ...r,
+            formats30d: [
+              { format: "xrechnung", inPdf: false, received: 41, failing: 2 },
+              { format: "en16931", inPdf: true, received: 80, failing: 0 },
+              { format: "factur_x_minimum", inPdf: true, received: 6, failing: 0 },
+              { format: "peppol_bis_3", inPdf: false, received: 3, failing: 0 },
+              { format: "picture", inPdf: false, received: 1204, failing: 0 },
+              { format: "unread", inPdf: false, received: 5, failing: 0 },
+            ],
+          }
+        : { ...r, formats30d: [] }
+    ),
+  };
+
+  /** The screen remembers the route chosen last, so each test chooses its own. */
+  async function choose(name: string) {
+    ([...document.querySelectorAll(".rttable tbody tr")].find((r) => r.textContent?.startsWith(name)) as HTMLElement).click();
+    await settle();
+  }
+
+  it("lists what a Source route reads, how, what it is checked against, and the last 30 days", async () => {
+    stub([], { "/api/routes": withFormats });
+    await openScreen("/routes.js");
+    await choose("Email in");
+    const rows = [...document.querySelectorAll(".rtformats tbody tr")].map((r) =>
+      [...r.querySelectorAll("td")].map((td) => td.textContent)
+    );
+    expect(rows.map((r) => r[0])).toEqual([
+      "XRechnungUBL or CII",
+      "Peppol BIS Billing 3.0UBL",
+      "EN 16931UBL or CII, with no national rules",
+      "ZUGFeRD / Factur-XA PDF with the XML inside",
+      "Another UBL or CII invoiceDeclaring another specification",
+      "PDF or imageNo data inside",
+    ]);
+    // Anything read from inside a PDF counts as Factur-X / ZUGFeRD, whatever profile it declares.
+    const counts = [...document.querySelectorAll(".rtformats tbody td.n")].map((td) =>
+      [...td.children].map((c) => c.textContent)
+    );
+    expect(counts).toEqual([["41", "2 broke a rule"], ["3"], ["0"], ["86"], ["0"], ["1204"]]);
+    expect(rows[0][2]).toBe("EN 16931, and the buyer reference XRechnung requires (BR-DE-15)");
+    expect(text(".rtformats").includes("undefined")).toBe(false);
+    expect(document.body.textContent).toContain("5 attachments in the last 30 days could not be read at all");
+    expect(text(".rtnote")).toContain("A broken rule does not stop an invoice");
+  });
+
+  it("is shown for a Source route that detects formats, and not for a Destination", async () => {
+    stub([], { "/api/routes": withFormats });
+    await openScreen("/routes.js");
+    await choose("Email in");
+    expect(document.querySelector(".rtformats")).not.toBeNull();
+    await choose("ERP CSV file");
+    expect(document.querySelector(".rtformats")).toBeNull();
   });
 });
 

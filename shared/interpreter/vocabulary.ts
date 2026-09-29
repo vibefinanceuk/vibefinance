@@ -182,6 +182,11 @@ export const DERIVED_FIELDS = [
   "intake.structure",
   "intake.attempted",
   "intake.detail",
+  // Decision 0560 — which e-invoice format a structured document is, and
+  // what the EN 16931 checks found.
+  "intake.format",
+  "en16931.checked",
+  "en16931.failures",
   "supplier.matched",
   "supplier.unmatchedReason",
   "supplier.onHold",
@@ -315,6 +320,9 @@ export const INVOICE_FIELD_TYPES: Record<string, FieldType> = {
   "intake.structure": "text",
   "intake.attempted": "text",
   "intake.detail": "text",
+  "intake.format": "text",
+  "en16931.checked": "boolean",
+  "en16931.failures": "text",
   "supplier.matched": "boolean",
   "supplier.unmatchedReason": "text",
   "supplier.onHold": "boolean",
@@ -535,6 +543,12 @@ export const DERIVED_FIELD_DESCRIPTIONS: Record<DerivedField, string> = {
     "the document structure intake detected — 'structured_xml', 'structured_pdfa', 'image', or empty when nothing was recognised. An empty value means the document arrived with no facts and needs a person: a rule testing for it is how an undetectable document reaches somebody.",
   "intake.attempted":
     "a comma-separated list of the detection tests intake tried, in order. Distinguishes a supplier who has not adopted e-invoicing from one whose implementation is broken — 'a PDF with no embedded invoice' and 'a PDF declaring one that could not be read' are opposite conversations. A string so the existing contains operator works.",
+  "intake.format":
+    "which e-invoice format a structured document declared itself to be: 'peppol_bis_3', 'xrechnung', 'en16931', 'factur_x_extended', 'factur_x_basic', 'factur_x_basic_wl', 'factur_x_minimum', or 'ubl_other' / 'cii_other' for a UBL or CII invoice declaring something else. Absent on a picture or a PDF with nothing inside. Read from the document's own specification identifier (BT-24), never from who sent it.",
+  "en16931.checked":
+    "true where the document was checked against the EN 16931 business rules at intake. False for a Factur-X MINIMUM or BASIC WL, which are not EN 16931 invoices and would fail every check; absent on a document that was not structured at all.",
+  "en16931.failures":
+    "a comma-separated list of the EN 16931 business rules the document broke, by their official identifier, empty when none did: 'en16931.failures contains BR-CO-16' finds an invoice whose amount due does not follow from its totals, 'contains BR-DE-15' an XRechnung with no buyer reference. **A failure never stops an invoice** — what to do with one is the customer's rule to write. A string so the existing contains operator works.",
   "supplier.matched":
     "true where this invoice's seller was found in the supplier list loaded from the customer's ERP, and an ERP identifier is therefore available. **False is what routes a new supplier for review**: not 'we do not recognise this company' but 'we cannot name it to the ERP', and an invoice without that cannot be paid however familiar the name on it. Matched on the seller's electronic address (BT-34), then their VAT id (BT-31).",
   "supplier.paymentTerms":

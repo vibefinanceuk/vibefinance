@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 29 September 2026 (decision 0559). A living document: what
+Last updated 29 September 2026 (decision 0560). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,17 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Routes phase 2, slice 1: structured formats in (0560)
+- UBL and CII read as data through one entry point; the CII inside a real
+  Factur-X / ZUGFeRD PDF is read for the first time (every one was refused
+  before); credit notes and ZUGFeRD 1.0 refused in words.
+- The format recognised from BT-24; EN 16931 rules (presence, arithmetic,
+  BR-CO-9, BR-CO-25, BR-DE-15 for XRechnung) checked in our own code,
+  agreeing with CEN's official unit tests and KoSIT's XRechnung suite.
+- A failure never stops an invoice: `en16931.failures` is a fact a rule can
+  test; the monitor shows each rule broken in words; Routes shows a
+  Receiving formats panel with the last 30 days.
 
 ### Routes, slice 5: reprocess, dismiss and alerts (0559) — phase 1 complete
 - Reprocess a failed message from its kept original (never an invoice

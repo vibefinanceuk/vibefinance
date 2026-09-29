@@ -1,5 +1,5 @@
 import type { InvoiceFacts } from "@vibefinance/shared";
-import { parseUblInvoice, UblParseError } from "@vibefinance/shared";
+import { formatFacts, readInvoiceXml, UblParseError, type ReadInvoiceXml } from "@vibefinance/shared";
 import type { RouteResult } from "./org-route.js";
 import { handleUpsertInvoice, mergeStructuredInvoiceFacts } from "./invoice-facts-route.js";
 import { mergePoMatchFacts } from "./po-matching.js";
@@ -346,9 +346,11 @@ export async function handleCaptureUblXml(
   // /capture-xml API route included) omits this and is unaffected.
   enrichFacts?: CaptureIntakeBody["enrichFacts"]
 ): Promise<RouteResult> {
-  let parsed: { facts: InvoiceFacts; lines: Array<InvoiceFacts & { lineNumber: number }> };
+  let parsed: ReadInvoiceXml;
   try {
-    parsed = parseUblInvoice(xml);
+    // Decision 0560: UBL or CII, recognised by root element, with the
+    // format named and the EN 16931 rules checked.
+    parsed = readInvoiceXml(xml);
   } catch (err) {
     if (err instanceof UblParseError) {
       // A parse failure happens before handleCaptureIntake is ever
@@ -365,7 +367,8 @@ export async function handleCaptureUblXml(
     throw err;
   }
 
-  const { facts, lines } = parsed;
+  const { lines } = parsed;
+  const facts = { ...parsed.facts, ...formatFacts(parsed) };
   const id = idOverride ?? crypto.randomUUID();
 
   // The parser's own facts already carry the real BT-* structured
@@ -383,7 +386,25 @@ export async function handleCaptureUblXml(
     facts,
     lines,
     enrichFacts,
-  });
+  }).then((result) => withFormat(result, parsed));
+}
+
+/**
+ * **What format it was, and what the checks found — decision 0560** —
+ * on the response, so the route that received the document can record
+ * it on the message part without reading the invoice back.
+ */
+export function withFormat(result: RouteResult, read: ReadInvoiceXml): RouteResult {
+  if (result.status >= 400) return result;
+  return {
+    status: result.status,
+    body: {
+      ...(result.body as Record<string, unknown>),
+      format: read.format,
+      syntax: read.syntax,
+      en16931: read.en16931 === null ? null : { checked: read.en16931.checked.length, failed: read.en16931.failed },
+    },
+  };
 }
 
 export type HybridPdfFallback = "refuse" | "fallback";

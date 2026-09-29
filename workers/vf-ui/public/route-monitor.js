@@ -277,6 +277,59 @@ function technical(message, parts) {
   return lines.length === 0 ? [] : [el("pre", { class: "rmtech", text: lines.join("\n") })];
 }
 
+/**
+ * **What each e-invoice was, and what the EN 16931 checks found —
+ * decision 0560.** One line per attachment read as data: its format and
+ * syntax, then either that it passed, that it was not checked (a Factur-X
+ * MINIMUM or BASIC WL), or each rule it broke, in words, with the figures
+ * the check found.
+ */
+export function formatChecks(parts) {
+  const read = parts.filter((p) => p.format);
+  if (read.length === 0) return [];
+  return [
+    el("h4", { class: "rmh4", text: t("routemonitor.checks") }),
+    ...read.map((p) => {
+      const name = `${words("routes.format", p.format)}${p.syntax ? ` (${t(`routes.syntax.${p.syntax}`)})` : ""}`;
+      const failed = p.en16931Failed;
+      const verdict =
+        failed === null
+          ? el("span", { class: "rmpill q", text: t("routemonitor.notchecked") })
+          : failed.length === 0
+            ? el("span", { class: "rmpill ok", text: t("routemonitor.passed") })
+            : el("span", { class: "rmpill bad", text: t("routemonitor.brokenn").replace("{n}", String(failed.length)) });
+      return el("div", { class: "rmfmt" }, [
+        el("div", { class: "rmfmthead" }, [el("span", { class: "rmfmtname", text: `${p.filename}: ${name}` }), verdict]),
+        ...(failed === null ? [el("div", { class: "muted sm", text: t("routemonitor.notcheckedwhy") })] : []),
+        ...(failed && failed.length > 0
+          ? [
+              el(
+                "ul",
+                { class: "rmrules" },
+                failed.map((f) =>
+                  el("li", {}, [
+                    el("span", { class: "rmrule", text: f.rule }),
+                    // Keys are lower case (0013); the rule identifier is shown as it is.
+                    el("span", { text: ` ${words("en16931.rule", f.rule.toLowerCase())}` }),
+                    ...(f.detail ? [el("span", { class: "muted", text: ` · ${f.detail}` })] : []),
+                  ])
+                )
+              ),
+              el("div", { class: "muted sm", text: t("routemonitor.notstopped") }),
+            ]
+          : []),
+      ]);
+    }),
+  ];
+}
+
+/** A value's words, or the value itself where the interface has none. */
+function words(prefix, value) {
+  const key = `${prefix}.${value}`;
+  const found = t(key);
+  return found === key ? value : found;
+}
+
 function detailPanel() {
   if (!detail) {
     return el("div", { class: "panel rmdetail" }, [el("p", { class: "muted sm", text: t("routemonitor.pick") })]);
@@ -347,6 +400,7 @@ function detailPanel() {
             return b;
           })
         ),
+    ...formatChecks(parts),
     el("h4", { class: "rmh4", text: t("routemonitor.history") }),
     el(
       "ol",

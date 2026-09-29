@@ -257,6 +257,27 @@ export async function setPartOutcome(
   }
 }
 
+/**
+ * **Which format an attachment was, and what the checks found** —
+ * decision 0560. Never throws: like the part's outcome, it describes
+ * what happened and must not become a reason for it not to.
+ */
+export async function setPartFormat(
+  db: D1Database,
+  messageId: string,
+  seq: number,
+  read: { format: string; syntax: string; failed: ReadonlyArray<{ rule: string; detail?: string }> | null }
+): Promise<void> {
+  try {
+    await db
+      .prepare("UPDATE route_message_parts SET format = ?, syntax = ?, en16931_failed = ? WHERE message_id = ? AND seq = ?")
+      .bind(read.format, read.syntax, read.failed === null ? null : JSON.stringify(read.failed), messageId, seq)
+      .run();
+  } catch {
+    // Deliberately silent.
+  }
+}
+
 /** Records the item a message made. Never throws. */
 export async function linkRouteItem(
   db: D1Database,

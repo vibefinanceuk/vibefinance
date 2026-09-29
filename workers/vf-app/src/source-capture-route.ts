@@ -8,9 +8,9 @@ import {
   detailOfAttempts,
   type DetectedStructure,
 } from "./detect-structure.js";
-import { handleCaptureIntake, handleCaptureImage, handleCaptureUblXml } from "./intake-capture-route.js";
+import { handleCaptureIntake, handleCaptureImage, handleCaptureUblXml, withFormat } from "./intake-capture-route.js";
 import type { ExtractionModel } from "./extraction.js";
-import { parseUblInvoice, UblParseError } from "@vibefinance/shared";
+import { formatFacts, readInvoiceXml, UblParseError } from "@vibefinance/shared";
 import {
   storeInvoiceDocument,
   referenceStoredDocument,
@@ -725,12 +725,14 @@ async function capturePreExtractedXml(
 ): Promise<RouteResult> {
   let parsed;
   try {
-    parsed = parseUblInvoice(xml);
+    // Decision 0560: a Factur-X or ZUGFeRD carries CII, not UBL, and
+    // until this read both syntaxes every one of them was refused here.
+    parsed = readInvoiceXml(xml);
   } catch (err) {
     if (err instanceof UblParseError) {
       // The PDF declared an embedded invoice, detection extracted it,
-      // and it is not a UBL invoice. Distinct from an unreadable
-      // attachment, and worth saying which.
+      // and it is not an invoice we can read. Distinct from an
+      // unreadable attachment, and worth saying which.
       return {
         status: 422,
         body: {
@@ -746,13 +748,14 @@ async function capturePreExtractedXml(
     id: idOverride ?? crypto.randomUUID(),
     facts: {
       ...parsed.facts,
+      ...formatFacts(parsed),
       "intake.structure": "structured_pdfa",
       "intake.attempted": attempted,
     },
     lines: parsed.lines,
     enrichFacts,
   } as Parameters<typeof handleCaptureIntake>[2]);
-  return withIntakeFacts(result, "structured_pdfa", attempted);
+  return withIntakeFacts(withFormat(result, parsed), "structured_pdfa", attempted);
 }
 
 /**

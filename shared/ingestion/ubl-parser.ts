@@ -55,6 +55,36 @@ export class UblParseError extends Error {}
 export interface ParsedUblInvoice {
   facts: InvoiceFacts;
   lines: Array<InvoiceFacts & { lineNumber: number }>;
+  /**
+   * **What the EN 16931 checks need and the facts do not carry** —
+   * decision 0560. Whether each party has a postal address at all
+   * (BR-08, BR-10), and the four totals that make BR-CO-13 and BR-CO-16
+   * add up. Kept out of `facts` because none is in the rule vocabulary,
+   * and a fact nobody can write a rule against is one more thing a
+   * screen has to explain.
+   */
+  check: InvoiceCheckInputs;
+}
+
+export interface InvoiceCheckInputs {
+  sellerAddress: boolean;
+  buyerAddress: boolean;
+  /** BT-107, sum of allowances on document level. */
+  allowanceTotal?: number;
+  /** BT-108, sum of charges on document level. */
+  chargeTotal?: number;
+  /** BT-113, paid amount. */
+  prepaid?: number;
+  /** BT-114, rounding amount. */
+  rounding?: number;
+  /**
+   * Every tax total in the document currency added together, present
+   * only where there is more than one. A document may give its VAT total
+   * once in its own currency (BT-110) and once in the VAT accounting
+   * currency (BT-111); giving it twice in the same currency is an error,
+   * and BR-CO-15 is where the official rules catch it, by adding them.
+   */
+  vatTotalAll?: number;
 }
 
 /**
@@ -69,13 +99,13 @@ export interface ParsedUblInvoice {
  * The parser runs with `ignoreAttributes: false` and the default `@_`
  * prefix, so an attribute appears as a sibling key of `#text`.
  */
-function getAttribute(value: unknown, name: string): string | undefined {
+export function getAttribute(value: unknown, name: string): string | undefined {
   if (value === undefined || value === null || typeof value !== "object") return undefined;
   const raw = (value as Record<string, unknown>)[`@_${name}`];
   return raw === undefined || raw === null ? undefined : String(raw);
 }
 
-function getText(value: unknown): string | undefined {
+export function getText(value: unknown): string | undefined {
   if (value === undefined || value === null) return undefined;
   if (typeof value === "string") return value;
   if (typeof value === "number" || typeof value === "boolean") return String(value);
@@ -101,7 +131,17 @@ function findVatSchemeCompanyId(partyTaxScheme: unknown): string | undefined {
   if (partyTaxScheme === undefined || partyTaxScheme === null) return undefined;
   const schemes = Array.isArray(partyTaxScheme) ? partyTaxScheme : [partyTaxScheme];
   if (schemes.length === 1) {
-    return getText((schemes[0] as Record<string, unknown>)?.CompanyID);
+    /**
+     * **Unless it says it is something else** — decision 0560. A lone
+     * scheme with no TaxScheme/ID is taken as VAT, as before; one whose
+     * ID is present and not `VAT` is a tax registration (BT-32), and a
+     * German Steuernummer read as a VAT identifier fails BR-CO-9 and
+     * matches no supplier. Found by the XRechnung test suite.
+     */
+    const only = schemes[0] as Record<string, unknown>;
+    const schemeId = getText((only?.TaxScheme as Record<string, unknown> | undefined)?.ID);
+    if (schemeId !== undefined && schemeId.trim() !== "VAT") return undefined;
+    return getText(only?.CompanyID);
   }
   const vatScheme = schemes.find((s) => {
     const taxScheme = (s as Record<string, unknown>)?.TaxScheme as Record<string, unknown> | undefined;
@@ -154,7 +194,18 @@ function findDocumentCurrencyTaxAmount(taxTotal: unknown, documentCurrency: stri
   return getNumber(candidates[0]?.TaxAmount);
 }
 
-function getNumber(value: unknown): number | undefined {
+/** Every tax amount given in the document currency. */
+function documentCurrencyTaxAmounts(taxTotal: unknown, documentCurrency: string | undefined): number[] {
+  if (documentCurrency === undefined || taxTotal === undefined || taxTotal === null) return [];
+  const totals = Array.isArray(taxTotal) ? taxTotal : [taxTotal];
+  return totals
+    .filter((t): t is Record<string, unknown> => typeof t === "object" && t !== null)
+    .filter((t) => (t.TaxAmount as Record<string, unknown> | undefined)?.["@_currencyID"] === documentCurrency)
+    .map((t) => getNumber(t.TaxAmount))
+    .filter((n): n is number => n !== undefined);
+}
+
+export function getNumber(value: unknown): number | undefined {
   const text = getText(value);
   if (text === undefined) return undefined;
   const n = Number(text);
@@ -387,5 +438,23 @@ export function parseUblInvoice(xml: string): ParsedUblInvoice {
     return lineFacts;
   });
 
-  return { facts, lines };
+  const check: InvoiceCheckInputs = {
+    // Present means the element is there, empty or not — as the
+    // official BR-08/BR-10 tests have it. What it must contain is
+    // BR-09/BR-11's business.
+    sellerAddress: typeof supplierParty === "object" && supplierParty !== null && "PostalAddress" in supplierParty,
+    buyerAddress: typeof buyerParty === "object" && buyerParty !== null && "PostalAddress" in buyerParty,
+  };
+  const inCurrency = documentCurrencyTaxAmounts(invoice.TaxTotal, currency);
+  if (inCurrency.length > 1) check.vatTotalAll = inCurrency.reduce((a, b) => a + b, 0);
+  const allowanceTotal = getNumber(monetaryTotal?.AllowanceTotalAmount);
+  if (allowanceTotal !== undefined) check.allowanceTotal = allowanceTotal;
+  const chargeTotal = getNumber(monetaryTotal?.ChargeTotalAmount);
+  if (chargeTotal !== undefined) check.chargeTotal = chargeTotal;
+  const prepaid = getNumber(monetaryTotal?.PrepaidAmount);
+  if (prepaid !== undefined) check.prepaid = prepaid;
+  const rounding = getNumber(monetaryTotal?.PayableRoundingAmount);
+  if (rounding !== undefined) check.rounding = rounding;
+
+  return { facts, lines, check };
 }

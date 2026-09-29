@@ -187,7 +187,7 @@ export async function handleGetRouteMessage(db: D1Database, id: string): Promise
 
   const parts = await db
     .prepare(
-      `SELECT seq, role, filename, content_type, bytes, sha256, outcome, reason, stored_at
+      `SELECT seq, role, filename, content_type, bytes, sha256, outcome, reason, stored_at, format, syntax, en16931_failed
        FROM route_message_parts WHERE message_id = ? ORDER BY seq`
     )
     .bind(id)
@@ -201,6 +201,9 @@ export async function handleGetRouteMessage(db: D1Database, id: string): Promise
       outcome: string | null;
       reason: string | null;
       stored_at: string;
+      format: string | null;
+      syntax: string | null;
+      en16931_failed: string | null;
     }>();
   const events = await db
     .prepare(
@@ -283,6 +286,11 @@ export async function handleGetRouteMessage(db: D1Database, id: string): Promise
         outcome: p.outcome,
         reason: p.reason,
         storedAt: p.stored_at,
+        // Decision 0560: the e-invoice format, and the EN 16931 rules it
+        // broke — `null` where it was not checked, `[]` where it passed.
+        format: p.format,
+        syntax: p.syntax,
+        en16931Failed: parseFailed(p.en16931_failed),
       })),
       // Who did it, for what a person did (an export made or undone, 0558).
       events: events.results.map((e) => ({ seq: e.seq, at: e.at, event: e.event, partSeq: e.part_seq, detail: e.detail, actorName: e.actor_name })),
@@ -294,6 +302,16 @@ export async function handleGetRouteMessage(db: D1Database, id: string): Promise
       })),
     },
   };
+}
+
+function parseFailed(raw: string | null): Array<{ rule: string; detail?: string }> | null {
+  if (raw === null) return null;
+  try {
+    const value = JSON.parse(raw) as unknown;
+    return Array.isArray(value) ? (value as Array<{ rule: string; detail?: string }>) : null;
+  } catch {
+    return null;
+  }
 }
 
 /**

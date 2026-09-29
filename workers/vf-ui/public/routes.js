@@ -112,6 +112,83 @@ function chain(route) {
   ]);
 }
 
+/**
+ * **What a Source route reads, and what it has received — decision
+ * 0560.** Each format in the order detection tries it, how it is read,
+ * what it is checked against, and the last 30 days' attachments: how
+ * many, and how many broke an EN 16931 rule. Counted from the message
+ * parts the Route monitor already keeps.
+ */
+export const FORMAT_ROWS = ["xrechnung", "peppol_bis_3", "en16931", "factur_x", "other", "picture"];
+
+/**
+ * Which row an attachment counts in. Anything read as data from inside a
+ * PDF is a Factur-X / ZUGFeRD, whatever profile it declares; a bare CII
+ * declaring a Factur-X profile is one too.
+ */
+export function formatRow(f) {
+  if (f.format === "picture") return "picture";
+  if (f.inPdf || f.format.startsWith("factur_x")) return "factur_x";
+  if (f.format === "ubl_other" || f.format === "cii_other") return "other";
+  return FORMAT_ROWS.includes(f.format) ? f.format : null;
+}
+
+export function formatCounts(formats30d) {
+  return FORMAT_ROWS.map((key) => {
+    const rows = (formats30d ?? []).filter((f) => formatRow(f) === key);
+    return {
+      key,
+      received: rows.reduce((a, f) => a + f.received, 0),
+      failing: rows.reduce((a, f) => a + f.failing, 0),
+    };
+  });
+}
+
+function formatsPanel(route) {
+  if (route.direction !== "source" || route.current?.receivingFormat !== "detected") return null;
+  const counts = formatCounts(route.formats30d);
+  const unread = (route.formats30d ?? []).filter((f) => f.format === "unread").reduce((a, f) => a + f.received, 0);
+  return el("div", { class: "panel" }, [
+    el("div", { class: "cardhead" }, [el("h3", { text: t("routes.formats.heading") })]),
+    el("p", { class: "muted sm", text: t("routes.formats.sub") }),
+    el("table", { class: "rtformats" }, [
+      el("thead", {}, [
+        el("tr", {}, [
+          el("th", { text: t("routes.formats.col.format") }),
+          el("th", { text: t("routes.formats.col.how") }),
+          el("th", { text: t("routes.formats.col.checked") }),
+          el("th", { class: "n", text: t("routes.formats.col.days") }),
+        ]),
+      ]),
+      el(
+        "tbody",
+        {},
+        counts.map((c) =>
+          el("tr", {}, [
+            el("td", {}, [
+              el("div", { class: "fname", text: t(`routes.formats.${c.key}`) }),
+              el("div", { class: "muted", text: t(`routes.formats.${c.key}.syntax`) }),
+            ]),
+            el("td", { text: t(`routes.formats.${c.key}.how`) }),
+            el("td", { text: t(`routes.formats.${c.key}.checked`) }),
+            el("td", { class: "n" }, [
+              el("div", { text: String(c.received) }),
+              ...(c.failing > 0
+                ? [el("div", { class: "bad", text: t("routes.formats.failing").replace("{n}", String(c.failing)) })]
+                : []),
+            ]),
+          ])
+        )
+      ),
+    ]),
+    ...(unread > 0 ? [el("p", { class: "muted sm", text: t("routes.formats.unread").replace("{n}", String(unread)) })] : []),
+    el("div", { class: "rtnote" }, [
+      el("div", { class: "h", text: t("routes.formats.notstopped.h") }),
+      el("div", { text: t("routes.formats.notstopped") }),
+    ]),
+  ]);
+}
+
 function detailPanel() {
   const route = routes.find((r) => r.id === selectedId);
   if (!route || !route.current) return null;
@@ -149,7 +226,7 @@ function render() {
         topbar(t("routes.heading"), t("routes.subtitle")),
         el("div", { id: "routes-note", class: "warn" }),
         el("div", { class: "rtgrid" }, [panel("source"), panel("destination")]),
-        ...[detailPanel()].filter(Boolean),
+        ...[detailPanel(), formatsPanel(routes.find((r) => r.id === selectedId) ?? {})].filter(Boolean),
       ])
     )
   );
