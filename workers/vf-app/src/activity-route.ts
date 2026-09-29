@@ -364,22 +364,58 @@ async function commentEvents(db: D1Database, invoiceId: string): Promise<Activit
   }));
 }
 
+/**
+ * **Exported to the ERP, and an export undone — decision 0553.** Derived
+ * from the export's own record, like every system line here: an export
+ * that took this invoice (its rows are kept even after an undo), and,
+ * where it was undone, who undid it and why. Before migrations 0104/0105
+ * there is nothing to say.
+ */
+async function erpExportEvents(db: D1Database, invoiceId: string): Promise<ActivityItem[]> {
+  let rows: { created_at: string; created_by_name: string | null; reversed_at: string | null; reversed_by_name: string | null; reverse_reason: string | null }[];
+  try {
+    rows = (
+      await db
+        .prepare(
+          `SELECT x.created_at, u.name AS created_by_name, x.reversed_at, r.name AS reversed_by_name, x.reverse_reason
+           FROM erp_exports x
+           LEFT JOIN org_users u ON u.id = x.created_by
+           LEFT JOIN org_users r ON r.id = x.reversed_by
+           WHERE x.id IN (SELECT DISTINCT export_id FROM erp_export_rows WHERE invoice_id = ?)`
+        )
+        .bind(invoiceId)
+        .all<(typeof rows)[number]>()
+    ).results;
+  } catch {
+    return [];
+  }
+  // The export's own UTC time, written the way task actions write theirs (ISO), so the Timeline sorts them together.
+  const iso = (t: string) => (t.includes("T") ? t : `${t.replace(" ", "T")}Z`);
+  return rows.flatMap((r) => [
+    { kind: "action_taken" as const, at: iso(r.created_at), action: "erp_export", userName: r.created_by_name ?? "" },
+    ...(r.reversed_at
+      ? [{ kind: "action_taken" as const, at: iso(r.reversed_at), action: "erp_export_undone", userName: r.reversed_by_name ?? "", comment: r.reverse_reason }]
+      : []),
+  ]);
+}
+
 export async function handleGetActivity(db: D1Database, invoiceId: string): Promise<RouteResult> {
   const invoice = await db.prepare("SELECT id FROM invoice_headers WHERE id = ?").bind(invoiceId).first();
   if (!invoice) {
     return { status: 404, body: { error: `document ${invoiceId} does not exist` } };
   }
 
-  const [received, stageCompletions, ruleFirings, comments, taskActions, taskEnded] = await Promise.all([
+  const [received, stageCompletions, ruleFirings, comments, taskActions, taskEnded, erpExports] = await Promise.all([
     receivedEvent(db, invoiceId),
     stageCompletedEvents(db, invoiceId),
     ruleFiredEvents(db, invoiceId),
     commentEvents(db, invoiceId),
     taskActionEvents(db, invoiceId),
     taskEndedEvents(db, invoiceId),
+    erpExportEvents(db, invoiceId),
   ]);
 
-  const items = [...received, ...stageCompletions, ...ruleFirings, ...comments, ...taskActions, ...taskEnded].sort(
+  const items = [...received, ...stageCompletions, ...ruleFirings, ...comments, ...taskActions, ...taskEnded, ...erpExports].sort(
     (a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0)
   );
 

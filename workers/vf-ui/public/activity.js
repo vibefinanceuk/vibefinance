@@ -115,6 +115,9 @@ function ruleFiredLine(item) {
  * `return_to_supplier`, `discard`, `reassign`, `route_to_approver`), so
  * it doubles as the icon lookup key in `itemRow` below.
  */
+/** Actions whose icon is another button's (decision 0553): the export's Download, and Undo's Return. */
+const ACTION_ICONS = { erp_export: "download", erp_export_undone: "return" };
+
 function actionTakenLine(item) {
   const who = item.userName;
   switch (item.action) {
@@ -144,6 +147,11 @@ function actionTakenLine(item) {
         .replace("{line}", line ?? "");
       return extra === "coding-cleared" ? `${said} ${t("activity.pocodingcleared")}` : said;
     }
+    // Decision 0553 — exported to the ERP (0552), and an export undone (its reason shows below as the comment).
+    case "erp_export":
+      return t("activity.erpexported").replace("{who}", who);
+    case "erp_export_undone":
+      return t("activity.erpexportundone").replace("{who}", who);
     default:
       return "";
   }
@@ -200,7 +208,8 @@ function itemRow(item) {
     // itself, not a generic dot, so Reassign one day looks like
     // Reassign here too rather than every action reading the same.
     return el("div", { class: "activitysysline activityaction" }, [
-      el("span", { class: "activityactionicon" }, [icon(item.action)]),
+      // Decision 0553 — the ERP export's lines take the icons of its own buttons.
+      el("span", { class: "activityactionicon" }, [icon(ACTION_ICONS[item.action] ?? item.action)]),
       el(
         "div",
         { class: "activityactionbody" },

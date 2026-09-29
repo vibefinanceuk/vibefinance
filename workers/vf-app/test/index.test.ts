@@ -4854,5 +4854,14 @@ describe("the ERP export, through the real router (decision 0552)", () => {
     expect(file.headers.get("Content-Type")).toBe("text/csv; charset=utf-8");
     expect(file.headers.get("Content-Disposition")).toMatch(/^attachment; filename="vibefinance-erp-export-.*\.csv"$/);
     expect(await file.text()).toContain("X-1");
+
+    // Decision 0553 — undone through the router, with a reason.
+    const undo = await SELF.fetch(`https://example.com/erp-exports/${made.id}/undo`, {
+      method: "POST",
+      headers: { ...headers, "Content-Type": "application/json" },
+      body: JSON.stringify({ reason: "ERP import failed" }),
+    });
+    expect(undo.status).toBe(200);
+    expect(((await (await SELF.fetch("https://example.com/erp-exports", { headers })).json()) as { pending: { count: number } }).pending.count).toBe(1);
   });
 });

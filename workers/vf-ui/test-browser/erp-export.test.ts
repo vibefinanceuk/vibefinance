@@ -36,6 +36,13 @@ const STRINGS = {
     "erpexport.nothing": "There is nothing to export.",
     "erpexport.failed": "The export could not be loaded or made. Try again.",
     "erpexport.downloadfailed": "The file could not be downloaded. Try again.",
+    "action.return": "Return",
+    "erpexport.undo": "Undo",
+    "erpexport.undoprompt": "Undo this export? Its {n} invoices go back to Ready to export. Why?",
+    "erpexport.undone": "Undone",
+    "erpexport.undoneby": "by {who}, {when}",
+    "erpexport.undonemsg": "Export undone: {n} invoices are back in Ready to export.",
+    "erpexport.undofailed": "The export could not be undone. Try again.",
   },
 };
 
@@ -60,6 +67,7 @@ function stub(list: unknown, calls: Call[], posted: { status: number; body: unkn
       const method = init?.method ?? "GET";
       calls.push({ method, path });
       if (path === "/api/ui-strings") return { ok: true, json: async () => STRINGS } as Response;
+      if (/^\/api\/erp-exports\/[^/]+\/undo$/.test(path)) return { ok: true, status: 200, json: async () => ({ id: "x-0", invoicesReleased: 5 }) } as Response;
       if (path === "/api/erp-exports" && method === "POST") return { ok: posted.status < 400, status: posted.status, json: async () => posted.body } as Response;
       if (path === "/api/erp-exports") return { ok: true, json: async () => list } as Response;
       if (/^\/api\/erp-exports\/[^/]+\/csv$/.test(path)) {
@@ -139,5 +147,46 @@ describe("the ERP export screen — decision 0552", () => {
     expect(document.querySelector(".erpready")?.textContent).toContain("Nothing is waiting");
     expect(document.querySelector(".erpready button")).toBeNull();
     expect(document.querySelector(".erphistory")?.textContent).toContain("No exports yet.");
+  });
+});
+
+describe("undoing an export — decision 0553", () => {
+  it("asks why, undoes it, and says the invoices are back", async () => {
+    const calls: Call[] = [];
+    stub(PENDING, calls);
+    const prompt = vi.spyOn(window, "prompt").mockReturnValue("ERP rejected the file");
+    await open();
+    const undo = [...document.querySelectorAll(".erphistory button")].find((b) => b.textContent === "Undo") as HTMLButtonElement;
+    undo.click();
+    await settle();
+    expect(prompt).toHaveBeenCalledWith("Undo this export? Its 5 invoices go back to Ready to export. Why?");
+    expect(calls.map((c) => `${c.method} ${c.path}`)).toContain("POST /api/erp-exports/x-0/undo");
+    expect(document.getElementById("erpexport-note")?.textContent).toBe("Export undone: 5 invoices are back in Ready to export.");
+  });
+
+  it("does nothing when no reason is given", async () => {
+    const calls: Call[] = [];
+    stub(PENDING, calls);
+    vi.spyOn(window, "prompt").mockReturnValue("  ");
+    await open();
+    ([...document.querySelectorAll(".erphistory button")].find((b) => b.textContent === "Undo") as HTMLButtonElement).click();
+    await settle();
+    expect(calls.some((c) => c.path.endsWith("/undo"))).toBe(false);
+  });
+
+  it("marks an undone export, who undid it and why, still downloadable and not undoable again", async () => {
+    stub(
+      {
+        ...PENDING,
+        exports: [{ ...PENDING.exports[0], undone: { at: "2026-09-29 11:00:05.000", byName: "Dan", reason: "ERP rejected the file" } }],
+      },
+      []
+    );
+    await open();
+    const row = document.querySelector(".erphistory tbody tr") as HTMLElement;
+    expect(row.classList.contains("erpundone")).toBe(true);
+    expect(row.querySelector(".erpundonenote")?.textContent).toBe("Undone by Dan, 2026-09-29 11:00");
+    expect(row.textContent).toContain("ERP rejected the file");
+    expect([...row.querySelectorAll("button")].map((b) => b.textContent)).toEqual(["Download"]);
   });
 });

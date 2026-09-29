@@ -4702,3 +4702,9 @@
 .erptable th { text-align: left; font-size: var(--text-sm); color: var(--text-muted); font-weight: 500; padding: 6px 8px; border-bottom: 0.5px solid var(--border); }
 .erptable td { padding: 8px; border-bottom: 0.5px solid var(--border); }
 .erptable .num { text-align: right; white-space: nowrap; }
+/* Decision 0553 — an undone ERP export: still listed and downloadable, marked with who undid it and why. */
+.erptable .erpactions { display: flex; justify-content: flex-end; gap: 6px; }
+.erptable td:has(> .erpactions) { width: 1%; white-space: nowrap; }
+.erptable tr.erpundone td { color: var(--text-secondary); }
+.erpundonenote { margin-top: 3px; }
+.erpundonepill { display: inline-block; padding: 1px 8px; border-radius: 999px; font-weight: 600; background: var(--severity-warning-bg); color: var(--severity-warning-text); }

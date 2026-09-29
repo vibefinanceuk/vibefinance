@@ -1,7 +1,8 @@
 import { env } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
 import { applyTestSchema } from "./setup.js";
-import { erpExportCsv, handleCreateErpExport, handleListErpExports, toCsv, ERP_EXPORT_COLUMNS } from "../src/erp-export-route.js";
+import { erpExportCsv, handleCreateErpExport, handleListErpExports, handleUndoErpExport, toCsv, ERP_EXPORT_COLUMNS } from "../src/erp-export-route.js";
+import { handleGetActivity } from "../src/activity-route.js";
 
 /**
  * The ERP export — decision 0552. A three-stage process (Coding, Approval,
@@ -145,5 +146,49 @@ describe("the ERP export — decision 0552", () => {
     expect(csv).toContain('"Chairs, ""ergonomic""\nx2"');
     // A negative amount is a number, never escaped as a formula.
     expect(csv).toContain(",-10.00,");
+  });
+});
+
+describe("undoing an export, and the Timeline — decision 0553", () => {
+  const timeline = async (id: string) =>
+    ((await handleGetActivity(env.DB, id)).body as { items: { kind: string; action?: string; userName?: string; comment?: string }[] }).items.filter(
+      (i) => i.action?.startsWith("erp_export")
+    );
+
+  it("says on each invoice's Timeline that it was exported, and by whom", async () => {
+    await handleCreateErpExport(env.DB, "fran");
+    expect(await timeline("inv-a")).toEqual([expect.objectContaining({ kind: "action_taken", action: "erp_export", userName: "fran" })]);
+    expect(await timeline("inv-c")).toEqual([]);
+  });
+
+  it("needs a reason, puts the invoices back in Ready to export, keeps the file, and says so on the Timeline", async () => {
+    const id = ((await handleCreateErpExport(env.DB, "fran")).body as { id: string }).id;
+    const file = (await erpExportCsv(env.DB, "fran", id)).csv;
+
+    expect(await handleUndoErpExport(env.DB, "fran", id, { reason: " " })).toMatchObject({ status: 400, body: { reason: "reason_required" } });
+    expect(await handleUndoErpExport(env.DB, "fran", id, { reason: "The ERP rejected the file: unknown GL code 1610" })).toMatchObject({
+      status: 200,
+      body: { invoicesReleased: 2 },
+    });
+
+    expect((await list("fran")).pending.invoices.map((i) => i.id)).toEqual(["inv-a", "inv-b"]);
+    const past = (await list("fran")).exports as unknown as { id: string; undone: { byName: string; reason: string } | null }[];
+    expect(past[0]).toMatchObject({ id, undone: { byName: "fran", reason: "The ERP rejected the file: unknown GL code 1610" } });
+    expect((await erpExportCsv(env.DB, "fran", id)).csv).toBe(file);
+
+    expect(await timeline("inv-a")).toEqual([
+      expect.objectContaining({ action: "erp_export", userName: "fran" }),
+      expect.objectContaining({ action: "erp_export_undone", userName: "fran", comment: "The ERP rejected the file: unknown GL code 1610" }),
+    ]);
+
+    // Undone once only; and the invoices can be exported again.
+    expect(await handleUndoErpExport(env.DB, "fran", id, { reason: "again" })).toMatchObject({ status: 409, body: { reason: "already_undone" } });
+    expect(await handleCreateErpExport(env.DB, "fran")).toMatchObject({ status: 201, body: { invoiceCount: 2 } });
+    expect((await timeline("inv-a")).map((e) => e.action)).toEqual(["erp_export", "erp_export_undone", "erp_export"]);
+  });
+
+  it("is refused for an export out of this person's reach", async () => {
+    const id = ((await handleCreateErpExport(env.DB, "olga")).body as { id: string }).id;
+    expect((await handleUndoErpExport(env.DB, "fran", id, { reason: "x" })).status).toBe(404);
   });
 });

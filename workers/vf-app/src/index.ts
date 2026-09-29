@@ -1,4 +1,4 @@
-import { erpExportCsv, handleCreateErpExport, handleListErpExports } from "./erp-export-route.js";
+import { erpExportCsv, handleCreateErpExport, handleListErpExports, handleUndoErpExport } from "./erp-export-route.js";
 import { handleGetPoMatchView, handlePoCandidates, handleLinkPo, handlePairLine, PO_PANEL_PERMISSIONS } from "./po-match-panel-route.js";
 import { resolveTenant } from "@vibefinance/shared";
 import { searchOrgUnits, setInvoiceOrgUnit } from "./derive-org.js";
@@ -1590,7 +1590,7 @@ export default {
      * `GET` lists what a new export would take and the exports so far;
      * `POST` makes one; `GET /erp-exports/:id/csv` downloads its file.
      */
-    if (pathname === "/erp-exports" || /^\/erp-exports\/[^/]+\/csv$/.test(pathname)) {
+    if (pathname === "/erp-exports" || /^\/erp-exports\/[^/]+\/(csv|undo)$/.test(pathname)) {
       const { db } = resolveTenant(request, env);
       const auth = await authenticatePerson(db, request, env);
       if (!auth.user) return json({ error: auth.reason }, 401);
@@ -1617,6 +1617,13 @@ export default {
             "Content-Disposition": `attachment; filename="${result.filename}"`,
           },
         });
+      }
+      // Decision 0553 — undoing an export, with a reason.
+      const undoMatch = pathname.match(/^\/erp-exports\/([^/]+)\/undo$/);
+      if (undoMatch && request.method === "POST") {
+        const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+        const result = await handleUndoErpExport(db, auth.user.id, decodeURIComponent(undoMatch[1]), body, org);
+        return json(result.body, result.status);
       }
       return json({ error: "method not allowed" }, 405);
     }

@@ -5094,6 +5094,40 @@ describe("the document/timeline tabs (decision 0269)", () => {
     expect(document.querySelector(".activityactioncomment")).toBeNull();
   });
 
+  it("shows an ERP export and its undoing, with the reason, and each with an icon (decision 0553)", async () => {
+    const base = BASE_ROUTES["/api/ui-strings"] as { locale: string; strings: Record<string, string> };
+    stubFetch({
+      ...BASE_ROUTES,
+      "/api/ui-strings": {
+        ...base,
+        strings: {
+          ...base.strings,
+          "activity.erpexported": "{who} exported this invoice to the ERP",
+          "activity.erpexportundone": "{who} undid its ERP export, so it is back in Ready to export",
+        },
+      },
+      "/api/documents/inv-1/activity": {
+        items: [
+          { kind: "action_taken", at: "2026-09-29T10:15:00.000Z", action: "erp_export", userName: "Fran" },
+          { kind: "action_taken", at: "2026-09-29T11:00:00.000Z", action: "erp_export_undone", userName: "Dan", comment: "ERP rejected GL 1610" },
+        ],
+      },
+    });
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { openViewer } = await import("/viewer.js");
+    await openViewer(TASK, () => {});
+    await new Promise((r) => setTimeout(r, 0));
+    (timelineTabButton() as HTMLButtonElement).click();
+
+    expect(document.body.textContent).toContain("Fran exported this invoice to the ERP");
+    expect(document.body.textContent).toContain("Dan undid its ERP export, so it is back in Ready to export");
+    expect([...document.querySelectorAll(".activityactioncomment")].map((c) => c.textContent)).toEqual(["ERP rejected GL 1610"]);
+    const icons = [...document.querySelectorAll(".activityaction .activityactionicon svg")];
+    expect(icons).toHaveLength(2);
+    expect(icons.every((svg) => svg.innerHTML !== "")).toBe(true);
+  });
+
   it("shows a line pairing, and a cleared one, in words (decision 0532)", async () => {
     stubFetch({
       ...BASE_ROUTES,

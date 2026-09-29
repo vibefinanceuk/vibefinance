@@ -539,6 +539,7 @@ describe("the proxy carries every path a screen calls (decision 0131)", () => {
     ["GET", "/api/erp-exports"],
     ["POST", "/api/erp-exports"],
     ["GET", "/api/erp-exports/x-1/csv"],
+    ["POST", "/api/erp-exports/x-1/undo"],
     ["GET", "/api/coding-lists/project"],
     ["POST", "/api/coding-lists/project"],
     ["PUT", "/api/coding-lists/project/p-1"],

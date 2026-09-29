@@ -266,8 +266,8 @@ function visibleExportClause(units: string[] | null): { sql: string; binds: unkn
   if (units.length === 0) return { sql: "AND 1 = 0", binds: [] };
   return {
     sql: `AND NOT EXISTS (
-            SELECT 1 FROM erp_export_invoices ei JOIN invoice_headers h ON h.id = ei.invoice_id
-            WHERE ei.export_id = x.id AND (h.org_unit_id IS NULL OR h.org_unit_id NOT IN (${units.map(() => "?").join(", ")})))`,
+            SELECT 1 FROM erp_export_rows er JOIN invoice_headers h ON h.id = er.invoice_id
+            WHERE er.export_id = x.id AND (h.org_unit_id IS NULL OR h.org_unit_id NOT IN (${units.map(() => "?").join(", ")})))`,
     binds: units,
   };
 }
@@ -305,13 +305,25 @@ export async function handleListErpExports(db: D1Database, userId: string, curre
   const exports = (
     await db
       .prepare(
-        `SELECT x.id, x.created_at, x.invoice_count, x.row_count, u.name AS created_by_name
-         FROM erp_exports x LEFT JOIN org_users u ON u.id = x.created_by
+        `SELECT x.id, x.created_at, x.invoice_count, x.row_count, u.name AS created_by_name,
+                x.reversed_at, r.name AS reversed_by_name, x.reverse_reason
+         FROM erp_exports x
+         LEFT JOIN org_users u ON u.id = x.created_by
+         LEFT JOIN org_users r ON r.id = x.reversed_by
          WHERE 1 = 1 ${visible.sql}
          ORDER BY x.created_at DESC LIMIT 50`
       )
       .bind(...visible.binds)
-      .all<{ id: string; created_at: string; invoice_count: number; row_count: number; created_by_name: string | null }>()
+      .all<{
+        id: string;
+        created_at: string;
+        invoice_count: number;
+        row_count: number;
+        created_by_name: string | null;
+        reversed_at: string | null;
+        reversed_by_name: string | null;
+        reverse_reason: string | null;
+      }>()
   ).results;
   return {
     status: 200,
@@ -323,6 +335,8 @@ export async function handleListErpExports(db: D1Database, userId: string, curre
         createdByName: x.created_by_name,
         invoiceCount: x.invoice_count,
         rowCount: x.row_count,
+        // Decision 0553 — undone: who, when, why. The file is still there to download.
+        undone: x.reversed_at ? { at: x.reversed_at, byName: x.reversed_by_name, reason: x.reverse_reason } : null,
       })),
       columns: ERP_EXPORT_COLUMNS,
     },
@@ -388,4 +402,41 @@ export async function erpExportCsv(
   ).results.map((r) => JSON.parse(r.row_json) as ErpExportRow);
   const stamp = x.created_at.slice(0, 16).replace(/[-: ]/g, "").replace("T", "");
   return { status: 200, csv: toCsv(rows), filename: `vibefinance-erp-export-${stamp}-${exportId.slice(0, 8)}.csv` };
+}
+
+/**
+ * **Undoing an export — decision 0553.** For when the file failed to
+ * import on the ERP side. The whole export is undone, with a reason:
+ * its invoices go back to Ready to export (so the next export takes them
+ * again), and the export is kept, marked undone with who, when and why.
+ * Its rows stay, so the file can still be downloaded. Each invoice's
+ * Timeline says it was exported, and that the export was undone.
+ */
+export async function handleUndoErpExport(
+  db: D1Database,
+  userId: string,
+  exportId: string,
+  body: Record<string, unknown>,
+  currentOrg: string | null = null
+): Promise<RouteResult> {
+  const reason = typeof body.reason === "string" ? body.reason.trim() : "";
+  if (!reason) return { status: 400, body: { error: "Say why the export is being undone.", reason: "reason_required" } };
+  const units = await exportUnits(db, userId, currentOrg);
+  const visible = visibleExportClause(units);
+  const x = await db
+    .prepare(`SELECT x.id, x.reversed_at FROM erp_exports x WHERE x.id = ? ${visible.sql}`)
+    .bind(exportId, ...visible.binds)
+    .first<{ id: string; reversed_at: string | null }>();
+  if (!x) return { status: 404, body: { error: `export ${exportId} does not exist` } };
+  if (x.reversed_at) return { status: 409, body: { error: "This export has already been undone.", reason: "already_undone" } };
+  const count = await db.prepare("SELECT count(*) AS n FROM erp_export_invoices WHERE export_id = ?").bind(exportId).first<{ n: number }>();
+  await db.batch([
+    db.prepare("DELETE FROM erp_export_invoices WHERE export_id = ?").bind(exportId),
+    db
+      .prepare(
+        "UPDATE erp_exports SET reversed_at = strftime('%Y-%m-%d %H:%M:%f', 'now'), reversed_by = ?, reverse_reason = ? WHERE id = ? AND reversed_at IS NULL"
+      )
+      .bind(userId, reason, exportId),
+  ]);
+  return { status: 200, body: { id: exportId, invoicesReleased: count?.n ?? 0 } };
 }

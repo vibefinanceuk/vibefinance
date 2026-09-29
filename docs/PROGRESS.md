@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 29 September 2026 (decision 0552). A living document: what
+Last updated 29 September 2026 (decision 0553). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,12 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### ERP export on the Timeline, and undo (0553)
+- Each invoice's Timeline says it was exported, and when an export was
+  undone, by whom and why.
+- Undo a whole export with a reason: its invoices go back to Ready to
+  export; the export stays listed as undone and downloadable.
 
 ### The ERP export (0552)
 - A CSV file of payment-eligible invoices (process completed, or at its

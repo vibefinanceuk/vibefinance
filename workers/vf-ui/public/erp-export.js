@@ -70,6 +70,34 @@ async function download(id) {
   }
 }
 
+/**
+ * **Undo an export — decision 0553.** For when the file failed to import
+ * on the ERP side: its invoices go back to Ready to export, and the
+ * export stays in the list, marked undone, still downloadable. A reason
+ * is asked for, and shows on each invoice's Timeline.
+ */
+async function undo(x) {
+  const reason = window.prompt(t("erpexport.undoprompt").replace("{n}", String(x.invoiceCount)));
+  if (reason === null || reason.trim() === "") return;
+  try {
+    const response = await fetch(withOrg(`/api/erp-exports/${encodeURIComponent(x.id)}/undo`), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reason: reason.trim() }),
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      note(body.error ?? t("erpexport.undofailed"));
+      return;
+    }
+    await load();
+    render();
+    note(t("erpexport.undonemsg").replace("{n}", String(body.invoicesReleased)), { success: true });
+  } catch {
+    note(t("erpexport.undofailed"));
+  }
+}
+
 async function exportNow() {
   if (busy) return;
   busy = true;
@@ -151,12 +179,29 @@ function historyPanel() {
             "tbody",
             {},
             data.exports.map((x) =>
-              el("tr", {}, [
-                el("td", { text: String(x.createdAt ?? "").slice(0, 16).replace("T", " ") }),
+              el("tr", { class: x.undone ? "erpundone" : "" }, [
+                el("td", {}, [
+                  el("div", { text: String(x.createdAt ?? "").slice(0, 16).replace("T", " ") }),
+                  // Decision 0553 — undone, by whom, when and why.
+                  ...(x.undone
+                    ? [
+                        el("div", { class: "erpundonenote sm" }, [
+                          el("span", { class: "erpundonepill", text: t("erpexport.undone") }),
+                          ` ${t("erpexport.undoneby").replace("{who}", x.undone.byName ?? "—").replace("{when}", String(x.undone.at ?? "").slice(0, 16).replace("T", " "))}`,
+                        ]),
+                        el("div", { class: "muted sm", text: x.undone.reason ?? "" }),
+                      ]
+                    : []),
+                ]),
                 el("td", { text: x.createdByName ?? "—" }),
                 el("td", { class: "num", text: String(x.invoiceCount) }),
                 el("td", { class: "num", text: String(x.rowCount) }),
-                el("td", { class: "num" }, [actionLink("download", { onclick: () => download(x.id) })]),
+                el("td", { class: "num" }, [
+                  el("div", { class: "erpactions" }, [
+                    actionLink("download", { onclick: () => download(x.id) }),
+                    ...(x.undone ? [] : [actionLink("return", { label: t("erpexport.undo"), onclick: () => undo(x) })]),
+                  ]),
+                ]),
               ])
             )
           ),
