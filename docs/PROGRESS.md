@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 29 September 2026 (decision 0547). A living document: what
+Last updated 29 September 2026 (decision 0548). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,16 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Split coding (0548)
+- A line's cost shared across 2–10 rows, each with a cost centre or
+  project and a GL code, by % or amount; the Commodity Code stays on the
+  line. Held in `invoice_line_coding_splits`; the line's own three blank.
+- Checked at save (balance, lists, either/or) and at Complete (per row);
+  Cost-Object approval per share; budgets count only a project's share;
+  "Split like last time"; a "Split · n" chip in the line table.
+- Line-scope rules do not yet see split rows' values. No ERP export yet.
+- Full reasoning and verification counts in decision 0548.
 
 ### A supplier site can be project-only expenditure (0547)
 - `suppliers.project_only`, set on the Suppliers screen and kept through

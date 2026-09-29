@@ -26,6 +26,46 @@ let lines = [];
 let lineNumberOf = new WeakMap();
 /** Decision 0536 — redraws the open document after the PO matching panel changes it. */
 let reopenViewer = null;
+/**
+ * **Split coding — decision 0548.** Each split line's rows, by the line
+ * object in `lines`: `{costCentre, project, glCode, sharePct, amount}`.
+ * An empty list means "the split was removed here". Absent: never split.
+ */
+let splitsOf = new WeakMap();
+/** Names of coding values already seen (pickers, suggestions), for the Split chip's hover text. */
+const codingNames = new Map();
+/** The three a split row carries; the Commodity Code stays on the line. */
+const SPLIT_FIELDS = ["BT-133", "coding.project", "coding.gl_code"];
+
+function round2(n) {
+  return Math.round(n * 100) / 100;
+}
+
+/** Amounts from percentage shares; when the shares make 100, pennies left by rounding go to the last row. */
+function splitAmounts(net, pcts) {
+  const amounts = pcts.map((p) => round2((net * p) / 100));
+  const sum = pcts.reduce((a, b) => a + b, 0);
+  if (amounts.length > 0 && Math.abs(sum - 100) < 1e-6) {
+    amounts[amounts.length - 1] = round2(net - amounts.slice(0, -1).reduce((a, b) => a + b, 0));
+  }
+  return amounts;
+}
+
+/** A split row's money, in the reader's own format. */
+function splitMoney(v) {
+  return Number(v).toLocaleString(currentLocale(), { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+/** The Split chip's hover text: each row's cost centre or project, its share and amount. */
+function splitSummary(rows, net) {
+  return rows
+    .map((r) => {
+      const id = r.costCentre || r.project || "—";
+      const pct = r.sharePct ?? (net ? round2((r.amount / net) * 100) : 0);
+      return `${codingNames.get(id) ?? id} ${pct}% ${splitMoney(r.amount)}`;
+    })
+    .join(" · ");
+}
 
 /**
  * The current exceptions — decision 0119.
@@ -948,6 +988,11 @@ function lineRow(line, index) {
       return el("td", {}, [el("div", { class: "readonly", text: line[spec.field] ?? "—" })]);
     }
 
+    // Decision 0548 — a split line's cost centre, project and GL code are its rows', changed in the Coding pop-out.
+    if (SPLIT_FIELDS.includes(spec.field) && (splitsOf.get(line) ?? []).length) {
+      return el("td", {}, [el("div", { class: "readonly muted splitcell", text: t("viewer.coding.split.cell") })]);
+    }
+
     // BT-130 is a UN/ECE code, so the line table picks one too.
     const picker = codeInput(spec.field, undefined, line[spec.field]);
     const input =
@@ -987,19 +1032,24 @@ function lineRow(line, index) {
         // Decision 0537 — on a PO invoice only a Non-PO line is coded by hand.
         const lockedNote = codingLockedNote(line);
         const coded = !lockedNote && lineIsCoded(line);
+        // Decision 0548 — a split line shows "Split · n", and says where each share goes on hover.
+        const split = splitsOf.get(line) ?? [];
         const button = el("button", {
           // `codingbtn` — decision 0511: what `markOne` marks when this
           // line's coding is not on Account Coding's own lists, since
           // the coding fields themselves live in the pop-out, not here.
-          class: `rm codingbtn${lockedNote ? " locked" : coded ? " coded" : ""}`,
+          class: `rm codingbtn${split.length ? " split" : ""}${lockedNote ? " locked" : coded ? " coded" : ""}`,
           title: lockedNote
             ? `${t("action.coding")} — ${lockedNote}`
-            : coded
-              ? `${t("action.coding")} — ${t("viewer.coding.complete")}`
-              : t("action.coding"),
+            : split.length
+              ? `${t("action.coding")} — ${splitSummary(split, Number(line["BT-131"]))}`
+              : coded
+                ? `${t("action.coding")} — ${t("viewer.coding.complete")}`
+                : t("action.coding"),
           onclick: () => openLineCodingPopout(line, { lockedNote }),
         });
-        button.append(icon("coding"));
+        if (split.length) button.append(el("span", { class: "splitchip", text: t("viewer.coding.split.chip").replace("{n}", String(split.length)) }));
+        else button.append(icon("coding"));
         return button;
       })(),
     ]),
@@ -1118,8 +1168,8 @@ async function fetchCodingSuggestions() {
     const response = await fetch(`/api/invoices/${encodeURIComponent(current.subject.id)}/coding-suggestions`);
     if (!response.ok) return {};
     const body = await response.json();
-    // Decision 0539 — one suggestion per line, keyed by line number.
-    return body.lines ?? {};
+    // Decision 0539 — one suggestion per line, keyed by line number; decision 0548 — and the supplier's last split.
+    return { lines: body.lines ?? {}, split: body.split ?? null };
   } catch {
     return {};
   }
@@ -1341,7 +1391,8 @@ async function openLineCodingPopout(line, { lockedNote = null } = {}) {
   const editable = new Set(
     CODING_PICKER_FIELDS.filter((spec) => fieldSpec(spec.field)?.visibility === "edit" && canEditAnything && !lockedNote).map((s) => s.field)
   );
-  const suggestion = editable.size > 0 ? (await fetchCodingSuggestions())[String(lineNumber)] ?? null : null;
+  const suggestions = editable.size > 0 ? await fetchCodingSuggestions() : { lines: {}, split: null };
+  const suggestion = suggestions.lines?.[String(lineNumber)] ?? null;
 
   const chosen = Object.fromEntries(CODING_PICKER_FIELDS.map((spec) => [spec.field, line[spec.field] || null]));
 
@@ -1545,14 +1596,400 @@ async function openLineCodingPopout(line, { lockedNote = null } = {}) {
     return box;
   };
 
+  /**
+   * **Split coding — decision 0548.** A line's cost shared across two to
+   * ten rows, each with its own cost centre or project and GL code, by
+   * percentage or by amount; the Commodity Code stays on the whole line.
+   * `splitRows` is the working copy (null: not split). Nothing reaches
+   * the line until Done, and Done waits until the rows add up to the
+   * line's net amount; closing an unbalanced split any other way leaves
+   * the line as it was.
+   */
+  const lineNet = Number(line["BT-131"]);
+  const heldSplit = splitsOf.get(line) ?? [];
+  const canSplit =
+    !lockedNote && canEditAnything && (editable.has("BT-133") || editable.has("coding.project")) && Number.isFinite(lineNet) && lineNet !== 0;
+  let splitRows = heldSplit.length ? heldSplit.map((r) => ({ ...r })) : null;
+  let splitMode = splitRows && !splitRows.every((r) => r.sharePct !== null && r.sharePct !== undefined) ? "amount" : "pct";
+  let splitTouched = false;
+  const glShown = !!fieldSpec("coding.gl_code");
+  const splitBox = el("div", { class: "codingsplit" });
+  const splitFoot = el("span", { class: "muted sm codingsplitnote" });
+  const doneButton = el("button", { type: "button", class: "primary", text: t("viewer.coding.done") });
+  // The footer's left side and the whole-line suggestion follow split mode; set once both exist below.
+  const footLeft = el("span", { class: "codingfootleft" });
+  let refreshFoot = () => {};
+
   const fieldsGrid = el("div", { class: "codingfields" });
   const renderFields = () =>
     fieldsGrid.replaceChildren(
-      ...(eitherOr
-        ? [objectCard(), ...CODING_PICKER_FIELDS.filter((spec) => !Object.values(COST_OBJECTS).includes(spec.field)).map(card)]
-        : CODING_PICKER_FIELDS.map(card))
+      ...(splitRows
+        ? // Split: the rows carry cost centre, project and GL code; what is left belongs to the whole line.
+          CODING_PICKER_FIELDS.filter((spec) => !SPLIT_FIELDS.includes(spec.field)).map((spec) => {
+            const box = card(spec);
+            box.querySelector(".codingfieldlabel")?.append(` · ${t("viewer.coding.split.wholeline")}`);
+            return box;
+          })
+        : eitherOr
+          ? [objectCard(), ...CODING_PICKER_FIELDS.filter((spec) => !Object.values(COST_OBJECTS).includes(spec.field)).map(card)]
+          : CODING_PICKER_FIELDS.map(card))
     );
   renderFields();
+
+  const splitState = () => {
+    const amounts =
+      splitMode === "pct" ? splitAmounts(lineNet, splitRows.map((r) => Number(r.sharePct) || 0)) : splitRows.map((r) => Number(r.amount) || 0);
+    const total = round2(amounts.reduce((a, b) => a + b, 0));
+    const left = round2(lineNet - total);
+    const balanced =
+      splitRows.length >= 2 && Math.abs(left) <= 0.005 && amounts.every((a) => a !== 0 && Math.sign(a) === Math.sign(lineNet));
+    return { amounts, total, left, balanced };
+  };
+
+  const rowPicker = (row, field, key) => {
+    const spec = CODING_PICKER_FIELDS.find((x) => x.field === field);
+    const label = t(`field.${field.toLowerCase()}`);
+    if (!canSplit || !editable.has(field)) {
+      const id = row[key];
+      return el("div", { class: "readonly", text: id ? codingNames.get(id) ?? id : "—" });
+    }
+    const filters = () =>
+      Object.fromEntries(
+        spec.filterKeys.map((k) => [k, k === "company_code" ? stored.orgUnitId : k === "cost_centre" ? row.costCentre : chosen["coding.commodity_code"]])
+      );
+    return searchableEntryPicker({
+      current: row[key],
+      hint: t("viewer.coding.searchhint"),
+      resolveCurrent: row[key]
+        ? async () => {
+            const id = row[key];
+            if (codingNames.has(id)) return { id, name: codingNames.get(id) };
+            const found = await fetchCodingEntries(spec.listType, id);
+            return found.find((e) => e.id === id) ?? null;
+          }
+        : null,
+      fetchResults: (q) => fetchCodingEntries(spec.listType, q, filters(), { activeOnly: true }),
+      fieldLabel: label,
+      results,
+      scopeNote: () => spec.filterKeys.filter((k) => filters()[k]).map((k) => t(FILTER_FIELD_LABEL_KEYS[k] ?? k)),
+      onChoose: (item) => {
+        row[key] = item?.id ?? null;
+        if (item) codingNames.set(item.id, item.name);
+        // Decision 0540 — a row holds a cost centre or a project, as a line does.
+        if (item && eitherOr && (key === "costCentre" || key === "project")) row[key === "costCentre" ? "project" : "costCentre"] = null;
+        splitTouched = true;
+        updateSplit();
+        if (key === "project") showRowBudgets();
+      },
+    });
+  };
+
+  // A row's cost object: Project alone for a project-only supplier (0547), a switch under "one or the other" (0540), both otherwise.
+  const objectCell = (row) => {
+    const kindOf = () => (projectOnly ? "project" : row._kind ?? (row.project && !row.costCentre ? "project" : "cost_centre"));
+    const cell = [];
+    if (projectOnly) {
+      cell.push(
+        el("div", { class: "splitobjectrow" }, [
+          el("span", { class: "splitkind project", text: t("field.coding.project") }),
+          rowPicker(row, "coding.project", "project"),
+        ])
+      );
+    } else if (eitherOr) {
+      const kind = kindOf();
+      cell.push(el("div", { class: "splitobjectrow" }, [
+        el(
+          "div",
+          { class: "codingswitch small", role: "group", "aria-label": t("field.cost_object") },
+          [
+            ["cost_centre", "BT-133"],
+            ["project", "coding.project"],
+          ].map(([k, field]) =>
+            el("button", {
+              type: "button",
+              class: k === kind ? "on" : "",
+              "aria-pressed": String(k === kind),
+              text: t(`field.${field.toLowerCase()}`),
+              disabled: canSplit ? undefined : "disabled",
+              onclick: () => {
+                if (k === kindOf()) return;
+                row._kind = k;
+                renderSplit();
+              },
+            })
+          )
+        ),
+        kind === "project" ? rowPicker(row, "coding.project", "project") : rowPicker(row, "BT-133", "costCentre"),
+      ]));
+    } else {
+      cell.push(rowPicker(row, "BT-133", "costCentre"), rowPicker(row, "coding.project", "project"));
+    }
+    row._budget = el("div", { class: "codingsplitbudget sm" });
+    cell.push(row._budget);
+    return cell;
+  };
+
+  /** A project row's budget, with every share of it on this invoice counted (0542). */
+  let budgetRun = 0;
+  async function showRowBudgets() {
+    if (!splitRows || !current?.subject?.id) return;
+    const run = ++budgetRun;
+    const { amounts } = splitState();
+    for (const [i, row] of splitRows.entries()) {
+      row._budget?.replaceChildren();
+      if (!row.project) continue;
+      let usage = null;
+      try {
+        const response = await fetch(`/api/invoices/${encodeURIComponent(current.subject.id)}/project-usage?project=${encodeURIComponent(row.project)}`);
+        usage = response.ok ? await response.json() : null;
+      } catch {
+        usage = null;
+      }
+      if (run !== budgetRun || !usage || usage.budget === null || usage.budget === undefined) continue;
+      const here = splitRows.reduce((sum, r, j) => sum + (r.project === row.project ? amounts[j] : 0), 0);
+      const elsewhere = lines.reduce((sum, l) => {
+        if (l === line) return sum;
+        const rows = splitsOf.get(l) ?? [];
+        if (rows.length) return sum + rows.reduce((a, r) => a + (r.project === row.project ? Number(r.amount) || 0 : 0), 0);
+        return sum + (l["coding.project"] === row.project ? Number(l["BT-131"]) || 0 : 0);
+      }, 0);
+      const budget = Number(usage.budget);
+      const used = (Number(usage.usedByOthers) || 0) + here + elsewhere;
+      const over = used > budget;
+      row._budget.replaceChildren(
+        el("span", { class: "mini" }, [el("i", { class: over ? "over" : "", style: `width:${budget > 0 ? Math.min(100, (used / budget) * 100) : 100}%` })]),
+        el("span", {
+          class: over ? "pmover" : "muted",
+          text: over
+            ? t("viewer.coding.overbudget").replace("{amount}", splitMoney(used - budget))
+            : t("viewer.coding.split.budget").replace("{pct}", String(budget > 0 ? Math.round((used / budget) * 100) : 100)),
+        })
+      );
+      void i;
+    }
+  }
+
+  const computedCells = [];
+  const splitBar = el("div", { class: "splitbar", "aria-hidden": "true" });
+  const splitStatus = el("div", { class: "splittotal" });
+
+  function updateSplit() {
+    if (!splitRows) {
+      doneButton.disabled = false;
+      splitFoot.textContent = "";
+      return;
+    }
+    const { amounts, total, left, balanced } = splitState();
+    for (const [i, cell] of computedCells.entries()) {
+      cell.textContent =
+        splitMode === "pct" ? splitMoney(amounts[i]) : `${round2(((Number(splitRows[i].amount) || 0) / lineNet) * 100)}%`;
+    }
+    const pct = round2((total / lineNet) * 100);
+    splitBar.replaceChildren(
+      ...amounts.map((a, i) => el("i", { class: `c${i % 6}`, style: `width:${Math.max(0, Math.min(100, (a / lineNet) * 100))}%` }))
+    );
+    const fill = el("button", {
+      type: "button",
+      class: "splitfill",
+      text: t("viewer.coding.split.fill"),
+      onclick: () => {
+        const last = splitRows[splitRows.length - 1];
+        if (splitMode === "pct") {
+          last.sharePct = round2(100 - splitRows.slice(0, -1).reduce((a, r) => a + (Number(r.sharePct) || 0), 0));
+        } else {
+          last.amount = round2((Number(last.amount) || 0) + left);
+        }
+        splitTouched = true;
+        renderSplit();
+      },
+    });
+    splitStatus.className = `splittotal ${balanced ? "ok" : "warn"}`;
+    splitStatus.replaceChildren(
+      el("span", {
+        text: balanced
+          ? t("viewer.coding.split.balanced").replace("{pct}", String(pct)).replace("{done}", splitMoney(total)).replace("{total}", splitMoney(lineNet))
+          : (Math.sign(left) === Math.sign(lineNet) ? t("viewer.coding.split.left") : t("viewer.coding.split.over"))
+              .replace("{pct}", String(pct))
+              .replace("{left}", splitMoney(Math.abs(left))),
+      }),
+      ...(balanced ? [el("span", { "aria-hidden": "true", text: "✓" })] : canSplit && left !== 0 ? [fill] : [])
+    );
+    doneButton.disabled = canSplit && !balanced;
+    splitFoot.textContent = balanced ? t("viewer.coding.split.rounding") : t("viewer.coding.split.waits");
+  }
+
+  function renderSplit() {
+    computedCells.length = 0;
+    refreshFoot();
+    if (!splitRows) {
+      splitBox.replaceChildren(
+        ...(canSplit
+          ? [
+              el("button", {
+                type: "button",
+                class: "linklike codingsplitstart",
+                text: t("viewer.coding.split.start"),
+                onclick: () => {
+                  // The line's own coding becomes the first row, half each to start with.
+                  splitRows = [
+                    { costCentre: chosen["BT-133"] ?? null, project: chosen["coding.project"] ?? null, glCode: chosen["coding.gl_code"] ?? null, sharePct: 50, amount: 0 },
+                    { costCentre: null, project: null, glCode: null, sharePct: 50, amount: 0 },
+                  ];
+                  splitMode = "pct";
+                  splitTouched = true;
+                  renderFields();
+                  renderSplit();
+                },
+              }),
+            ]
+          : [])
+      );
+      updateSplit();
+      return;
+    }
+    const { amounts } = splitState();
+    const modeSwitch = el(
+      "div",
+      { class: "codingswitch", role: "group", "aria-label": t("viewer.coding.split.title") },
+      [
+        ["pct", "viewer.coding.split.bypct"],
+        ["amount", "viewer.coding.split.byamount"],
+      ].map(([mode, key]) =>
+        el("button", {
+          type: "button",
+          class: mode === splitMode ? "on" : "",
+          "aria-pressed": String(mode === splitMode),
+          text: t(key),
+          disabled: canSplit ? undefined : "disabled",
+          onclick: () => {
+            if (mode === splitMode) return;
+            const now = splitState().amounts;
+            for (const [i, r] of splitRows.entries()) {
+              if (mode === "amount") {
+                r.amount = now[i];
+                r.sharePct = null;
+              } else {
+                r.sharePct = round2(((Number(r.amount) || 0) / lineNet) * 100);
+              }
+            }
+            splitMode = mode;
+            splitTouched = true;
+            renderSplit();
+          },
+        })
+      )
+    );
+    const rows = splitRows.map((row, i) => {
+      const input = el("input", {
+        type: "number",
+        step: "0.01",
+        class: "splitvalue",
+        "aria-label": `${t("viewer.coding.split.row").replace("{n}", String(i + 1))} ${t(splitMode === "pct" ? "viewer.coding.split.share" : "viewer.coding.split.amount")}`,
+        value: splitMode === "pct" ? row.sharePct ?? "" : row.amount || row.amount === 0 ? String(row.amount) : "",
+        disabled: canSplit ? undefined : "disabled",
+      });
+      input.oninput = () => {
+        const v = input.value.trim() === "" ? null : Number(input.value);
+        if (splitMode === "pct") row.sharePct = v;
+        else row.amount = v ?? 0;
+        splitTouched = true;
+        updateSplit();
+      };
+      input.onchange = () => showRowBudgets();
+      const computed = el("span", { class: "splitcomputed" });
+      computedCells.push(computed);
+      return el("tr", {}, [
+        el("td", { class: "splitobject" }, objectCell(row)),
+        ...(glShown ? [el("td", { class: "splitgl" }, [rowPicker(row, "coding.gl_code", "glCode")])] : []),
+        el("td", { class: "num" }, [input, splitMode === "pct" ? el("span", { class: "muted", text: " %" }) : null].filter(Boolean)),
+        el("td", { class: "num" }, [computed]),
+        el("td", {}, [
+          canSplit && splitRows.length > 2
+            ? el("button", {
+                type: "button",
+                class: "splitremove",
+                title: t("viewer.coding.split.remove"),
+                "aria-label": t("viewer.coding.split.remove"),
+                text: "✕",
+                onclick: () => {
+                  splitRows.splice(i, 1);
+                  splitTouched = true;
+                  renderSplit();
+                },
+              })
+            : el("span", {}),
+        ]),
+      ]);
+    });
+    void amounts;
+    splitBox.replaceChildren(
+      el("div", { class: "splithead" }, [el("h4", { text: t("viewer.coding.split.title") }), modeSwitch]),
+      el("div", { class: "splittablewrap" }, [el("table", { class: "splittable" }, [
+        el("thead", {}, [
+          el("tr", {}, [
+            el("th", { text: t("field.cost_object") }),
+            ...(glShown ? [el("th", { text: t("field.coding.gl_code") })] : []),
+            el("th", { class: "num", text: t(splitMode === "pct" ? "viewer.coding.split.share" : "viewer.coding.split.amount") }),
+            el("th", { class: "num", text: t(splitMode === "pct" ? "viewer.coding.split.amount" : "viewer.coding.split.share") }),
+            el("th", {}),
+          ]),
+        ]),
+        el("tbody", {}, rows),
+      ])]),
+      splitBar,
+      splitStatus,
+      ...(canSplit
+        ? [
+            el("div", { class: "splitlinks" }, [
+              ...(splitRows.length < 10
+                ? [
+                    el("button", {
+                      type: "button",
+                      class: "linklike splitadd",
+                      text: t("viewer.coding.split.add"),
+                      onclick: () => {
+                        const { left } = splitState();
+                        splitRows.push(
+                          splitMode === "pct"
+                            ? { costCentre: null, project: null, glCode: null, sharePct: Math.max(0, round2((left / lineNet) * 100)) || null, amount: 0 }
+                            : { costCentre: null, project: null, glCode: null, sharePct: null, amount: Math.sign(left) === Math.sign(lineNet) ? left : 0 }
+                        );
+                        splitTouched = true;
+                        renderSplit();
+                      },
+                    }),
+                  ]
+                : []),
+              el("button", {
+                type: "button",
+                class: "linklike splitstop",
+                text: t("viewer.coding.split.stop"),
+                onclick: () => {
+                  // The first row's coding goes back on the line.
+                  const first = splitRows[0];
+                  for (const [field, key] of [
+                    ["BT-133", "costCentre"],
+                    ["coding.project", "project"],
+                    ["coding.gl_code", "glCode"],
+                  ]) {
+                    chosen[field] = first[key] ?? null;
+                    line[field] = first[key] ?? "";
+                  }
+                  objectKind = projectOnly || (first.project && !first.costCentre) ? "project" : "cost_centre";
+                  splitRows = null;
+                  splitTouched = true;
+                  renderFields();
+                  renderSplit();
+                },
+              }),
+            ]),
+          ]
+        : [])
+    );
+    updateSplit();
+    showRowBudgets();
+  }
+  renderSplit();
 
   /**
    * **The suggestion — decision 0539.** Shown only when it would change
@@ -1623,6 +2060,46 @@ async function openLineCodingPopout(line, { lockedNote = null } = {}) {
       : null;
 
   /**
+   * **"Split like last time" — decision 0548.** This supplier's most
+   * recent split, as shares, offered on a line that is not split yet;
+   * Accept sets the rows up for this line, still to be checked and Done.
+   */
+  const lastSplit = canSplit && !splitRows ? suggestions.split ?? null : null;
+  const lastSplitBox = lastSplit
+    ? el("div", { class: "codingsuggest codingsplitsuggest", role: "group", "aria-label": t("viewer.coding.split.last") }, [
+        el("div", { class: "codingsuggesthead" }, [
+          el("span", {}, [
+            el("b", { text: t("viewer.coding.split.last") }),
+            " ",
+            el("span", {
+              class: "codingsuggestwhy",
+              text: t("viewer.coding.split.lastwhy")
+                .replace("{invoice}", lastSplit.invoiceNumber ?? "")
+                .replace("{shares}", lastSplit.rows.map((r) => r.sharePct).join(" / ")),
+            }),
+          ]),
+          el("button", {
+            type: "button",
+            class: "primary codingsplitaccept",
+            text: t("viewer.coding.sug.accept"),
+            onclick: () => {
+              for (const [field, byId] of Object.entries(lastSplit.labels ?? {})) {
+                void field;
+                for (const [id, name] of Object.entries(byId)) codingNames.set(id, name);
+              }
+              splitRows = lastSplit.rows.map((r) => ({ costCentre: r.costCentre, project: r.project, glCode: r.glCode, sharePct: r.sharePct, amount: 0 }));
+              splitMode = "pct";
+              splitTouched = true;
+              lastSplitBox.remove();
+              renderFields();
+              renderSplit();
+            },
+          }),
+        ]),
+      ])
+    : null;
+
+  /**
    * **Also apply to the other uncoded lines — decision 0539**, unticked
    * to start with. Only lines that can be coded here (0537) and carry
    * no coding at all: a line somebody already coded is never changed.
@@ -1635,12 +2112,45 @@ async function openLineCodingPopout(line, { lockedNote = null } = {}) {
 
   const close = () => {
     backdrop.remove();
-    if (applyOthers?.checked) {
-      for (const { l } of others) for (const field of editable) if (chosen[field]) l[field] = chosen[field];
+    if (splitRows) {
+      // Decision 0548 — a balanced split replaces the line's own cost centre, project and GL code; an unbalanced one is dropped.
+      const { amounts, balanced } = splitState();
+      if (splitTouched && balanced) {
+        splitsOf.set(
+          line,
+          splitRows.map((r, i) => ({
+            costCentre: r.costCentre ?? null,
+            project: r.project ?? null,
+            glCode: r.glCode ?? null,
+            sharePct: splitMode === "pct" ? Number(r.sharePct) : null,
+            amount: amounts[i],
+          }))
+        );
+        for (const field of SPLIT_FIELDS) line[field] = "";
+      }
+    } else {
+      if (splitTouched && heldSplit.length) splitsOf.set(line, []);
+      if (applyOthers?.checked) {
+        for (const { l } of others) for (const field of editable) if (chosen[field]) l[field] = chosen[field];
+      }
     }
     // The line table reads the same `line[field]` this pop-out writes.
     renderLines();
   };
+  doneButton.onclick = close;
+  const applyNode = applyOthers
+    ? el("label", { class: "codingapplyotherslabel" }, [
+        applyOthers,
+        ` ${t("viewer.coding.applyothers").replace("{lines}", others.map((o) => o.n).join(", "))}`,
+      ])
+    : el("span", { class: "muted sm", text: editable.size > 0 ? t("viewer.coding.savehint") : "" });
+  refreshFoot = () => {
+    footLeft.replaceChildren(splitRows ? splitFoot : applyNode);
+    if (suggestionBox) suggestionBox.hidden = !!splitRows;
+    // A split's rows need the room: the pop-out widens while splitting.
+    splitBox.closest(".popout")?.classList.toggle("splitting", !!splitRows);
+  };
+  refreshFoot();
 
   const bits = [
     el("span", { class: "codingchip codingcompanycode" }, [`${t("viewer.coding.ctx.company")} `, el("b", { text: stored.buyer?.entityName ?? "—" })]),
@@ -1670,16 +2180,13 @@ async function openLineCodingPopout(line, { lockedNote = null } = {}) {
       // Spread, not `: null` — `el()` appends a null child as the text "null".
       ...(lockedNote ? [el("p", { class: "codinglocked", text: lockedNote })] : []),
       ...(suggestionBox ? [suggestionBox] : []),
+      ...(lastSplitBox ? [lastSplitBox] : []),
       fieldsGrid,
+      splitBox,
       el("div", { class: "codingresults" }, [resultsLabel, resultsList]),
       el("div", { class: "codingfoot" }, [
-        applyOthers
-          ? el("label", {}, [
-              applyOthers,
-              ` ${t("viewer.coding.applyothers").replace("{lines}", others.map((o) => o.n).join(", "))}`,
-            ])
-          : el("span", { class: "muted sm", text: editable.size > 0 ? t("viewer.coding.savehint") : "" }),
-        el("button", { type: "button", class: "primary", text: t("viewer.coding.done"), onclick: close }),
+        footLeft,
+        doneButton,
       ]),
     ]),
   ]);
@@ -1687,6 +2194,7 @@ async function openLineCodingPopout(line, { lockedNote = null } = {}) {
     if (e.target === backdrop) close();
   };
   document.body.append(backdrop);
+  refreshFoot();
   // Only takes effect once the element is actually in the document — decision 0459.
   costCentreInput?.focus();
 }
@@ -1748,6 +2256,20 @@ function lineIsCoded(line) {
   if (shown.length === 0) return false;
   const has = (f) => !!String(line[f] ?? "").trim();
   const objects = ["BT-133", "coding.project"];
+  // Decision 0548 — a split line is coded when every row is, and the line's own other coding is there.
+  const split = splitsOf.get(line) ?? [];
+  if (split.length) {
+    const exclusive = stored.costObjectRule === "exclusive";
+    const rowCoded = (r) =>
+      (!shown.some((f) => objects.includes(f)) ||
+        (exclusive && stored.supplierProjectOnly
+          ? !!r.project && !r.costCentre
+          : exclusive
+            ? !!r.costCentre !== !!r.project
+            : (!shown.includes("BT-133") || !!r.costCentre) && (!shown.includes("coding.project") || !!r.project))) &&
+      (!shown.includes("coding.gl_code") || !!r.glCode);
+    return shown.filter((f) => !SPLIT_FIELDS.includes(f)).every(has) && split.every(rowCoded);
+  }
   // Decision 0547 — a project-only supplier's line is coded when it has a project and no cost centre.
   if (stored.costObjectRule === "exclusive" && stored.supplierProjectOnly && shown.includes("coding.project")) {
     return has("coding.project") && !has("BT-133") && shown.filter((f) => !objects.includes(f)).every(has);
@@ -1870,6 +2392,8 @@ function codingGapsText(failure) {
     ...failure.gaps.map((g) =>
       [
         `${t("viewer.online")} ${g.line}`,
+        // Decision 0548 — which row of a split line.
+        ...(g.split ? [`${t("viewer.onsplit")} ${g.split}`] : []),
         // Decision 0540: "cost_object" is "cost centre or project", and "both" a line holding the two.
         t(`field.${String(g.field).toLowerCase()}`),
         g.reason === "missing" ? t("viewer.coding.missing") : t(`viewer.coding.invalid.${g.reason}`),
@@ -2882,7 +3406,7 @@ function markOne(entry, severity, reason) {
      * marked. Only for `account_coding` — any other check naming BT-133
      * is about the cell, and the cell is marked below as ever.
      */
-    if (entry.check === "account_coding" && severity === "danger" && CODING_PICKER_FIELDS.some((f) => f.field === code)) {
+    if (entry.check === "account_coding" && severity === "danger" && (code === "coding.split" || CODING_PICKER_FIELDS.some((f) => f.field === code))) {
       for (const [n, row] of rows.entries()) {
         if (entry.line && entry.line !== n + 1) continue;
         const button = row.querySelector(".codingbtn");
@@ -2926,6 +3450,10 @@ function renderExceptions() {
  * any other refusal, which keeps its existing message.
  */
 function codingRefusalText(body) {
+  // Decision 0548 — a split that does not add up, or has too few or too many rows.
+  if (body?.reason === "invalid_split" && body.problem) {
+    return t(`viewer.coding.split.refused.${body.problem}`).replace("{line}", String(body.line ?? ""));
+  }
   // Decision 0540 — a cost centre and a project keyed on one line together.
   if (body?.reason === "cost_centre_and_project" && Array.isArray(body.lines)) {
     return t("viewer.coding.bothrefused").replace("{lines}", body.lines.join(", "));
@@ -2936,6 +3464,7 @@ function codingRefusalText(body) {
     ...body.invalid.map((p) =>
       [
         p.line ? `${t("viewer.online")} ${p.line}` : null,
+        p.split ? `${t("viewer.onsplit")} ${p.split}` : null,
         t(`field.${String(p.field).toLowerCase()}`),
         `"${p.value}"`,
         t(`viewer.coding.invalid.${p.reason}`),
@@ -2963,6 +3492,29 @@ async function save(close) {
   // delete the rest. The server works out what actually changed for the
   // provenance trail (decision 0109).
   const payload = { facts };
+  /**
+   * **Every line's split, once any line has one — decision 0548.** Split
+   * rows belong to a line number, and removing a line above renumbers
+   * the rest, so each line says what it holds (`[]` for none). Unchanged
+   * rows are recognised by the server and cost nothing. A split by
+   * percentage is re-worked from the line's net amount as it stands, so
+   * correcting the amount keeps the split adding up.
+   */
+  const anySplit = lines.some((l) => splitsOf.has(l)) || stored.lines.some((l) => l.splits?.length);
+  const splitPayload = (line) => {
+    const rows = splitsOf.get(line) ?? [];
+    if (rows.length === 0) return [];
+    const net = Number(line["BT-131"]);
+    const byPct = rows.every((r) => r.sharePct !== null && r.sharePct !== undefined);
+    const amounts = byPct && Number.isFinite(net) ? splitAmounts(net, rows.map((r) => Number(r.sharePct))) : rows.map((r) => Number(r.amount));
+    return rows.map((r, i) => ({
+      costCentre: r.costCentre ?? null,
+      project: r.project ?? null,
+      glCode: r.glCode ?? null,
+      sharePct: byPct ? Number(r.sharePct) : null,
+      amount: amounts[i],
+    }));
+  };
   const usable = lines
     .filter((row) => lineFields.some((spec) => String(row[spec.field] ?? "").trim() !== ""))
     .map((line, index) => {
@@ -2990,7 +3542,7 @@ async function save(close) {
       // identifier — stated rather than left blank.
       facts["BT-126"] = String(index + 1);
 
-      return { lineNumber: index + 1, ...columnsFor(line), facts };
+      return { lineNumber: index + 1, ...columnsFor(line), facts, ...(anySplit ? { splits: splitPayload(line) } : {}) };
     });
   if (usable.length > 0) payload.lines = usable;
 
@@ -3173,6 +3725,10 @@ export async function openViewer(task, onClose) {
   // its own summary even after a line above it is removed. A line added
   // here has none until it is saved.
   lineNumberOf = new WeakMap(lines.map((line, i) => [line, stored.lines[i]?.lineNumber]));
+  // Decision 0548 — each split line's rows, as stored.
+  splitsOf = new WeakMap(
+    lines.flatMap((line, i) => (stored.lines[i]?.splits?.length ? [[line, stored.lines[i].splits.map((r) => ({ ...r }))]] : []))
+  );
 
   const shell = document.getElementById("viewer");
 

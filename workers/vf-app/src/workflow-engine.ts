@@ -1,3 +1,4 @@
+import { loadSplits } from "./coding-splits.js";
 import { evaluateRuleSet } from "@vibefinance/shared";
 import type { InvoiceFacts } from "@vibefinance/shared";
 import {
@@ -980,6 +981,16 @@ export async function visitCurrentStage(
           // toggle is on; see resolveNonPoApprovers's own comment in
           // approval-hierarchy.ts.
           poReferenced: typeof taskFacts["BT-13"] === "string" && taskFacts["BT-13"].trim() !== "",
+          // Decision 0548 — a split line's rows, each resolved at its own amount in Cost-Object mode.
+          allocations:
+            lineNumber !== null && instance.subject_type === "invoice"
+              ? ((await loadSplits(db, instance.subject_id)).get(lineNumber) ?? []).map((r) => ({
+                  costCentreId: r.costCentre,
+                  project: r.project,
+                  glCode: r.glCode,
+                  amount: r.amount,
+                }))
+              : undefined,
           collaboratorUserIds,
           // Route To Approver — decision 0495. Consumed once: the
           // first approval-hierarchy stage this cascade meets, never

@@ -1,3 +1,4 @@
+import { SPLIT_FIELDS, checkSplits, loadSplits, type CodingSplit } from "./coding-splits.js";
 import { supplierProjectOnly } from "./supplier-project-only.js";
 import type { InvoiceFacts } from "@vibefinance/shared";
 import { mergeProjectBudgetFacts } from "./project-budget.js";
@@ -162,14 +163,24 @@ export async function mergeCodingValidityFacts<L extends InvoiceFacts>(
    * so whatever coding it carries (a supplier's own BT-133 included) is
    * never checked and never flagged.
    */
-  options: { poInvoice?: boolean } = {}
+  options: {
+    poInvoice?: boolean;
+    /** Decision 0548 — each split line's rows, by line number; a row's bad value flags the line as `coding.split`. */
+    splits?: ReadonlyMap<number, CodingSplit[]>;
+  } = {}
 ): Promise<(L & { "coding.line_invalid": string })[]> {
   const cache = new CodingLookupCache(db);
   return Promise.all(
-    lines.map(async (line) => {
+    lines.map(async (line, index) => {
       if (options.poInvoice && line["po.line_non_po"] !== true) return { ...line, "coding.line_invalid": "" };
       const problems = await checkLineCoding(db, orgUnitId, line as Record<string, unknown>, undefined, cache);
-      return { ...line, "coding.line_invalid": problems.map((p) => p.field).join(",") };
+      const fields = problems.map((p) => p.field);
+      const lineNumber = Number((line as Record<string, unknown>).lineNumber) || index + 1;
+      const rows = options.splits?.get(lineNumber);
+      if (rows && rows.length > 0 && (await checkSplits(db, orgUnitId, line as Record<string, unknown>, rows, cache)).length > 0) {
+        fields.push("coding.split");
+      }
+      return { ...line, "coding.line_invalid": fields.join(",") };
     })
   );
 }
@@ -295,9 +306,10 @@ export async function mergeCodingValidityForInvoice<L extends InvoiceFacts>(
   } catch {
     // Unparseable header facts carry no order reference.
   }
-  const merged = await mergeCodingValidityFacts(db, row?.org_unit_id ?? null, lines, { poInvoice: isPoInvoice(header) });
+  const splits = await loadSplits(db, invoiceId);
+  const merged = await mergeCodingValidityFacts(db, row?.org_unit_id ?? null, lines, { poInvoice: isPoInvoice(header), splits });
   // Decision 0542 — a project's budget, for rules (project.over_budget, project.budget_used_pct).
-  return mergeProjectBudgetFacts(db, invoiceId, merged);
+  return mergeProjectBudgetFacts(db, invoiceId, merged, splits);
 }
 
 export interface CodingGap {
@@ -309,6 +321,8 @@ export interface CodingGap {
    * either/or rule is on, and `both` says a line holds the two together.
    */
   reason: "missing" | "both" | "project_required" | "project_only" | CodingProblemReason;
+  /** Decision 0548 — which row of a split line, from 1, when the gap is in one. */
+  split?: number;
 }
 
 /**
@@ -399,6 +413,8 @@ export async function codingGapsForTask(db: D1Database, taskId: string): Promise
    * against its list (0511) when present.
    */
   const COST_OBJECTS = ["BT-133", "coding.project"];
+  // Decision 0548 — what each row of a split line must carry, before the either/or rule folds the two together.
+  const editableCoding = [...required];
   const eitherOr =
     (await getCostObjectRule(db)) === "exclusive" && required.some((f) => COST_OBJECTS.includes(f));
   if (eitherOr) required = required.filter((f) => !COST_OBJECTS.includes(f));
@@ -425,6 +441,7 @@ export async function codingGapsForTask(db: D1Database, taskId: string): Promise
 
   const cache = new CodingLookupCache(db);
   const gaps: CodingGap[] = [];
+  const splits = await loadSplits(db, task.subject_id);
   for (const row of lines.results) {
     if (onlyLines && !onlyLines.has(row.line_number)) continue;
     let facts: Record<string, unknown> = {};
@@ -437,6 +454,47 @@ export async function codingGapsForTask(db: D1Database, taskId: string): Promise
       const value = facts[field];
       return value === undefined || value === null || String(value).trim() === "";
     };
+
+    /**
+     * **A split line — decision 0548.** Each row stands in for the line's
+     * cost centre, project and GL code, and is held to what the line
+     * would be: a cost object (one of the two under "one or the other",
+     * a project for a project-only supplier, 0547), a GL code where the
+     * stage makes it editable, and every value on its list. The line's
+     * other coding (the Commodity Code) is checked on the line as usual.
+     */
+    const rows = splits.get(row.line_number);
+    if (rows && rows.length > 0) {
+      const lineOnly = required.filter((f) => !(SPLIT_FIELDS as readonly string[]).includes(f));
+      for (const field of lineOnly) {
+        if (blank(field)) gaps.push({ line: row.line_number, field, reason: "missing" });
+      }
+      for (const problem of await checkLineCoding(db, task.org_unit_id, facts, new Set(lineOnly), cache)) {
+        gaps.push({ line: row.line_number, field: problem.field, reason: problem.reason });
+      }
+      const objects = editableCoding.filter((f) => COST_OBJECTS.includes(f));
+      for (const [i, r] of rows.entries()) {
+        const split = i + 1;
+        const push = (field: string, reason: CodingGap["reason"]) => gaps.push({ line: row.line_number, field, reason, split });
+        if (objects.length > 0) {
+          if (projectOnly) {
+            if (!r.project) push("coding.project", "project_required");
+            if (r.costCentre) push("BT-133", "project_only");
+          } else if (eitherOr) {
+            if (!r.costCentre && !r.project) push("cost_object", "missing");
+            if (r.costCentre && r.project) push("cost_object", "both");
+          } else {
+            if (objects.includes("BT-133") && !r.costCentre) push("BT-133", "missing");
+            if (objects.includes("coding.project") && !r.project) push("coding.project", "missing");
+          }
+        }
+        if (editableCoding.includes("coding.gl_code") && !r.glCode) push("coding.gl_code", "missing");
+      }
+      for (const p of await checkSplits(db, task.org_unit_id, facts, rows, cache)) {
+        gaps.push({ line: row.line_number, field: p.field, reason: p.reason, split: p.split });
+      }
+      continue;
+    }
     for (const field of required) {
       if (blank(field)) gaps.push({ line: row.line_number, field, reason: "missing" });
     }

@@ -1,3 +1,4 @@
+import { checkSplits, loadSplits } from "./coding-splits.js";
 import { supplierProjectOnly } from "./supplier-project-only.js";
 import type { InvoiceFacts } from "@vibefinance/shared";
 import { getCostObjectRule } from "./coding-config-route.js";
@@ -229,6 +230,77 @@ async function labelsFor(db: D1Database, values: Record<string, string>): Promis
   return labels;
 }
 
+export interface SplitSuggestion {
+  /** The earlier invoice's own number, to say where it came from. */
+  invoiceNumber: string | null;
+  rows: { costCentre: string | null; project: string | null; glCode: string | null; sharePct: number }[];
+  /** Each value's own name, by field and id: `labels["BT-133"]["CC-300"]`. */
+  labels: Record<string, Record<string, string>>;
+}
+
+/**
+ * **"Split like last time" — decision 0548.** The split this supplier's
+ * most recent split line was saved with, as shares of 100, for the pop-
+ * out to apply to the line in front of it. Offered only when every row
+ * would still be accepted: on its lists and open, one cost object a row
+ * under "one or the other", a project for a project-only site (0547).
+ * `null` otherwise.
+ */
+async function lastSplit(
+  db: D1Database,
+  supplierVat: string,
+  invoiceId: string,
+  orgUnitId: string | null,
+  opts: { eitherOr: boolean; projectOnly: boolean }
+): Promise<SplitSuggestion | null> {
+  let latest: { invoice_id: string; line_number: number; invoice_number: string | null } | null = null;
+  try {
+    latest = await db
+      .prepare(
+        `SELECT s.invoice_id, s.line_number, h.invoice_number
+         FROM invoice_line_coding_splits s
+         JOIN invoice_headers h ON h.id = s.invoice_id
+         LEFT JOIN keyed_fields k ON k.invoice_id = s.invoice_id AND k.field = 'line.' || s.line_number || '.coding.split'
+         WHERE h.supplier_vat_id = ? AND s.invoice_id != ?
+         GROUP BY s.invoice_id, s.line_number
+         ORDER BY max(k.keyed_at) DESC
+         LIMIT 1`
+      )
+      .bind(supplierVat, invoiceId)
+      .first();
+  } catch {
+    return null;
+  }
+  if (!latest) return null;
+  const rows = (await loadSplits(db, latest.invoice_id)).get(latest.line_number) ?? [];
+  const total = rows.reduce((sum, r) => sum + r.amount, 0);
+  if (rows.length === 0 || total === 0) return null;
+  if (opts.eitherOr && rows.some((r) => r.costCentre && r.project)) return null;
+  if (opts.projectOnly && rows.some((r) => r.costCentre || !r.project)) return null;
+  if ((await checkSplits(db, orgUnitId, {}, rows)).length > 0) return null;
+
+  const labels: Record<string, Record<string, string>> = {};
+  for (const r of rows) {
+    const values: Record<string, string> = {};
+    if (r.costCentre) values["BT-133"] = r.costCentre;
+    if (r.project) values["coding.project"] = r.project;
+    if (r.glCode) values["coding.gl_code"] = r.glCode;
+    for (const [field, name] of Object.entries(await labelsFor(db, values))) {
+      (labels[field] ??= {})[values[field]] = name;
+    }
+  }
+  return {
+    invoiceNumber: latest.invoice_number,
+    rows: rows.map((r) => ({
+      costCentre: r.costCentre,
+      project: r.project,
+      glCode: r.glCode,
+      sharePct: r.sharePct ?? Math.round((r.amount / total) * 10000) / 100,
+    })),
+    labels,
+  };
+}
+
 /**
  * `GET /invoices/:id/coding-suggestions` → `{ lines: { "<n>": LineCodingSuggestion } }`,
  * one entry per line that has a suggestion.
@@ -269,7 +341,11 @@ export async function handleCodingSuggestions(db: D1Database, invoiceId: string)
     : [];
   const projectReference = text(headerFacts["BT-11"]);
   const namedProject = await projectNamedByInvoice(db, projectReference);
-  if (history.length === 0 && !namedProject) return { status: 200, body: { lines: {} } };
+  // Decision 0548 — offered for the invoice as a whole; the pop-out applies it to the line in front of it.
+  const split = header.supplier_vat_id
+    ? await lastSplit(db, header.supplier_vat_id, invoiceId, header.org_unit_id, { eitherOr, projectOnly })
+    : null;
+  if (history.length === 0 && !namedProject) return { status: 200, body: { lines: {}, ...(split ? { split } : {}) } };
 
   const lines = (
     await db
@@ -323,5 +399,5 @@ export async function handleCodingSuggestions(db: D1Database, invoiceId: string)
 
     out[String(line.line_number)] = { ...found, values, labels: await labelsFor(db, values) };
   }
-  return { status: 200, body: { lines: out } };
+  return { status: 200, body: { lines: out, ...(split ? { split } : {}) } };
 }

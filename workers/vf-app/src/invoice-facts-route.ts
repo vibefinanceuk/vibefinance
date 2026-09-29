@@ -1,3 +1,4 @@
+import { loadSplits } from "./coding-splits.js";
 import { supplierProjectOnly } from "./supplier-project-only.js";
 import type { InvoiceFacts } from "@vibefinance/shared";
 import { getCostObjectRule } from "./coding-config-route.js";
@@ -695,8 +696,11 @@ export async function handleGetInvoice(
   );
   // Decision 0511 — the screen marks a line whose coding is not on
   // Account Coding's lists on arrival, not only after a save.
+  // Decision 0548 — split lines' rows: checked here, and sent with each line for the Coding pop-out.
+  const splits = await loadSplits(db, invoice.id);
   const codingLines = await mergeCodingValidityFacts(db, invoice.org_unit_id ?? null, poMerged.lines, {
     poInvoice: isPoInvoice(facts),
+    splits,
   });
   const verdict = validateInvoiceFacts(poMerged.headerFacts, codingLines);
 
@@ -705,7 +709,7 @@ export async function handleGetInvoice(
     body: {
       id: invoice.id,
       facts,
-      lines,
+      lines: splits.size === 0 ? lines : lines.map((l) => (splits.has(l.lineNumber) ? { ...l, splits: splits.get(l.lineNumber) } : l)),
       orgUnitId: invoice.org_unit_id,
       /**
        * **How each line matches its PO line** — decision 0536, the

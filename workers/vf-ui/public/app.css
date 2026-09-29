@@ -4614,3 +4614,77 @@
     color: var(--text-primary);
   }
   .chatinputrow .chatinput:disabled { opacity: 0.6; }
+
+/*
+  **Split coding — decision 0548.** The rows in the Coding pop-out, the
+  bar showing how much of the line each takes, the balanced / still-to-
+  allocate line, and the line table's "Split · n" chip. The chip and the
+  balanced line use the fixed pale green of a coded line (0541), the
+  still-to-allocate line the fixed warning pair, so both read the same
+  in Day and Night.
+*/
+.linklike {
+  border: none; background: none; padding: 0; font: inherit; font-size: var(--text-sm); font-weight: 600;
+  color: var(--text-accent); cursor: pointer;
+}
+.linklike:hover { text-decoration: underline; }
+.codingsplit { flex: 0 1 auto; min-height: 0; display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
+.codingsplit > * { flex: none; }
+.codingsplit > .splittablewrap { flex: 0 1 auto; min-height: 90px; overflow: auto; }
+.popout.codingpopout.splitting { width: min(940px, 100%); height: min(900px, 94vh); }
+.popout.codingpopout.splitting .codingresults { flex: 1 0 90px; }
+.codingsplit:empty { display: none; }
+.codingsplitstart { justify-self: start; }
+.splithead { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.splithead h4 { margin: 0; font-size: var(--text-base); }
+.splittable { width: 100%; border-collapse: separate; border-spacing: 0 6px; }
+.splittable th { font-size: var(--text-sm); color: var(--text-muted); font-weight: 500; text-align: left; padding: 0 8px; }
+.splittable th.num, .splittable td.num { text-align: right; white-space: nowrap; }
+.splittable td {
+  background: var(--surface-1); border-top: 0.5px solid var(--border); border-bottom: 0.5px solid var(--border);
+  padding: 7px 8px; vertical-align: top;
+}
+.splittable td:first-child { border-left: 0.5px solid var(--border); border-radius: var(--radius) 0 0 var(--radius); }
+.splittable td:last-child { border-right: 0.5px solid var(--border); border-radius: 0 var(--radius) var(--radius) 0; width: 22px; }
+.splittable td.splitobject { min-width: 300px; }
+.splitobjectrow { display: flex; align-items: center; gap: 8px; }
+.splitobjectrow > :last-child { flex: 1; min-width: 0; }
+.splitobjectrow .codingswitch { flex: none; }
+.splittable td.splitobject > * + * { margin-top: 5px; }
+.splittable td.splitgl { min-width: 180px; }
+.splitkind { display: inline-block; font-size: var(--text-sm); font-weight: 600; color: var(--text-secondary); }
+.codingswitch.small button { padding: 2px 9px; }
+.splittable input.splitvalue { width: 76px; min-width: 76px; box-sizing: border-box; text-align: right; }
+.splitcomputed { display: inline-block; min-width: 70px; padding-top: 7px; color: var(--text-secondary); }
+.splitremove { border: none; background: none; color: var(--text-muted); cursor: pointer; font-size: var(--text-base); padding: 6px 2px; }
+.splitremove:hover { color: var(--text-danger); }
+.splitbar { display: flex; height: 8px; border-radius: 999px; overflow: hidden; background: var(--surface-2); }
+.splitbar i { display: block; height: 100%; }
+.splitbar i.c0 { background: var(--chart-1); }
+.splitbar i.c1 { background: var(--chart-3); }
+.splitbar i.c2 { background: var(--chart-2); }
+.splitbar i.c3 { background: var(--chart-4); }
+.splitbar i.c4 { background: var(--chart-5); }
+.splitbar i.c5 { background: var(--text-muted); }
+.splittotal { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 8px 12px; border-radius: var(--radius); font-size: var(--text-sm); }
+.splittotal.ok { background: var(--severity-ok-bg); color: var(--severity-ok-text); font-weight: 600; }
+.splittotal.warn { background: var(--severity-warning-bg); color: var(--severity-warning-text); font-weight: 600; }
+.splitfill {
+  border: 0.5px solid color-mix(in srgb, var(--severity-warning-text) 40%, transparent); background: #ffffff; color: var(--severity-warning-text);
+  border-radius: var(--radius); padding: 3px 10px; font: inherit; font-size: var(--text-sm); font-weight: 600; cursor: pointer;
+}
+.splitlinks { display: flex; gap: 18px; }
+.codingsplitbudget { display: flex; align-items: center; gap: 6px; }
+.codingsplitbudget:empty { display: none; }
+.codingsplitbudget .mini { display: inline-block; width: 90px; height: 5px; border-radius: 999px; background: var(--surface-2); overflow: hidden; }
+.codingsplitbudget .mini i { display: block; height: 100%; background: var(--chart-1); }
+.codingsplitbudget .mini i.over { background: var(--text-danger); }
+.popout.codingpopout button.primary:disabled { opacity: 0.45; cursor: not-allowed; }
+.codingcol .codingbtn.split { width: auto; }
+.splitchip {
+  display: inline-flex; align-items: center; padding: 1px 8px; border-radius: 999px; white-space: nowrap;
+  font-size: var(--text-sm); font-weight: 700; background: var(--surface-1); color: var(--text-secondary);
+  border: 1.5px solid var(--border);
+}
+.codingcol .codingbtn.split.coded .splitchip { background: var(--severity-ok-bg); color: var(--severity-ok-text); border-color: var(--border-success); }
+.codingcol .codingbtn.split.danger .splitchip { border-color: var(--text-danger); color: var(--text-danger); }

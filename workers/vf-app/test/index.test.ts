@@ -2501,6 +2501,43 @@ describe("process instances and stage visits, through the real router (decision 
     expect((await completeAsTestUser(codingTaskId)).status).toBe(200);
   });
 
+  it("Complete — decision 0548: each row of a split line needs a cost object and a GL code, on their lists", async () => {
+    const { codingTaskId } = await seedUncodedLineWithCodingEditable();
+    await env.DB.prepare("INSERT INTO field_visibility (field, visibility, sort_order) VALUES ('coding.project', 'edit', 1), ('coding.gl_code', 'edit', 2)").run();
+    await env.DB.prepare("INSERT INTO cost_centres (id, name) VALUES ('cc1', 'Marketing')").run();
+    await env.DB.prepare("INSERT INTO coding_list_entries (list_type_id, id, name) VALUES ('project', 'PRJ-1', 'Fit-out'), ('gl_code', 'GL-1', 'Repairs')").run();
+    const split = (rows: [string | null, string | null, string | null, number][]) =>
+      env.DB.batch([
+        env.DB.prepare("DELETE FROM invoice_line_coding_splits WHERE invoice_id = 'real-inv-manual'"),
+        ...rows.map(([cc, project, gl, amount], i) =>
+          env.DB.prepare(
+            "INSERT INTO invoice_line_coding_splits (invoice_id, line_number, seq, cost_centre, project, gl_code, amount) VALUES ('real-inv-manual', 1, ?, ?, ?, ?, ?)"
+          ).bind(i + 1, cc, project, gl, amount)
+        ),
+      ]);
+    const gaps = async () => ((await (await completeAsTestUser(codingTaskId)).json()) as { gaps?: unknown[] }).gaps;
+
+    await split([
+      ["cc1", null, null, 1800],
+      [null, null, "GL-1", 1200],
+    ]);
+    // The line's own cost centre, project and GL code are not asked for: the rows are.
+    expect(await gaps()).toEqual([
+      { line: 1, field: "coding.gl_code", reason: "missing", split: 1 },
+      { line: 1, field: "cost_object", reason: "missing", split: 2 },
+    ]);
+    await split([
+      ["cc1", null, "GL-1", 1800],
+      [null, "PRJ-TYPO", "GL-1", 1200],
+    ]);
+    expect(await gaps()).toEqual([{ line: 1, field: "coding.project", reason: "not_on_list", split: 2 }]);
+    await split([
+      ["cc1", null, "GL-1", 1800],
+      [null, "PRJ-1", "GL-1", 1200],
+    ]);
+    expect((await completeAsTestUser(codingTaskId)).status).toBe(200);
+  });
+
   it("Complete — decision 0514: a non-PO invoice at an offered stage is still refused, as 0513 set", async () => {
     const { codingTaskId } = await seedUncodedLineWithCodingEditable();
     expect((await completeAsTestUser(codingTaskId)).status).toBe(422);

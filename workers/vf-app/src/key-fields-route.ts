@@ -13,6 +13,15 @@ import {
   mergeCodingValidityFacts,
   type CodingProblem,
 } from "./coding-validation.js";
+import {
+  checkSplits,
+  loadSplits,
+  parseSplits,
+  round2,
+  saveSplitStatements,
+  splitShapeProblem,
+  type CodingSplit,
+} from "./coding-splits.js";
 
 /**
  * Keying — a person producing facts extraction could not.
@@ -352,6 +361,82 @@ export async function handleKeyInvoiceFields(
   const before = new Map(existingLines.results.map((l) => [l.line_number, l]));
 
   /**
+   * **Split coding — decision 0548.** A line may carry `splits`: its
+   * cost shared across two to ten rows, each with a cost centre or
+   * project and a GL code. Absent means "leave the split as it is";
+   * `[]` or `null` removes it. Only a change is checked, recorded and
+   * written, so a split resent untouched never blocks a save.
+   *
+   * Splitting is coding the line's cost object, so it needs Cost Centre
+   * or Project editable at this stage (0144's own rule). The rows must
+   * add up to the line's net amount. A split line's own cost centre,
+   * project and GL code are cleared: the rows say where the cost goes.
+   */
+  const storedSplits = await loadSplits(db, invoiceId);
+  const splitChanges = new Map<number, CodingSplit[]>();
+  const sameSplit = (a: CodingSplit[], b: CodingSplit[]) =>
+    JSON.stringify(a.map((x) => [x.costCentre, x.project, x.glCode, x.sharePct, round2(x.amount)])) ===
+    JSON.stringify(b.map((x) => [x.costCentre, x.project, x.glCode, x.sharePct, round2(x.amount)]));
+  if (Array.isArray(body.lines)) {
+    const SHAPE_WHY = {
+      too_few: "a split needs at least two rows",
+      too_many: "a line can be split ten ways at most",
+      not_positive: "every split needs an amount, of the same sign as the line",
+      unbalanced: "the split does not add up to the line's net amount",
+      no_net: "a line with no net amount cannot be split",
+    } as const;
+    for (const line of body.lines as Record<string, unknown>[]) {
+      if (!("splits" in line)) continue;
+      const lineNumber = Number(line.lineNumber);
+      if (!Number.isInteger(lineNumber) || lineNumber < 1) continue;
+      const parsed = parseSplits(line.splits);
+      if (!parsed.ok) {
+        return { status: 400, body: { error: `line ${lineNumber}: ${parsed.error}`, reason: "invalid_split", line: lineNumber } };
+      }
+      if (sameSplit(storedSplits.get(lineNumber) ?? [], parsed.splits)) continue;
+      if (!editable.has("BT-133") && !editable.has("coding.project")) {
+        return {
+          status: 403,
+          body: { error: "this stage does not permit editing those fields", reason: "not_editable_here", fields: ["coding.split"] },
+        };
+      }
+      let previousFacts: Record<string, unknown> = {};
+      try {
+        previousFacts = JSON.parse(before.get(lineNumber)?.facts_json ?? "{}") as Record<string, unknown>;
+      } catch {
+        // Unparseable stored facts count as none.
+      }
+      const facts = (line.facts ?? {}) as Record<string, unknown>;
+      const problem = splitShapeProblem(facts["BT-131"] !== undefined ? facts["BT-131"] : previousFacts["BT-131"], parsed.splits);
+      if (problem) {
+        return {
+          status: 422,
+          body: { error: `Not saved: line ${lineNumber}: ${SHAPE_WHY[problem]}.`, reason: "invalid_split", problem, line: lineNumber },
+        };
+      }
+      splitChanges.set(lineNumber, parsed.splits);
+      if (parsed.splits.length > 0) {
+        line.facts = { ...facts, "BT-133": "", "coding.project": "", "coding.gl_code": "" };
+        line.costCentre = undefined;
+      }
+    }
+    // Decision 0540 — a split row holds a cost centre or a project, not both, as a line does.
+    if (splitChanges.size > 0 && (await getCostObjectRule(db)) === "exclusive") {
+      const both = [...splitChanges].filter(([, rows]) => rows.some((r) => r.costCentre && r.project)).map(([n]) => n);
+      if (both.length > 0) {
+        return {
+          status: 422,
+          body: {
+            error: `A line carries a cost centre or a project, not both (line ${both.join(", ")}).`,
+            reason: "cost_centre_and_project",
+            lines: both,
+          },
+        };
+      }
+    }
+  }
+
+  /**
    * **Cost Centre OR Project on a line — decision 0540**, when AP
    * Setup's either/or rule is on. A save that keys one of the two on a
    * line already holding the other clears the other — a supplier's own
@@ -423,7 +508,7 @@ export async function handleKeyInvoiceFields(
   const nonPo = poInvoice ? await nonPoLines(db, invoiceId, headerAfter as InvoiceFacts) : new Set<number>();
   {
     const cache = new CodingLookupCache(db);
-    const invalid: (CodingProblem & { line: number | null })[] = [];
+    const invalid: (CodingProblem & { line: number | null; split?: number })[] = [];
     const poMatchedCoding: { line: number; field: string }[] = [];
 
     const changedCodingFields = (
@@ -483,6 +568,26 @@ export async function handleKeyInvoiceFields(
       }
     }
 
+    // Decision 0548 — a split is coding like any other: Non-PO lines only on a PO invoice, and values on the lists.
+    for (const [lineNumber, rows] of splitChanges) {
+      if (rows.length === 0) continue;
+      if (poInvoice && !nonPo.has(lineNumber)) {
+        poMatchedCoding.push({ line: lineNumber, field: "coding.split" });
+        continue;
+      }
+      let previousFacts: Record<string, unknown> = {};
+      try {
+        previousFacts = JSON.parse(before.get(lineNumber)?.facts_json ?? "{}") as Record<string, unknown>;
+      } catch {
+        // None.
+      }
+      const sent = (body.lines as Record<string, unknown>[]).find((l) => Number(l.lineNumber) === lineNumber);
+      const lineFacts = { ...previousFacts, ...((sent?.facts ?? {}) as Record<string, unknown>) };
+      for (const p of await checkSplits(db, invoiceUnitId, lineFacts, rows, cache)) {
+        invalid.push({ field: p.field, value: p.value, reason: p.reason, line: lineNumber, split: p.split });
+      }
+    }
+
     if (poMatchedCoding.length > 0) {
       const lineList = [...new Set(poMatchedCoding.map((p) => p.line))].join(", ");
       return {
@@ -507,7 +612,7 @@ export async function handleKeyInvoiceFields(
         status: 422,
         body: {
           error: `Account Coding values not accepted: ${invalid
-            .map((p) => `${p.line === null ? "" : `line ${p.line} `}${p.field} "${p.value}" ${WHY[p.reason]}`)
+            .map((p) => `${p.line === null ? "" : `line ${p.line} `}${p.split ? `split ${p.split} ` : ""}${p.field} "${p.value}" ${WHY[p.reason]}`)
             .join("; ")}`,
           reason: "invalid_coding",
           invalid,
@@ -560,6 +665,18 @@ export async function handleKeyInvoiceFields(
           field: `line.${lineNumber}.${code}`,
           previous: previousFacts[code] ?? null,
           next: value,
+          line: lineNumber,
+        });
+      }
+
+      // Decision 0548 — the split, as one change: the rows before and after.
+      const split = splitChanges.get(lineNumber);
+      if (split) {
+        const was = storedSplits.get(lineNumber) ?? [];
+        changes.push({
+          field: `line.${lineNumber}.coding.split`,
+          previous: was.length > 0 ? was : null,
+          next: split.length > 0 ? split : null,
           line: lineNumber,
         });
       }
@@ -703,6 +820,19 @@ export async function handleKeyInvoiceFields(
   } as Parameters<typeof handleUpsertInvoice>[1]);
   if (upsert.status >= 400) return upsert;
 
+  // Decision 0548 — the splits, once the lines they belong to are written; none left behind for a line that is gone.
+  {
+    const statements: D1PreparedStatement[] = [];
+    for (const [lineNumber, rows] of splitChanges) statements.push(...saveSplitStatements(db, invoiceId, lineNumber, rows));
+    if (Array.isArray(body.lines) && storedSplits.size > 0) {
+      const kept = new Set((body.lines as Record<string, unknown>[]).map((l) => Number(l.lineNumber)));
+      for (const lineNumber of storedSplits.keys()) {
+        if (!kept.has(lineNumber)) statements.push(...saveSplitStatements(db, invoiceId, lineNumber, []));
+      }
+    }
+    if (statements.length > 0) await db.batch(statements);
+  }
+
   // Validation is re-run and REPORTED, never stored — decision 0072.
   //
   // The operator's actual question is "is it valid now", and after
@@ -760,7 +890,7 @@ export async function handleKeyInvoiceFields(
         ...(nonPo.has(lineNumber) ? { "po.line_non_po": true } : {}),
       } as InvoiceFacts & { lineNumber: number };
     }),
-    { poInvoice }
+    { poInvoice, splits: await loadSplits(db, invoiceId) }
   );
   const coding = accountCodingFailures(codingLines);
   if (coding.checked) verdict.checked.push("account_coding");

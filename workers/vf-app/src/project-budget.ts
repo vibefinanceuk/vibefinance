@@ -1,3 +1,4 @@
+import type { CodingSplit } from "./coding-splits.js";
 import type { InvoiceFacts } from "@vibefinance/shared";
 import type { RouteResult } from "./org-route.js";
 
@@ -35,6 +36,38 @@ export async function loadProject(db: D1Database, projectId: string): Promise<Pr
 
 /** Net amount coded to `projectId` on every paid-to-be invoice but `excludeInvoiceId`. */
 export async function projectSpendByOthers(db: D1Database, projectId: string, excludeInvoiceId: string | null): Promise<number> {
+  return (await wholeLineSpend(db, projectId, excludeInvoiceId)) + (await splitSpend(db, projectId, excludeInvoiceId));
+}
+
+/**
+ * **A split line's share — decision 0548.** Only the rows coded to the
+ * project count, at their own amounts, never the whole line. A split
+ * line's own `coding.project` is blank, so the whole-line sum never
+ * counts it twice.
+ */
+async function splitSpend(db: D1Database, projectId: string, excludeInvoiceId: string | null): Promise<number> {
+  try {
+    const row = await db
+      .prepare(
+        `SELECT coalesce(sum(s.amount), 0) AS spent
+         FROM invoice_line_coding_splits s
+         WHERE s.project = ? AND s.invoice_id != ?
+           AND NOT EXISTS (
+             SELECT 1 FROM process_instances pi
+             WHERE pi.subject_type = 'invoice' AND pi.subject_id = s.invoice_id
+               AND pi.status IN (${UNPAID.map(() => "?").join(", ")})
+           )`
+      )
+      .bind(projectId, excludeInvoiceId ?? "", ...UNPAID)
+      .first<{ spent: number }>();
+    return row?.spent ?? 0;
+  } catch {
+    // Before migration 0102: nothing is split.
+    return 0;
+  }
+}
+
+async function wholeLineSpend(db: D1Database, projectId: string, excludeInvoiceId: string | null): Promise<number> {
   const row = await db
     .prepare(
       `SELECT coalesce(sum(CAST(json_extract(il.facts_json, '$."BT-131"') AS REAL)), 0) AS spent
@@ -64,19 +97,35 @@ function num(v: unknown): number {
  * every line of this invoice on the same project. Absent on every other
  * line, so no rule fires for it.
  */
-export async function mergeProjectBudgetFacts<L extends InvoiceFacts>(db: D1Database, invoiceId: string, lines: L[]): Promise<L[]> {
-  const ids = [...new Set(lines.map((l) => String(l["coding.project"] ?? "").trim()).filter(Boolean))];
+export async function mergeProjectBudgetFacts<L extends InvoiceFacts>(
+  db: D1Database,
+  invoiceId: string,
+  lines: L[],
+  /** Decision 0548 — split lines' rows, by line number: each row's project takes its own amount. */
+  splits: ReadonlyMap<number, CodingSplit[]> = new Map()
+): Promise<L[]> {
+  const lineNumberOf = (line: L, index: number) => Number((line as Record<string, unknown>).lineNumber) || index + 1;
+  // What each line puts on each project: the whole line, or its split rows.
+  const shares = lines.map((line, index) => {
+    const rows = splits.get(lineNumberOf(line, index));
+    if (rows && rows.length > 0) return rows.filter((r) => r.project).map((r) => ({ id: r.project as string, amount: r.amount }));
+    const id = String(line["coding.project"] ?? "").trim();
+    return id ? [{ id, amount: num(line["BT-131"]) }] : [];
+  });
+  const ids = [...new Set(shares.flat().map((s) => s.id))];
   if (ids.length === 0) return lines;
   const used = new Map<string, { budget: number; total: number }>();
   for (const id of ids) {
     const project = await loadProject(db, id);
     if (!project || project.budget === null) continue;
-    const mine = lines.filter((l) => String(l["coding.project"] ?? "").trim() === id).reduce((s, l) => s + num(l["BT-131"]), 0);
+    const mine = shares.flat().filter((s) => s.id === id).reduce((sum, s) => sum + s.amount, 0);
     used.set(id, { budget: project.budget, total: (await projectSpendByOthers(db, id, invoiceId)) + mine });
   }
-  return lines.map((line) => {
-    const u = used.get(String(line["coding.project"] ?? "").trim());
-    if (!u) return line;
+  return lines.map((line, index) => {
+    // A split line reads as over budget if any of its projects is; its used share is the highest.
+    const mineHere = shares[index].map((s) => used.get(s.id)).filter((u): u is { budget: number; total: number } => !!u);
+    if (mineHere.length === 0) return line;
+    const u = mineHere.reduce((a, b) => (b.total / (b.budget || 1) > a.total / (a.budget || 1) ? b : a));
     return {
       ...line,
       "project.over_budget": u.total > u.budget,

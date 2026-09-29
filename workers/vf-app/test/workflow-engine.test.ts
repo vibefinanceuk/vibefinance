@@ -651,6 +651,48 @@ describe("visitCurrentStage — Cost-Object mode spawns one task per resolved di
   });
 });
 
+describe("visitCurrentStage — a split line's shares, each to its own approver (decision 0548)", () => {
+  it("raises one Approval task per split row's approver, each resolved at the row's own amount", async () => {
+    await handleCreateProcess(env.DB, { id: "p1", name: "AP" });
+    await handleCreateUser(env.DB, { id: "alice", email: "alice@acme.com", name: "Alice" });
+    await handleCreateUser(env.DB, { id: "bob", email: "bob@acme.com", name: "Bob" });
+    await env.DB.prepare("UPDATE org_approval_config SET mode = 'cost_object' WHERE id = 1").run();
+    await env.DB.prepare("UPDATE cost_object_dimensions SET enabled = 1 WHERE list_type_id = 'project'").run();
+    // Alice's limit covers her share (900), not the whole line (1,500).
+    await env.DB.prepare("INSERT INTO cost_centres (id, name, owner_user_id, approval_limit) VALUES ('cc1', 'Marketing', 'alice', 1000)").run();
+    await env.DB.prepare(
+      "INSERT INTO coding_list_entries (list_type_id, id, name, approver_user_id, approval_limit) VALUES ('project', 'proj1', 'Mjolner', 'bob', 10000)"
+    ).run();
+    await handleCreateStage(env.DB, "p1", { id: "coding", name: "Coding", sequence: 1 });
+    await seedRuleSet("rs-approval", {
+      conditions: { field: "BT-131", operator: "greater_than", value: -1 },
+      actions: [{ type: "assign_task", params: { team: "decoy-team", permission: "AP.Approve" } }],
+    });
+    await handleCreateStage(env.DB, "p1", { id: "approval", name: "Approval", sequence: 2, ruleSetId: "rs-approval", evaluationScope: "line" });
+    await env.DB.prepare("UPDATE process_stages SET uses_approval_hierarchy = 1 WHERE id = 'approval'").run();
+    await env.DB.prepare("INSERT INTO invoice_headers (id, facts_json) VALUES ('inv-1', '{}')").run();
+    await env.DB.prepare(
+      `INSERT INTO invoice_line_coding_splits (invoice_id, line_number, seq, cost_centre, project, amount) VALUES
+         ('inv-1', 1, 1, 'cc1', NULL, 900), ('inv-1', 1, 2, NULL, 'proj1', 600)`
+    ).run();
+
+    const created = await handleCreateProcessInstance(env.DB, "p1", { subjectType: "invoice", subjectId: "inv-1" });
+    const instanceId = (created.body as { id: string }).id;
+    const result = await visitCurrentStage(env.DB, instanceId, { "BT-5": "EUR" }, [
+      { lineNumber: 1, "BT-131": 1500, "BT-5": "EUR", "BT-133": "", "coding.project": "" },
+    ]);
+    expect(result.status).toBe(200);
+
+    const approvalTasks = await env.DB.prepare(
+      "SELECT owner_user_id, line_number FROM tasks WHERE stage_id = 'approval' ORDER BY owner_user_id"
+    ).all();
+    expect(approvalTasks.results).toEqual([
+      { owner_user_id: "alice", line_number: 1 },
+      { owner_user_id: "bob", line_number: 1 },
+    ]);
+  });
+});
+
 describe("visitCurrentStage — route_to", () => {
   it("advances to the named stage, skipping intermediate sequence stages", async () => {
     await handleCreateProcess(env.DB, { id: "p1", name: "AP" });

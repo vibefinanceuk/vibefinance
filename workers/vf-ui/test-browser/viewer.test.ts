@@ -7468,3 +7468,238 @@ describe("a project's budget and status in the Coding pop-out — decision 0542"
     expect(resolve).not.toContain("activeOnly");
   });
 });
+
+describe("split coding in the Coding pop-out — decision 0548", () => {
+  const STR = {
+    ...STRINGS,
+    strings: {
+      ...STRINGS.strings,
+      "action.coding": "Coding",
+      "viewer.coding.linetitle": "Line {n} coding",
+      "viewer.coding.searchhint": "Type to search",
+      "viewer.coding.done": "Done",
+      "viewer.coding.sug.accept": "Accept",
+      "field.bt-133": "Cost centre",
+      "field.coding.project": "Project",
+      "field.coding.commodity_code": "Commodity code",
+      "field.coding.gl_code": "General ledger code",
+      "field.cost_object": "Cost centre or project",
+      "viewer.coding.split.start": "Split this line",
+      "viewer.coding.split.title": "Split across",
+      "viewer.coding.split.bypct": "By %",
+      "viewer.coding.split.byamount": "By amount",
+      "viewer.coding.split.share": "Share",
+      "viewer.coding.split.amount": "Amount",
+      "viewer.coding.split.row": "Split {n}",
+      "viewer.coding.split.wholeline": "whole line",
+      "viewer.coding.split.add": "+ Add a split",
+      "viewer.coding.split.stop": "Stop splitting (keep the first row)",
+      "viewer.coding.split.remove": "Remove this split",
+      "viewer.coding.split.fill": "Put it on the last row",
+      "viewer.coding.split.balanced": "{pct}% allocated · {done} of {total}",
+      "viewer.coding.split.left": "{pct}% allocated · {left} still to allocate",
+      "viewer.coding.split.over": "{pct}% allocated · {left} more than the line",
+      "viewer.coding.split.chip": "Split · {n}",
+      "viewer.coding.split.cell": "Split",
+      "viewer.coding.split.last": "Split like last time",
+      "viewer.coding.split.lastwhy": "{invoice} from this supplier was split {shares}",
+      "viewer.coding.split.refused.unbalanced": "Not saved. The split on line {line} does not add up to the line's net amount.",
+    },
+  };
+  const FIELDS_SPLIT = {
+    fields: [
+      { field: "BT-131", visibility: "edit", type: "number", line: true, description: "line net" },
+      { field: "BT-133", visibility: "edit", type: "text", line: true, description: "cost centre" },
+      { field: "coding.project", visibility: "edit", type: "text", line: true, description: "project" },
+      { field: "coding.commodity_code", visibility: "edit", type: "text", line: true, description: "commodity" },
+      { field: "coding.gl_code", visibility: "edit", type: "text", line: true, description: "gl" },
+    ],
+  };
+  const ROWS = [
+    { costCentre: "cc1", project: null, glCode: "gl1", sharePct: 50, amount: 6000 },
+    { costCentre: null, project: "PRJ-1", glCode: "gl2", sharePct: 30, amount: 3600 },
+    { costCentre: "cc2", project: null, glCode: "gl1", sharePct: 20, amount: 2400 },
+  ];
+  function stubSplit(line: { facts: Record<string, unknown>; splits?: unknown[] }, extra: Record<string, unknown> = {}, bodies: { path: string; body: unknown }[] = []) {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        const path = String(url).split("?")[0];
+        if (init?.body) bodies.push({ path, body: JSON.parse(String(init.body)) });
+        const routes: Record<string, unknown> = {
+          "/api/ui-strings": STR,
+          "/api/code-lists": { fields: {} },
+          "/api/field-visibility": FIELDS_SPLIT,
+          "/api/invoices/inv-1": {
+            facts: {},
+            lines: [{ lineNumber: 1, ...line, facts: { "BT-131": 12000, "coding.commodity_code": "cm1", ...line.facts } }],
+            validation: { passed: true, checked: [], failures: [] },
+            buyer: { unitId: "UK01", unitName: "Acme UK", entityName: "Acme UK", vatId: "GB1" },
+            orgUnitId: "UK01",
+            costObjectRule: "exclusive",
+          },
+          "/api/invoices/inv-1/document-url": { url: null },
+          "/api/invoices/inv-1/progress": { inProcess: false, stages: [] },
+          "/api/invoices/inv-1/pages": { pages: [] },
+          "/api/documents/inv-1/activity": { items: [] },
+          "/api/documents/inv-1/collaborators": { collaborators: [] },
+          "/api/invoices/inv-1/key": { ok: true },
+          "/api/invoices/inv-1/coding-suggestions": { lines: {} },
+          "/api/invoices/inv-1/project-usage": { budget: null },
+          "/api/org/cost-centres": { costCentres: [{ id: "cc1", name: "Facilities", filters: [] }, { id: "cc2", name: "Logistics", filters: [] }], total: 2, page: 1, pageSize: 50 },
+          "/api/coding-lists/project": { entries: [{ id: "PRJ-1", name: "Fit-out", filters: [] }], declaredFilters: [], total: 1, page: 1, pageSize: 50 },
+          "/api/coding-lists/gl_code": { entries: [{ id: "gl1", name: "Repairs", filters: [] }, { id: "gl2", name: "Capital works", filters: [] }], declaredFilters: [], total: 2, page: 1, pageSize: 50 },
+          "/api/coding-lists/commodity_code": { entries: [{ id: "cm1", name: "Building works", filters: [] }], declaredFilters: [], total: 1, page: 1, pageSize: 50 },
+          ...extra,
+        };
+        const value = routes[path];
+        if (value && typeof value === "object" && "__notOk" in value) return { ok: false, json: async () => (value as { __notOk: unknown }).__notOk } as Response;
+        if (path in routes) return { ok: true, json: async () => value } as Response;
+        throw new Error(`no stub for ${path}`);
+      })
+    );
+  }
+  const settle = async () => {
+    for (let i = 0; i < 4; i++) await new Promise((r) => setTimeout(r, 0));
+  };
+  async function openViewerOnly() {
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { openViewer } = await import("/viewer.js");
+    await openViewer(TASK, () => {});
+    await settle();
+  }
+  async function openCoding() {
+    await openViewerOnly();
+    (document.querySelector("#lines .codingbtn") as HTMLButtonElement).click();
+    await settle();
+  }
+  const shares = () => [...document.querySelectorAll(".popout .splitvalue")] as HTMLInputElement[];
+  const total = () => document.querySelector(".popout .splittotal") as HTMLElement;
+  const done = () => [...document.querySelectorAll(".popout button.primary")].find((b) => b.textContent === "Done") as HTMLButtonElement;
+  const setShare = (i: number, v: string) => {
+    const input = shares()[i];
+    input.value = v;
+    input.oninput?.(new Event("input"));
+  };
+  const save = async () => {
+    const saveButton = [...document.querySelectorAll(".actionlink")].find((a) => a.querySelector("span")?.textContent === "Save") as HTMLButtonElement;
+    saveButton.click();
+    await settle();
+  };
+  const sentLine = (bodies: { path: string; body: unknown }[]) =>
+    (bodies.find((b) => b.path === "/api/invoices/inv-1/key")?.body as { lines: { facts: Record<string, unknown>; splits?: unknown[] }[] }).lines[0];
+
+  it("shows a split line as 'Split · 3', its rows on hover, and 'Split' in its cost centre, project and GL cells", async () => {
+    stubSplit({ facts: {}, splits: ROWS });
+    await openViewerOnly();
+    const button = document.querySelector("#lines .codingbtn") as HTMLButtonElement;
+    expect(button.textContent).toBe("Split · 3");
+    expect(button.classList.contains("coded")).toBe(true);
+    expect(button.title).toContain("cc1 50% 6,000.00 · PRJ-1 30% 3,600.00 · cc2 20% 2,400.00");
+    expect([...document.querySelectorAll("#lines .splitcell")].map((c) => c.textContent)).toEqual(["Split", "Split", "Split"]);
+  });
+
+  it("opens a split line on its rows: the commodity for the whole line, a share and amount per row, balanced", async () => {
+    stubSplit({ facts: {}, splits: ROWS });
+    await openCoding();
+    const labels = [...document.querySelectorAll(".popout .codingfieldlabel")].map((l) => l.textContent);
+    expect(labels).toEqual(["Commodity code · whole line"]);
+    expect(shares().map((i) => i.value)).toEqual(["50", "30", "20"]);
+    expect([...document.querySelectorAll(".popout .splitcomputed")].map((c) => c.textContent)).toEqual(["6,000.00", "3,600.00", "2,400.00"]);
+    expect(total().classList.contains("ok")).toBe(true);
+    expect(total().textContent).toContain("100% allocated · 12,000.00 of 12,000.00");
+    expect(done().disabled).toBe(false);
+  });
+
+  it("starts a split from the line's own coding, half each", async () => {
+    stubSplit({ facts: { "BT-133": "cc1", "coding.gl_code": "gl1" } });
+    await openCoding();
+    ([...document.querySelectorAll(".popout .codingsplitstart")][0] as HTMLButtonElement).click();
+    await settle();
+    expect(shares().map((i) => i.value)).toEqual(["50", "50"]);
+    const firstRow = document.querySelector(".popout .splittable tbody tr") as HTMLElement;
+    expect((firstRow.querySelector(".splitobject .searchbox") as HTMLInputElement).value).toBe("Facilities");
+    expect(total().classList.contains("ok")).toBe(true);
+  });
+
+  it("waits for Done until the split adds up, and puts what is left on the last row", async () => {
+    stubSplit({ facts: {}, splits: ROWS });
+    await openCoding();
+    setShare(2, "10");
+    expect(total().classList.contains("warn")).toBe(true);
+    expect(total().textContent).toContain("90% allocated · 1,200.00 still to allocate");
+    expect(done().disabled).toBe(true);
+    (document.querySelector(".popout .splitfill") as HTMLButtonElement).click();
+    await settle();
+    expect(shares()[2].value).toBe("20");
+    expect(done().disabled).toBe(false);
+  });
+
+  it("saves the rows with their amounts, and the line's own cost centre, project and GL code go", async () => {
+    const bodies: { path: string; body: unknown }[] = [];
+    stubSplit({ facts: { "BT-133": "cc1" } }, {}, bodies);
+    await openCoding();
+    ([...document.querySelectorAll(".popout .codingsplitstart")][0] as HTMLButtonElement).click();
+    await settle();
+    setShare(0, "70");
+    setShare(1, "30");
+    done().click();
+    await settle();
+    expect((document.querySelector("#lines .codingbtn") as HTMLElement).textContent).toBe("Split · 2");
+    await save();
+    const line = sentLine(bodies);
+    expect(line.facts["BT-133"]).toBeUndefined();
+    expect(line.splits).toEqual([
+      { costCentre: "cc1", project: null, glCode: null, sharePct: 70, amount: 8400 },
+      { costCentre: null, project: null, glCode: null, sharePct: 30, amount: 3600 },
+    ]);
+  });
+
+  it("stopping the split puts the first row back on the line and sends no rows", async () => {
+    const bodies: { path: string; body: unknown }[] = [];
+    stubSplit({ facts: {}, splits: ROWS }, {}, bodies);
+    await openCoding();
+    (document.querySelector(".popout .splitstop") as HTMLButtonElement).click();
+    await settle();
+    expect(document.querySelector(".popout .splittable")).toBeNull();
+    done().click();
+    await settle();
+    await save();
+    const line = sentLine(bodies);
+    expect(line.splits).toEqual([]);
+    expect(line.facts).toMatchObject({ "BT-133": "cc1", "coding.gl_code": "gl1" });
+  });
+
+  it("offers this supplier's last split, and Accept sets the rows up for this line", async () => {
+    stubSplit(
+      { facts: {} },
+      {
+        "/api/invoices/inv-1/coding-suggestions": {
+          lines: {},
+          split: {
+            invoiceNumber: "INV-2291",
+            rows: [
+              { costCentre: "cc1", project: null, glCode: "gl1", sharePct: 60 },
+              { costCentre: null, project: "PRJ-1", glCode: "gl2", sharePct: 40 },
+            ],
+            labels: { "BT-133": { cc1: "Facilities" }, "coding.project": { "PRJ-1": "Fit-out" } },
+          },
+        },
+      }
+    );
+    await openCoding();
+    expect(document.querySelector(".popout .codingsplitsuggest")?.textContent).toContain("INV-2291 from this supplier was split 60 / 40");
+    (document.querySelector(".popout .codingsplitaccept") as HTMLButtonElement).click();
+    await settle();
+    expect(shares().map((i) => i.value)).toEqual(["60", "40"]);
+    expect([...document.querySelectorAll(".popout .splitcomputed")].map((c) => c.textContent)).toEqual(["7,200.00", "4,800.00"]);
+  });
+
+  it("says why a split was not saved, in the reader's words", async () => {
+    stubSplit({ facts: {}, splits: ROWS }, { "/api/invoices/inv-1/key": { __notOk: { error: "…", reason: "invalid_split", problem: "unbalanced", line: 1 } } });
+    await openViewerOnly();
+    await save();
+    expect(document.getElementById("viewer-note")?.textContent).toBe("Not saved. The split on line 1 does not add up to the line's net amount.");
+  });
+});

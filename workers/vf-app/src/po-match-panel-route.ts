@@ -1,3 +1,4 @@
+import { loadSplits, saveSplitStatements } from "./coding-splits.js";
 import type { InvoiceFacts } from "@vibefinance/shared";
 import { CODING_FIELD_LISTS } from "./coding-validation.js";
 import type { RouteResult } from "./org-route.js";
@@ -820,6 +821,23 @@ async function clearManualCoding(db: D1Database, invoiceId: string, lineNumber: 
           lineNumber
         )
     );
+  }
+  /**
+   * **A split goes too — decision 0548.** Splitting is coding by hand,
+   * so a Non-PO line paired with a PO line loses its split as it loses
+   * its keyed coding, recorded the same way.
+   */
+  const rows = (await loadSplits(db, invoiceId)).get(lineNumber) ?? [];
+  if (rows.length > 0) {
+    statements.push(
+      db
+        .prepare(
+          "INSERT INTO keyed_fields (id, invoice_id, field, previous_value, new_value, keyed_by, keyed_at, line_number) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+        )
+        .bind(crypto.randomUUID(), invoiceId, keyedName("coding.split"), JSON.stringify(rows), JSON.stringify(null), userId, now, lineNumber),
+      ...saveSplitStatements(db, invoiceId, lineNumber, [])
+    );
+    changed = true;
   }
   if (!changed) return false;
   const costCentre = facts["BT-133"];

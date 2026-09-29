@@ -860,3 +860,67 @@ describe("Non-PO Approval routing — decisions 0468/0469/0471, resolveApprovalT
     expect(resolutions[0]).toMatchObject({ targetUserId: "bob" });
   });
 });
+
+describe("resolveApprovalTargets — a split line, each share to its own approver (decision 0548)", () => {
+  const params = {
+    instanceId: "inv-1",
+    processId: "p1",
+    currentSequence: 2,
+    processVersion: 1,
+    lineNumber: 1,
+    unitId: null,
+    currency: "GBP",
+    amount: 3000,
+    costCentreId: null,
+  };
+  beforeEach(async () => {
+    await env.DB.prepare("UPDATE org_approval_config SET mode = 'cost_object' WHERE id = 1").run();
+    await env.DB.prepare("UPDATE cost_object_dimensions SET enabled = 1 WHERE list_type_id = 'project'").run();
+    await env.DB.prepare(
+      "INSERT INTO cost_centres (id, name, owner_user_id, approval_limit) VALUES ('cc1', 'Facilities', 'alice', 2000), ('cc2', 'Logistics', 'alice', 2000)"
+    ).run();
+    await env.DB.prepare(
+      "INSERT INTO coding_list_entries (list_type_id, id, name, approver_user_id, approval_limit) VALUES ('project', 'p1', 'Fit-out', 'bob', 5000)"
+    ).run();
+  });
+
+  it("resolves each row at its own amount: a share within a limit the whole line would exceed goes to its owner", async () => {
+    const resolutions = await resolveApprovalTargets(env.DB, {
+      ...params,
+      allocations: [
+        { costCentreId: "cc1", project: null, glCode: null, amount: 1500 },
+        { costCentreId: null, project: "p1", glCode: null, amount: 1500 },
+      ],
+    });
+    expect(resolutions).toEqual([
+      { targetUserId: "alice", reasoning: "Split 1 (1500.00): cost centre chain: cc1." },
+      { targetUserId: "bob", reasoning: "Split 2 (1500.00): project chain: p1." },
+    ]);
+  });
+
+  it("gives one task to an approver two rows reach, naming both", async () => {
+    const resolutions = await resolveApprovalTargets(env.DB, {
+      ...params,
+      allocations: [
+        { costCentreId: "cc1", project: null, glCode: null, amount: 1000 },
+        { costCentreId: "cc2", project: null, glCode: null, amount: 2000 },
+      ],
+    });
+    expect(resolutions).toEqual([
+      { targetUserId: "alice", reasoning: "Split 1 (1000.00): cost centre chain: cc1. Split 2 (2000.00): cost centre chain: cc2." },
+    ]);
+  });
+
+  it("refuses the whole line when one row cannot resolve, naming the row", async () => {
+    const resolutions = await resolveApprovalTargets(env.DB, {
+      ...params,
+      allocations: [
+        { costCentreId: "cc1", project: null, glCode: null, amount: 500 },
+        { costCentreId: "cc2", project: null, glCode: null, amount: 2500 },
+      ],
+    });
+    expect(resolutions).toHaveLength(1);
+    expect(resolutions[0]).toMatchObject({ unresolved: true });
+    expect((resolutions[0] as { reason: string }).reason).toMatch(/^Split 2: /);
+  });
+});

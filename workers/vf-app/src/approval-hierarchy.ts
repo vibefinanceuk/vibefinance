@@ -266,6 +266,14 @@ export interface ResolveApprovalParams {
    */
   costObjectValues?: Partial<Record<Exclude<CostObjectDimension, "cost_centre">, string | null>>;
   /**
+   * **A split line's rows — decision 0548.** In Cost-Object mode each
+   * row is resolved as though it were the line, at its own amount, so
+   * each split's approver approves their share (the operator's choice).
+   * Absent or empty: the line is resolved as one, exactly as before.
+   * Every other mode ignores it and resolves the line as one.
+   */
+  allocations?: Array<{ costCentreId: string | null; project: string | null; glCode: string | null; amount: number }>;
+  /**
    * Non-PO Approval routing — decisions 0468/0469. Optional, and
    * absent reads the same as `false`/`null`: every caller and every
    * test written before this decision never sets either of the two
@@ -760,6 +768,32 @@ export async function resolveApprovalTargets(
   if (nonPo) return nonPo;
 
   if (config.mode === "cost_object") {
+    if (params.allocations && params.allocations.length > 0) {
+      /**
+       * One walk per split row, each at its own amount and with its own
+       * cost centre, project and GL code (the Commodity Code is the
+       * line's). The same approver reached by two rows gets one task,
+       * whose reasoning names both. All-or-nothing still holds: one
+       * unresolved row refuses the stage visit, as for a line.
+       */
+      const byTarget = new Map<string, ApprovalResolution>();
+      for (const [i, a] of params.allocations.entries()) {
+        const rowResults = await resolveCostObjects(db, config, {
+          ...params,
+          amount: a.amount,
+          costCentreId: a.costCentreId,
+          costObjectValues: { ...(params.costObjectValues ?? {}), project: a.project, gl_code: a.glCode },
+        });
+        for (const r of rowResults) {
+          if ("unresolved" in r) return [{ ...r, reason: `Split ${i + 1}: ${r.reason}` }];
+          const key = `${r.targetUserId}|${r.requiredPermission ?? ""}`;
+          const reasoning = `Split ${i + 1} (${a.amount.toFixed(2)}): ${r.reasoning}`;
+          const seen = byTarget.get(key);
+          byTarget.set(key, seen ? { ...seen, reasoning: `${seen.reasoning} ${reasoning}` } : { ...r, reasoning });
+        }
+      }
+      return [...byTarget.values()];
+    }
     return resolveCostObjects(db, config, params);
   }
   return [await resolveApprovalHierarchy(db, params)];
