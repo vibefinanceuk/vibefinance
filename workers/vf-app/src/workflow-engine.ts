@@ -1,4 +1,4 @@
-import { loadSplits } from "./coding-splits.js";
+import { loadSplits, splitAsLineFacts, type CodingSplit } from "./coding-splits.js";
 import { evaluateRuleSet } from "@vibefinance/shared";
 import type { InvoiceFacts } from "@vibefinance/shared";
 import {
@@ -661,9 +661,29 @@ export async function visitCurrentStage(
     // exist before any task can reference it via its own
     // stage_visit_id foreign key, so task creation happens last, not
     // interleaved with evaluation.
-    const evaluations: Array<{ facts: InvoiceFacts; lineNumber: number | null }> =
+    /**
+     * **A split line's rows, each tested as a line — decision 0550.** The
+     * operator's choice: a row is tested with its own cost centre,
+     * project and GL code, and its own share as the line's net amount
+     * (BT-131), so "cost centre is Facilities and net over 5,000" tests
+     * Facilities' share. `coding.split_row` says which row. A line that
+     * is not split is tested once, as before.
+     */
+    const splitsByLine =
+      stage.evaluation_scope === "line" && instance.subject_type === "invoice"
+        ? await loadSplits(db, instance.subject_id)
+        : new Map<number, CodingSplit[]>();
+    const evaluations: Array<{ facts: InvoiceFacts; lineNumber: number | null; splitRow?: number }> =
       stage.evaluation_scope === "line"
-        ? (lines ?? []).map((line) => ({ facts: { ...facts, ...line }, lineNumber: line.lineNumber }))
+        ? (lines ?? []).flatMap((line): Array<{ facts: InvoiceFacts; lineNumber: number | null; splitRow?: number }> => {
+            const rows = splitsByLine.get(line.lineNumber) ?? [];
+            if (rows.length === 0) return [{ facts: { ...facts, ...line } as InvoiceFacts, lineNumber: line.lineNumber }];
+            return rows.map((row, i) => ({
+              facts: { ...facts, ...splitAsLineFacts(line as Record<string, unknown>, row), "coding.split_row": i + 1 } as InvoiceFacts,
+              lineNumber: line.lineNumber,
+              splitRow: i + 1,
+            }));
+          })
         : [{ facts, lineNumber: null }];
 
     const visitId = crypto.randomUUID();
@@ -686,6 +706,8 @@ export async function visitCurrentStage(
        * path — every entry here came from a rule that matched.
        */
       ruleId: string;
+      /** Decision 0550 — the rows of a split line this rule matched; one action for the line, not one per row. */
+      splitRows?: number[];
     }> = [];
     // Every field a rule changed, recorded so an auditor can ask what
     // this invoice said before a rule touched it (decision 0049).
@@ -760,11 +782,24 @@ export async function visitCurrentStage(
          * task created from `actions` alone has no way back to the
          * rule that raised it once this call returns.
          */
+        const params = (attributed.action.params ?? {}) as Record<string, unknown>;
+        // Decision 0550 — a rule matching several rows of one split line raises its task once, for those rows.
+        if (evaluation.splitRow !== undefined) {
+          const same = pendingTaskActions.find(
+            (p) =>
+              p.splitRows && p.ruleId === attributed.ruleId && p.lineNumber === evaluation.lineNumber && JSON.stringify(p.params) === JSON.stringify(params)
+          );
+          if (same) {
+            same.splitRows!.push(evaluation.splitRow);
+            continue;
+          }
+        }
         pendingTaskActions.push({
-          params: (attributed.action.params ?? {}) as Record<string, unknown>,
+          params,
           lineNumber: evaluation.lineNumber,
           facts: evaluation.facts,
           ruleId: attributed.ruleId,
+          ...(evaluation.splitRow !== undefined ? { splitRows: [evaluation.splitRow] } : {}),
         });
       }
     }
@@ -912,7 +947,18 @@ export async function visitCurrentStage(
     // can genuinely need different approvers. Now safe: the
     // stage_visits row this references was already inserted above.
     let tasksCreated = 0;
-    for (const { params, lineNumber, facts: taskFacts, ruleId } of pendingTaskActions) {
+    for (const { params, lineNumber, facts: rowFacts, ruleId, splitRows } of pendingTaskActions) {
+      /**
+       * **For a split line, the rows the rule matched — decision 0550.**
+       * The task's amount is what those rows come to, and in Cost-Object
+       * mode each of them is routed to its own approver (0548).
+       */
+      const matchedRows =
+        splitRows && lineNumber !== null
+          ? splitRows.map((n) => ({ n, row: (splitsByLine.get(lineNumber) ?? [])[n - 1] })).filter((r) => !!r.row)
+          : [];
+      const taskFacts: InvoiceFacts =
+        matchedRows.length > 0 ? ({ ...rowFacts, "BT-131": matchedRows.reduce((sum, r) => sum + r.row.amount, 0) } as InvoiceFacts) : rowFacts;
       /**
        * **The stage's own, where it declares one** — decision 0200.
        *
@@ -957,7 +1003,7 @@ export async function visitCurrentStage(
        * design. Every other mode still resolves to exactly one, so
        * this is a one-element loop for them — no behaviour change.
        */
-      let targets: Array<{ teamId?: string; userId?: string; requiredPermission?: string }>;
+      let targets: Array<{ teamId?: string; userId?: string; requiredPermission?: string; rows?: number[] }>;
       if (stage.uses_approval_hierarchy) {
         const amountRaw = lineNumber !== null ? taskFacts["BT-131"] : taskFacts["BT-112"];
         const resolutions = await resolveApprovalTargets(db, {
@@ -981,14 +1027,15 @@ export async function visitCurrentStage(
           // toggle is on; see resolveNonPoApprovers's own comment in
           // approval-hierarchy.ts.
           poReferenced: typeof taskFacts["BT-13"] === "string" && taskFacts["BT-13"].trim() !== "",
-          // Decision 0548 — a split line's rows, each resolved at its own amount in Cost-Object mode.
+          // Decisions 0548/0550 — the split rows this rule matched, each resolved at its own amount in Cost-Object mode.
           allocations:
-            lineNumber !== null && instance.subject_type === "invoice"
-              ? ((await loadSplits(db, instance.subject_id)).get(lineNumber) ?? []).map((r) => ({
-                  costCentreId: r.costCentre,
-                  project: r.project,
-                  glCode: r.glCode,
-                  amount: r.amount,
+            matchedRows.length > 0
+              ? matchedRows.map(({ n, row }) => ({
+                  costCentreId: row.costCentre,
+                  project: row.project,
+                  glCode: row.glCode,
+                  amount: row.amount,
+                  row: n,
                 }))
               : undefined,
           collaboratorUserIds,
@@ -1014,12 +1061,14 @@ export async function visitCurrentStage(
         targets = (resolutions as ApprovalResolution[]).map((r) => ({
           userId: r.targetUserId,
           requiredPermission: r.requiredPermission,
+          // Decision 0551 — the rows this approver's task is for; the rule's matched rows outside Cost-Object mode.
+          rows: r.splitRows ?? splitRows,
         }));
       } else {
-        targets = [{ teamId: params.team as string | undefined, userId: params.user as string | undefined }];
+        targets = [{ teamId: params.team as string | undefined, userId: params.user as string | undefined, rows: splitRows }];
       }
 
-      for (const { teamId, userId, requiredPermission } of targets) {
+      for (const { teamId, userId, requiredPermission, rows } of targets) {
         const createResult = await handleCreateTask(db, {
           id: crypto.randomUUID(),
           stageId: stage.id,
@@ -1044,8 +1093,8 @@ export async function visitCurrentStage(
           // already are: that function is also the manual/API task
           // creation path (task-route.ts's own POST /tasks), which has
           // no rule and must not be made to invent one.
-          .prepare("UPDATE tasks SET stage_visit_id = ?, line_number = ?, rule_id = ? WHERE id = ?")
-          .bind(visitId, lineNumber, ruleId, newTaskId)
+          .prepare("UPDATE tasks SET stage_visit_id = ?, line_number = ?, rule_id = ?, split_rows = ? WHERE id = ?")
+          .bind(visitId, lineNumber, ruleId, rows && rows.length > 0 ? [...rows].sort((a, b) => a - b).join(",") : null, newTaskId)
           .run();
         tasksCreated++;
       }

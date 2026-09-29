@@ -166,6 +166,14 @@ const AP_PERMISSIONS = [
    * adds this permission to it via the Access screen.
    */
   "AP.Manager",
+  /**
+   * **Decision 0552.** Export payment-eligible invoices to the ERP as a
+   * CSV file, and download past exports. Its own permission, not folded
+   * into `AP.Review` or `Admin.Configure`: sending invoices on to be
+   * paid is neither reviewing one nor configuring the system. Scoped
+   * by unit like every other grant.
+   */
+  "AP.Export",
 ] as const;
 
 /**
@@ -352,6 +360,7 @@ export const PERMISSION_DESCRIPTIONS: Record<Permission, string> = {
   "AP.Discard": "Discard a document that cannot be processed",
   "AP.FraudReview": "See the AP Analytics screen's Fraud Prevention tab",
   "AP.TaskManage": "See, release, and reassign every user's tasks, not just your own",
+  "AP.Export": "Export payment-eligible invoices to the ERP as a CSV file, each once, and download past exports (decision 0552)",
   "AP.Assistant": "Ask the AP Analytics screen's Talk to an AP Expert tab a question — each answer still scoped by whatever else you hold",
   "AP.Manager": "Remove a collaborator from an invoice's conversation — decision 0476, deliberately narrower than the AP.Review that can add one",
 

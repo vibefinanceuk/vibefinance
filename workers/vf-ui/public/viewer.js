@@ -245,6 +245,59 @@ function reasonLinePanel() {
   return el("div", { class: "panel reasonline" }, children);
 }
 
+/**
+ * **Your share of a split line — decision 0551.** An approval task for a
+ * split line (0548) is for some of its rows: the ones whose approver you
+ * are (Cost-Object mode) or the ones a rule matched (0550). This names
+ * them, their shares, and what they come to out of the line, so an
+ * approver knows exactly what they are approving. Nothing for any other
+ * task.
+ */
+function splitSharePanel() {
+  const task = current;
+  if (!task?.lineNumber || !Array.isArray(task.splitRows) || task.splitRows.length === 0) return null;
+  const stored_ = stored.lines.find((l) => l.lineNumber === task.lineNumber);
+  const rows = stored_?.splits ?? [];
+  const mine = task.splitRows.map((n) => ({ n, row: rows[n - 1] })).filter((r) => r.row);
+  if (mine.length === 0) return null;
+  const net = Number(stored_.facts?.["BT-131"]);
+  const total = mine.reduce((sum, r) => sum + Number(r.row.amount), 0);
+  const nameSpans = [];
+  const items = mine.map(({ n, row }) => {
+    const id = row.costCentre || row.project || "—";
+    const name = el("b", { text: codingNames.get(id) ?? id });
+    if (!codingNames.has(id) && id !== "—") nameSpans.push({ id, listType: row.costCentre ? "cost_centre" : "project", name });
+    const pct = row.sharePct ?? (net ? round2((row.amount / net) * 100) : 0);
+    return el("li", {}, [
+      `${t("viewer.coding.split.row").replace("{n}", String(n))}: `,
+      name,
+      ` · ${pct}% · ${splitMoney(row.amount)}`,
+    ]);
+  });
+  // Names as the lists hold them, once known; the id until then.
+  for (const { id, listType, name } of nameSpans) {
+    fetchCodingEntries(listType, id)
+      .then((found) => {
+        const match = found.find((e) => e.id === id);
+        if (match) {
+          codingNames.set(id, match.name);
+          name.textContent = match.name;
+        }
+      })
+      .catch(() => {});
+  }
+  return el("div", { class: "panel splitshare" }, [
+    el("div", {
+      class: "splitsharehead",
+      text: t("viewer.coding.split.yourshare")
+        .replace("{line}", String(task.lineNumber))
+        .replace("{amount}", splitMoney(total))
+        .replace("{total}", Number.isFinite(net) ? splitMoney(net) : "—"),
+    }),
+    el("ul", { class: "splitsharelist" }, items),
+  ]);
+}
+
 function progressRow() {
   if (!progress.inProcess || progress.stages.length === 0) return null;
 
@@ -4795,7 +4848,7 @@ export async function openViewer(task, onClose) {
   // beneath both rather than confined to this column. (Decision
   // 0392 above changes what those areas are once popped out.)
   columnsEl.append(
-    el("div", { class: "c-process" }, [workflowErrorPanel(), reasonLinePanel(), progressRow()].filter(Boolean)),
+    el("div", { class: "c-process" }, [workflowErrorPanel(), reasonLinePanel(), splitSharePanel(), progressRow()].filter(Boolean)),
     el("div", { class: "c-document" }, [
       documentPanel(task, setDocPoppedOut),
       exceptionPanel(),

@@ -715,6 +715,10 @@ async function go(screen) {
   } else if (screen === "purchaseorders") {
     const { open } = await import("/purchase-orders.js");
     await open();
+  } else if (screen === "erpexport") {
+    // The ERP export — decision 0552.
+    const { open } = await import("/erp-export.js");
+    await open();
   } else if (screen === "documents") {
     const { open } = await import("/documents.js");
     await open();
@@ -818,6 +822,8 @@ const NAV_PERMISSIONS = {
   // invoices get matched against, matching what the backend route
   // itself already requires.
   purchaseorders: "Admin.Configure",
+  // The ERP export — decision 0552: its own permission, scoped by unit.
+  erpexport: "AP.Export",
   /**
    * **Either standing opens it, decision 0321** — extending decision
    * 0320's own `Admin.Configure` correction rather than reverting it:
@@ -917,6 +923,15 @@ export function frame(main) {
         ["rules", "rules"],
         ["processes", "processes"],
       ],
+    },
+    /**
+     * **Integration — decision 0552.** The ERP export, last in the menu
+     * so no existing screen changes colour (0527 numbers them by place).
+     * The operator plans an API push and ERP-specific layouts here later.
+     */
+    {
+      heading: "integration",
+      screens: [["erpexport", "download"]],
     },
   ];
   /**

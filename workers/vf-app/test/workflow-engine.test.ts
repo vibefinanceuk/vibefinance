@@ -684,11 +684,57 @@ describe("visitCurrentStage — a split line's shares, each to its own approver 
     expect(result.status).toBe(200);
 
     const approvalTasks = await env.DB.prepare(
-      "SELECT owner_user_id, line_number FROM tasks WHERE stage_id = 'approval' ORDER BY owner_user_id"
+      "SELECT owner_user_id, line_number, split_rows FROM tasks WHERE stage_id = 'approval' ORDER BY owner_user_id"
     ).all();
+    // Decision 0551 — each task says which rows it is for.
     expect(approvalTasks.results).toEqual([
-      { owner_user_id: "alice", line_number: 1 },
-      { owner_user_id: "bob", line_number: 1 },
+      { owner_user_id: "alice", line_number: 1, split_rows: "1" },
+      { owner_user_id: "bob", line_number: 1, split_rows: "2" },
+    ]);
+  });
+});
+
+describe("visitCurrentStage — a line-scope rule tests each split row as a line (decision 0550)", () => {
+  async function seed(condition: Record<string, unknown>) {
+    await handleCreateProcess(env.DB, { id: "p1", name: "AP" });
+    await env.DB.prepare("INSERT INTO org_units (id, name) VALUES ('u1', 'Acme UK') ON CONFLICT(id) DO NOTHING").run();
+    await handleCreateTeam(env.DB, { id: "facilities-team", name: "Facilities", unitId: "u1" });
+    await seedRuleSet("rs-review", {
+      conditions: condition,
+      actions: [{ type: "assign_task", params: { team: "facilities-team", permission: "AP.Review" } }],
+    });
+    await handleCreateStage(env.DB, "p1", { id: "review", name: "Review", sequence: 1, ruleSetId: "rs-review", evaluationScope: "line" });
+    await env.DB.prepare("INSERT INTO invoice_headers (id, facts_json) VALUES ('inv-1', '{}')").run();
+    // 12,000.00 split: Facilities 6,000, a project 3,600, Facilities again 2,400.
+    await env.DB.prepare(
+      `INSERT INTO invoice_line_coding_splits (invoice_id, line_number, seq, cost_centre, project, gl_code, amount) VALUES
+         ('inv-1', 1, 1, 'cc-fac', NULL, 'gl1', 6000), ('inv-1', 1, 2, NULL, 'proj1', 'gl2', 3600), ('inv-1', 1, 3, 'cc-fac', NULL, 'gl1', 2400)`
+    ).run();
+    const created = await handleCreateProcessInstance(env.DB, "p1", { subjectType: "invoice", subjectId: "inv-1" });
+    const instanceId = (created.body as { id: string }).id;
+    const result = await visitCurrentStage(env.DB, instanceId, { "BT-5": "GBP" }, [
+      { lineNumber: 1, "BT-131": 12000, "BT-5": "GBP", "BT-133": "", "coding.project": "", "coding.gl_code": "" },
+    ]);
+    expect(result.status).toBe(200);
+    return (await env.DB.prepare("SELECT owner_team_id, line_number, split_rows FROM tasks WHERE stage_id = 'review'").all()).results;
+  }
+
+  it("matches a row's own cost centre, raising one task for the line that names the rows", async () => {
+    expect(await seed({ field: "BT-133", operator: "is", value: "cc-fac" })).toEqual([
+      { owner_team_id: "facilities-team", line_number: 1, split_rows: "1,3" },
+    ]);
+  });
+
+  it("tests a row's own share as the line's net amount", async () => {
+    // Only the 6,000.00 row is over 5,000; the whole line (12,000.00) would have matched on every row.
+    expect(await seed({ field: "BT-131", operator: "greater_than", value: 5000 })).toEqual([
+      { owner_team_id: "facilities-team", line_number: 1, split_rows: "1" },
+    ]);
+  });
+
+  it("can name the row itself, through coding.split_row", async () => {
+    expect(await seed({ field: "coding.split_row", operator: "is", value: 2 })).toEqual([
+      { owner_team_id: "facilities-team", line_number: 1, split_rows: "2" },
     ]);
   });
 });

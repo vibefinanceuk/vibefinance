@@ -4688,3 +4688,17 @@
 }
 .codingcol .codingbtn.split.coded .splitchip { background: var(--severity-ok-bg); color: var(--severity-ok-text); border-color: var(--border-success); }
 .codingcol .codingbtn.split.danger .splitchip { border-color: var(--text-danger); color: var(--text-danger); }
+
+/* Decision 0551 — an approver's share of a split line: the rows their task is for. */
+.panel.splitshare { display: grid; gap: 4px; }
+.splitsharehead { font-weight: 600; }
+.splitsharelist { margin: 0; padding-left: 18px; font-size: var(--text-sm); color: var(--text-secondary); }
+.splitsharelist b { color: var(--text-primary); font-weight: 600; }
+
+/* Decision 0552 — the ERP export screen. */
+.erpreadyrow { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 6px; }
+.erpreadyrow p { margin: 0; }
+.erptable { width: 100%; border-collapse: collapse; font-size: var(--text-base); }
+.erptable th { text-align: left; font-size: var(--text-sm); color: var(--text-muted); font-weight: 500; padding: 6px 8px; border-bottom: 0.5px solid var(--border); }
+.erptable td { padding: 8px; border-bottom: 0.5px solid var(--border); }
+.erptable .num { text-align: right; white-space: nowrap; }

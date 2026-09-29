@@ -191,6 +191,7 @@ import poStatusStringsSql from "../migrations/0200_po_status_strings.sql?raw";
 import fixEscapedQuotesSql from "../migrations/0201_fix_escaped_quotes.sql?raw";
 import supplierProjectOnlyStringsSql from "../migrations/0202_supplier_project_only_strings.sql?raw";
 import splitCodingStringsSql from "../migrations/0203_split_coding_strings.sql?raw";
+import splitRulesErpExportStringsSql from "../migrations/0204_split_rules_approval_erp_export_strings.sql?raw";
 
 function stripSqlComments(sql: string): string {
   return sql
@@ -414,5 +415,6 @@ export async function applyTestSchema(): Promise<void> {
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(fixEscapedQuotesSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(supplierProjectOnlyStringsSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(splitCodingStringsSql)));
+  await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(splitRulesErpExportStringsSql)));
 
 }

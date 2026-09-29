@@ -705,6 +705,15 @@ describe("a task about one line (decision 0183)", () => {
 
     const tasks = await list("alice");
     expect(tasks[0].lineNumber).toBe(3);
+    expect(tasks[0].splitRows).toBeNull();
+  });
+
+  it("says which rows of a split line it is for (decision 0551)", async () => {
+    await seedInstance("inv-1", "validation", "v-1");
+    await seedTask("t-rows", "validation", "v-1", { user: "alice" });
+    await env.DB.prepare("UPDATE tasks SET line_number = 1, split_rows = '1,3' WHERE id = 't-rows'").run();
+    const tasks = await list("alice");
+    expect(tasks[0]).toMatchObject({ lineNumber: 1, splitRows: [1, 3] });
   });
 
   it("says nothing where a task is about the whole document", async () => {

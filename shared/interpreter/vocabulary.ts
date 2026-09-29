@@ -164,6 +164,13 @@ export const DERIVED_FIELDS = [
    * same way po.line_* are: a list can gain the missing entry later.
    */
   "coding.line_invalid",
+  /**
+   * **Decision 0550.** Which row of a split line (0548) a line-scope
+   * rule is testing: each row is tested as a line, with its own cost
+   * centre, project, GL code and share (BT-131). Absent on a line that
+   * is not split.
+   */
+  "coding.split_row",
   "mandate.channel",
   "validation.passed",
   "validation.failures",
@@ -296,6 +303,7 @@ export const INVOICE_FIELD_TYPES: Record<string, FieldType> = {
   "project.over_budget": "boolean",
   "project.budget_used_pct": "number",
   "coding.line_invalid": "text",
+  "coding.split_row": "number",
   "mandate.channel": "text",
   "validation.passed": "boolean",
   "validation.failures": "text",
@@ -500,6 +508,8 @@ export const DERIVED_FIELD_DESCRIPTIONS: Record<DerivedField, string> = {
     "true if this line is coded to a project whose budget is exceeded once this invoice is counted: the net amounts of every other invoice's lines coded to the project (not discarded or returned ones), plus this invoice's lines on it, are more than the project's budget. Absent on a line with no project, or whose project has no budget.",
   "project.budget_used_pct":
     "how much of this line's project budget is used once this invoice is counted, as a percentage: 100 is exactly the budget, over 100 is over it. Absent on a line with no project, or whose project has no budget.",
+  "coding.split_row":
+    "on a split line, which row is being tested, from 1. Each row of a split line is tested as though it were the line: BT-133, coding.project and coding.gl_code are the row's, and BT-131 is the row's share of the line's net amount. Absent on a line that is not split.",
   "coding.line_invalid":
     "a comma-separated list of this line's coding fields (BT-133, coding.project, coding.commodity_code, coding.gl_code) whose value is not on Account Coding's own configured list, or is on it for a different company code or Commodity Code; empty when every coded value is valid. Most often a supplier's own BT-133 that does not match the buyer's cost centres. Test it with contains: 'coding.line_invalid contains BT-133'.",
   // Enriched with real example values, per decision 0023's "Intake"

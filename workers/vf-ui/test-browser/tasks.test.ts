@@ -438,6 +438,26 @@ describe("the flat nav, permission-filtered (decisions 0274 and 0276)", () => {
     ]);
   });
 
+  it("adds Integration, with the ERP export, last in the menu for someone holding AP.Export — decision 0552", async () => {
+    Object.assign(STRINGS.strings, { "nav.group.integration": "Integration", "nav.groupshort.integration": "INT", "nav.erpexport": "ERP export" });
+    stubFetch({
+      "/api/ui-strings": STRINGS,
+      "/api/whoami": { id: "u-dan", name: "Dan", permissions: [...ALL_NAV_PERMISSIONS, "AP.Export"] },
+      "/api/tasks": { tasks: [APPROVAL_TASK], counts: {} },
+      "/api/dashboard": { cards: [], usingDefault: true },
+    });
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { start } = await import("/tasks.js");
+    await start();
+    const headings = [...document.querySelectorAll(".navgroup .navgrouplong")].map((h) => h.textContent);
+    expect(headings.at(-1)).toBe("Integration");
+    const items = [...document.querySelectorAll(".navitem")];
+    expect(items.at(-1)?.textContent).toBe("ERP export");
+    // Last, so no other screen changes colour (0527): Processes keeps its own.
+    expect(items.find((a) => a.textContent === "Processes")?.className).toMatch(/navhue1\b/);
+  });
+
   it("never shows a heading with nothing unlocked beneath it — decision 0346", async () => {
     /**
      * **The exact edge case grouping creates** — "Supplier

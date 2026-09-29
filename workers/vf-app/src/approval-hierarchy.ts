@@ -28,6 +28,8 @@ import { hasPermission } from "./enforce.js";
 export interface ApprovalResolution {
   targetUserId: string;
   reasoning: string;
+  /** Decision 0551 — for a split line (0548), which rows this approver's task is for. */
+  splitRows?: number[];
   /**
    * **The task's own permission, when a resolution needs a different
    * one than the stage's default — decision 0471.** Optional, and
@@ -272,7 +274,7 @@ export interface ResolveApprovalParams {
    * Absent or empty: the line is resolved as one, exactly as before.
    * Every other mode ignores it and resolves the line as one.
    */
-  allocations?: Array<{ costCentreId: string | null; project: string | null; glCode: string | null; amount: number }>;
+  allocations?: Array<{ costCentreId: string | null; project: string | null; glCode: string | null; amount: number; row?: number }>;
   /**
    * Non-PO Approval routing — decisions 0468/0469. Optional, and
    * absent reads the same as `false`/`null`: every caller and every
@@ -778,6 +780,7 @@ export async function resolveApprovalTargets(
        */
       const byTarget = new Map<string, ApprovalResolution>();
       for (const [i, a] of params.allocations.entries()) {
+        const rowNumber = a.row ?? i + 1;
         const rowResults = await resolveCostObjects(db, config, {
           ...params,
           amount: a.amount,
@@ -785,11 +788,17 @@ export async function resolveApprovalTargets(
           costObjectValues: { ...(params.costObjectValues ?? {}), project: a.project, gl_code: a.glCode },
         });
         for (const r of rowResults) {
-          if ("unresolved" in r) return [{ ...r, reason: `Split ${i + 1}: ${r.reason}` }];
+          if ("unresolved" in r) return [{ ...r, reason: `Split ${rowNumber}: ${r.reason}` }];
           const key = `${r.targetUserId}|${r.requiredPermission ?? ""}`;
-          const reasoning = `Split ${i + 1} (${a.amount.toFixed(2)}): ${r.reasoning}`;
+          const reasoning = `Split ${rowNumber} (${a.amount.toFixed(2)}): ${r.reasoning}`;
           const seen = byTarget.get(key);
-          byTarget.set(key, seen ? { ...seen, reasoning: `${seen.reasoning} ${reasoning}` } : { ...r, reasoning });
+          // Decision 0551 — which rows each approver's one task is for.
+          byTarget.set(
+            key,
+            seen
+              ? { ...seen, reasoning: `${seen.reasoning} ${reasoning}`, splitRows: [...new Set([...(seen.splitRows ?? []), rowNumber])] }
+              : { ...r, reasoning, splitRows: [rowNumber] }
+          );
         }
       }
       return [...byTarget.values()];

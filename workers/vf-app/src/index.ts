@@ -1,3 +1,4 @@
+import { erpExportCsv, handleCreateErpExport, handleListErpExports } from "./erp-export-route.js";
 import { handleGetPoMatchView, handlePoCandidates, handleLinkPo, handlePairLine, PO_PANEL_PERMISSIONS } from "./po-match-panel-route.js";
 import { resolveTenant } from "@vibefinance/shared";
 import { searchOrgUnits, setInvoiceOrgUnit } from "./derive-org.js";
@@ -1584,6 +1585,42 @@ export default {
      * for this screen, and the same permission the tab itself already
      * checks to be reachable at all.
      */
+    /**
+     * **The ERP export — decision 0552.** `AP.Export`, scoped by unit.
+     * `GET` lists what a new export would take and the exports so far;
+     * `POST` makes one; `GET /erp-exports/:id/csv` downloads its file.
+     */
+    if (pathname === "/erp-exports" || /^\/erp-exports\/[^/]+\/csv$/.test(pathname)) {
+      const { db } = resolveTenant(request, env);
+      const auth = await authenticatePerson(db, request, env);
+      if (!auth.user) return json({ error: auth.reason }, 401);
+      if (!(await hasPermission(db, auth.user.id, "AP.Export"))) {
+        return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
+      }
+      const org = url.searchParams.get("org");
+      if (pathname === "/erp-exports" && request.method === "GET") {
+        const result = await handleListErpExports(db, auth.user.id, org);
+        return json(result.body, result.status);
+      }
+      if (pathname === "/erp-exports" && request.method === "POST") {
+        const result = await handleCreateErpExport(db, auth.user.id, org);
+        return json(result.body, result.status);
+      }
+      const csvMatch = pathname.match(/^\/erp-exports\/([^/]+)\/csv$/);
+      if (csvMatch && request.method === "GET") {
+        const result = await erpExportCsv(db, auth.user.id, decodeURIComponent(csvMatch[1]), org);
+        if (result.status !== 200 || result.csv === undefined) return json(result.body, result.status);
+        return new Response(result.csv, {
+          status: 200,
+          headers: {
+            "Content-Type": "text/csv; charset=utf-8",
+            "Content-Disposition": `attachment; filename="${result.filename}"`,
+          },
+        });
+      }
+      return json({ error: "method not allowed" }, 405);
+    }
+
     if (pathname === "/accruals" && request.method === "GET") {
       const { db } = resolveTenant(request, env);
       const auth = await authenticatePerson(db, request, env);

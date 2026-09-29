@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 29 September 2026 (decision 0549). A living document: what
+Last updated 29 September 2026 (decision 0552). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,19 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### The ERP export (0552)
+- A CSV file of payment-eligible invoices (process completed, or at its
+  final stage), each exported once, one row per distribution (a line or
+  each split row); the rows kept so a re-download is the same file.
+- New permission `AP.Export`, scoped by unit; an "ERP export" screen in a
+  new Integration menu group. API push and ERP-specific layouts planned.
+
+### Split rows in rules and approval tasks (0550, 0551)
+- Line-scope rules test each split row with its own coding and share
+  (`coding.split_row`); a rule matching several rows acts once per line.
+- A task records the rows it is for (`tasks.split_rows`); the viewer shows
+  an approver their rows and what they come to.
 
 ### Split coding's controls unlocked (0549)
 - The share inputs and both switches carried `disabled="undefined"` from

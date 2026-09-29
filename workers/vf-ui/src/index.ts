@@ -231,6 +231,9 @@ const PROXIED_TO_INSTANCE: RegExp[] = [
    */
   /^\/invoices\/[^/]+\/coding-suggestions$/,
   /^\/invoices\/[^/]+\/project-usage$/,
+  // The ERP export — decision 0552: the list, a new export, and each export's CSV file.
+  /^\/erp-exports$/,
+  /^\/erp-exports\/[^/]+\/csv$/,
   /^\/invoices\/[^/]+\/document-url$/,
   // The pages behind a multi-page scan (decision 0381) — the same
   // shape as document-url immediately above, and the exact gap this

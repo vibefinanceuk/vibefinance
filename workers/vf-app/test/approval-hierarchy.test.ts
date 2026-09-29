@@ -893,8 +893,8 @@ describe("resolveApprovalTargets — a split line, each share to its own approve
       ],
     });
     expect(resolutions).toEqual([
-      { targetUserId: "alice", reasoning: "Split 1 (1500.00): cost centre chain: cc1." },
-      { targetUserId: "bob", reasoning: "Split 2 (1500.00): project chain: p1." },
+      { targetUserId: "alice", reasoning: "Split 1 (1500.00): cost centre chain: cc1.", splitRows: [1] },
+      { targetUserId: "bob", reasoning: "Split 2 (1500.00): project chain: p1.", splitRows: [2] },
     ]);
   });
 
@@ -906,8 +906,13 @@ describe("resolveApprovalTargets — a split line, each share to its own approve
         { costCentreId: "cc2", project: null, glCode: null, amount: 2000 },
       ],
     });
+    // Decision 0551 — the one task says which rows it is for.
     expect(resolutions).toEqual([
-      { targetUserId: "alice", reasoning: "Split 1 (1000.00): cost centre chain: cc1. Split 2 (2000.00): cost centre chain: cc2." },
+      {
+        targetUserId: "alice",
+        reasoning: "Split 1 (1000.00): cost centre chain: cc1. Split 2 (2000.00): cost centre chain: cc2.",
+        splitRows: [1, 2],
+      },
     ]);
   });
 

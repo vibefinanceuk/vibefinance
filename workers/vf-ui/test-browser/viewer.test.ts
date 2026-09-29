@@ -7730,6 +7730,28 @@ describe("split coding in the Coding pop-out — decision 0548", () => {
     expect(shares().every((i) => i.disabled)).toBe(true);
   });
 
+  it("shows an approver the rows of a split line their task is for, and what they come to (decision 0551)", async () => {
+    Object.assign(STR.strings, { "viewer.coding.split.yourshare": "Your task covers line {line}: {amount} of {total}" });
+    stubSplit({ facts: {}, splits: ROWS });
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { openViewer } = await import("/viewer.js");
+    await openViewer({ ...TASK, lineNumber: 1, splitRows: [1, 3] }, () => {});
+    await settle();
+    const panel = document.querySelector(".panel.splitshare") as HTMLElement;
+    expect(panel.querySelector(".splitsharehead")?.textContent).toBe("Your task covers line 1: 8,400.00 of 12,000.00");
+    expect([...panel.querySelectorAll("li")].map((li) => li.textContent)).toEqual([
+      "Split 1: Facilities · 50% · 6,000.00",
+      "Split 3: Logistics · 20% · 2,400.00",
+    ]);
+  });
+
+  it("shows no share panel for a task about a whole line or document", async () => {
+    stubSplit({ facts: {}, splits: ROWS });
+    await openViewerOnly();
+    expect(document.querySelector(".panel.splitshare")).toBeNull();
+  });
+
   it("says why a split was not saved, in the reader's words", async () => {
     stubSplit({ facts: {}, splits: ROWS }, { "/api/invoices/inv-1/key": { __notOk: { error: "…", reason: "invalid_split", problem: "unbalanced", line: 1 } } });
     await openViewerOnly();

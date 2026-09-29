@@ -4823,3 +4823,36 @@ describe("/coding-config, through the real router (decision 0540)", () => {
     expect(await got.json()).toEqual({ costObjectRule: "both" });
   });
 });
+
+describe("the ERP export, through the real router (decision 0552)", () => {
+  it("needs AP.Export, lists, refuses an empty export, and 404s an unknown file", async () => {
+    const without = await seedUserWithPermissions(["AP.Review"]);
+    expect((await SELF.fetch("https://example.com/erp-exports", { headers: { Authorization: `Bearer ${without}` } })).status).toBe(403);
+
+    const exporter = await seedUserWithPermissions(["AP.Export"]);
+    const headers = { Authorization: `Bearer ${exporter}` };
+    const listed = await SELF.fetch("https://example.com/erp-exports", { headers });
+    expect(listed.status).toBe(200);
+    expect(await listed.json()).toMatchObject({ pending: { count: 0, invoices: [] }, exports: [] });
+    const made = await SELF.fetch("https://example.com/erp-exports", { method: "POST", headers });
+    expect(made.status).toBe(409);
+    expect((await SELF.fetch("https://example.com/erp-exports/nope/csv", { headers })).status).toBe(404);
+  });
+
+  it("downloads an export as a CSV file", async () => {
+    const exporter = await seedUserWithPermissions(["AP.Export"]);
+    const headers = { Authorization: `Bearer ${exporter}` };
+    await env.DB.prepare("INSERT OR IGNORE INTO processes (id, name) VALUES ('ap-x', 'AP')").run();
+    await env.DB.prepare("INSERT INTO process_stages (id, process_id, name, sequence) VALUES ('ap-x-final', 'ap-x', 'Payment-eligible', 1)").run();
+    await env.DB.prepare("INSERT INTO invoice_headers (id, facts_json) VALUES ('inv-x', ?)").bind(JSON.stringify({ "BT-1": "X-1", "BT-112": 12 })).run();
+    await env.DB.prepare(
+      "INSERT INTO process_instances (id, process_id, subject_type, subject_id, current_stage_id, status) VALUES ('pi-x', 'ap-x', 'invoice', 'inv-x', 'ap-x-final', 'completed')"
+    ).run();
+    const made = (await (await SELF.fetch("https://example.com/erp-exports", { method: "POST", headers })).json()) as { id: string };
+    const file = await SELF.fetch(`https://example.com/erp-exports/${made.id}/csv`, { headers });
+    expect(file.status).toBe(200);
+    expect(file.headers.get("Content-Type")).toBe("text/csv; charset=utf-8");
+    expect(file.headers.get("Content-Disposition")).toMatch(/^attachment; filename="vibefinance-erp-export-.*\.csv"$/);
+    expect(await file.text()).toContain("X-1");
+  });
+});
