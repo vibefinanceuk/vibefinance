@@ -4761,3 +4761,49 @@
 .rmorig.bad { border-color: color-mix(in srgb, var(--border-danger) 60%, transparent); }
 .rmhistory { margin: 0; padding-left: 18px; font-size: var(--text-sm); color: var(--text-secondary); display: grid; gap: 3px; }
 @media (max-width: 1100px) { .rmcols { grid-template-columns: 1fr; } .rmtiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+/* Decision 0557 — Routes: Sources beside Destinations, and one route as its five parts. */
+.rtgrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin-bottom: 14px; align-items: start; }
+.rtgrid > .panel { margin-bottom: 0; }
+.rttable { width: 100%; border-collapse: collapse; font-size: var(--text-sm); }
+.rttable th { text-align: left; color: var(--text-muted); font-weight: 500; padding: 6px 8px; border-bottom: 0.5px solid var(--border); }
+.rttable td { padding: 8px; border-bottom: 0.5px solid var(--border); vertical-align: top; }
+.rttable tr.clickable { cursor: pointer; }
+.rttable tr.sel td { background: color-mix(in srgb, var(--text-accent) 10%, transparent); }
+.rtname { font-weight: 600; color: var(--text-primary); }
+.rtstd { display: inline-block; margin-top: 3px; padding: 1px 9px; border-radius: 999px; font-weight: 600; background: color-mix(in srgb, var(--text-accent) 12%, transparent); color: var(--text-accent); }
+.rtchain { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 22px; margin: 12px 0 10px; }
+.rtpart { position: relative; border: 0.5px solid var(--border); border-radius: var(--radius); padding: 10px 12px; background: var(--surface-1); min-height: 92px; }
+.rtpart:not(:last-child)::after { content: "\2192"; position: absolute; right: -18px; top: 36px; color: var(--text-muted); }
+.rtpart .k { font-size: var(--text-sm); color: var(--text-muted); }
+.rtpart .v { font-weight: 600; margin-top: 4px; }
+.rtpart .d { font-size: var(--text-sm); color: var(--text-secondary); margin-top: 3px; }
+.rtpart.core { border-color: var(--border-accent); background: color-mix(in srgb, var(--text-accent) 7%, var(--surface-1)); }
+
+/* Decision 0557 — Process routes: sources into the entry stage, destinations out of the exit stage. */
+.prgrid { display: grid; grid-template-columns: 250px 44px minmax(0, 1fr) 44px 250px; align-items: center; margin: 44px 0 6px; }
+.prstack { position: relative; display: flex; flex-direction: column; gap: 12px; }
+.prcolh { position: absolute; top: -30px; left: 0; font-weight: 700; font-size: var(--text-sm); color: var(--text-accent); text-transform: uppercase; letter-spacing: 0.03em; white-space: nowrap; }
+.prcolh span { text-transform: none; font-weight: 400; color: var(--text-secondary); margin-left: 6px; letter-spacing: 0; }
+.prcard { display: block; width: 100%; box-sizing: border-box; text-align: left; font: inherit; color: var(--text-primary); border: 1.5px solid var(--border-accent); border-radius: var(--radius); padding: 8px 12px; background: color-mix(in srgb, var(--text-accent) 7%, var(--surface-1)); cursor: pointer; overflow: hidden; }
+.prcard.dim { border-style: dashed; background: var(--surface-1); }
+.prcard.sel { box-shadow: 0 0 0 2px var(--text-accent); }
+.prcard .t { font-size: var(--text-sm); font-weight: 700; color: var(--text-accent); letter-spacing: 0.03em; }
+.prcard .v { font-weight: 600; margin-top: 3px; }
+.prcard .d { font-size: var(--text-sm); color: var(--text-secondary); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.prcard .s { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 4px; }
+.prempty { display: flex; align-items: center; justify-content: center; text-align: center; padding: 8px 12px; border: 0.5px dashed var(--border); border-radius: var(--radius); color: var(--text-muted); font-size: var(--text-sm); box-sizing: border-box; }
+.prbracket { width: 44px; color: var(--text-muted); fill: none; stroke: currentColor; stroke-width: 1.5; }
+.prflow { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.prstage { flex: 1; min-width: 0; text-align: center; border: 0.5px solid var(--border); border-radius: var(--radius); padding: 10px 6px; background: var(--surface-1); }
+.prstage .sn { font-weight: 600; font-size: var(--text-sm); }
+.prstage .sd { font-size: var(--text-sm); color: var(--text-accent); margin-top: 3px; }
+.prstage.edge { flex: 1.35; border: 1.5px solid var(--border-accent); background: color-mix(in srgb, var(--text-accent) 7%, var(--surface-1)); }
+.prarrow { color: var(--text-muted); flex: none; }
+.prfields { display: grid; grid-template-columns: 180px 1fr; gap: 10px 16px; font-size: var(--text-sm); align-items: center; margin-top: 8px; }
+.prfields .l { color: var(--text-muted); }
+.prfields .addr { font-weight: 600; }
+.prfields select { max-width: 360px; }
+.popout.praddpop { width: min(520px, 100%); }
+.rttable td:last-child { white-space: nowrap; }
+@media (max-width: 1200px) { .rtgrid { grid-template-columns: 1fr; } .rtchain { grid-template-columns: 1fr; } .rtpart:not(:last-child)::after { content: none; } }

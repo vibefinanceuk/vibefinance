@@ -110,6 +110,7 @@ import taskSplitRowsSql from "../../../migrations/0103_task_split_rows.sql?raw";
 import erpExportsSql from "../../../migrations/0104_erp_exports.sql?raw";
 import erpExportUndoSql from "../../../migrations/0105_erp_export_undo.sql?raw";
 import routeMessagesSql from "../../../migrations/0106_route_messages.sql?raw";
+import routesAndInstancesSql from "../../../migrations/0107_routes_and_instances.sql?raw";
 
 // Another known divergence from production, on top of the one below:
 // D1's exec() splits its input by newline and executes each non-empty
@@ -158,6 +159,8 @@ const TABLES_IN_DROP_ORDER = [
   // Routes, slice 1 (decision 0555): invoice_documents now references
   // route_messages, so both go first, invoice_documents before it.
   "route_message_items", "route_message_events", "route_message_parts", "invoice_documents", "route_messages",
+  // Routes, slice 3 (decision 0557): instances reference sources and processes.
+  "route_instances", "route_versions", "routes",
   "erp_export_rows", "erp_export_invoices", "erp_exports", "invoice_line_coding_splits", "invoice_line_po_pairings", "cost_centre_gl_codes", "document_comments",
   // Matching Exceptions and Business User (decision 0468/migration
   // 0078) — references invoice_headers and org_users, so it sits here
@@ -282,6 +285,16 @@ export async function applyTestSchema(): Promise<void> {
   } catch {
     // org_users does not exist yet — nothing to break a cycle with.
   }
+  /**
+   * **Another cycle — decision 0557.** `processes` now names its entry
+   * and exit stages, and each stage names its process. Broken the same
+   * way: clear the process's side first.
+   */
+  try {
+    await env.DB.exec("UPDATE processes SET entry_stage_id = NULL, exit_stage_id = NULL;");
+  } catch {
+    // processes, or its new columns, do not exist yet.
+  }
   for (const table of TABLES_IN_DROP_ORDER) {
     await env.DB.exec(`DROP TABLE IF EXISTS ${table};`);
   }
@@ -402,6 +415,7 @@ export async function applyTestSchema(): Promise<void> {
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(erpExportsSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(erpExportUndoSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(routeMessagesSql)));
+  await env.DB.exec(toOneStatementPerLine(stripSqlComments(routesAndInstancesSql)));
 }
 
 /**

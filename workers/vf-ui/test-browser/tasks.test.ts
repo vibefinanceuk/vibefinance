@@ -39,6 +39,11 @@ const STRINGS = {
     "nav.access": "Access",
     "nav.apsetup": "AP Setup",
     "nav.processes": "Processes",
+    // Decision 0557: Sources moved to Integration as Routes and Process routes.
+    "nav.routes": "Routes",
+    "nav.processroutes": "Process routes",
+    "nav.group.integration": "Integration",
+    "nav.groupshort.integration": "INT",
     "nav.group.accountspayable": "Accounts payable",
     "nav.group.suppliermanagement": "Supplier management",
     "nav.group.configuration": "Configuration",
@@ -138,6 +143,9 @@ async function openList(tasks: unknown[]) {
     // 0191's test navigates between them.
     "/api/sources": { sources: [] },
     "/api/processes": { processes: [] },
+    // Process routes, in place of Sources — decision 0557.
+    "/api/process-routes": { processes: [], process: null, sources: [], destinations: [] },
+    "/api/org/units": { units: [] },
     "/api/rules": { rules: [] },
     "/api/rules/stages": { stages: [] },
     "/api/documents": { documents: [], searched: 0 },
@@ -417,7 +425,9 @@ describe("the flat nav, permission-filtered (decisions 0274 and 0276)", () => {
     await openList([APPROVAL_TASK]);
 
     const headings = [...document.querySelectorAll(".navgroup .navgrouplong")].map((h) => h.textContent);
-    expect(headings).toEqual(["Accounts payable", "Supplier management", "Configuration"]);
+    // Integration too since decision 0557: Routes and Process routes need
+    // Admin.Configure, which every-permission holds.
+    expect(headings).toEqual(["Accounts payable", "Supplier management", "Configuration", "Integration"]);
 
     const labels = [...document.querySelectorAll(".navitem")].map((a) => a.textContent);
     expect(labels).toEqual([
@@ -431,10 +441,12 @@ describe("the flat nav, permission-filtered (decisions 0274 and 0276)", () => {
       "Suppliers",
       "Access",
       "AP Setup",
-      "Sources",
       "Purchase Orders",
       "Rules",
       "Processes",
+      // Decision 0557: Sources is Process routes now, under Integration.
+      "Routes",
+      "Process routes",
     ]);
   });
 
@@ -454,8 +466,9 @@ describe("the flat nav, permission-filtered (decisions 0274 and 0276)", () => {
     expect(headings.at(-1)).toBe("Integration");
     const items = [...document.querySelectorAll(".navitem")];
     expect(items.at(-1)?.textContent).toBe("ERP export");
-    // Last, so no other screen changes colour (0527): Processes keeps its own.
-    expect(items.find((a) => a.textContent === "Processes")?.className).toMatch(/navhue1\b/);
+    // Decision 0557 moved Sources out of Configuration, the one colour
+    // change the Routes design accepted: Processes moved up one place.
+    expect(items.find((a) => a.textContent === "Processes")?.className).toMatch(/navhue5\b/);
   });
 
   it("adds the Route monitor after the ERP export for someone holding Integration.Monitor — decision 0556", async () => {
@@ -519,7 +532,7 @@ describe("the flat nav, permission-filtered (decisions 0274 and 0276)", () => {
     await openList([APPROVAL_TASK]);
 
     const shorts = [...document.querySelectorAll(".navgroup .navgroupshort")];
-    expect(shorts.map((h) => h.textContent)).toEqual(["AP", "SM", "CONF"]);
+    expect(shorts.map((h) => h.textContent)).toEqual(["AP", "SM", "CONF", "INT"]);
     for (const short of shorts) expect(short.getAttribute("aria-hidden")).toBe("true");
   });
 
@@ -555,7 +568,8 @@ describe("the flat nav, permission-filtered (decisions 0274 and 0276)", () => {
     expect(hueOf("Documents")).toBe("4");
     expect(hueOf("Suppliers")).toBe("5");
     expect(hueOf("Access")).toBe("1");
-    expect(hueOf("Rules")).toBe("5");
+    // Decision 0557: one place earlier since Sources moved to Integration.
+    expect(hueOf("Rules")).toBe("4");
     // The icon sits in its own tile, and the label is unchanged.
     for (const item of document.querySelectorAll(".navitem")) {
       expect(item.querySelector(".navicon > svg")).not.toBeNull();
@@ -576,7 +590,7 @@ describe("the flat nav, permission-filtered (decisions 0274 and 0276)", () => {
     const { start } = await import("/tasks.js");
     await start();
     expect(hueOf("Suppliers")).toBeUndefined();
-    expect(hueOf("Rules")).toBe("5");
+    expect(hueOf("Rules")).toBe("4");
   });
 
   it("colours an icon only on hover or when its screen is open, with a tile and a bar — decision 0527", async () => {
@@ -605,7 +619,8 @@ describe("the flat nav, permission-filtered (decisions 0274 and 0276)", () => {
     await openList([APPROVAL_TASK]);
 
     const items = [...document.querySelectorAll(".navitem")];
-    expect(items).toHaveLength(11);
+    // Decision 0557: Sources became Routes and Process routes.
+    expect(items).toHaveLength(12);
     for (const item of items) {
       expect(item.querySelector("svg")).not.toBeNull();
     }
@@ -819,9 +834,10 @@ describe("the flat nav, permission-filtered (decisions 0274 and 0276)", () => {
       "Suppliers",
       "Access",
       "AP Setup",
-      "Sources",
       "Purchase Orders",
       "Processes",
+      "Routes",
+      "Process routes",
     ]);
   });
 
@@ -887,7 +903,7 @@ describe("the flat nav, permission-filtered (decisions 0274 and 0276)", () => {
     const { start } = await import("/tasks.js");
     await start();
     const labels = [...document.querySelectorAll(".navitem")].map((a) => a.textContent);
-    expect(labels, "permission Admin.Configure").toEqual(["Access", "AP Setup", "Sources", "Purchase Orders", "Processes"]);
+    expect(labels, "permission Admin.Configure").toEqual(["Access", "AP Setup", "Purchase Orders", "Processes", "Routes", "Process routes"]);
 
     /**
      * **`AP.Supplier` unlocks two items together, decisions 0416/0417**
@@ -1862,8 +1878,9 @@ describe("every screen can reach every other (decision 0191)", () => {
     await until(() => highlighted() === "Tasks", "Tasks never became current again");
   }
 
-  it("reaches Tasks from Sources", async () => {
-    await navigateFrom("Sources");
+  // Decision 0557: Sources is reached as Process routes now.
+  it("reaches Tasks from Process routes", async () => {
+    await navigateFrom("Process routes");
     expect(document.querySelector(".nav a.on")?.textContent).toBe("Tasks");
   });
 

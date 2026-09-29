@@ -189,19 +189,14 @@ describe("the sources screen", () => {
     expect(document.body.textContent).toContain("No sources configured");
   });
 
-  it("puts a second entry in the navigation", async () => {
-    // The frame has carried one since decision 0108, which existed so
-    // later screens would sit inside it rather than be retrofitted.
+  it("is no longer in the navigation: Process routes replaces it (decision 0557)", async () => {
+    // The frame has carried a navigation since decision 0108. Sources had
+    // an entry in it until 0557 moved it to Integration as Process routes,
+    // which shows these same sources as each process's Source instances.
     await open([]);
     const nav = [...document.querySelectorAll(".nav a")].map((a) => a.textContent);
     expect(nav).toContain("Tasks");
-    expect(nav).toContain("Sources");
-  });
-
-  it("marks which screen you are on", async () => {
-    await open([]);
-    const on = document.querySelector(".nav a.on");
-    expect(on?.textContent).toBe("Sources");
+    expect(nav).not.toContain("Sources");
   });
 });
 

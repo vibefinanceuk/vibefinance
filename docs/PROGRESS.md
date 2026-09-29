@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 29 September 2026 (decision 0556). A living document: what
+Last updated 29 September 2026 (decision 0557). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,14 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Routes, slice 3: routes, instances, and Process routes (0557)
+- Six standard routes (Email in and HTTPS in live; SFTP, file import and
+  EDI drafts; the ERP CSV file), each source a Source instance, an ERP
+  Destination per process, and each process's entry and exit stages.
+- A Routes screen (read-only, each route as its five parts) and Process
+  routes in place of Sources: sources into Intake, stages, the ERP out of
+  Payment Eligible, with the Sources screen's own actions and Add a source.
 
 ### Routes, slice 2: the Route monitor (0556)
 - A new screen under Integration, for the new `Integration.Monitor`

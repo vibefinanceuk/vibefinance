@@ -193,6 +193,7 @@ import { handleGetRetention, handleSetRetention, handleListBeyondRetention } fro
 import { handleCaptureFromSource } from "./source-capture-route.js";
 import { handleInboundEmail, handleListInboundEmail, type EmailMessage } from "./inbound-email.js";
 import { handleGetRouteMessage, handleListRouteMessages, routeMessagePart } from "./route-monitor-route.js";
+import { handleListRoutes, handleProcessRoutes } from "./routes-route.js";
 import { handleKeyInvoiceFields } from "./key-fields-route.js";
 import { handleReturnToStage, handleReturnToSupplier, handleDiscard, handleReturnTargets } from "./return-route.js";
 import {
@@ -1627,6 +1628,22 @@ export default {
         return json(result.body, result.status);
       }
       return json({ error: "method not allowed" }, 405);
+    }
+
+    /**
+     * **Routes, and where they are placed — decision 0557.** Gated on
+     * `Admin.Configure`, like the Sources screen these replace: the
+     * standard routes (read-only for now) and one process's flow.
+     */
+    if ((pathname === "/routes" || pathname === "/process-routes") && request.method === "GET") {
+      const { db } = resolveTenant(request, env);
+      const auth = await authenticatePerson(db, request, env);
+      if (!auth.user) return json({ error: auth.reason }, 401);
+      if (!(await hasPermission(db, auth.user.id, "Admin.Configure"))) {
+        return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
+      }
+      const result = pathname === "/routes" ? await handleListRoutes(db) : await handleProcessRoutes(db, url.searchParams);
+      return json(result.body, result.status);
     }
 
     /**

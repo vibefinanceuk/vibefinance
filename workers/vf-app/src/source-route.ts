@@ -24,6 +24,19 @@ import type { RouteResult } from "./org-route.js";
 export const SOURCE_MECHANISMS = ["email", "https", "sftp", "file_import", "edi"] as const;
 export type SourceMechanism = (typeof SOURCE_MECHANISMS)[number];
 
+/**
+ * **The standard route each mechanism is an instance of — decision
+ * 0557**, seeded by migration 0107. Email and HTTPS are live; the others
+ * are drafts, because nothing receives by them yet.
+ */
+export const SOURCE_ROUTE_FOR_MECHANISM: Record<SourceMechanism, string> = {
+  email: "email-in",
+  https: "https-in",
+  sftp: "sftp-in",
+  file_import: "file-import",
+  edi: "edi-in",
+};
+
 export function isKnownSourceMechanism(value: unknown): value is SourceMechanism {
   return typeof value === "string" && (SOURCE_MECHANISMS as readonly string[]).includes(value);
 }
@@ -107,10 +120,27 @@ export async function handleCreateSource(
     return { status: 409, body: { error: `process ${processId} already has a source named "${name}"` } };
   }
 
-  await db
-    .prepare("INSERT INTO sources (id, process_id, name, mechanism) VALUES (?, ?, ?, ?)")
-    .bind(id, processId, name, mechanism)
-    .run();
+  /**
+   * **A source is a Source instance — decision 0557.** Created together
+   * in one batch, so there is never a source without the route it is an
+   * instance of (0107's standing invariant).
+   */
+  await db.batch([
+    db.prepare("INSERT INTO sources (id, process_id, name, mechanism) VALUES (?, ?, ?, ?)").bind(id, processId, name, mechanism),
+    db
+      .prepare("INSERT INTO route_instances (id, route_id, process_id, source_id) VALUES (?, ?, ?, ?)")
+      .bind(id, SOURCE_ROUTE_FOR_MECHANISM[mechanism], processId, id),
+    // A process's first source makes it one that receives invoices, and
+    // so one with an ERP Destination, as 0107 gave every such process.
+    db
+      .prepare(
+        `INSERT INTO route_instances (id, route_id, process_id, name, status)
+         SELECT ?, 'erp-csv', ?, 'ERP', 'active'
+         WHERE NOT EXISTS (SELECT 1 FROM route_instances i JOIN routes r ON r.id = i.route_id
+                           WHERE i.process_id = ? AND r.direction = 'destination')`
+      )
+      .bind(`erp-${processId}`, processId, processId),
+  ]);
 
   const row = await db.prepare("SELECT * FROM sources WHERE id = ?").bind(id).first<SourceRow>();
   return { status: 201, body: toBody(row as SourceRow) };
@@ -423,15 +453,28 @@ export async function handleListProcesses(db: D1Database): Promise<RouteResult> 
  * as its `mandate.channel`? That is what capture writes (decision
  * 0060), and it is the thing that makes a name permanent.
  */
-async function hasReceivedDocuments(db: D1Database, sourceName: string): Promise<boolean> {
+async function hasReceivedDocuments(db: D1Database, sourceName: string, sourceId?: string): Promise<boolean> {
   const row = await db
     .prepare(
       "SELECT id FROM invoice_headers WHERE json_extract(facts_json, '$.\"mandate.channel\"') = ? LIMIT 1"
     )
     .bind(sourceName)
     .first<{ id: string }>();
+  if (row !== null) return true;
 
-  return row !== null;
+  /**
+   * **Or any message at all — decision 0557.** Since 0555 every email a
+   * source receives is kept as a route message naming it, even one that
+   * made no invoice (nothing attached, nothing readable). That message
+   * is history of this source, and its original is kept: deleting the
+   * source would orphan it, so such a source is retired instead.
+   */
+  if (!sourceId) return false;
+  const message = await db
+    .prepare("SELECT id FROM route_messages WHERE instance_id = ? LIMIT 1")
+    .bind(sourceId)
+    .first<{ id: string }>();
+  return message !== null;
 }
 
 /**
@@ -477,7 +520,7 @@ export async function handleRetireSource(
     return { status: 409, body: { error: `source ${sourceId} is already retired` } };
   }
 
-  const used = await hasReceivedDocuments(db, source.name);
+  const used = await hasReceivedDocuments(db, source.name, source.id);
 
   /**
    * An issued address is refused **unless somebody says otherwise** —
@@ -503,7 +546,11 @@ export async function handleRetireSource(
   }
 
   if (!used && (!source.email_address || releaseAddress)) {
-    await db.prepare("DELETE FROM sources WHERE id = ?").bind(sourceId).run();
+    // Its Source instance goes with it (decision 0557).
+    await db.batch([
+      db.prepare("DELETE FROM route_instances WHERE source_id = ?").bind(sourceId),
+      db.prepare("DELETE FROM sources WHERE id = ?").bind(sourceId),
+    ]);
     return {
       status: 200,
       body: {
@@ -582,7 +629,7 @@ export async function handleRenameSource(
     };
   }
 
-  if (await hasReceivedDocuments(db, source.name)) {
+  if (await hasReceivedDocuments(db, source.name, source.id)) {
     return {
       status: 409,
       body: {

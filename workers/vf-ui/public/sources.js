@@ -22,6 +22,21 @@ let units = [];
 let processes = [];
 
 /**
+ * **What an action does once it has succeeded — decision 0557.** This
+ * screen reloads and redraws itself; Process routes, which now shows
+ * these same sources as Source instances, sets its own, so the
+ * rename, retire, address and org actions below serve both.
+ */
+const reloadThisScreen = async () => {
+  await load();
+  render();
+};
+let refresh = reloadThisScreen;
+export function setSourcesRefresh(fn) {
+  refresh = fn;
+}
+
+/**
  * A name reduced to an identifier — decision 0129.
  *
  * **Accents are folded rather than stripped**, so a German customer
@@ -33,7 +48,7 @@ let processes = [];
  * and the alternative — a round trip to preview an identifier as
  * somebody types — is worse.
  */
-function slug(value) {
+export function slug(value) {
   return value
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
@@ -49,7 +64,7 @@ function slug(value) {
  * Only operating units, because a document belongs to one and never to
  * a legal entity (decision 0036).
  */
-async function loadUnits() {
+export async function loadUnits() {
   try {
     const response = await fetch("/api/org/units");
     if (!response.ok) return;
@@ -101,7 +116,7 @@ async function load() {
  * name, and rules reference that name. Promising deletion and archiving
  * instead is the mistake decision 0078 records.
  */
-async function retireSource(source, releaseAddress = false) {
+export async function retireSource(source, releaseAddress = false) {
   const query = releaseAddress ? "?releaseAddress=true" : "";
   const response = await fetch(`/api/sources/${encodeURIComponent(source.id)}${query}`, {
     method: "DELETE",
@@ -130,8 +145,7 @@ async function retireSource(source, releaseAddress = false) {
     return;
   }
 
-  await load();
-  render();
+  await refresh();
 }
 
 function openReleaseAddressConfirm(source, emailAddress) {
@@ -173,7 +187,7 @@ function openReleaseAddressConfirm(source, emailAddress) {
  * look like part of this app. The same `.backdrop`/`.popout` shape
  * every other write action in this app already uses, in its place.
  */
-function openRenameSourceForm(source) {
+export function openRenameSourceForm(source) {
   const problem = el("div", { class: "warn" });
   const nameInput = el("input", { type: "text", value: source.name });
 
@@ -199,8 +213,7 @@ function openRenameSourceForm(source) {
           return;
         }
         backdrop.remove();
-        await load();
-        render();
+        await refresh();
       } catch {
         problem.textContent = t("sources.failed");
       }
@@ -267,8 +280,7 @@ async function createSource() {
     return;
   }
 
-  await load();
-  render();
+  await refresh();
 }
 
 /**
@@ -278,7 +290,7 @@ async function createSource() {
  * collide with another customer they have never heard of. The button
  * says so by asking for nothing.
  */
-async function claimAddress(sourceId) {
+export async function claimAddress(sourceId) {
   const response = await fetch(`/api/sources/${encodeURIComponent(sourceId)}/email`, {
     method: "POST",
   });
@@ -289,8 +301,7 @@ async function claimAddress(sourceId) {
     return;
   }
 
-  await load();
-  render();
+  await refresh();
 }
 
 /**
@@ -305,7 +316,7 @@ async function claimAddress(sourceId) {
  * Empty for an unknown code, so a caller can fall through to whatever
  * else it has rather than printing `outcome.something`.
  */
-function outcome(reason) {
+export function outcome(reason) {
   if (!reason) return "";
   const words = t(`outcome.${reason}`);
   return words === `outcome.${reason}` ? "" : words;
@@ -325,7 +336,7 @@ function outcome(reason) {
  * Cleared on every render, so a refusal about one source cannot sit
  * over an action on another.
  */
-function note(message) {
+export function note(message) {
   const box = document.getElementById("sources-note");
   if (box) box.textContent = message;
 }
@@ -349,7 +360,7 @@ function note(message) {
  * Only operating units: a document belongs to one and never to a legal
  * entity (decision 0036).
  */
-function orgPicker(source) {
+export function orgPicker(source) {
   const picker = el("select", { class: "orgpicker" });
 
   picker.append(el("option", { value: "", text: t("sources.orgautomatic") }));
@@ -546,6 +557,7 @@ function render() {
 
 export async function openSources() {
   setCurrentScreen("sources");
+  refresh = reloadThisScreen;
   // Before the sources, because each row's org picker is built from
   // them — decision 0204.
   await loadUnits();

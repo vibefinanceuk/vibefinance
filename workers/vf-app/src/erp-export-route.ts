@@ -83,7 +83,7 @@ function money(v: unknown): string {
  * The invoices a new export would take, in the units this person may
  * export: payment-eligible and never exported.
  */
-async function eligibleInvoiceIds(db: D1Database, units: string[] | null): Promise<string[]> {
+export async function eligibleInvoiceIds(db: D1Database, units: string[] | null): Promise<string[]> {
   const clause = unitClause({ units }, "h.org_unit_id");
   const rows = await db
     .prepare(

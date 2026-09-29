@@ -498,6 +498,14 @@ Object.assign(ICONS, {
   // once it has.
   sources: '<path d="M3 12h5l2 3h4l2-3h5"/><path d="M4 12 5.5 5h13L20 12"/><path d="M3 12v6a1 1 0 0 0 1 1h16a1 1 0 0 0 1-1v-6"/>',
 
+  // Decision 0557 — an arrow in and an arrow out either side of a box:
+  // a route, which is a way in (a Source) or a way out (a Destination).
+  routes: '<rect x="8" y="7" width="8" height="10" rx="1.5"/><path d="M2 12h5M5 9.5 7.5 12 5 14.5"/><path d="M17 12h5M19.5 9.5 22 12l-2.5 2.5"/>',
+
+  // Decision 0557 — sources fanning into a first box and a line of
+  // stages: where routes are placed in a process.
+  processroutes: '<path d="M2 6h3l3 6M2 18h3l3-6M2 12h6"/><rect x="8" y="9.5" width="5" height="5" rx="1"/><path d="M13 12h3"/><rect x="16" y="9.5" width="5" height="5" rx="1"/>',
+
   // A package outline — the silhouette, the seam where a lid meets a
   // box, and a centre line — decision 0371. Distinct from `documents`
   // deliberately: a purchase order is reference data, not a document

@@ -698,8 +698,11 @@ async function go(screen) {
     shell.hidden = false;
   }
   if (screen === "sources") {
-    const { openSources } = await import("/sources.js");
-    await openSources();
+    // Decision 0557: Sources is now Process routes, which shows the same
+    // sources as each process's Source instances. Anything still asking
+    // for Sources is taken there.
+    const { open } = await import("/process-routes.js");
+    await open();
   } else if (screen === "rules") {
     const { open } = await import("/rules.js");
     await open();
@@ -714,6 +717,14 @@ async function go(screen) {
     await open();
   } else if (screen === "purchaseorders") {
     const { open } = await import("/purchase-orders.js");
+    await open();
+  } else if (screen === "routes") {
+    // Routes — decision 0557.
+    const { open } = await import("/routes.js");
+    await open();
+  } else if (screen === "processroutes") {
+    // Process routes — decision 0557, in place of Sources.
+    const { open } = await import("/process-routes.js");
     await open();
   } else if (screen === "routemonitor") {
     // The Route monitor — decision 0556.
@@ -828,6 +839,9 @@ const NAV_PERMISSIONS = {
   purchaseorders: "Admin.Configure",
   // The ERP export — decision 0552: its own permission, scoped by unit.
   erpexport: "AP.Export",
+  // Routes and Process routes — decision 0557: gated as Sources was.
+  routes: "Admin.Configure",
+  processroutes: "Admin.Configure",
   // The Route monitor — decision 0556: for a customer's own IT team.
   routemonitor: "Integration.Monitor",
   /**
@@ -924,7 +938,6 @@ export function frame(main) {
       screens: [
         ["access", "users"],
         ["apsetup", "apsetup"],
-        ["sources", "sources"],
         ["purchaseorders", "purchaseorders"],
         ["rules", "rules"],
         ["processes", "processes"],
@@ -940,8 +953,13 @@ export function frame(main) {
       // The Route monitor (decision 0556) after it, last in the menu, so no
       // existing screen changes colour (0527).
       screens: [
-        ["erpexport", "download"],
+        // Decision 0557: Routes and Process routes, which replaces
+        // Sources (moved here from Configuration: the one menu change
+        // the Routes design accepted, so some screens change colour).
+        ["routes", "routes"],
+        ["processroutes", "processroutes"],
         ["routemonitor", "systemalert"],
+        ["erpexport", "download"],
       ],
     },
   ];

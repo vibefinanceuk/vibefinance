@@ -28,6 +28,8 @@ const STRINGS = {
   strings: {
     "nav.tasks": "Tasks",
     "nav.sources": "Sources",
+    "nav.routes": "Routes",
+    "nav.processroutes": "Process routes",
     "nav.purchaseorders": "Purchase Orders",
     "nav.dashboard": "Dashboard",
     "nav.suppliers": "Suppliers",
@@ -331,10 +333,13 @@ describe("the navigation", () => {
       // suite's own full, unfiltered form rather than a hand-picked
       // subset.
       "AP Setup",
-      "Sources",
       "Purchase Orders",
       "Rules",
       "Processes",
+      // Decision 0557: Sources became Routes and Process routes, under
+      // Integration.
+      "Routes",
+      "Process routes",
     ]);
   });
 

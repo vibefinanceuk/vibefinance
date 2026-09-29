@@ -4824,6 +4824,22 @@ describe("/coding-config, through the real router (decision 0540)", () => {
   });
 });
 
+describe("routes and process routes, through the real router (decision 0557)", () => {
+  it("need Admin.Configure, like the Sources screen they replace", async () => {
+    const monitor = await seedUserWithPermissions(["Integration.Monitor"]);
+    for (const path of ["/routes", "/process-routes"]) {
+      expect((await SELF.fetch(`https://example.com${path}`, { headers: { Authorization: `Bearer ${monitor}` } })).status).toBe(403);
+    }
+    const admin = await seedUserWithPermissions(["Admin.Configure"]);
+    const headers = { Authorization: `Bearer ${admin}` };
+    const routes = await SELF.fetch("https://example.com/routes", { headers });
+    expect(routes.status).toBe(200);
+    expect(((await routes.json()) as { routes: unknown[] }).routes).toHaveLength(6);
+    const flow = await SELF.fetch("https://example.com/process-routes", { headers });
+    expect(flow.status).toBe(200);
+  });
+});
+
 describe("the Route monitor, through the real router (decision 0556)", () => {
   it("needs Integration.Monitor, lists, reads one message, and 404s what does not exist", async () => {
     const without = await seedUserWithPermissions(["AP.Review", "Admin.Configure"]);

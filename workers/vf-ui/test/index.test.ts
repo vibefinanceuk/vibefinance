@@ -539,6 +539,9 @@ describe("the proxy carries every path a screen calls (decision 0131)", () => {
     ["GET", "/api/erp-exports"],
     ["POST", "/api/erp-exports"],
     ["GET", "/api/erp-exports/x-1/csv"],
+    /** Routes and Process routes — decision 0557. */
+    ["GET", "/api/routes"],
+    ["GET", "/api/process-routes"],
     /** The Route monitor — decision 0556. */
     ["GET", "/api/route-messages"],
     ["GET", "/api/route-messages/MSG-1"],
