@@ -197,6 +197,7 @@ import erpExportUndoPopoutStringsSql from "../migrations/0206_erp_export_undo_po
 import routeMonitorStringsSql from "../migrations/0207_route_monitor_strings.sql?raw";
 import routesStringsSql from "../migrations/0208_routes_and_process_routes_strings.sql?raw";
 import erpDestinationStringsSql from "../migrations/0209_erp_destination_strings.sql?raw";
+import routeFixStringsSql from "../migrations/0210_route_fix_and_tell_strings.sql?raw";
 
 function stripSqlComments(sql: string): string {
   return sql
@@ -426,5 +427,6 @@ export async function applyTestSchema(): Promise<void> {
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(routeMonitorStringsSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(routesStringsSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(erpDestinationStringsSql)));
+  await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(routeFixStringsSql)));
 
 }

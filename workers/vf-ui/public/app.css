@@ -4810,3 +4810,19 @@
 .popout.praddpop { width: min(520px, 100%); }
 .rttable td:last-child { white-space: nowrap; }
 @media (max-width: 1200px) { .rtgrid { grid-template-columns: 1fr; } .rtchain { grid-template-columns: 1fr; } .rtpart:not(:last-child)::after { content: none; } }
+
+/* Decision 0559 — reprocess, dismiss and alerts in the Route monitor. */
+.rmreason { margin: 2px 0 0 0; font-style: italic; }
+.popout.rmpop { width: min(560px, 100%); }
+.popout.rmpop textarea.rmreasonbox { width: 100%; min-height: 84px; box-sizing: border-box; resize: vertical; }
+.popout.rmalertspop { width: min(640px, 100%); max-height: 86vh; overflow: auto; }
+.rmalerts { display: grid; gap: 8px; margin: 8px 0; }
+.rmalert { border: 0.5px solid var(--border); border-radius: var(--radius); padding: 8px 12px; background: var(--surface-1); display: grid; gap: 2px; }
+.rmalerthead { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.rmalertform { border-top: 1px solid var(--border-strong); margin-top: 10px; padding-top: 4px; display: grid; gap: 8px; }
+.rmalertform .kf { display: grid; gap: 4px; }
+.rmalertform input[type="text"], .rmalertform select { width: 100%; box-sizing: border-box; }
+.rmcheck { display: flex; align-items: center; gap: 6px; font-size: var(--text-sm); }
+.popout .rmcheck input.rmnum { width: 80px; flex: none; padding: 4px 8px; margin-left: 4px; }
+.popout .rmcheck input[type="checkbox"] { width: auto; flex: none; }
+.rmformbuttons { justify-content: flex-start; }

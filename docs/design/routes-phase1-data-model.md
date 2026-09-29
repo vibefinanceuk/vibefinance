@@ -294,7 +294,7 @@ Each slice is a decision on its own, delivered and tested live as now.
 | **2. Route monitor** (built, 0556) | The monitor screen, message detail, originals, `Integration.Monitor`; the four counts | IT can see every email and why one failed |
 | **3. Routes and instances** (built, 0557: entry and exit stages on the process rather than a `route_role` on the stage, and gated on `Admin.Configure` until routes can be configured) | `routes`, versions, instances, `route_role`; the backfill in section 4; the Routes screen (standard routes, read-only) and Process routes replacing Sources | Sources become Process routes; the menu changes once |
 | **4. ERP as a Destination** (built, 0558: outbound messages name their Destination in `destination_id`; an undone export's messages are dismissed) | The export's eligibility from the exit stage; each export an outbound message; once-only per instance; the Destination panel | The ERP export appears as a Destination, with its failures in the monitor |
-| **5. Fix and tell** | Plain-language errors with codes, reprocess and dismiss, alerts by email and webhook | IT fixes and reprocesses without VibeFinance |
+| **5. Fix and tell** (built, 0559: alerts for `Integration.Monitor`, email through Resend) | Plain-language errors with codes, reprocess and dismiss, alerts by email and webhook | IT fixes and reprocesses without VibeFinance |
 
 Slice 1 comes first because it is useful on its own and everything else
 reads its tables. Slice 2 needs only slice 1.

@@ -112,6 +112,7 @@ import erpExportUndoSql from "../../../migrations/0105_erp_export_undo.sql?raw";
 import routeMessagesSql from "../../../migrations/0106_route_messages.sql?raw";
 import routesAndInstancesSql from "../../../migrations/0107_routes_and_instances.sql?raw";
 import erpDestinationMessagesSql from "../../../migrations/0108_erp_destination_messages.sql?raw";
+import routeAlertsSql from "../../../migrations/0109_route_alerts.sql?raw";
 
 // Another known divergence from production, on top of the one below:
 // D1's exec() splits its input by newline and executes each non-empty
@@ -159,6 +160,7 @@ function toOneStatementPerLine(sql: string): string {
 const TABLES_IN_DROP_ORDER = [
   // Routes, slice 1 (decision 0555): invoice_documents now references
   // route_messages, so both go first, invoice_documents before it.
+  "route_alert_log", "route_alerts",
   "route_message_items", "route_message_events", "route_message_parts", "invoice_documents", "route_messages",
   // Routes, slice 3 (decision 0557): instances reference sources and processes.
   "route_instances", "route_versions", "routes",
@@ -418,6 +420,7 @@ export async function applyTestSchema(): Promise<void> {
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(routeMessagesSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(routesAndInstancesSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(erpDestinationMessagesSql)));
+  await env.DB.exec(toOneStatementPerLine(stripSqlComments(routeAlertsSql)));
 }
 
 /**

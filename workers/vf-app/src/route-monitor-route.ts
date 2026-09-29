@@ -1,4 +1,5 @@
 import type { RouteResult } from "./org-route.js";
+import { whyNotReprocess } from "./route-reprocess.js";
 
 /**
  * **The Route monitor — decision 0556**, slice 2 of
@@ -221,9 +222,39 @@ export async function handleGetRouteMessage(db: D1Database, id: string): Promise
     .bind(id)
     .all<{ item_id: string; part_seq: number | null; invoice_number: string | null; supplier_name: string | null }>();
 
+  /**
+   * **What can be done with it — decision 0559.** Whether it can be run
+   * again (and if not, why: a code), and the other open failures on the
+   * same route with the same problem, which one fix usually fixes too.
+   */
+  const cannotReprocess = await whyNotReprocess(db, {
+    id: String(m.id),
+    instance_id: (m.instance_id as string | null) ?? null,
+    direction: String(m.direction),
+    status: String(m.status),
+    received_at: String(m.received_at),
+    attempts: Number(m.attempts ?? 1),
+  });
+  const similar =
+    m.instance_id && m.error_code && (m.status === "failed" || m.status === "partial")
+      ? (
+          await db
+            .prepare(
+              `SELECT id FROM route_messages WHERE instance_id = ? AND error_code = ? AND status IN ('failed', 'partial') AND id != ?
+               ORDER BY received_at DESC LIMIT 50`
+            )
+            .bind(m.instance_id, m.error_code, m.id)
+            .all<{ id: string }>()
+        ).results.map((r) => r.id)
+      : [];
+
   return {
     status: 200,
     body: {
+      canReprocess: cannotReprocess === null,
+      cannotReprocess,
+      similar,
+      canDismiss: m.status === "failed" || m.status === "partial" || m.status === "received",
       message: {
         id: m.id,
         sourceId: m.route_instance,

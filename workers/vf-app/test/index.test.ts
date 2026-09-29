@@ -4858,6 +4858,31 @@ describe("pausing a Destination, through the real router (decision 0558)", () =>
   });
 });
 
+describe("fix and tell, through the real router (decision 0559)", () => {
+  it("need Integration.Monitor: dismiss, alerts, and a reprocess refused with its reason", async () => {
+    const admin = await seedUserWithPermissions(["Admin.Configure"]);
+    for (const [method, path] of [["POST", "/route-messages/MSG-R9/dismiss"], ["POST", "/route-messages/MSG-R9/reprocess"], ["GET", "/route-alerts"]]) {
+      expect((await SELF.fetch(`https://example.com${path}`, { method, headers: { Authorization: `Bearer ${admin}` } })).status).toBe(403);
+    }
+    const monitor = await seedUserWithPermissions(["Integration.Monitor"]);
+    const headers = { Authorization: `Bearer ${monitor}`, "Content-Type": "application/json" };
+    await env.DB.prepare(
+      "INSERT INTO route_messages (id, instance_id, direction, status, failed_part, error_code, received_at) VALUES ('MSG-R9', NULL, 'in', 'failed', 'gateway', 'no_such_address', ?)"
+    )
+      .bind(new Date().toISOString())
+      .run();
+    const reprocess = await SELF.fetch("https://example.com/route-messages/MSG-R9/reprocess", { method: "POST", headers });
+    // Unclaimed mail was never kept, so there is nothing to run again.
+    expect([409, 503]).toContain(reprocess.status);
+    const dismissed = await SELF.fetch("https://example.com/route-messages/MSG-R9/dismiss", { method: "POST", headers, body: JSON.stringify({ reason: "Spam" }) });
+    expect(dismissed.status).toBe(200);
+    const saved = await SELF.fetch("https://example.com/route-alerts", { method: "POST", headers, body: JSON.stringify({ onFailure: true, emails: ["it@acme.com"] }) });
+    expect(saved.status).toBe(201);
+    const listed = (await (await SELF.fetch("https://example.com/route-alerts", { headers })).json()) as { alerts: unknown[] };
+    expect(listed.alerts).toHaveLength(1);
+  });
+});
+
 describe("the Route monitor, through the real router (decision 0556)", () => {
   it("needs Integration.Monitor, lists, reads one message, and 404s what does not exist", async () => {
     const without = await seedUserWithPermissions(["AP.Review", "Admin.Configure"]);

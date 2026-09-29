@@ -241,6 +241,11 @@ const PROXIED_TO_INSTANCE: RegExp[] = [
   /^\/route-messages$/,
   /^\/route-messages\/[^/]+$/,
   /^\/route-messages\/[^/]+\/parts\/\d+$/,
+  // Fix and tell — decision 0559: reprocess (one, or several), dismiss, and alerts.
+  /^\/route-messages\/[^/]+\/(reprocess|dismiss)$/,
+  /^\/route-alerts$/,
+  /^\/route-alerts\/[^/]+$/,
+  /^\/route-alerts\/[^/]+\/test$/,
   // Decision 0553 — undoing an export.
   /^\/erp-exports\/[^/]+\/undo$/,
   /^\/invoices\/[^/]+\/document-url$/,

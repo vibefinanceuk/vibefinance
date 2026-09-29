@@ -85,7 +85,7 @@ async function sourceFor(db: D1Database, address: string) {
  * gives a stream and nothing else, and a MIME parser is a dependency
  * this needs one function from.
  */
-function attachmentsOf(raw: string): { filename: string; contentType: string; bytes: Uint8Array }[] {
+export function attachmentsOf(raw: string): { filename: string; contentType: string; bytes: Uint8Array }[] {
 
   const boundaryMatch = raw.match(/boundary="?([^"\r\n;]+)"?/i);
   if (!boundaryMatch) return [];
@@ -216,13 +216,99 @@ async function markReceiving(db: D1Database, sourceId: string): Promise<void> {
  * the difference between a supplier learning today and a customer
  * learning in a month that invoices went nowhere.
  */
+/**
+ * Receive a message, then — **decision 0559** — tell whoever asked to be
+ * told if it failed. `onFinished` is given the message's id once it is
+ * recorded; the alerts decide from its status whether to say anything.
+ * A failure to alert never affects what was received.
+ */
 export async function handleInboundEmail(
   message: EmailMessage,
   db: D1Database,
   model: ExtractionModel,
   bucket?: R2Bucket,
-  customerId?: string
+  customerId?: string,
+  onFinished?: (messageId: string) => Promise<void>
 ): Promise<void> {
+  const messageId = await receiveInboundEmail(message, db, model, bucket, customerId);
+  if (messageId && onFinished) {
+    try {
+      await onFinished(messageId);
+    } catch {
+      // Deliberately silent: see above.
+    }
+  }
+}
+
+/**
+ * **One attachment through capture — decisions 0555 and 0559.** Shared by
+ * receiving and by reprocessing, so a message fixed and run again goes
+ * through exactly the path it first took: the invoice points at the
+ * stored part, the part records its outcome, and the history says so.
+ */
+export async function captureAttachmentPart(
+  db: D1Database,
+  args: {
+    messageId: string | null;
+    sourceId: string;
+    seq: number;
+    filename: string;
+    bytes: Uint8Array;
+    stored?: StoredPart;
+    model: ExtractionModel;
+    bucket?: R2Bucket;
+    customerId?: string;
+    actor?: string;
+  }
+): Promise<{ captured: boolean; invoiceId?: string; why?: string }> {
+  const { messageId, seq, stored } = args;
+  const result = await handleCaptureFromSource(
+    db,
+    args.sourceId,
+    args.bytes,
+    args.model,
+    undefined,
+    args.bucket,
+    args.customerId,
+    stored
+  );
+  if (result.status >= 400) {
+    /**
+     * **Why, not just that** — decision 0162.
+     *
+     * Decision 0146 collected failed attachments by filename and
+     * discarded `result.body`, which holds the actual reason. So a
+     * supplier got *"the attached file could not be read as an
+     * invoice"*, the customer got `unreadable`, and **the one thing
+     * that would explain it was thrown away** — the same fault
+     * decision 0161 fixed for a document that could not be detected.
+     *
+     * `wrangler tail` shows nothing either, because capture returns a
+     * 422 rather than throwing.
+     */
+    const why = (result.body as { error?: string } | undefined)?.error;
+    if (messageId) {
+      if (stored) await setPartOutcome(db, messageId, seq, "failed", why ?? null);
+      await addRouteEvent(db, messageId, "capture_failed", { partSeq: seq, detail: why ?? args.filename });
+    }
+    return { captured: false, ...(why ? { why } : {}) };
+  }
+  const invoiceId = (result.body as { id?: string } | undefined)?.id;
+  if (messageId) {
+    if (stored) await setPartOutcome(db, messageId, seq, "captured", null);
+    if (invoiceId) await linkRouteItem(db, messageId, invoiceId, seq);
+    await addRouteEvent(db, messageId, "captured", { partSeq: seq, ...(invoiceId ? { detail: invoiceId } : {}) });
+  }
+  return { captured: true, ...(invoiceId ? { invoiceId } : {}) };
+}
+
+async function receiveInboundEmail(
+  message: EmailMessage,
+  db: D1Database,
+  model: ExtractionModel,
+  bucket?: R2Bucket,
+  customerId?: string
+): Promise<string | null> {
   /**
    * **Read once, as bytes — decision 0555.** The raw stream can be read
    * only once, and the email itself is now kept, so it is read as the
@@ -297,7 +383,7 @@ export async function handleInboundEmail(
       });
     }
     message.setReject("That address does not accept invoices.");
-    return;
+    return messageId;
   }
 
   if (source.status === "retired") {
@@ -314,7 +400,7 @@ export async function handleInboundEmail(
     // 0130). Until it does, this is the guard that makes the status
     // true rather than decorative.
     message.setReject("That address is no longer in use.");
-    return;
+    return messageId;
   }
 
   const attachments = attachmentsOf(raw);
@@ -332,7 +418,7 @@ export async function handleInboundEmail(
     message.setReject(
       "No invoice was attached. Please attach the invoice as a PDF, XML or image."
     );
-    return;
+    return messageId;
   }
 
   /**
@@ -366,42 +452,18 @@ export async function handleInboundEmail(
       else await addRouteEvent(db, messageId!, "attachment_not_stored", { partSeq: seq, detail: part.reason });
     }
 
-    const result = await handleCaptureFromSource(
-      db,
-      source.id,
-      attachment.bytes,
+    const outcome = await captureAttachmentPart(db, {
+      messageId,
+      sourceId: source.id,
+      seq,
+      filename: attachment.filename,
+      bytes: attachment.bytes,
+      stored,
       model,
-      undefined,
       bucket,
       customerId,
-      stored
-    );
-    if (result.status >= 400) {
-      /**
-       * **Why, not just that** — decision 0162.
-       *
-       * Decision 0146 collected failed attachments by filename and
-       * discarded `result.body`, which holds the actual reason. So a
-       * supplier got *"the attached file could not be read as an
-       * invoice"*, the customer got `unreadable`, and **the one thing
-       * that would explain it was thrown away** — the same fault
-       * decision 0161 fixed for a document that could not be detected.
-       *
-       * `wrangler tail` shows nothing either, because capture returns a
-       * 422 rather than throwing.
-       */
-      const why = (result.body as { error?: string } | undefined)?.error;
-      failures.push(why ? `${attachment.filename}: ${why}` : attachment.filename);
-      if (messageId) {
-        if (stored) await setPartOutcome(db, messageId, seq, "failed", why ?? null);
-        await addRouteEvent(db, messageId, "capture_failed", { partSeq: seq, detail: why ?? attachment.filename });
-      }
-    } else if (messageId) {
-      const invoiceId = (result.body as { id?: string } | undefined)?.id;
-      if (stored) await setPartOutcome(db, messageId, seq, "captured", null);
-      if (invoiceId) await linkRouteItem(db, messageId, invoiceId, seq);
-      await addRouteEvent(db, messageId, "captured", { partSeq: seq, ...(invoiceId ? { detail: invoiceId } : {}) });
-    }
+    });
+    if (!outcome.captured) failures.push(outcome.why ? `${attachment.filename}: ${outcome.why}` : attachment.filename);
   }
 
   // **Rejected only if nothing got through.** A message with one good
@@ -430,12 +492,13 @@ export async function handleInboundEmail(
       });
     }
     message.setReject("The attached file could not be read as an invoice.");
-    return;
+    return messageId;
   }
 
   await record(db, message, "captured", null, source.id, attachments.length, captured);
   if (messageId) await finishRouteMessage(db, messageId, { status: failures.length > 0 ? "partial" : "delivered" });
   await markReceiving(db, source.id);
+  return messageId;
 }
 
 /**

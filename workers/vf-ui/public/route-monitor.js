@@ -174,7 +174,11 @@ function outcomeLine(m) {
 }
 
 function messagesPanel() {
-  const head = el("div", { class: "cardhead" }, [el("h3", { text: t("routemonitor.messages") })]);
+  const head = el("div", { class: "cardhead" }, [
+    el("h3", { text: t("routemonitor.messages") }),
+    // Decision 0559: who is told, and when.
+    el("div", { class: "statebuttons" }, [actionLink("systemalert", { label: t("routemonitor.alerts"), onclick: openAlerts })]),
+  ]);
   if (data.messages.length === 0) {
     return el("div", { class: "panel rmmessages" }, [head, filters(), el("p", { class: "muted sm", text: t("routemonitor.nomessages") })]);
   }
@@ -285,14 +289,35 @@ function detailPanel() {
       render();
     },
   });
+  /**
+   * **Fix and run again, or close — decision 0559.** Reprocess where the
+   * message can be run again; the same for every open failure like it on
+   * this route, where there are others; and Dismiss, with a reason.
+   */
+  const actions = [
+    ...(detail.canReprocess ? [actionLink("release", { primary: true, label: t("routemonitor.reprocess"), onclick: () => reprocess([message.id]) })] : []),
+    ...(detail.canReprocess && detail.similar?.length > 0
+      ? [
+          actionLink("release", {
+            label: t("routemonitor.reprocessall").replace("{n}", String(detail.similar.length + 1)),
+            onclick: () => reprocess([message.id, ...detail.similar]),
+          }),
+        ]
+      : []),
+    ...(detail.canDismiss ? [actionLink("discard", { label: t("routemonitor.dismiss"), onclick: () => openDismiss(message) })] : []),
+  ];
   return el("div", { class: "panel rmdetail" }, [
-    el("div", { class: "cardhead" }, [el("h3", { text: message.subject || message.id }), el("div", { class: "statebuttons" }, [close])]),
+    el("div", { class: "cardhead" }, [el("h3", { text: message.subject || message.id }), el("div", { class: "statebuttons" }, [...actions, close])]),
     el("p", {
       class: "muted sm",
       text: [message.sourceName ?? t("routemonitor.unclaimed"), when(message.receivedAt), message.id].join(" · "),
     }),
     chain(message),
     ...explanation(message),
+    // Why it cannot be run again, where it failed and cannot (0559).
+    ...((message.status === "failed" || message.status === "partial") && !detail.canReprocess && detail.cannotReprocess
+      ? [el("p", { class: "muted sm", text: t(`routemonitor.cannot.${detail.cannotReprocess}`) })]
+      : []),
     ...technical(message, parts),
     ...(invoices.length > 0
       ? [
@@ -332,11 +357,278 @@ function detailPanel() {
           ` ${t(`routemonitor.event.${e.event}`)}`,
           // Who, for what a person did: an export made or undone (0558).
           ...(e.actorName ? [el("span", { class: "muted", text: ` · ${t("routemonitor.by").replace("{who}", e.actorName)}` })] : []),
+          // The reason a person gave, for what they closed (0558, 0559).
+          ...((e.event === "dismissed" || e.event === "undone") && e.detail ? [el("div", { class: "muted sm rmreason", text: e.detail })] : []),
           ...(e.partSeq ? [el("span", { class: "muted", text: ` · ${t("routemonitor.partn").replace("{n}", String(e.partSeq))}` })] : []),
         ])
       )
     ),
   ]);
+}
+
+function note(message, ok = false) {
+  const box = document.getElementById("routemonitor-note");
+  if (!box) return;
+  box.textContent = message ?? "";
+  box.className = ok ? "ok" : "warn";
+}
+
+async function post(path, body) {
+  try {
+    const response = await fetch(path, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body ?? {}),
+    });
+    return { ok: response.ok, body: await response.json().catch(() => ({})) };
+  } catch {
+    return { ok: false, body: {} };
+  }
+}
+
+/** Run one message, or several, again — decision 0559. */
+async function reprocess(ids) {
+  note("");
+  const single = ids.length === 1;
+  const result = single
+    ? await post(`/api/route-messages/${encodeURIComponent(ids[0])}/reprocess`)
+    : await post("/api/route-messages/reprocess", { ids });
+  if (!result.ok) {
+    note(result.body.reason ? t(`routemonitor.cannot.${result.body.reason}`) : t("routemonitor.reprocessfailed"));
+    return;
+  }
+  const outcomes = single ? [result.body] : (result.body.results ?? []);
+  const delivered = outcomes.filter((o) => o.status === "delivered").length;
+  await load();
+  if (selectedId) await loadDetail(selectedId);
+  render();
+  note(t("routemonitor.reprocessed").replace("{n}", String(outcomes.length)).replace("{d}", String(delivered)), delivered > 0);
+}
+
+/** Close a failure that needs no fixing, with the reason — decision 0559. */
+function openDismiss(message) {
+  const reasonBox = el("textarea", { class: "rmreasonbox", placeholder: t("routemonitor.dismissplaceholder") });
+  const errorBox = el("div", { class: "warn sm", hidden: "hidden" });
+  const onKey = (event) => {
+    if (event.key === "Escape") close();
+  };
+  const close = () => {
+    backdrop.remove();
+    document.removeEventListener("keydown", onKey);
+  };
+  const doDismiss = async () => {
+    const reason = reasonBox.value.trim();
+    if (!reason) {
+      errorBox.hidden = false;
+      errorBox.textContent = t("routemonitor.dismissneedsreason");
+      reasonBox.focus();
+      return;
+    }
+    const result = await post(`/api/route-messages/${encodeURIComponent(message.id)}/dismiss`, { reason });
+    if (!result.ok) {
+      errorBox.hidden = false;
+      errorBox.textContent = result.body.error ?? t("routemonitor.dismissfailed");
+      return;
+    }
+    close();
+    await load();
+    if (selectedId) await loadDetail(selectedId);
+    render();
+  };
+  const box = el("div", { class: "popout rmpop", role: "dialog", "aria-label": t("routemonitor.dismisstitle") }, [
+    el("div", { class: "cardhead" }, [
+      el("h3", { text: t("routemonitor.dismisstitle") }),
+      el("div", { class: "statebuttons" }, [
+        actionLink("discard", { primary: true, label: t("routemonitor.dismiss"), onclick: doDismiss }),
+        actionLink("close", { onclick: close }),
+      ]),
+    ]),
+    el("p", { class: "muted sm", text: t("routemonitor.dismissexplain") }),
+    el("div", { class: "kf" }, [el("label", { text: t("routemonitor.dismisslabel") }), reasonBox]),
+    errorBox,
+  ]);
+  const backdrop = el("div", { class: "backdrop" }, [box]);
+  backdrop.onclick = (e) => {
+    if (e.target === backdrop) close();
+  };
+  document.addEventListener("keydown", onKey);
+  document.body.append(backdrop);
+  reasonBox.focus();
+}
+
+/**
+ * **Alerts — decision 0559.** Who is told, and when: on each failure,
+ * when a day's failures reach a number, or when a Source has received
+ * nothing for some hours; by email and/or a signed webhook. For one
+ * route or every route. Listed with what each last sent, and each can
+ * be tested, changed or deleted.
+ */
+async function openAlerts() {
+  let alerts = [];
+  let editing = null; // an alert being changed, or null for a new one
+  const listBox = el("div", { class: "rmalerts" });
+  const formBox = el("div", { class: "rmalertform" });
+  const errorBox = el("div", { class: "warn sm", hidden: "hidden" });
+  const onKey = (event) => {
+    if (event.key === "Escape") close();
+  };
+  const close = () => {
+    backdrop.remove();
+    document.removeEventListener("keydown", onKey);
+  };
+  const routes = [
+    ...data.sources.map((s) => ({ id: s.id, name: s.name, source: true })),
+    ...(data.destinations ?? []).map((d) => ({ id: d.id, name: d.name, source: false })),
+  ];
+  const routeName = (id) => (id ? routes.find((r) => r.id === id)?.name ?? id : t("routemonitor.alert.allroutes"));
+
+  async function reload() {
+    try {
+      const response = await fetch("/api/route-alerts");
+      alerts = response.ok ? (await response.json()).alerts ?? [] : [];
+    } catch {
+      alerts = [];
+    }
+    drawList();
+  }
+
+  function summaryOf(a) {
+    return [
+      ...(a.onFailure ? [t("routemonitor.alert.eachfailure")] : []),
+      ...(a.failuresPerDay ? [t("routemonitor.alert.perday").replace("{n}", String(a.failuresPerDay))] : []),
+      ...(a.silentHours ? [t("routemonitor.alert.silent").replace("{n}", String(a.silentHours))] : []),
+    ].join(" · ");
+  }
+
+  function drawList() {
+    listBox.replaceChildren(
+      ...(alerts.length === 0
+        ? [el("p", { class: "muted sm", text: t("routemonitor.alert.none") })]
+        : alerts.map((a) =>
+            el("div", { class: "rmalert" }, [
+              el("div", { class: "rmalerthead" }, [
+                el("b", { text: routeName(a.routeId) }),
+                el("div", { class: "statebuttons" }, [
+                  actionLink("backtest", {
+                    label: t("routemonitor.alert.test"),
+                    onclick: async () => {
+                      const result = await post(`/api/route-alerts/${encodeURIComponent(a.id)}/test`);
+                      await reload();
+                      errorBox.hidden = false;
+                      errorBox.className = result.ok ? "ok sm" : "warn sm";
+                      errorBox.textContent = result.ok ? t("routemonitor.alert.tested").replace("{outcome}", result.body.outcome ?? "") : t("routemonitor.alert.failed");
+                    },
+                  }),
+                  actionLink("rename", {
+                    label: t("routemonitor.alert.change"),
+                    onclick: () => {
+                      editing = a;
+                      drawForm();
+                    },
+                  }),
+                  actionLink("discard", {
+                    label: t("routemonitor.alert.delete"),
+                    onclick: async () => {
+                      await fetch(`/api/route-alerts/${encodeURIComponent(a.id)}`, { method: "DELETE" }).catch(() => null);
+                      if (editing?.id === a.id) editing = null;
+                      await reload();
+                      drawForm();
+                    },
+                  }),
+                ]),
+              ]),
+              el("div", { class: "sm", text: summaryOf(a) }),
+              el("div", { class: "muted sm", text: [...a.emails, ...(a.webhookUrl ? [a.webhookUrl] : [])].join(", ") }),
+              ...(a.webhookSecret ? [el("div", { class: "muted sm", text: t("routemonitor.alert.secret").replace("{secret}", a.webhookSecret) })] : []),
+              ...(a.lastSent ? [el("div", { class: "muted sm", text: t("routemonitor.alert.lastsent").replace("{when}", String(a.lastSent.at).slice(0, 16).replace("T", " ")).replace("{outcome}", a.lastSent.outcome) })] : []),
+            ])
+          ))
+    );
+  }
+
+  function drawForm() {
+    const a = editing ?? { routeId: null, onFailure: true, failuresPerDay: null, silentHours: null, emails: [], webhookUrl: null };
+    const route = el("select", {});
+    route.append(el("option", { value: "", text: t("routemonitor.alert.allroutes") }));
+    for (const r of routes) route.append(el("option", { value: r.id, text: r.name }));
+    route.value = a.routeId ?? "";
+    const each = el("input", { type: "checkbox", ...(a.onFailure ? { checked: "checked" } : {}) });
+    const perDayOn = el("input", { type: "checkbox", ...(a.failuresPerDay ? { checked: "checked" } : {}) });
+    const perDay = el("input", { type: "number", min: "1", class: "rmnum", value: String(a.failuresPerDay ?? 5) });
+    const silentOn = el("input", { type: "checkbox", ...(a.silentHours ? { checked: "checked" } : {}) });
+    const silent = el("input", { type: "number", min: "1", max: "720", class: "rmnum", value: String(a.silentHours ?? 24) });
+    const emails = el("input", { type: "text", value: a.emails.join(", "), placeholder: "it-support@example.com" });
+    const webhook = el("input", { type: "text", value: a.webhookUrl ?? "", placeholder: "https://" });
+    const save = actionLink("save", {
+      primary: true,
+      label: t(editing ? "routemonitor.alert.save" : "routemonitor.alert.add"),
+      onclick: async () => {
+        errorBox.hidden = true;
+        const body = {
+          routeId: route.value || null,
+          onFailure: each.checked,
+          failuresPerDay: perDayOn.checked ? Number(perDay.value) : null,
+          silentHours: silentOn.checked ? Number(silent.value) : null,
+          emails: emails.value,
+          webhookUrl: webhook.value.trim() || null,
+        };
+        let result;
+        try {
+          const response = await fetch(editing ? `/api/route-alerts/${encodeURIComponent(editing.id)}` : "/api/route-alerts", {
+            method: editing ? "PUT" : "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+          });
+          result = { ok: response.ok, body: await response.json().catch(() => ({})) };
+        } catch {
+          result = { ok: false, body: {} };
+        }
+        if (!result.ok) {
+          errorBox.hidden = false;
+          errorBox.className = "warn sm";
+          const words = result.body.reason ? t(`routemonitor.alert.refused.${result.body.reason}`) : "";
+          errorBox.textContent = words && !words.startsWith("routemonitor.") ? words : result.body.error ?? t("routemonitor.alert.failed");
+          return;
+        }
+        editing = null;
+        await reload();
+        drawForm();
+      },
+    });
+    const line = (box, words, extra = []) => el("label", { class: "rmcheck" }, [box, ` ${words}`, ...extra]);
+    formBox.replaceChildren(
+      el("h4", { class: "rmh4", text: t(editing ? "routemonitor.alert.changetitle" : "routemonitor.alert.new") }),
+      el("div", { class: "kf" }, [el("label", { text: t("routemonitor.alert.route") }), route]),
+      el("div", { class: "kf" }, [
+        el("label", { text: t("routemonitor.alert.when") }),
+        line(each, t("routemonitor.alert.eachfailure")),
+        line(perDayOn, t("routemonitor.alert.perdayform"), [perDay]),
+        line(silentOn, t("routemonitor.alert.silentform"), [silent]),
+      ]),
+      el("div", { class: "kf" }, [el("label", { text: t("routemonitor.alert.emails") }), emails]),
+      el("div", { class: "kf" }, [el("label", { text: t("routemonitor.alert.webhook") }), webhook]),
+      el("div", { class: "statebuttons rmformbuttons" }, [
+        save,
+        ...(editing ? [actionLink("close", { label: t("routemonitor.alert.cancel"), onclick: () => { editing = null; drawForm(); } })] : []),
+      ])
+    );
+  }
+
+  const box = el("div", { class: "popout rmpop rmalertspop", role: "dialog", "aria-label": t("routemonitor.alerts") }, [
+    el("div", { class: "cardhead" }, [el("h3", { text: t("routemonitor.alerts") }), el("div", { class: "statebuttons" }, [actionLink("close", { onclick: close })])]),
+    el("p", { class: "muted sm", text: t("routemonitor.alert.explain") }),
+    listBox,
+    errorBox,
+    formBox,
+  ]);
+  const backdrop = el("div", { class: "backdrop" }, [box]);
+  backdrop.onclick = (e) => {
+    if (e.target === backdrop) close();
+  };
+  document.addEventListener("keydown", onKey);
+  document.body.append(backdrop);
+  drawForm();
+  await reload();
 }
 
 function render() {

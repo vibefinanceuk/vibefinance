@@ -194,6 +194,16 @@ import { handleCaptureFromSource } from "./source-capture-route.js";
 import { handleInboundEmail, handleListInboundEmail, type EmailMessage } from "./inbound-email.js";
 import { handleGetRouteMessage, handleListRouteMessages, routeMessagePart } from "./route-monitor-route.js";
 import { handleListRoutes, handleProcessRoutes, handleSetInstanceStatus } from "./routes-route.js";
+import { handleDismissMessage, handleReprocessMessage } from "./route-reprocess.js";
+import {
+  alertTransport,
+  checkSilentRoutes,
+  handleDeleteAlert,
+  handleListAlerts,
+  handleSaveAlert,
+  handleTestAlert,
+  notifyMessageFinished,
+} from "./route-alerts.js";
 import { handleKeyInvoiceFields } from "./key-fields-route.js";
 import { handleReturnToStage, handleReturnToSupplier, handleDiscard, handleReturnTargets } from "./return-route.js";
 import {
@@ -1593,7 +1603,7 @@ export default {
      * `POST` makes one; `GET /erp-exports/:id/csv` downloads its file.
      */
     if (pathname === "/erp-exports" || /^\/erp-exports\/[^/]+\/(csv|undo)$/.test(pathname)) {
-      const { db } = resolveTenant(request, env);
+      const { db, documents } = resolveTenant(request, env);
       const auth = await authenticatePerson(db, request, env);
       if (!auth.user) return json({ error: auth.reason }, 401);
       if (!(await hasPermission(db, auth.user.id, "AP.Export"))) {
@@ -1605,7 +1615,7 @@ export default {
         return json(result.body, result.status);
       }
       if (pathname === "/erp-exports" && request.method === "POST") {
-        const result = await handleCreateErpExport(db, auth.user.id, org, env.DOCUMENTS, env.CUSTOMER_ID);
+        const result = await handleCreateErpExport(db, auth.user.id, org, documents, env.CUSTOMER_ID);
         return json(result.body, result.status);
       }
       const csvMatch = pathname.match(/^\/erp-exports\/([^/]+)\/csv$/);
@@ -1664,12 +1674,86 @@ export default {
     }
 
     /**
+     * **Fix and tell — decision 0559.** Reprocess (one message, or several
+     * with the same problem), dismiss with a reason, and alerts: all for
+     * `Integration.Monitor`, the IT team who watch the routes. Not scoped
+     * by unit, as the monitor is not.
+     */
+    if (
+      /^\/route-messages\/([^/]+)\/(reprocess|dismiss)$/.test(pathname) ||
+      pathname === "/route-messages/reprocess" ||
+      pathname === "/route-alerts" ||
+      /^\/route-alerts\/[^/]+(\/test)?$/.test(pathname)
+    ) {
+      const { db, documents } = resolveTenant(request, env);
+      const auth = await authenticatePerson(db, request, env);
+      if (!auth.user) return json({ error: auth.reason }, 401);
+      if (!(await hasPermission(db, auth.user.id, "Integration.Monitor"))) {
+        return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
+      }
+      const transport = alertTransport(env);
+      const body = request.method === "GET" || request.method === "DELETE" ? {} : ((await request.json().catch(() => ({}))) as Record<string, unknown>);
+      const reprocessDeps = () => {
+        if (!env.AI) return null;
+        return { model: createWorkersAiExtractionModel(env.AI, env.EXTRACTION_MODEL_ID), bucket: documents, customerId: env.CUSTOMER_ID };
+      };
+      if (pathname === "/route-messages/reprocess" && request.method === "POST") {
+        const deps = reprocessDeps();
+        if (!deps) return json({ error: "extraction is not configured", reason: "no_model" }, 503);
+        const ids = Array.isArray(body.ids) ? (body.ids as unknown[]).map(String).slice(0, 50) : [];
+        const results = [];
+        for (const id of ids) {
+          const result = await handleReprocessMessage(db, id, auth.user.id, deps);
+          if (result.status === 200) await notifyMessageFinished(db, transport, id);
+          results.push({ id, status: result.status, ...(result.body as Record<string, unknown>) });
+        }
+        return json({ results }, 200);
+      }
+      const messageAction = pathname.match(/^\/route-messages\/([^/]+)\/(reprocess|dismiss)$/);
+      if (messageAction && request.method === "POST") {
+        const id = decodeURIComponent(messageAction[1]);
+        if (messageAction[2] === "dismiss") {
+          const result = await handleDismissMessage(db, id, auth.user.id, body);
+          return json(result.body, result.status);
+        }
+        const deps = reprocessDeps();
+        if (!deps) return json({ error: "extraction is not configured", reason: "no_model" }, 503);
+        const result = await handleReprocessMessage(db, id, auth.user.id, deps);
+        if (result.status === 200) await notifyMessageFinished(db, transport, id);
+        return json(result.body, result.status);
+      }
+      if (pathname === "/route-alerts" && request.method === "GET") {
+        const result = await handleListAlerts(db);
+        return json(result.body, result.status);
+      }
+      if (pathname === "/route-alerts" && request.method === "POST") {
+        const result = await handleSaveAlert(db, auth.user.id, body);
+        return json(result.body, result.status);
+      }
+      const testMatch = pathname.match(/^\/route-alerts\/([^/]+)\/test$/);
+      if (testMatch && request.method === "POST") {
+        const result = await handleTestAlert(db, transport, decodeURIComponent(testMatch[1]));
+        return json(result.body, result.status);
+      }
+      const alertMatch = pathname.match(/^\/route-alerts\/([^/]+)$/);
+      if (alertMatch && request.method === "PUT") {
+        const result = await handleSaveAlert(db, auth.user.id, body, decodeURIComponent(alertMatch[1]));
+        return json(result.body, result.status);
+      }
+      if (alertMatch && request.method === "DELETE") {
+        const result = await handleDeleteAlert(db, decodeURIComponent(alertMatch[1]));
+        return json(result.body, result.status);
+      }
+      return json({ error: "method not allowed" }, 405);
+    }
+
+    /**
      * **The Route monitor — decision 0556.** `Integration.Monitor`, not
      * scoped by unit (a mailbox serves the whole customer). The list with
      * its counts, one message's detail, and one stored part as a download.
      */
     if (pathname === "/route-messages" || /^\/route-messages\/[^/]+(\/parts\/\d+)?$/.test(pathname)) {
-      const { db } = resolveTenant(request, env);
+      const { db, documents } = resolveTenant(request, env);
       const auth = await authenticatePerson(db, request, env);
       if (!auth.user) return json({ error: auth.reason }, 401);
       if (!(await hasPermission(db, auth.user.id, "Integration.Monitor"))) {
@@ -1682,7 +1766,7 @@ export default {
       }
       const partMatch = pathname.match(/^\/route-messages\/([^/]+)\/parts\/(\d+)$/);
       if (partMatch) {
-        const result = await routeMessagePart(db, env.DOCUMENTS, decodeURIComponent(partMatch[1]), Number(partMatch[2]));
+        const result = await routeMessagePart(db, documents, decodeURIComponent(partMatch[1]), Number(partMatch[2]));
         return result instanceof Response ? result : json(result.body, result.status);
       }
       const idMatch = pathname.match(/^\/route-messages\/([^/]+)$/);
@@ -5708,7 +5792,9 @@ export default {
       env.DB,
       createWorkersAiExtractionModel(env.AI, env.EXTRACTION_MODEL_ID),
       env.DOCUMENTS,
-      env.CUSTOMER_ID
+      env.CUSTOMER_ID,
+      // Decision 0559: tell whoever asked, if it failed.
+      (messageId) => notifyMessageFinished(env.DB!, alertTransport(env), messageId)
     );
   },
   /* eslint-enable no-restricted-properties */
@@ -5768,6 +5854,15 @@ export default {
         // Deliberately silent — retried next cron cycle, or via the
         // on-demand /usage/push endpoint at any time in between.
       }
+    }
+
+    // Routes gone quiet — decision 0559. Independent of the two jobs above,
+    // and silent on failure like them: checked again next cycle.
+    try {
+      const { db } = resolveTenant(new Request("https://scheduled-trigger.internal/"), env);
+      await checkSilentRoutes(db, alertTransport(env));
+    } catch {
+      // Deliberately silent.
     }
   },
 };

@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 29 September 2026 (decision 0558). A living document: what
+Last updated 29 September 2026 (decision 0559). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,12 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Routes, slice 5: reprocess, dismiss and alerts (0559) — phase 1 complete
+- Reprocess a failed message from its kept original (never an invoice
+  twice), one or all like it; dismiss with a reason.
+- Alerts by email and signed webhook on each failure, a daily threshold or
+  a Source gone quiet, managed and tested in the Route monitor.
 
 ### Routes, slice 4: the ERP export as a Destination (0558)
 - Payment-eligible reads each process's exit stage; the ERP Destination can

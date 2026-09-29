@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import stringsSql from "../../vf-licence/migrations/0207_route_monitor_strings.sql?raw";
 import destinationStringsSql from "../../vf-licence/migrations/0209_erp_destination_strings.sql?raw";
+import fixStringsSql from "../../vf-licence/migrations/0210_route_fix_and_tell_strings.sql?raw";
 
 /**
  * The Route monitor — decision 0556. Four counts, the messages with
@@ -12,8 +13,8 @@ import destinationStringsSql from "../../vf-licence/migrations/0209_erp_destinat
  * so a test that passes is a screen that reads as it will live.
  */
 
-const strings: Record<string, string> = { "action.close": "Close" };
-for (const sql of [stringsSql, destinationStringsSql]) {
+const strings: Record<string, string> = { "action.close": "Close", "action.save": "Save" };
+for (const sql of [stringsSql, destinationStringsSql, fixStringsSql]) {
   for (const m of sql.matchAll(/\('([^']+)', 'en', '((?:[^']|'')*)'\)/g)) strings[m[1]] = m[2].replace(/''/g, "'");
 }
 
@@ -334,6 +335,144 @@ describe("an export, as a message sent out — decision 0558", () => {
     const history = [...document.querySelectorAll(".rmhistory li")].map((li) =>
       (li.textContent ?? "").slice((li.querySelector(".rmtime")?.textContent ?? "").length).trim()
     );
-    expect(history).toEqual(["Exported · by Olga", "Delivered", "Undone · by Olga"]);
+    // The reason given follows the undo, on its own line (0559).
+    expect(history).toEqual(["Exported · by Olga", "Delivered", "Undone · by OlgaGL code"]);
+  });
+});
+
+describe("fix and tell — decision 0559", () => {
+  type Req = { method: string; path: string; body?: string };
+  function stubFix(calls: Req[], detail: Record<string, unknown>, alerts: unknown[] = [], refuse: Record<string, unknown> | null = null) {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        const path = String(url).split("?")[0];
+        const method = init?.method ?? "GET";
+        calls.push({ method, path, body: init?.body as string | undefined });
+        const ok = (body: unknown) => ({ ok: true, status: 200, json: async () => body }) as Response;
+        if (path === "/api/ui-strings") return ok({ locale: "en", strings });
+        if (path === "/api/route-messages" && method === "GET") return ok(LIST);
+        if (path === "/api/route-messages/MSG-7F3A-2291-0C4E" && method === "GET") return ok(detail);
+        if (path.endsWith("/reprocess") && path !== "/api/route-messages/reprocess") return ok({ id: "MSG-7F3A-2291-0C4E", status: "delivered", ran: 1, failed: 0 });
+        if (path === "/api/route-messages/reprocess") return ok({ results: [{ id: "a", status: "delivered" }, { id: "b", status: "failed" }, { id: "c", status: "delivered" }] });
+        if (path.endsWith("/dismiss")) return ok({ status: "dismissed" });
+        if (path === "/api/route-alerts" && method === "GET") return ok({ alerts });
+        if (path === "/api/route-alerts" && method === "POST") return refuse ? ({ ok: false, status: 400, json: async () => refuse }) as Response : ok({ id: "al-2" });
+        if (path.endsWith("/test")) return ok({ id: "al-1", outcome: "email: sent · webhook: sent" });
+        if (path.startsWith("/api/route-alerts/") && method === "DELETE") return ok({ deleted: true });
+        throw new Error(`no stub for ${method} ${path}`);
+      })
+    );
+  }
+  const openFirst = async () => {
+    await open();
+    (document.querySelector(".rmtable tbody tr") as HTMLElement).click();
+    await settle();
+  };
+  const buttons = () => [...document.querySelectorAll(".rmdetail .statebuttons button")].map((b) => b.textContent);
+  const click = (label: string, scope: ParentNode = document) =>
+    ([...scope.querySelectorAll("button")].find((b) => b.textContent === label) as HTMLButtonElement).click();
+
+  it("offers Reprocess, Reprocess all like it and Dismiss on a failure that can be run again", async () => {
+    const calls: Req[] = [];
+    stubFix(calls, { ...DETAIL, canReprocess: true, cannotReprocess: null, similar: ["MSG-2", "MSG-3"], canDismiss: true });
+    await openFirst();
+    expect(buttons()).toEqual(["Reprocess", "Reprocess 3 like it", "Dismiss", "Close"]);
+
+    click("Reprocess", document.querySelector(".rmdetail")!);
+    await settle();
+    expect(calls.some((c) => c.method === "POST" && c.path === "/api/route-messages/MSG-7F3A-2291-0C4E/reprocess")).toBe(true);
+    expect(text("#routemonitor-note")).toBe("1 run again: 1 delivered.");
+
+    click("Reprocess 3 like it", document.querySelector(".rmdetail")!);
+    await settle();
+    const bulk = calls.find((c) => c.path === "/api/route-messages/reprocess");
+    expect(JSON.parse(bulk!.body!)).toEqual({ ids: ["MSG-7F3A-2291-0C4E", "MSG-2", "MSG-3"] });
+    expect(text("#routemonitor-note")).toBe("3 run again: 2 delivered.");
+  });
+
+  it("says why one cannot be run again", async () => {
+    stubFix([], { ...DETAIL, canReprocess: false, cannotReprocess: "source_retired", similar: [], canDismiss: true });
+    await openFirst();
+    expect(buttons()).toEqual(["Dismiss", "Close"]);
+    expect(text(".rmdetail")).toContain("Its route is retired, so it cannot be run again.");
+  });
+
+  it("dismisses with a reason, asked for in its own pop-out", async () => {
+    const calls: Req[] = [];
+    stubFix(calls, { ...DETAIL, canReprocess: false, cannotReprocess: null, similar: [], canDismiss: true });
+    await openFirst();
+    click("Dismiss", document.querySelector(".rmdetail")!);
+    await settle();
+    const pop = document.querySelector(".popout.rmpop") as HTMLElement;
+    expect(pop.querySelector("h3")?.textContent).toBe("Dismiss this message");
+    click("Dismiss", pop);
+    await settle();
+    expect(pop.textContent).toContain("Give a reason.");
+    expect(calls.some((c) => c.path.endsWith("/dismiss"))).toBe(false);
+    (pop.querySelector("textarea") as HTMLTextAreaElement).value = "A portal notification";
+    click("Dismiss", pop);
+    await settle();
+    expect(JSON.parse(calls.find((c) => c.path.endsWith("/dismiss"))!.body!)).toEqual({ reason: "A portal notification" });
+    expect(document.querySelector(".popout.rmpop")).toBeNull();
+  });
+
+  it("shows the reason a message was dismissed in its history", async () => {
+    stubFix([], {
+      ...DETAIL,
+      message: { ...DETAIL.message, status: "dismissed" },
+      events: [...DETAIL.events, { seq: 5, at: TODAY, event: "dismissed", partSeq: null, detail: "A portal notification", actorName: "Ivy" }],
+      canReprocess: false,
+      canDismiss: false,
+      similar: [],
+    });
+    await openFirst();
+    const last = [...document.querySelectorAll(".rmhistory li")].at(-1)!;
+    expect(last.textContent).toContain("Dismissed · by Ivy");
+    expect(last.querySelector(".rmreason")?.textContent).toBe("A portal notification");
+  });
+
+  it("manages alerts: lists what each last sent, tests one, adds one and says why one is refused", async () => {
+    const calls: Req[] = [];
+    const existing = {
+      id: "al-1",
+      routeId: "s-ap",
+      routeName: "AP mailbox",
+      onFailure: true,
+      failuresPerDay: 5,
+      silentHours: null,
+      emails: ["it@acme.com"],
+      webhookUrl: "https://hooks.acme.com/vf",
+      webhookSecret: "whsec_abc",
+      lastSent: { kind: "failure", at: "2026-09-30T10:41:00.000Z", outcome: "email: sent · webhook: sent" },
+    };
+    stubFix(calls, DETAIL, [existing]);
+    await open();
+    click("Alerts", document.querySelector(".rmmessages")!);
+    await settle();
+    const pop = document.querySelector(".popout.rmalertspop") as HTMLElement;
+    const card = pop.querySelector(".rmalert") as HTMLElement;
+    expect(card.textContent).toContain("AP mailbox");
+    expect(card.textContent).toContain("Each message that fails · When a day's failures reach 5");
+    expect(card.textContent).toContain("it@acme.com, https://hooks.acme.com/vf");
+    expect(card.textContent).toContain("whsec_abc");
+    expect(card.textContent).toContain("Last sent 2026-09-30 10:41: email: sent · webhook: sent");
+
+    click("Test", card);
+    await settle();
+    expect(calls.some((c) => c.path === "/api/route-alerts/al-1/test")).toBe(true);
+    expect(pop.textContent).toContain("Test sent: email: sent · webhook: sent");
+
+    const form = pop.querySelector(".rmalertform") as HTMLElement;
+    (form.querySelector('input[type="text"]') as HTMLInputElement).value = "ops@acme.com";
+    click("Add alert", form);
+    await settle();
+    const posted = JSON.parse(calls.find((c) => c.method === "POST" && c.path === "/api/route-alerts")!.body!);
+    expect(posted).toEqual({ routeId: null, onFailure: true, failuresPerDay: null, silentHours: null, emails: "ops@acme.com", webhookUrl: null });
+
+    stubFix(calls, DETAIL, [existing], { error: "Only a Source can go quiet.", reason: "silence_needs_source" });
+    click("Add alert", pop.querySelector(".rmalertform") as HTMLElement);
+    await settle();
+    expect(pop.textContent).toContain("Only a Source can go quiet: choose a Source, or leave that unticked.");
   });
 });
