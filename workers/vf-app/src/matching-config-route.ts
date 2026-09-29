@@ -105,6 +105,21 @@ export const STANDARD_MATCHING_RULES = [
     suggestedSentence:
       "If a line's unit of measure does not match its purchase order line, assign a task to the AP Matching team requiring AP.Match.",
   },
+  /**
+   * **Decision 0545.** The operator: "add a rule to the AP Review stage,
+   * to check for closed / on hold purchase orders being used". Worded so
+   * the same sentence serves Matching and AP Review (a PO put on hold
+   * after Matching is caught there): `po.status` is computed fresh at
+   * every stage visit. The panel below already lists each stage a
+   * standard rule is authored on.
+   */
+  {
+    key: "po_status",
+    name: "Standard rule: Purchase order on hold or closed",
+    fact: "po.status",
+    suggestedSentence:
+      "If the invoice's purchase order is on hold or closed, assign a task to the AP Matching team requiring AP.Match.",
+  },
 ] as const;
 
 interface StandardRuleRow {

@@ -109,6 +109,9 @@ const STRINGS = {
     "pomatch.codingcleared": "Line {n} now has a PO line, so the coding keyed on it was removed.",
     "pomatch.pop.nonpo": "Not on the order. Coded by hand in the Coding column, like a Non-PO invoice line.",
     "pomatch.nonpoexcluded": "This invoice's Non-PO lines ({amount} with VAT) are left out.",
+    "pomatch.onholdwarn": "This purchase order is on hold. The invoice is not matched until the order is released.",
+    "pomatch.onholdwarn.reason": "This purchase order is on hold: {reason}. The invoice is not matched until the order is released.",
+    "pomatch.closedwarn": "This purchase order is closed. The invoice is not matched against it.",
     "purchaseorders.status.active": "Active",
     "purchaseorders.status.invoicedpart": "Invoiced (Part)",
     "purchaseorders.status.closed": "Closed",
@@ -586,5 +589,41 @@ describe("the usage bar leaves Non-PO lines out — decision 0544", () => {
     document.body.innerHTML = "";
     await open(VIEW);
     expect(panel().querySelector(".pmnonponote")).toBeNull();
+  });
+});
+
+describe("a PO on hold or closed — decision 0545", () => {
+  const warning = () => panel().querySelector(".pmstatuswarn")?.textContent ?? null;
+
+  it("warns in the panel, with the hold reason when there is one, and says nothing for an active PO", async () => {
+    await open({ ...VIEW, po: { ...VIEW.po, status: "on_hold", holdReason: "Budget review" } });
+    expect(warning()).toBe("This purchase order is on hold: Budget review. The invoice is not matched until the order is released.");
+    document.body.innerHTML = "";
+    await open({ ...VIEW, po: { ...VIEW.po, status: "on_hold", holdReason: null } });
+    expect(warning()).toBe("This purchase order is on hold. The invoice is not matched until the order is released.");
+    document.body.innerHTML = "";
+    await open({ ...VIEW, po: { ...VIEW.po, status: "closed", holdReason: null } });
+    expect(warning()).toBe("This purchase order is closed. The invoice is not matched against it.");
+    document.body.innerHTML = "";
+    await open(VIEW);
+    expect(warning()).toBeNull();
+  });
+
+  it("warns in a line's Match pop-out too", async () => {
+    stub({ "/api/ui-strings": STRINGS });
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { openLineMatchPopout } = await import("/po-match.js");
+    const line = {
+      lineNumber: 1, state: "matched", supplierReference: "1",
+      poLine: { lineNumber: 1, name: "Toner cartridge", quantity: 10, unit: "EA", price: 42, amount: 420 },
+      use: null, pairing: null,
+      result: { matched: true, referenceFound: true, priceMatched: true, quantityMatched: true, unitMismatch: false, variancePct: 0, quantityVariancePct: 0 },
+    };
+    openLineMatchPopout({ orderNumber: "PO-A", held: true, poStatus: "on_hold", holdReason: "Budget review", lines: [line] }, line);
+    expect(document.querySelector(".pmlinepop .pmstatuswarn")?.textContent).toContain("on hold: Budget review");
+    document.body.innerHTML = "";
+    openLineMatchPopout({ orderNumber: "PO-A", held: true, poStatus: "active", holdReason: null, lines: [line] }, line);
+    expect(document.querySelector(".pmlinepop .pmstatuswarn")).toBeNull();
   });
 });

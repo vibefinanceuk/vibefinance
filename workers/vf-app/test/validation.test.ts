@@ -459,6 +459,45 @@ describe("confirms — decision 0400, the positive twin of involves", () => {
   });
 });
 
+describe("po_status — decision 0545", () => {
+  it("is not checked when no purchase order held here was found", () => {
+    const result = validateInvoiceFacts({ "BT-112": 100, "BT-13": "PO-NOPE", "po.matched": false });
+    expect(result.checked).not.toContain("po_status");
+  });
+
+  it("passes for an active purchase order", () => {
+    const result = validateInvoiceFacts({ "BT-112": 100, "BT-13": "PO-A", "po.matched": true, "po.variance_pct": 0, "po.status": "active" });
+    expect(result.checked).toContain("po_status");
+    expect(result.failures).not.toContain("po_status");
+  });
+
+  it("fails, as danger on BT-13, for a PO on hold (with its reason) or closed", () => {
+    const held = validateInvoiceFacts({
+      "BT-112": 100,
+      "BT-13": "PO-A",
+      "po.matched": false,
+      "po.variance_pct": 0,
+      "po.status": "on_hold",
+      "po.hold_reason": "Supplier dispute",
+    });
+    expect(held.failures).toContain("po_status");
+    expect(held.involves?.find((f) => f.check === "po_status")).toMatchObject({
+      fields: ["BT-13"],
+      value: "on_hold: Supplier dispute",
+      severity: "danger",
+    });
+
+    const closed = validateInvoiceFacts({ "BT-112": 100, "BT-13": "PO-A", "po.matched": false, "po.variance_pct": 0, "po.status": "closed" });
+    expect(closed.involves?.find((f) => f.check === "po_status")?.value).toBe("closed");
+  });
+
+  it("does not also report a header PO mismatch at 0.00% when the only problem is the PO's status", () => {
+    const result = validateInvoiceFacts({ "BT-112": 100, "BT-13": "PO-A", "po.matched": false, "po.variance_pct": 0, "po.status": "on_hold" });
+    expect(result.involves?.find((f) => f.check === "po_mismatch")).toBeUndefined();
+    expect(result.failures).not.toContain("po_mismatch");
+  });
+});
+
 describe("po_mismatch — decision 0400", () => {
   /**
    * po-matching.ts computes po.matched/po.variance_pct (header) and

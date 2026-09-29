@@ -35,6 +35,14 @@ export interface LineMatchSummary {
   orderNumber: string;
   /** False when BT-13 names a PO not held here. */
   held: boolean;
+  /**
+   * Decision 0545 — the PO's own status (active, on_hold, closed) and why
+   * it is on hold. The line chips still say how each line compares; the
+   * pop-out warns that the invoice is not matched while the PO is not
+   * active.
+   */
+  poStatus: string | null;
+  holdReason: string | null;
   lines: {
     lineNumber: number;
     state: LineMatchState;
@@ -93,7 +101,10 @@ export async function lineMatchSummary(
   const orderNumber = text(facts["BT-13"]);
   if (!orderNumber) return null;
 
-  const po = await db.prepare("SELECT id FROM purchase_orders WHERE order_number = ?").bind(orderNumber).first<{ id: string }>();
+  const po = await db
+    .prepare("SELECT id, status, hold_reason FROM purchase_orders WHERE order_number = ?")
+    .bind(orderNumber)
+    .first<{ id: string; status: string; hold_reason: string | null }>();
   const invoiceLines = (
     await db
       .prepare("SELECT line_number, facts_json FROM invoice_lines WHERE invoice_id = ? ORDER BY line_number")
@@ -105,6 +116,8 @@ export async function lineMatchSummary(
     return {
       orderNumber,
       held: false,
+      poStatus: null,
+      holdReason: null,
       lines: invoiceLines.map((l) => ({
         lineNumber: l.line_number,
         state: "nopoline",
@@ -217,5 +230,11 @@ export async function lineMatchSummary(
     })
   );
 
-  return { orderNumber, held: true, lines };
+  return {
+    orderNumber,
+    held: true,
+    poStatus: po.status,
+    holdReason: po.status === "on_hold" ? po.hold_reason : null,
+    lines,
+  };
 }

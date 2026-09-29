@@ -118,6 +118,7 @@ interface PoRow {
   seller_party_id: string | null;
   payable_amount: number | null;
   status: string;
+  hold_reason: string | null;
   org_unit_id: string | null;
   buyer_name: string | null;
   supplier_name: string | null;
@@ -125,7 +126,7 @@ interface PoRow {
 
 const PO_SELECT = `
   SELECT po.id, po.order_number, po.issue_date, po.currency, po.seller_party_id,
-         po.payable_amount, po.status, po.org_unit_id,
+         po.payable_amount, po.status, po.hold_reason, po.org_unit_id,
          b.name AS buyer_name,
          (SELECT s.name FROM suppliers s WHERE s.vat_id = po.seller_party_id LIMIT 1) AS supplier_name
   FROM purchase_orders po
@@ -422,6 +423,8 @@ export async function handleGetPoMatchView(db: D1Database, invoiceId: string, us
             buyerName: po.buyer_name,
             payableAmount: po.payable_amount,
             status: poStatus(po, byOthers + thisInvoice),
+            // Decision 0545 — why it is on hold, shown with the "not matched" warning.
+            holdReason: po.status === "on_hold" ? po.hold_reason : null,
           }
         : null,
       header: { matched: header.matched, variancePct: header.variancePct ?? null },

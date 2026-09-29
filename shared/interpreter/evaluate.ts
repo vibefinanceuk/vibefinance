@@ -125,7 +125,32 @@ function validateNode(node: RuleNode, depth: number, vocabulary: VocabularyInput
  * bad code among four makes a rule that matches three things and looks
  * like it matches four.
  */
+/**
+ * **Our own closed values — decision 0545.** Not a standard's list, so
+ * not in `FIELD_CODE_LISTS` (which holds only what Peppol closes): a
+ * derived fact whose values the platform itself sets. "po.status is
+ * on hold" (with a space) would compile and never fire, the same silent
+ * failure decision 0148 refuses for currencies.
+ */
+const DERIVED_CLOSED_VALUES: Record<string, readonly string[]> = {
+  "po.status": ["active", "on_hold", "closed"],
+};
+
 function validateConditionValue(condition: Condition): void {
+  const own = DERIVED_CLOSED_VALUES[condition.field];
+  if (own) {
+    const values = Array.isArray(condition.value) ? condition.value : [condition.value];
+    for (const value of values) {
+      if (value === undefined || value === null || value === "") continue;
+      if (typeof value !== "string" || !own.includes(value)) {
+        throw new RuleValidationError(
+          `"${String(value)}" is not a ${condition.field} value (${own.join(", ")}) — ` +
+            "a rule naming one that does not exist would never match anything"
+        );
+      }
+    }
+    return;
+  }
   if (!isClosedList(condition.field)) return;
 
   const values = Array.isArray(condition.value) ? condition.value : [condition.value];

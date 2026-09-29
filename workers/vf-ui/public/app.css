@@ -2344,6 +2344,8 @@
   .pmlegend em { font-style: normal; color: var(--text-muted); }
   .pmover { color: var(--text-danger); font-weight: 600; }
   .pmwarntext { color: var(--text-warning); }
+  /* Decision 0545 — the linked PO is on hold or closed. */
+  .pmstatuswarn { margin: 0 0 10px; padding: 8px 12px; border-radius: var(--radius); border-left: 3px solid var(--severity-danger-text); background: var(--severity-danger-bg); color: var(--severity-danger-text); font-weight: 500; }
   .pmtable { width: 100%; border-collapse: collapse; }
   .pmtable th { text-align: left; font-size: var(--text-sm); font-weight: 500; color: var(--text-muted); padding: 6px 8px; border-bottom: 0.5px solid var(--border); }
   .pmtable td { padding: 10px 8px; border-bottom: 0.5px solid var(--border); vertical-align: top; }

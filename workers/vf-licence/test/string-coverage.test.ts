@@ -822,6 +822,12 @@ const KEYS_THE_INTERFACE_USES = [
   "viewer.coding.invalid.wrong_cost_centre",
   "viewer.coding.sug.invoice",
   "pomatch.nonpoexcluded",
+  // Decision 0545
+  "check.po_status",
+  "pomatch.onholdwarn",
+  "pomatch.onholdwarn.reason",
+  "pomatch.closedwarn",
+  "matching.standardrule.po_status.name",
   "pomatch.why.lines",
   // Decision 0533 — how much of each PO line is used.
   "pomatch.lineuse",

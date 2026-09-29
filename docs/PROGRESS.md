@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 29 September 2026 (decision 0544). A living document: what
+Last updated 29 September 2026 (decision 0545). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,18 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### A PO on hold or closed does not match (0545)
+- `po.matched` is false while the linked PO is `on_hold` or `closed`,
+  whatever the amounts. New facts `po.status` (closed values: active,
+  on_hold, closed) and `po.hold_reason`.
+- A `po_status` check (danger, BT-13) at every stage; the header
+  `po_mismatch` is not reported alongside it.
+- A fifth standard matching rule, "Purchase order on hold or closed",
+  worded to be authored on Matching and AP Review alike.
+- Warnings in the PO matching panel and a line's Match pop-out, with the
+  hold reason.
+- Full reasoning and verification counts in decision 0545.
 
 ### PO header check leaves Non-PO lines out (0544)
 - An invoice's use of its PO is its total less its Non-PO lines (grossed

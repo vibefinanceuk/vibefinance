@@ -106,3 +106,15 @@ describe("the VAT category, which is also closed", () => {
     expect(() => validateRule(ruleWith("BT-151", "is", "S"))).not.toThrow();
   });
 });
+
+describe("a purchase order status the platform never sets — decision 0545", () => {
+  it("refuses 'on hold' with a space, and says which values exist", () => {
+    expect(() => validateRule(ruleWith("po.status", "is", "on hold"))).toThrow(/active, on_hold, closed/);
+    expect(() => validateRule(ruleWith("po.status", "in", ["on_hold", "Closed"]))).toThrow(/"Closed"/);
+  });
+
+  it("accepts the values po-matching.ts sets", () => {
+    expect(() => validateRule(ruleWith("po.status", "in", ["on_hold", "closed"]))).not.toThrow();
+    expect(() => validateRule(ruleWith("po.status", "is_not", "active"))).not.toThrow();
+  });
+});

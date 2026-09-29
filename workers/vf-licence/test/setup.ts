@@ -187,6 +187,7 @@ import codingCompleteStringSql from "../migrations/0196_coding_complete_string.s
 import projectStatusBudgetStringsSql from "../migrations/0197_project_status_budget_strings.sql?raw";
 import glLinksProjectRefStringsSql from "../migrations/0198_gl_links_project_reference_strings.sql?raw";
 import poNonPoExcludedStringSql from "../migrations/0199_po_non_po_excluded_string.sql?raw";
+import poStatusStringsSql from "../migrations/0200_po_status_strings.sql?raw";
 
 function stripSqlComments(sql: string): string {
   return sql
@@ -406,5 +407,6 @@ export async function applyTestSchema(): Promise<void> {
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(projectStatusBudgetStringsSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(glLinksProjectRefStringsSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(poNonPoExcludedStringSql)));
+  await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(poStatusStringsSql)));
 
 }

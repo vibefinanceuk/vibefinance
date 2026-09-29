@@ -142,6 +142,13 @@ export const DERIVED_FIELDS = [
    */
   "po.line_non_po",
   /**
+   * **Decision 0545.** The linked purchase order's own status, and why
+   * it is on hold. An invoice against a PO that is not active never
+   * counts as matched (po.matched is false); these let a rule say why.
+   */
+  "po.status",
+  "po.hold_reason",
+  /**
    * **Decision 0542.** A project's budget, on each line coded to a
    * project that has one: over it, and how much of it is used. Absent on
    * every other line. Warn-only by the operator's choice; a rule decides
@@ -282,6 +289,8 @@ export const INVOICE_FIELD_TYPES: Record<string, FieldType> = {
   "po.line_quantity_matched": "boolean",
   "po.line_unit_mismatch": "boolean",
   "po.line_non_po": "boolean",
+  "po.status": "text",
+  "po.hold_reason": "text",
   "project.over_budget": "boolean",
   "project.budget_used_pct": "number",
   "coding.line_invalid": "text",
@@ -480,6 +489,10 @@ export const DERIVED_FIELD_DESCRIPTIONS: Record<DerivedField, string> = {
     "true if both the invoice line and the purchase order line carry a unit code (BT-130 and its PO-line counterpart) and they disagree. This is the gap decision 0466 named directly: today a unit mismatch makes the quantity check simply skip, reading identically to 'quantity agreed' to any rule testing po.line_quantity_matched. False, not absent, whenever both sides carry a unit — so a rule can act on it without also having to test for absence.",
   "po.line_non_po":
     "true if a person marked this line of a purchase order invoice as a Non-PO line at Matching: a charge the order never covered, such as freight or carriage, which is coded by hand instead of matched. Absent on every other line. On such a line every other po.line_* fact is absent, so line matching rules leave it alone; test this to route those lines deliberately, for example to approval above an amount.",
+  "po.status":
+    "the status of the purchase order the invoice names (BT-13): active, on_hold or closed. Absent when the invoice names no purchase order held here. An invoice against an on_hold or closed order is never matched (po.matched is false), whatever its amounts. Test it with is: 'po.status is on_hold'.",
+  "po.hold_reason":
+    "why the purchase order the invoice names is on hold, as recorded on the order. Present only while it is on hold.",
   "project.over_budget":
     "true if this line is coded to a project whose budget is exceeded once this invoice is counted: the net amounts of every other invoice's lines coded to the project (not discarded or returned ones), plus this invoice's lines on it, are more than the project's budget. Absent on a line with no project, or whose project has no budget.",
   "project.budget_used_pct":

@@ -54,7 +54,8 @@ describe("computePoMatch — header level", () => {
 
   it("matches exactly when the invoice total agrees with the order total", async () => {
     const result = await computePoMatch(env.DB, { "BT-13": "PO-500", "BT-112": 1000 });
-    expect(result).toEqual({ matched: true, variancePct: 0 });
+    // Decision 0545 — the PO's own status comes back with the verdict.
+    expect(result).toEqual({ matched: true, variancePct: 0, status: "active", holdReason: null });
   });
 
   it("is not matched when the variance exceeds the agreed tolerance", async () => {

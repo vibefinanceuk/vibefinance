@@ -588,3 +588,51 @@ describe("the invoice-level PO check leaves Non-PO lines out — decision 0544",
     expect(poShareOfTotal(100, undefined, 30)).toBe(70);
   });
 });
+
+describe("a PO on hold or closed does not match — decision 0545", () => {
+  const facts = async () => (await loadLiveInvoiceFacts(env.DB, "inv-1"))!.facts;
+  const setStatus = (status: string, reason: string | null = null) =>
+    env.DB.prepare("UPDATE purchase_orders SET status = ?, hold_reason = ? WHERE id = 'po-a'").bind(status, reason).run();
+
+  it("matches while the PO is active, and says so in po.status", async () => {
+    const f = await facts();
+    expect(f["po.matched"]).toBe(true);
+    expect(f["po.status"]).toBe("active");
+    expect(f["po.hold_reason"]).toBeUndefined();
+  });
+
+  it("stops matching while the PO is on hold, whatever the amounts, and carries the reason for rules", async () => {
+    await setStatus("on_hold", "Budget review");
+    const f = await facts();
+    expect(f["po.matched"]).toBe(false);
+    expect(f["po.status"]).toBe("on_hold");
+    expect(f["po.hold_reason"]).toBe("Budget review");
+    // The amounts still agree: only the status stops the match.
+    expect(f["po.variance_pct"]).toBe(0);
+  });
+
+  it("stops matching against a closed PO", async () => {
+    await setStatus("closed");
+    const f = await facts();
+    expect(f["po.matched"]).toBe(false);
+    expect(f["po.status"]).toBe("closed");
+  });
+
+  it("shows the status and reason in the panel and on the invoice's Match summary", async () => {
+    await setStatus("on_hold", "Budget review");
+    const view = (await handleGetPoMatchView(env.DB, "inv-1", "u-dan")).body as {
+      po: { status: string; holdReason: string | null };
+      header: { matched: boolean };
+    };
+    expect(view.po).toMatchObject({ status: "on_hold", holdReason: "Budget review" });
+    expect(view.header.matched).toBe(false);
+
+    const poMatch = ((await handleGetInvoice(env.DB, "inv-1")).body as { poMatch: { poStatus: string; holdReason: string | null } }).poMatch;
+    expect(poMatch).toMatchObject({ poStatus: "on_hold", holdReason: "Budget review" });
+
+    await setStatus("active", "Budget review");
+    const active = ((await handleGetInvoice(env.DB, "inv-1")).body as { poMatch: { poStatus: string; holdReason: string | null } }).poMatch;
+    // A stale reason on an active PO is never shown.
+    expect(active).toMatchObject({ poStatus: "active", holdReason: null });
+  });
+});

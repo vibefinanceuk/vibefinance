@@ -244,6 +244,9 @@ function toText(value: unknown): string | undefined {
 export interface PoHeaderMatch {
   matched: boolean;
   variancePct: number | undefined;
+  /** Decision 0545 — the PO's own status, when one is held: active, on_hold or closed. */
+  status?: string;
+  holdReason?: string | null;
 }
 
 export interface PoLineMatch {
@@ -289,10 +292,22 @@ export async function computePoMatch(
   if (!orderNumber) return { matched: false, variancePct: undefined };
 
   const order = await db
-    .prepare("SELECT id, payable_amount FROM purchase_orders WHERE order_number = ?")
+    .prepare("SELECT id, payable_amount, status, hold_reason FROM purchase_orders WHERE order_number = ?")
     .bind(orderNumber)
-    .first<PurchaseOrderRow>();
+    .first<PurchaseOrderRow & { status: string; hold_reason: string | null }>();
   if (!order) return { matched: false, variancePct: undefined };
+
+  /**
+   * **Only an active PO can be matched — decision 0545.** Reported from
+   * the PO matching test pack: a closed or on-hold PO still matched when
+   * the amounts agreed. On hold means "don't pay against this yet",
+   * closed means "no more invoices against this order"; either way the
+   * invoice needs a person, so neither counts as a match (the operator's
+   * choice), whatever the amounts say. `status` goes out as `po.status`
+   * for rules to route on.
+   */
+  const active = order.status === "active";
+  const statusOf = { status: order.status, holdReason: order.status === "on_hold" ? order.hold_reason : null };
 
   /**
    * **Against what is left, and only over — decision 0533.** Before, the
@@ -304,10 +319,10 @@ export async function computePoMatch(
   const invoiceTotal = poTotal ?? toNumber(headerFacts["BT-112"]);
   const payable = order.payable_amount ?? undefined;
   const variance = excessPct(invoiceTotal, payable === undefined ? undefined : payable - consumption.headerAmount, payable);
-  if (variance === undefined) return { matched: false, variancePct: undefined };
+  if (variance === undefined) return { matched: false, variancePct: undefined, ...statusOf };
 
   const tolerance = toNumber(headerFacts["supplier.amountTolerancePct"]) ?? orgConfig.amountTolerancePct;
-  return { matched: variance <= tolerance, variancePct: variance };
+  return { matched: active && variance <= tolerance, variancePct: variance, ...statusOf };
 }
 
 /**
@@ -513,6 +528,9 @@ export async function mergePoMatchFacts(
     ...headerFacts,
     "po.matched": header.matched,
     ...(header.variancePct !== undefined ? { "po.variance_pct": header.variancePct } : {}),
+    // Decision 0545 — absent when the invoice names no PO held here.
+    ...(header.status !== undefined ? { "po.status": header.status } : {}),
+    ...(header.holdReason ? { "po.hold_reason": header.holdReason } : {}),
   };
 
   const mergedLines = await Promise.all(

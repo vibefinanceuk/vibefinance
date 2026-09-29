@@ -89,6 +89,10 @@ export const VALIDATION_CHECKS = [
   // computes anything itself — coding-validation.ts's
   // mergeCodingValidityFacts is merged in by the caller first.
   "account_coding",
+  // Decision 0545 — the linked purchase order is on hold or closed. Reads
+  // po.status, merged in by mergePoMatchFacts like po.matched. Shown at
+  // every stage, so a PO put on hold after Matching is seen at AP Review.
+  "po_status",
 ] as const;
 export type ValidationCheck = (typeof VALIDATION_CHECKS)[number];
 
@@ -416,7 +420,12 @@ export function validateInvoiceFacts(
   let poChecked = false;
 
   const headerVariance = num(facts["po.variance_pct"]);
-  if (headerVariance !== null && typeof facts["po.matched"] === "boolean") {
+  // Decision 0545 — against a PO on hold or closed, po.matched is false
+  // whatever the amounts, so the header comparison would report a
+  // mismatch at 0.00%. po_status says what is wrong instead; the panel
+  // still shows the amounts.
+  const poNotActive = typeof facts["po.status"] === "string" && facts["po.status"] !== "active";
+  if (headerVariance !== null && typeof facts["po.matched"] === "boolean" && !poNotActive) {
     poChecked = true;
     const fields = ["BT-13", "BT-112"];
     const value = `${headerVariance.toFixed(2)}%`;
@@ -438,6 +447,21 @@ export function validateInvoiceFacts(
       poFailures.push({ check: "po_mismatch", fields, line: lineNumber, value: `${lineVariance.toFixed(2)}%`, severity: "danger" });
     } else {
       poConfirms.push({ check: "po_mismatch", fields, line: lineNumber });
+    }
+  }
+
+  /**
+   * **The linked PO is on hold or closed — decision 0545.** `danger`:
+   * the invoice cannot be paid against the order as it stands. Checked
+   * whenever a real order was found (`po.status` present).
+   */
+  const poStatus = typeof facts["po.status"] === "string" ? (facts["po.status"] as string) : null;
+  if (poStatus !== null) {
+    checked.push("po_status");
+    if (poStatus !== "active") {
+      failures.push("po_status");
+      const reason = typeof facts["po.hold_reason"] === "string" && facts["po.hold_reason"] ? `: ${facts["po.hold_reason"]}` : "";
+      involves.push({ check: "po_status", fields: ["BT-13"], value: `${poStatus}${reason}`, severity: "danger" });
     }
   }
 

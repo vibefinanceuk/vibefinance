@@ -147,6 +147,22 @@ function usageSection(view) {
   ]);
 }
 
+/**
+ * **The PO is on hold or closed — decision 0545.** The invoice is not
+ * matched against it, whatever the amounts, so both the panel and the
+ * line pop-out say so above everything else. `null` for an active PO.
+ */
+export function poStatusWarning(status, holdReason) {
+  if (status !== "on_hold" && status !== "closed") return null;
+  const text =
+    status === "closed"
+      ? t("pomatch.closedwarn")
+      : holdReason
+        ? fill("pomatch.onholdwarn.reason", { reason: holdReason })
+        : t("pomatch.onholdwarn");
+  return node("p", { class: "pmstatuswarn", role: "alert", text });
+}
+
 function poSection(view) {
   const heading = node("div", { class: "pmhead" }, [node("h4", { text: t("pomatch.linked") })]);
   if (!view.po) {
@@ -162,6 +178,7 @@ function poSection(view) {
   const meta = (labelKey, value) => node("div", {}, [node("span", { class: "pmlabel", text: t(labelKey) }), value]);
   return node("section", { class: "pmblock" }, [
     heading,
+    poStatusWarning(view.po.status, view.po.holdReason),
     node("div", { class: "pmcard" }, [
       node("div", { class: "pmmeta" }, [
         meta("pomatch.ponumber", node("b", { text: view.po.orderNumber })),
@@ -634,6 +651,7 @@ export function openLineMatchPopout(summary, line, { invoiceLine = null, onOpenP
       ]),
       node("button", { class: "actionlink", title: t("action.close"), onclick: close }, [icon("close"), node("span", { text: t("action.close") })]),
     ]),
+    summary.held ? poStatusWarning(summary.poStatus, summary.holdReason) : null,
     node("div", { class: "pmcompare" }, [
       side("pomatch.pop.invoice", node("b", { text: f["BT-153"] || `${line.lineNumber}` }), lineSummary(inv)),
       node("span", { class: "pmarrow", text: "→" }),

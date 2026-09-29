@@ -171,11 +171,12 @@ describe("handleGetStandardMatchingRules", () => {
     }
   }
 
-  it("returns all four canonical names with no matches when nothing has been authored yet", async () => {
+  it("returns all five canonical names with no matches when nothing has been authored yet", async () => {
     const result = await handleGetStandardMatchingRules(env.DB);
     expect(result.status).toBe(200);
     const body = result.body as { standardRules: Array<{ key: string; matches: unknown[] }> };
-    expect(body.standardRules).toHaveLength(4);
+    // Decision 0545 added the fifth, "Purchase order on hold or closed".
+    expect(body.standardRules).toHaveLength(5);
     expect(body.standardRules.map((r) => r.key)).toEqual(
       STANDARD_MATCHING_RULES.map((r) => r.key)
     );
@@ -236,7 +237,22 @@ describe("handleGetStandardMatchingRules", () => {
     const body = result.body as { standardRules: Array<{ fact: string; suggestedSentence: string }> };
     for (const entry of body.standardRules) {
       expect(entry.suggestedSentence.length).toBeGreaterThan(0);
-      expect(entry.fact).toMatch(/^po\.line_/);
+      expect(entry.fact).toMatch(/^po\.(line_|status$)/);
     }
+  });
+
+  it("offers a standard rule for a PO on hold or closed, worded for Matching and AP Review alike, and finds it on either — decision 0545", async () => {
+    const entry = STANDARD_MATCHING_RULES.find((r) => r.key === "po_status")!;
+    expect(entry).toMatchObject({ name: "Standard rule: Purchase order on hold or closed", fact: "po.status" });
+    expect(entry.suggestedSentence).toMatch(/on hold or closed/);
+    expect(entry.suggestedSentence).not.toMatch(/matching stage/i);
+
+    await seedStage("matching", "rs-m");
+    await env.DB.prepare("INSERT INTO rule_sets (id, name, mode) VALUES ('rs-r', 'Review rules', 'all_matches')").run();
+    await env.DB.prepare("INSERT INTO process_stages (id, process_id, name, sequence, rule_set_id) VALUES ('review', 'ap', 'AP Review', 2, 'rs-r')").run();
+    await addRule("r-m", "rs-m", entry.name, { approved: true });
+    await addRule("r-r", "rs-r", entry.name, { approved: true });
+    const body = (await handleGetStandardMatchingRules(env.DB)).body as { standardRules: Array<{ key: string; matches: unknown[] }> };
+    expect(body.standardRules.find((r) => r.key === "po_status")!.matches).toHaveLength(2);
   });
 });
