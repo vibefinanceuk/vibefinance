@@ -245,3 +245,23 @@ describe("adding a language later, without a redesign (decision 0107)", () => {
     }
   });
 });
+
+describe("no escape sequences in stored words — decision 0546", () => {
+  /**
+   * SQL has no "\u2018" escape: written in a migration it is stored as
+   * six literal characters, and the screen shows them. That is how the
+   * Timeline came to read "Business rule \u2018…\u2019 fired" from
+   * migration 0078 until 0201. Checked across every string, so the next
+   * migration that does it fails here rather than on the live screen.
+   */
+  it("holds real characters, never a literal \\uXXXX or \\n", async () => {
+    const rows = (await env.CONTROL_DB.prepare("SELECT key, locale, value FROM ui_strings").all<{ key: string; locale: string; value: string }>()).results;
+    const escaped = rows.filter((r) => /\\(u[0-9a-fA-F]{4}|n|t)/.test(r.value)).map((r) => `${r.key} (${r.locale})`);
+    expect(escaped).toEqual([]);
+  });
+
+  it("shows the rule-fired line with real quotes, in English and German", async () => {
+    expect((await strings(null)).strings["activity.rulefired"]).toBe("Business rule \u2018{rule}\u2019 fired: {actions}");
+    expect((await strings("de")).strings["activity.rulefired"]).toBe("Gesch\u00e4ftsregel \u201e{rule}\u201c ausgel\u00f6st: {actions}");
+  });
+});
