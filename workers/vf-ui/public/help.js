@@ -100,12 +100,52 @@ function openPanel(kind, titleKey, body) {
   document.addEventListener("keydown", onKey);
 }
 
+/**
+ * **Help written at length — decision 0562.** A screen's help is its key
+ * (`help.screen.<screen>`) and any numbered keys after it
+ * (`help.screen.<screen>.2`, `.3`, ...), one line each: a line starting
+ * `## ` is a heading, `- ` a list item, anything else a paragraph. One
+ * line per key, rather than line breaks inside one value, because stored
+ * words hold no escape sequences (0546). A screen with only its key reads
+ * exactly as it did.
+ */
+export function helpLines(key) {
+  const lines = [t(key)];
+  for (let i = 2; i < 200; i++) {
+    const next = `${key}.${i}`;
+    const value = t(next);
+    if (value === next) break;
+    lines.push(value);
+  }
+  return lines;
+}
+
+export function richHelp(lines) {
+  const out = [];
+  let list = null;
+  for (const raw of lines) {
+    const line = raw.trim();
+    if (line.startsWith("- ")) {
+      if (!list) {
+        list = node("ul", { class: "helplist sm" });
+        out.push(list);
+      }
+      list.append(node("li", { text: line.slice(2) }));
+      continue;
+    }
+    list = null;
+    if (line.startsWith("## ")) out.push(node("h5", { class: "helpsub", text: line.slice(3) }));
+    else if (line !== "") out.push(node("p", { class: "sm", text: line }));
+  }
+  return out;
+}
+
 /** What Help shows for this screen and task, as section nodes. */
 async function helpSections({ screen, task }) {
   const sections = [
     node("section", { class: "helpsection" }, [
       node("h4", { text: t("help.aboutpage") }),
-      node("p", { class: "sm", text: t(`help.screen.${task ? "viewer" : screen}`) }),
+      ...richHelp(helpLines(`help.screen.${task ? "viewer" : screen}`)),
     ]),
   ];
   if (task) sections.push(await stageSection(task));
@@ -142,7 +182,7 @@ export function openAsk({ screen, task } = {}) {
       // Grounded in what Help would show here, built off-screen.
       const sections = await helpSections({ screen, task });
       const helpText = sections
-        .flatMap((section) => [...section.querySelectorAll("h4, p, .helpactiontitle")])
+        .flatMap((section) => [...section.querySelectorAll("h4, h5, p, li, .helpactiontitle")])
         .map((n) => n.textContent)
         .join("\n");
       const response = await fetch("/api/help/ask", {

@@ -555,7 +555,8 @@ function render() {
 }
 
 export async function open(id) {
-  setCurrentScreen("routes");
+  // Its own screen for Help (decision 0562); the nav still lights Routes.
+  setCurrentScreen("mapping");
   mappingId = id;
   selectedSource = null;
   selectedTarget = null;
@@ -571,6 +572,13 @@ export async function open(id) {
     return;
   }
   render();
+}
+
+/** The same mapping again, after the org changes; Routes if there is none. */
+export async function reopen() {
+  if (mappingId) return open(mappingId);
+  const { open: openRoutes } = await import("/routes.js");
+  await openRoutes();
 }
 
 /**

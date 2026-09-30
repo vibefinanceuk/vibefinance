@@ -2492,6 +2492,9 @@
   .helppanel .helpbody { overflow-y: auto; min-height: 0; flex: 1; }
   .helpsection { margin-top: 14px; }
   .helpsection h4 { margin: 0 0 6px; }
+  /* Decision 0562: help written at length — headings and lists. */
+  .helpsection h5.helpsub { margin: 14px 0 4px; font-size: var(--text-sm); font-weight: 700; color: var(--text-primary); }
+  .helpsection ul.helplist { margin: 4px 0 8px; padding-left: 18px; display: grid; gap: 4px; }
   .helpactions { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 10px; }
   .helpaction { border: 0.5px solid var(--border); border-radius: 6px; padding: 8px 10px; }
   .helpactiontitle { display: flex; align-items: center; gap: 6px; font-weight: 600; }

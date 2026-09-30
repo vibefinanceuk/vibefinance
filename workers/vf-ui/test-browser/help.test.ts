@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import mappingHelpSql from "../../vf-licence/migrations/0213_mapping_help_strings.sql?raw";
 
 /**
  * In-app Help — decision 0518. A side panel: written help for the
@@ -167,5 +168,52 @@ describe("the Help panel (decision 0518)", () => {
     await settle();
     document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
     expect(document.querySelector(".helppanel")).toBeNull();
+  });
+});
+
+describe("help written at length (decision 0562)", () => {
+  const withMappingHelp = () => {
+    const strings: Record<string, string> = { ...STRINGS.strings };
+    for (const m of mappingHelpSql.matchAll(/\('([^']+)', 'en', '((?:[^']|'')*)'\)/g)) strings[m[1]] = m[2].replace(/''/g, "'");
+    return { locale: "en", strings };
+  };
+
+  it("reads a screen's numbered lines as paragraphs, headings and lists, in order", async () => {
+    stub({ "/api/ui-strings": withMappingHelp() });
+    await loadStrings();
+    const { openHelp } = await import("/help.js");
+    await openHelp({ screen: "mapping", task: null });
+    const panel = document.querySelector(".helppanel") as HTMLElement;
+    expect(panel.querySelector(".helpsection p")?.textContent).toMatch(/^A mapping teaches VibeFinance/);
+    expect([...panel.querySelectorAll("h5.helpsub")].map((h) => h.textContent)).toEqual([
+      "The two columns",
+      "Drawing a line",
+      "Functions (Fx)",
+      "The Mapping card",
+      "Try, publish, reprocess",
+      "When an invoice fails",
+      "Who can use it",
+    ]);
+    const whoItIsFor = [...panel.querySelectorAll(".helplist li")].find((li) => li.textContent?.startsWith("Who it is for"));
+    expect(whoItIsFor?.textContent).toContain("stops one supplier's invoices being read with another's mapping");
+    // Every line is its own key, so nothing shows an escape sequence.
+    expect(panel.textContent).not.toMatch(/\\n|help\.screen/);
+  });
+
+  it("extends the Routes and Route monitor help with what they now show", async () => {
+    stub({ "/api/ui-strings": withMappingHelp() });
+    await loadStrings();
+    const { helpLines } = await import("/help.js");
+    const routes = helpLines("help.screen.routes");
+    expect(routes).toContain("## Supplier mappings");
+    expect(helpLines("help.screen.routemonitor")).toContain("## E-invoice checks");
+  });
+
+  it("reads a screen with only its key exactly as before", async () => {
+    stub({ "/api/ui-strings": STRINGS });
+    await loadStrings();
+    const { helpLines, richHelp } = await import("/help.js");
+    expect(helpLines("help.screen.tasks")).toEqual(["Every task you can see."]);
+    expect(richHelp(["Every task you can see."]).map((n) => n.outerHTML)).toEqual(['<p class="sm">Every task you can see.</p>']);
   });
 });

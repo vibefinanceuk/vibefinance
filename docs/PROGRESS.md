@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 30 September 2026 (decision 0561). A living document: what
+Last updated 30 September 2026 (decision 0562). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,12 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Help written at length; the mapping editor's own help (0562)
+- A screen's help can run to headings, lists and paragraphs (numbered
+  one-line keys); the mapping editor has a full description, including
+  Who it is for; Routes and Route monitor help cover formats, checks and
+  supplier mappings.
 
 ### Routes phase 2, slice 2: supplier mappings and the mapping editor (0561)
 - A supplier's own XML is read through a supplier mapping on its route,

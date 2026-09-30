@@ -726,6 +726,11 @@ async function go(screen) {
     // Process routes — decision 0557, in place of Sources.
     const { open } = await import("/process-routes.js");
     await open();
+  } else if (screen === "mapping") {
+    // The mapping editor — decision 0561. Reached from Routes or the
+    // Route monitor, never the nav; this is the org switcher's relaunch.
+    const { reopen } = await import("/mapping-editor.js");
+    await reopen();
   } else if (screen === "routemonitor") {
     // The Route monitor — decision 0556.
     const { open } = await import("/route-monitor.js");
@@ -881,11 +886,18 @@ const NAV_PERMISSIONS = {
  * and colours only on hover or when the screen is open; otherwise it
  * looks exactly as it did.
  */
+/**
+ * **Screens with no nav item of their own — decision 0562.** They light
+ * the item they are reached from, while Help still knows which screen it
+ * is: the mapping editor is part of Routes.
+ */
+const NAV_PARENT = { mapping: "routes" };
+
 function navLink(screen, iconName, hue) {
   return el(
     "a",
     {
-      class: `navitem navhue${hue}${current === screen ? " on" : ""}`,
+      class: `navitem navhue${hue}${current === screen || NAV_PARENT[current] === screen ? " on" : ""}`,
       title: t(`nav.${screen}`),
       onclick: () => go(screen),
     },
