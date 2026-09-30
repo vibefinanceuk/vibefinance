@@ -322,7 +322,7 @@ export function formatChecks(parts) {
           ? el("span", { class: "rmpill q", text: t("routemonitor.notchecked") })
           : failed.length === 0
             ? el("span", { class: "rmpill ok", text: t("routemonitor.passed") })
-            : el("span", { class: "rmpill bad", text: t("routemonitor.brokenn").replace("{n}", String(failed.length)) });
+            : el("span", { class: "rmpill bad", text: brokenCount(failed.length) });
       return el("div", { class: "rmfmt" }, [
         el("div", { class: "rmfmthead" }, [el("span", { class: "rmfmtname", text: `${p.filename}: ${name}` }), verdict]),
         ...(failed === null ? [el("div", { class: "muted sm", text: t("routemonitor.notcheckedwhy") })] : []),
@@ -368,7 +368,7 @@ function supplierXmlCheck(p) {
   const miss = !captured ? p.mapping?.miss ?? null : null;
   const mappingName = p.mapping ? p.mapping.name ?? p.mapping.id : "";
   const verdict = captured
-    ? el("span", { class: `rmpill ${(p.en16931Failed ?? []).length > 0 ? "bad" : "ok"}`, text: (p.en16931Failed ?? []).length > 0 ? t("routemonitor.brokenn").replace("{n}", String(p.en16931Failed.length)) : t("routemonitor.passed") })
+    ? el("span", { class: `rmpill ${(p.en16931Failed ?? []).length > 0 ? "bad" : "ok"}`, text: (p.en16931Failed ?? []).length > 0 ? brokenCount(p.en16931Failed.length) : t("routemonitor.passed") })
     : miss
       ? el("span", { class: "rmpill q", text: t(miss === "not_published" ? "routemonitor.notpublished" : "routemonitor.notforsender") })
       : el("span", { class: `rmpill ${p.mapping ? "bad" : "q"}`, text: t(p.mapping ? "routemonitor.mappingfailed" : "routemonitor.nomapping") });
@@ -377,7 +377,10 @@ function supplierXmlCheck(p) {
         .replace("{name}", mappingName)
         .replace("{sender}", detail?.message?.counterparty ?? "—")
     : p.mapping
-      ? t("routemonitor.readwith").replace("{name}", mappingName).replace("{n}", String(p.mapping.version))
+      ? // Decision 0566: a failed file was tried, not read, and says why.
+        captured
+        ? t("routemonitor.readwith").replace("{name}", mappingName).replace("{n}", String(p.mapping.version))
+        : `${t("routemonitor.triedwith").replace("{name}", mappingName).replace("{n}", String(p.mapping.version))} ${p.reason ?? ""}`.trim()
       : t(p.format === "supplier_csv" ? "routemonitor.nomappingwhy_csv" : "routemonitor.nomappingwhy");
   return el("div", { class: "rmfmt" }, [
     el("div", { class: "rmfmthead" }, [
@@ -391,10 +394,47 @@ function supplierXmlCheck(p) {
     ...(captured && (p.en16931Failed ?? []).length > 0
       ? [el("ul", { class: "rmrules" }, p.en16931Failed.map((f) => el("li", {}, [el("span", { class: "rmrule", text: f.rule }), el("span", { text: ` ${words("en16931.rule", f.rule.toLowerCase())}` }), ...(f.detail ? [el("span", { class: "muted", text: ` · ${f.detail}` })] : [])])))]
       : []),
+    ...(p.reread && !p.reread.can
+      ? [el("div", { class: "muted sm rmreread", text: t(`routemonitor.reread.no.${p.reread.reason}`) })]
+      : []),
+    ...(p.reread?.can ? [el("div", { class: "sm rmreread", text: t("routemonitor.reread.offer").replace("{n}", String(p.reread.version)) })] : []),
     el("div", { class: "statebuttons rmfmtact" }, [
-      actionLink("coding", { primary: !captured, label: t(p.mapping ? "routemonitor.openmapping" : "routemonitor.mapthis"), onclick: openEditor }),
+      ...(p.reread?.can
+        ? [actionLink("release", { primary: true, label: t("routemonitor.reread.button").replace("{n}", String(p.reread.version)), onclick: () => reread(p) })]
+        : []),
+      actionLink("coding", { primary: !captured && !p.reread?.can, label: t(p.mapping ? "routemonitor.openmapping" : "routemonitor.mapthis"), onclick: openEditor }),
     ]),
   ]);
+}
+
+/** "1 rule broken", "2 rules broken" — decision 0566. */
+function brokenCount(n) {
+  return n === 1 ? t("routemonitor.brokenone") : t("routemonitor.brokenn").replace("{n}", String(n));
+}
+
+/**
+ * **Read again with the newer version — decision 0566.** A captured file
+ * whose mapping has a newer live version can be read again, into the same
+ * invoice, while nobody has worked on it; otherwise the reason is shown.
+ */
+async function reread(p) {
+  note("");
+  const result = await post(`/api/route-messages/${encodeURIComponent(selectedId)}/parts/${p.seq}/reread`);
+  if (!result.ok) {
+    const key = `routemonitor.reread.no.${result.body.reason}`;
+    note(t(key) === key ? result.body.error ?? t("routemonitor.reread.failed") : t(key));
+    return;
+  }
+  await load();
+  if (selectedId) await loadDetail(selectedId);
+  render();
+  const failed = result.body.en16931Failed ?? [];
+  note(
+    t(failed.length === 0 ? "routemonitor.reread.done" : "routemonitor.reread.donebroken")
+      .replace("{n}", String(result.body.version))
+      .replace("{r}", String(failed.length)),
+    failed.length === 0
+  );
 }
 
 /** A value's words, or the value itself where the interface has none. */

@@ -4861,7 +4861,7 @@ describe("pausing a Destination, through the real router (decision 0558)", () =>
 describe("fix and tell, through the real router (decision 0559)", () => {
   it("need Integration.Monitor: dismiss, alerts, and a reprocess refused with its reason", async () => {
     const admin = await seedUserWithPermissions(["Admin.Configure"]);
-    for (const [method, path] of [["POST", "/route-messages/MSG-R9/dismiss"], ["POST", "/route-messages/MSG-R9/reprocess"], ["GET", "/route-alerts"]]) {
+    for (const [method, path] of [["POST", "/route-messages/MSG-R9/dismiss"], ["POST", "/route-messages/MSG-R9/reprocess"], ["POST", "/route-messages/MSG-R9/parts/1/reread"], ["GET", "/route-alerts"]]) {
       expect((await SELF.fetch(`https://example.com${path}`, { method, headers: { Authorization: `Bearer ${admin}` } })).status).toBe(403);
     }
     const monitor = await seedUserWithPermissions(["Integration.Monitor"]);
@@ -4871,6 +4871,9 @@ describe("fix and tell, through the real router (decision 0559)", () => {
     )
       .bind(new Date().toISOString())
       .run();
+    // Decision 0566: reading a part again, through the real router.
+    expect((await SELF.fetch("https://example.com/route-messages/MSG-R9/parts/1/reread", { method: "POST", headers })).status).toBe(404);
+    expect((await SELF.fetch("https://example.com/route-messages/MSG-R9/parts/1/reread", { headers })).status).toBe(405);
     const reprocess = await SELF.fetch("https://example.com/route-messages/MSG-R9/reprocess", { method: "POST", headers });
     // Unclaimed mail was never kept, so there is nothing to run again.
     expect([409, 503]).toContain(reprocess.status);

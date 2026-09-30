@@ -550,6 +550,7 @@ describe("the proxy carries every path a screen calls (decision 0131)", () => {
     ["POST", "/api/route-messages/MSG-1/reprocess"],
     ["POST", "/api/route-messages/reprocess"],
     ["POST", "/api/route-messages/MSG-1/dismiss"],
+    ["POST", "/api/route-messages/MSG-1/parts/1/reread"],
     ["GET", "/api/route-alerts"],
     ["POST", "/api/route-alerts"],
     ["PUT", "/api/route-alerts/a-1"],

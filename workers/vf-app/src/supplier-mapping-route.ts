@@ -226,7 +226,9 @@ export async function captureThroughMapping(
   root: string,
   sender: string | undefined,
   idOverride: string | undefined,
-  enrichFacts: CaptureIntakeBody["enrichFacts"]
+  enrichFacts: CaptureIntakeBody["enrichFacts"],
+  /** Decision 0566: read again into this invoice's own instance, rather than a new one. */
+  existingInstanceId?: string
 ): Promise<RouteResult> {
   const found = await mappingFor(db, sourceId, root, sender, text);
   const isCsv = root === CSV_ROOT;
@@ -303,6 +305,7 @@ export async function captureThroughMapping(
     facts,
     lines: applied.lines,
     enrichFacts,
+    ...(existingInstanceId ? { existingInstanceId } : {}),
   });
   if (result.status >= 400) return { status: result.status, body: { ...(result.body as object), ...base, ...where } };
   return {

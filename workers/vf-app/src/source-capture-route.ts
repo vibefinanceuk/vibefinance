@@ -88,7 +88,7 @@ async function channelFor(
  * two are kept deliberately parallel — a change to one almost always
  * wants the other.
  */
-function buildIntakeEnricher(
+export function buildIntakeEnricher(
   db: D1Database,
   source: SourceRow
 ): (facts: Record<string, unknown>) => Promise<Record<string, unknown>> {

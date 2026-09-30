@@ -195,6 +195,7 @@ import { handleInboundEmail, handleListInboundEmail, type EmailMessage } from ".
 import { handleGetRouteMessage, handleListRouteMessages, routeMessagePart } from "./route-monitor-route.js";
 import { handleListRoutes, handleProcessRoutes, handleSetInstanceStatus } from "./routes-route.js";
 import { handleDismissMessage, handleReprocessMessage } from "./route-reprocess.js";
+import { handleRereadPart } from "./mapping-reread.js";
 import {
   handleCompileFunction,
   handleCreateMapping,
@@ -1746,6 +1747,7 @@ export default {
      */
     if (
       /^\/route-messages\/([^/]+)\/(reprocess|dismiss)$/.test(pathname) ||
+      /^\/route-messages\/[^/]+\/parts\/\d+\/reread$/.test(pathname) ||
       pathname === "/route-messages/reprocess" ||
       pathname === "/route-alerts" ||
       /^\/route-alerts\/[^/]+(\/test)?$/.test(pathname)
@@ -1773,6 +1775,13 @@ export default {
           results.push({ id, status: result.status, ...(result.body as Record<string, unknown>) });
         }
         return json({ results }, 200);
+      }
+      // Decision 0566: a captured supplier file read again with its mapping's newer version.
+      const rereadMatch = pathname.match(/^\/route-messages\/([^/]+)\/parts\/(\d+)\/reread$/);
+      if (rereadMatch) {
+        if (request.method !== "POST") return json({ error: "method not allowed" }, 405);
+        const result = await handleRereadPart(db, documents, decodeURIComponent(rereadMatch[1]), Number(rereadMatch[2]), auth.user.id);
+        return json(result.body, result.status);
       }
       const messageAction = pathname.match(/^\/route-messages\/([^/]+)\/(reprocess|dismiss)$/);
       if (messageAction && request.method === "POST") {

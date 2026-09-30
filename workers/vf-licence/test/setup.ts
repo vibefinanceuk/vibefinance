@@ -204,6 +204,7 @@ import mappingHelpStringsSql from "../migrations/0213_mapping_help_strings.sql?r
 import mappingMissStringsSql from "../migrations/0214_mapping_miss_strings.sql?raw";
 import mappingRetirePopoutStringsSql from "../migrations/0215_mapping_retire_popout_strings.sql?raw";
 import supplierCsvStringsSql from "../migrations/0216_supplier_csv_strings.sql?raw";
+import mappingRereadStringsSql from "../migrations/0217_mapping_reread_strings.sql?raw";
 
 function stripSqlComments(sql: string): string {
   return sql
@@ -441,5 +442,6 @@ export async function applyTestSchema(): Promise<void> {
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(mappingMissStringsSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(mappingRetirePopoutStringsSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(supplierCsvStringsSql)));
+  await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(mappingRereadStringsSql)));
 
 }

@@ -38,6 +38,13 @@ import { resolveVocabulary } from "@vibefinance/shared";
 
 export interface CaptureIntakeBody {
   id?: unknown;
+  /**
+   * **Read again into its own instance — decision 0566.** The instance
+   * this invoice already has, started again at its first stage by the
+   * caller: visited with the new facts rather than a second instance
+   * created beside it. Must be this invoice's, and in progress.
+   */
+  existingInstanceId?: unknown;
   subjectType?: unknown;
   mandateChannel?: unknown;
   facts?: unknown;
@@ -157,16 +164,29 @@ export async function handleCaptureIntake(db: D1Database, channelId: string, bod
   // caller never needs to name a process explicitly; the channel they
   // captured through already determines it.
   const resolvedSubjectType = typeof subjectType === "string" && subjectType ? subjectType : "invoice";
-  const instanceResult = await handleCreateProcessInstance(db, channel.process_id, {
-    subjectType: resolvedSubjectType,
-    subjectId: id,
-  });
-  if (instanceResult.status >= 400) {
-    const reason = (instanceResult.body as { error?: string }).error ?? "could not create a process instance";
-    await recordCaptureEvent(db, channelId, "rejected", reason, null);
-    return instanceResult;
+  let instanceId: string;
+  if (typeof body.existingInstanceId === "string") {
+    const existing = await db
+      .prepare("SELECT id FROM process_instances WHERE id = ? AND subject_type = ? AND subject_id = ? AND status = 'in_progress'")
+      .bind(body.existingInstanceId, resolvedSubjectType, id)
+      .first<{ id: string }>();
+    if (!existing) {
+      await recordCaptureEvent(db, channelId, "rejected", "the instance to read again into is not this invoice's, or not in progress", null);
+      return { status: 409, body: { error: "the instance to read again into is not this invoice's, or not in progress" } };
+    }
+    instanceId = existing.id;
+  } else {
+    const instanceResult = await handleCreateProcessInstance(db, channel.process_id, {
+      subjectType: resolvedSubjectType,
+      subjectId: id,
+    });
+    if (instanceResult.status >= 400) {
+      const reason = (instanceResult.body as { error?: string }).error ?? "could not create a process instance";
+      await recordCaptureEvent(db, channelId, "rejected", reason, null);
+      return instanceResult;
+    }
+    instanceId = (instanceResult.body as { id: string }).id;
   }
-  const instanceId = (instanceResult.body as { id: string }).id;
 
   // Accepted from here — a real instance now genuinely exists,
   // regardless of what the immediate visit below does with it.

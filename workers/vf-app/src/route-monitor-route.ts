@@ -1,5 +1,6 @@
 import type { RouteResult } from "./org-route.js";
 import { whyNotReprocess } from "./route-reprocess.js";
+import { rereadState } from "./mapping-reread.js";
 
 /**
  * **The Route monitor — decision 0556**, slice 2 of
@@ -283,7 +284,7 @@ export async function handleGetRouteMessage(db: D1Database, id: string): Promise
         attempts: m.attempts,
       },
       // The R2 key stays on the server: a part is fetched by its number.
-      parts: parts.results.map((p) => ({
+      parts: (await Promise.all(parts.results.map(async (p) => ({ p, reread: p.outcome === "captured" && p.mapping_id ? await rereadState(db, id, p.seq) : null })))).map(({ p, reread }) => ({
         seq: p.seq,
         role: p.role,
         filename: p.filename,
@@ -302,6 +303,9 @@ export async function handleGetRouteMessage(db: D1Database, id: string): Promise
         // that read it or tried to (null where none exists yet).
         xmlRoot: p.xml_root,
         mapping: p.mapping_id ? { id: p.mapping_id, version: p.mapping_version, name: p.mapping_name, miss: p.mapping_miss } : null,
+        // Decision 0566: a captured supplier file whose mapping has a newer
+        // live version — whether it can be read again with it, or why not.
+        reread,
       })),
       // Who did it, for what a person did (an export made or undone, 0558).
       events: events.results.map((e) => ({ seq: e.seq, at: e.at, event: e.event, partSeq: e.part_seq, detail: e.detail, actorName: e.actor_name })),

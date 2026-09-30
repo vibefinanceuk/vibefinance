@@ -6,6 +6,7 @@ import routesStringsSql from "../../vf-licence/migrations/0208_routes_and_proces
 import missStringsSql from "../../vf-licence/migrations/0214_mapping_miss_strings.sql?raw";
 import retirePopoutStringsSql from "../../vf-licence/migrations/0215_mapping_retire_popout_strings.sql?raw";
 import csvStringsSql from "../../vf-licence/migrations/0216_supplier_csv_strings.sql?raw";
+import rereadStringsSql from "../../vf-licence/migrations/0217_mapping_reread_strings.sql?raw";
 
 /**
  * **The mapping editor — decision 0561**, with the real strings: draw a
@@ -17,7 +18,7 @@ import csvStringsSql from "../../vf-licence/migrations/0216_supplier_csv_strings
  */
 
 const strings: Record<string, string> = { "action.close": "Close", "action.save": "Save" };
-for (const sql of [mappingStringsSql, formatStringsSql, monitorStringsSql, routesStringsSql, missStringsSql, retirePopoutStringsSql, csvStringsSql]) {
+for (const sql of [mappingStringsSql, formatStringsSql, monitorStringsSql, routesStringsSql, missStringsSql, retirePopoutStringsSql, csvStringsSql, rereadStringsSql]) {
   for (const m of sql.matchAll(/\('([^']+)', 'en', '((?:[^']|'')*)'\)/g)) strings[m[1]] = m[2].replace(/''/g, "'");
   // Later migrations change some words in place.
   for (const m of sql.matchAll(/UPDATE ui_strings SET value = '((?:[^']|'')*)' WHERE key = '([^']+)' AND locale = 'en'/g)) strings[m[2]] = m[1].replace(/''/g, "'");
@@ -567,5 +568,87 @@ describe("a CSV mapping — decision 0565", () => {
     expect(text(".rmexplain .h")).toBe("A supplier's CSV, and no mapping reads it yet");
     expect(text(".rmfmt .muted.sm")).toBe("This supplier sends a CSV. Map it once, from this file, and every CSV like it is read as data.");
     expect(button("Map this format")).toBeTruthy();
+  });
+});
+
+/**
+ * **What was tried, and reading again — decision 0566**: a failed file's
+ * card says which version tried and why, "1 rule broken" is singular, and
+ * a file read with an older version offers to read it again with the live
+ * one, or says why it will not.
+ */
+describe("tried, and read again — decision 0566", () => {
+  async function monitorWithParts(parts: unknown[], calls: Call[] = [], extra: Record<string, (body: unknown) => { status?: number; body: unknown }> = {}) {
+    let detailCalls = 0;
+    stub(calls, {
+      "GET /api/route-messages": () => ({ body: { period: "today", summary: {}, sources: [], destinations: [], messages: [{ id: "MSG-1", sourceName: "AP mailbox", status: "partial", subject: "Rechnung", receivedAt: new Date().toISOString(), invoices: 1 }] } }),
+      "GET /api/route-messages/MSG-1": () => {
+        detailCalls++;
+        return {
+          body: {
+            canReprocess: true,
+            similar: [],
+            canDismiss: true,
+            message: { id: "MSG-1", sourceName: "AP mailbox", status: "partial", subject: "Rechnung", receivedAt: new Date().toISOString() },
+            parts: typeof parts[0] === "function" ? (parts[0] as (n: number) => unknown[])(detailCalls) : parts,
+            events: [],
+            invoices: [],
+          },
+        };
+      },
+      ...extra,
+    });
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { open } = await import("/route-monitor.js");
+    await open();
+    await settle();
+    (document.querySelector(".rmtable tbody tr") as HTMLElement).click();
+    await settle();
+  }
+  const cards = () => [...document.querySelectorAll(".rmfmt")] as HTMLElement[];
+
+  it("says what was tried and why on a failed file, and counts one broken rule in the singular", async () => {
+    await monitorWithParts([
+      { seq: 1, role: "attachment", filename: "Rechnungen_88252_88253.csv", outcome: "failed", reason: "the file holds 2 invoices (88252, 88253); one invoice per file is read", format: "supplier_csv", xmlRoot: "CSV", mapping: { id: "MAP-1", version: 2, name: "Lager Nord CSV", miss: null }, en16931Failed: null, reread: null },
+      { seq: 2, role: "attachment", filename: "Rechnung_88251.csv", outcome: "captured", format: "supplier_csv", xmlRoot: "CSV", mapping: { id: "MAP-1", version: 2, name: "Lager Nord CSV", miss: null }, en16931Failed: [{ rule: "BR-CO-15", detail: "BT-112 605.00, expected 508.40" }], reread: null },
+    ]);
+    const [failed, captured] = cards();
+    expect(failed.querySelector(".muted.sm")?.textContent).toBe(
+      "Tried with Lager Nord CSV, version 2: the file holds 2 invoices (88252, 88253); one invoice per file is read"
+    );
+    expect(captured.querySelector(".rmpill")?.textContent).toBe("1 rule broken");
+    expect(captured.querySelector(".muted.sm")?.textContent).toBe("Read with Lager Nord CSV, version 2.");
+  });
+
+  it("offers to read a file again with the live version, reads it, and shows the result", async () => {
+    const calls: Call[] = [];
+    const before = { seq: 2, role: "attachment", filename: "Rechnung_88251.csv", outcome: "captured", format: "supplier_csv", xmlRoot: "CSV", mapping: { id: "MAP-1", version: 1, name: "Lager Nord CSV", miss: null }, en16931Failed: [{ rule: "BR-CO-15" }], reread: { can: true, version: 2 } };
+    const after = { ...before, mapping: { ...before.mapping, version: 2 }, en16931Failed: [], reread: null };
+    // Before the re-read, the part as read with version 1; after it, with version 2.
+    let done = false;
+    await monitorWithParts([() => [done ? after : before]], calls, {
+      "POST /api/route-messages/MSG-1/parts/2/reread": () => {
+        done = true;
+        return { body: { invoiceId: "inv-1", mappingId: "MAP-1", version: 2, en16931Failed: [] } };
+      },
+    });
+    expect(text(".rmreread")).toBe(
+      "Version 2 of the mapping is now live. This invoice was read with an earlier version, and nobody has worked on it yet, so it can be read again."
+    );
+    button("Read again with version 2").click();
+    await settle();
+    expect(calls.find((c) => c.path === "/api/route-messages/MSG-1/parts/2/reread")?.method).toBe("POST");
+    expect(text("#routemonitor-note")).toBe("Read again with version 2: no EN 16931 rules broken. The same invoice starts again at its first stage.");
+    expect(text(".rmfmt .rmpill")).toBe("Passed EN 16931");
+    expect(button("Read again with version 2")).toBeUndefined();
+  });
+
+  it("says why a file is not read again", async () => {
+    await monitorWithParts([
+      { seq: 2, role: "attachment", filename: "Rechnung_88251.csv", outcome: "captured", format: "supplier_csv", xmlRoot: "CSV", mapping: { id: "MAP-1", version: 1, name: "Lager Nord CSV", miss: null }, en16931Failed: [], reread: { can: false, reason: "worked_on" } },
+    ]);
+    expect(text(".rmreread")).toBe("A newer version of the mapping is live, but somebody has worked on this invoice, so it is not read again.");
+    expect(button("Read again with version 2")).toBeUndefined();
   });
 });

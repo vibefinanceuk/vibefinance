@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 30 September 2026 (decision 0565). A living document: what
+Last updated 30 September 2026 (decision 0566). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,12 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Reading a captured file again with a newer mapping (0566)
+- A supplier file captured with an older mapping version can be read
+  again with the live one, from the Route monitor, into the same invoice
+  while nobody has worked on it; otherwise the monitor says why not.
+- A failed file's card says what was tried and why; "1 rule broken".
 
 ### Routes phase 2, slice 3: a supplier's own CSV (0565)
 - A supplier's CSV is mapped like its XML: read as the first row and

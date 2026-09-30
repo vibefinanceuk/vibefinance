@@ -4,6 +4,7 @@ import { applyTestSchema } from "./setup.js";
 import { handleInboundEmail, type EmailMessage } from "../src/inbound-email.js";
 import { handleGetRouteMessage } from "../src/route-monitor-route.js";
 import { handleReprocessMessage } from "../src/route-reprocess.js";
+import { handleRereadPart } from "../src/mapping-reread.js";
 import {
   domainOf,
   handleCompileFunction,
@@ -611,6 +612,103 @@ describe("a supplier's own CSV", () => {
       .run();
     const invoice = await receiveCsv("rechnung@lagernord.de", LAGER_CSV.replace(/88250/g, "88253"));
     expect(await part(invoice.id)).toMatchObject({ mapping_id: id, outcome: "captured" });
+  });
+});
+
+/**
+ * **Reading a captured file again with a newer mapping — decision 0566.**
+ * On 30 September 88251 was read with version 1 of a mapping that lacked
+ * the VAT total; version 2 added it, and reprocessing could not reach an
+ * invoice already captured. Read again, it is the same invoice with the
+ * new facts, in the same instance, never a second one.
+ */
+describe("reading a captured file again", () => {
+  const WITHOUT_VAT = { ...DEFINITION, lines: DEFINITION.lines.filter((l) => l.target !== "BT-110") };
+
+  /** Version 1 without the VAT total, an invoice captured with it, then version 2 with it. */
+  async function capturedWithOldVersion() {
+    const failed = await receive("buchhaltung@munch.de", munch());
+    const created = await handleCreateMapping(env.DB, env.DOCUMENTS, "u-dan", { messageId: failed.id, partSeq: 1 });
+    const id = (created.body as { id: string }).id;
+    await handleSaveDraft(env.DB, "u-dan", id, { definition: WITHOUT_VAT });
+    await handlePublishMapping(env.DB, env.DOCUMENTS, "u-dan", id);
+    const next = await receive("rechnung@munch.de", munch({ number: "88251" }));
+    // As at a Validation stage waiting for someone: still in progress.
+    await env.DB.prepare(
+      "UPDATE process_instances SET status = 'in_progress' WHERE subject_id = (SELECT item_id FROM route_message_items WHERE message_id = ?)"
+    )
+      .bind(next.id)
+      .run();
+    await handleSaveDraft(env.DB, "u-dan", id, { definition: DEFINITION });
+    await handlePublishMapping(env.DB, env.DOCUMENTS, "u-dan", id);
+    const invoiceId = (await env.DB.prepare("SELECT item_id FROM route_message_items WHERE message_id = ?").bind(next.id).first<{ item_id: string }>())!.item_id;
+    return { id, next, invoiceId };
+  }
+
+  it("offers to read it again with the live version, and does: the same invoice, new facts, one instance", async () => {
+    const { id, next, invoiceId } = await capturedWithOldVersion();
+    expect(await part(next.id)).toMatchObject({ mapping_version: 1 });
+    expect((await facts(next.id))?.["BT-110"]).toBeUndefined();
+
+    const detail = (await handleGetRouteMessage(env.DB, next.id)).body as { parts: Array<{ role: string; reread: unknown }> };
+    expect(detail.parts.find((p) => p.role === "attachment")?.reread).toEqual({ can: true, version: 2 });
+
+    const reread = await handleRereadPart(env.DB, env.DOCUMENTS, next.id, 1, "u-dan");
+    expect(reread).toMatchObject({ status: 200, body: { invoiceId, mappingId: id, version: 2, en16931Failed: [] } });
+    expect(await part(next.id)).toMatchObject({ outcome: "captured", mapping_id: id, mapping_version: 2, en16931_failed: "[]" });
+    expect((await facts(next.id))?.["BT-110"]).toBe(103.74);
+    const invoices = await env.DB.prepare("SELECT count(*) AS n FROM invoice_headers WHERE invoice_number = '88251'").first<{ n: number }>();
+    expect(invoices?.n).toBe(1);
+    const instances = await env.DB.prepare("SELECT count(*) AS n FROM process_instances WHERE subject_id = ?").bind(invoiceId).first<{ n: number }>();
+    expect(instances?.n).toBe(1);
+    const event = await env.DB.prepare("SELECT event, part_seq, detail, actor FROM route_message_events WHERE message_id = ? ORDER BY seq DESC LIMIT 1")
+      .bind(next.id)
+      .first();
+    expect(event).toEqual({ event: "reread", part_seq: 1, detail: "read again with munch.de <Rechnung> version 2", actor: "u-dan" });
+
+    // Read with the live version now: nothing more to offer.
+    const after = (await handleGetRouteMessage(env.DB, next.id)).body as { parts: Array<{ role: string; reread: unknown }> };
+    expect(after.parts.find((p) => p.role === "attachment")?.reread).toBeNull();
+    expect(await handleRereadPart(env.DB, env.DOCUMENTS, next.id, 1, "u-dan")).toMatchObject({ status: 409, body: { reason: "no_newer_version" } });
+  });
+
+  it("refuses an invoice somebody has worked on, and changes nothing", async () => {
+    const { next, invoiceId } = await capturedWithOldVersion();
+    const visit = await env.DB.prepare(
+      "SELECT v.id, v.stage_id FROM stage_visits v JOIN process_instances pi ON pi.id = v.process_instance_id WHERE pi.subject_id = ? LIMIT 1"
+    )
+      .bind(invoiceId)
+      .first<{ id: string; stage_id: string }>();
+    await env.DB.prepare(
+      "INSERT INTO tasks (id, stage_id, required_permission, stage_visit_id, claimed_by, claimed_at) VALUES ('t-1', ?, 'AP.Validate', ?, 'u-dan', ?)"
+    )
+      .bind(visit!.stage_id, visit!.id, new Date().toISOString())
+      .run();
+    const detail = (await handleGetRouteMessage(env.DB, next.id)).body as { parts: Array<{ role: string; reread: unknown }> };
+    expect(detail.parts.find((p) => p.role === "attachment")?.reread).toEqual({ can: false, reason: "worked_on" });
+    expect(await handleRereadPart(env.DB, env.DOCUMENTS, next.id, 1, "u-dan")).toMatchObject({ status: 409, body: { reason: "worked_on" } });
+    expect(await part(next.id)).toMatchObject({ mapping_version: 1 });
+  });
+
+  it("refuses an invoice whose process has finished, and a file the live version cannot read", async () => {
+    const { id, next, invoiceId } = await capturedWithOldVersion();
+    await env.DB.prepare("UPDATE process_instances SET status = 'completed' WHERE subject_id = ?").bind(invoiceId).run();
+    expect(await handleRereadPart(env.DB, env.DOCUMENTS, next.id, 1, "u-dan")).toMatchObject({ status: 409, body: { reason: "not_in_progress" } });
+
+    await env.DB.prepare("UPDATE process_instances SET status = 'in_progress' WHERE subject_id = ?").bind(invoiceId).run();
+    // Version 3 reads the date as the wrong pattern: refused with its problems, nothing touched.
+    const wrongDate = {
+      ...DEFINITION,
+      lines: DEFINITION.lines.map((l) => (l.target === "BT-2" ? { ...l, fx: [{ fn: "read_date", args: { pattern: "yyyy-MM-dd" } }] } : l)),
+    };
+    await handleSaveDraft(env.DB, "u-dan", id, { definition: wrongDate });
+    await env.DB.prepare("UPDATE supplier_mapping_versions SET status = 'retired' WHERE mapping_id = ? AND status = 'live'").bind(id).run();
+    await env.DB.prepare("UPDATE supplier_mapping_versions SET status = 'live', published_at = ?, published_by = 'u-dan' WHERE mapping_id = ? AND status = 'draft'")
+      .bind(new Date().toISOString(), id)
+      .run();
+    const refused = await handleRereadPart(env.DB, env.DOCUMENTS, next.id, 1, "u-dan");
+    expect(refused).toMatchObject({ status: 422, body: { reason: "read_failed", error: "version 3 cannot read this file" } });
+    expect(await part(next.id)).toMatchObject({ mapping_version: 1 });
   });
 });
 

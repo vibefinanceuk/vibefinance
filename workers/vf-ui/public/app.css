@@ -4849,6 +4849,8 @@
 /* Decisions 0563 and 0564: confirming a mapping's retirement, in a pop-out. */
 .popout.meretirepop { width: min(480px, 100%); }
 .rmfmtact { margin-top: 6px; }
+/* Decision 0566: reading a captured file again with a newer mapping version. */
+.rmreread { margin-top: 6px; }
 @media (max-width: 1100px) { .meed { grid-template-columns: 1fr; } }
 
 /* Decision 0557 — Process routes: sources into the entry stage, destinations out of the exit stage. */
