@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 30 September 2026 (decision 0575). A living document: what
+Last updated 30 September 2026 (decision 0576). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,13 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Create → Batch upload (0576)
+- Many invoices from one file: the VibeFinance CSV template (one row per
+  line, a statement's rows becoming one invoice), a supplier's own CSV by
+  its mapping, or XML invoices.
+- A preview first, with every invoice Ready, a Possible duplicate or a
+  Problem by row, and problems to download; then made a few at a time.
 
 ### Create → Create an invoice (0575)
 - Key one invoice by hand, optionally starting from a PDF, image or XML

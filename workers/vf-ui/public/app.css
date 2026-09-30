@@ -4975,3 +4975,25 @@
 .createcheck { display: flex; align-items: center; gap: 8px; margin-top: 4px; font-weight: 500; }
 .createcheck input { width: auto; }
 .createbuttons { display: flex; justify-content: flex-end; margin-top: 16px; }
+
+/* Decision 0576 — Batch upload. */
+.createradio { display: flex; align-items: center; gap: 8px; font-size: var(--text-sm); color: var(--text-primary); min-height: 32px; }
+.createradio input { width: auto; }
+.createinline { flex-direction: row; padding: 2px 8px; margin-left: auto; text-decoration: none; }
+.createinline svg { width: 16px; height: 16px; }
+.createinlineselect { margin-left: auto; width: auto; max-width: 60%; font-size: var(--text-sm); padding: 4px 8px; }
+.createdetails { margin-top: 14px; font-size: var(--text-sm); }
+.createdetails summary { cursor: pointer; color: var(--text-secondary); margin-bottom: 6px; }
+.createtablewrap { max-height: 60vh; overflow-y: auto; }
+.createtable { width: 100%; border-collapse: collapse; font-size: var(--text-sm); margin-top: 4px; }
+.createtable th { text-align: left; color: var(--text-muted); font-weight: 500; padding: 6px 8px; border-bottom: 1px solid var(--border); position: sticky; top: 0; background: var(--surface-0); }
+.createtable td { padding: 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
+.createtable .num { text-align: right; white-space: nowrap; }
+.createtable tr.createproblem td { background: color-mix(in srgb, var(--text-danger) 6%, transparent); }
+.createtable tr.createduplicate td { background: color-mix(in srgb, var(--text-warning) 6%, transparent); }
+.createpill.warn { color: var(--text-warning); border-color: var(--border-warning); }
+.createfoot { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-top: 16px; }
+.createbtns { display: flex; gap: 8px; align-items: center; }
+.createbtns .actionlink:not(.primary) { flex-direction: row; }
+.createbtns .actionlink:not(.primary) svg { width: 16px; height: 16px; }
+.createtable td:nth-child(1), .createtable td:nth-child(3) { white-space: nowrap; }

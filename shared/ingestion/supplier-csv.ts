@@ -280,3 +280,51 @@ export function validateCsvOptions(options: unknown): string | null {
   if (!Number.isInteger(o.skip) || o.skip < 0 || o.skip > 50) return "lines to skip at the top is a whole number from 0 to 50";
   return null;
 }
+
+/** One cell as CSV writes it: quoted where it holds the separator, a quote or a line break. */
+function csvCell(value: string, delimiter: CsvDelimiter): string {
+  return value.includes(delimiter) || /["\r\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
+}
+
+export interface CsvGroup {
+  /** The value the rows share, as written. */
+  value: string;
+  /** The rows' own CSV, with the header and skipped lines kept, read by the same options. */
+  text: string;
+  /** Each row's line in the file, counting from 1 at the first line. */
+  rows: number[];
+}
+
+/**
+ * **One CSV into one per invoice — decision 0576**, for Batch upload with a
+ * supplier's own layout. Rows are grouped by the column a mapping reads
+ * the invoice number from (`path`, `CSV/First/<column>`), in the order
+ * each number first appears. Each group keeps the file's skipped lines
+ * and header, so the mapping reads it exactly as it reads a whole file.
+ * Rows with no value in that column are a group of their own, value "".
+ */
+export function splitCsvByColumn(text: string, options: CsvOptions, path: string): CsvGroup[] {
+  const element = path.split("/").pop() ?? "";
+  const index = csvToXml(text, options).columns.findIndex((c) => c.element === element);
+  if (index === -1) throw new CsvError(`the file has no column the mapping reads the invoice number from`);
+  const rows = parseCsv(skipLines(text, options.skip), options.delimiter);
+  const header = options.header ? rows[0] : null;
+  const data = options.header ? rows.slice(1) : rows;
+  const firstLine = options.skip + (options.header ? 2 : 1);
+  const groups = new Map<string, { rows: string[][]; lines: number[] }>();
+  data.forEach((row, i) => {
+    if (row.every((c) => c.trim() === "")) return;
+    const value = (row[index] ?? "").trim();
+    const group = groups.get(value) ?? { rows: [], lines: [] };
+    group.rows.push(row);
+    group.lines.push(firstLine + i);
+    groups.set(value, group);
+  });
+  const write = (row: string[]) => row.map((c) => csvCell(c, options.delimiter)).join(options.delimiter);
+  const prefix = "\n".repeat(options.skip);
+  return [...groups].map(([value, g]) => ({
+    value,
+    text: prefix + [...(header ? [write(header)] : []), ...g.rows.map(write)].join("\n") + "\n",
+    rows: g.lines,
+  }));
+}

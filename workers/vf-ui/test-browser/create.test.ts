@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import stringsSql from "../../vf-licence/migrations/0222_create_upload_strings.sql?raw";
 import keyedStringsSql from "../../vf-licence/migrations/0223_create_invoice_strings.sql?raw";
+import batchStringsSql from "../../vf-licence/migrations/0224_batch_upload_strings.sql?raw";
 
 /**
  * **Create → Upload documents — decision 0573.** Where an upload goes,
@@ -11,7 +12,7 @@ import keyedStringsSql from "../../vf-licence/migrations/0223_create_invoice_str
  */
 
 const strings: Record<string, string> = { "action.close": "Close" };
-for (const sql of [stringsSql, keyedStringsSql]) {
+for (const sql of [stringsSql, keyedStringsSql, batchStringsSql]) {
   for (const m of sql.matchAll(/\('([^']+)', 'en', '((?:[^']|'')*)'\)/g)) strings[m[1]] = m[2].replace(/''/g, "'");
 }
 
@@ -310,7 +311,7 @@ describe("Create → Upload documents (decision 0573)", () => {
     it("has its own tab beside Upload documents, with a file to start from and self-billing", async () => {
       stubKeyed([]);
       await open();
-      expect(texts(".createtabs .doctab")).toEqual(["Upload documents", "Create an invoice"]);
+      expect(texts(".createtabs .doctab")).toEqual(["Upload documents", "Create an invoice", "Batch upload"]);
       (document.getElementById("create-tab-keyed") as HTMLButtonElement).click();
       expect(document.getElementById("create-tab-keyed")?.className).toContain("on");
       expect(document.getElementById("create-drop")).toBeNull();
@@ -353,6 +354,135 @@ describe("Create → Upload documents (decision 0573)", () => {
       expect(calls.find((c) => c.path.endsWith("/files"))?.query).toBe("name=Rechnung_88240.xml&selfBilled=1");
       expect(calls.some((c) => c.path.endsWith("/keyed"))).toBe(false);
       expect(JSON.parse(String(calls.find((c) => c.path === "/api/uploads")?.body))).toMatchObject({ kind: "keyed", files: 1 });
+    });
+  });
+
+  describe("Batch upload — decision 0576", () => {
+    const PREVIEW = {
+      filename: "batch_september.csv",
+      layout: "VibeFinance template",
+      rows: 5,
+      problems: [],
+      counts: { ready: 2, duplicate: 1, problem: 1 },
+      invoices: [
+        { key: "STMT-09|de999", number: "STMT-09", supplier: "Hanse Logistik", date: "2026-09-30", currency: "EUR", total: 178.5, lines: 2, rows: [2, 3], status: "ready", problems: [], duplicateOf: null },
+        { key: "88240|de812345678", number: "88240", supplier: "Lager Nord GmbH", date: "2026-09-30", currency: "EUR", total: 738.99, lines: 1, rows: [4], status: "ready", problems: [], duplicateOf: null },
+        { key: "7781|de999", number: "7781", supplier: "Hanse Logistik", date: "2026-09-30", currency: "EUR", total: 96.4, lines: 1, rows: [5], status: "duplicate", problems: [], duplicateOf: { id: "inv-old", number: "7781", receivedAt: "2026-09-12 10:00:00" } },
+        { key: "INV-5530|de999", number: "INV-5530", supplier: "Hanse Logistik", date: null, currency: null, total: null, lines: 0, rows: [6], status: "problem", problems: ["Row 6: no VAT rate"], duplicateOf: null },
+      ],
+      problemsCsv: "row,invoice_number,problem\r\n6,INV-5530,Row 6: no VAT rate\r\n",
+    };
+
+    function stubBatch(calls: Call[]) {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async (url: string, init?: RequestInit) => {
+          const [path, query = ""] = String(url).split("?");
+          const method = init?.method ?? "GET";
+          calls.push({ method, path, query, body: init?.body });
+          const reply = (body: unknown, status = 200) => ({ ok: status < 400, status, json: async () => body }) as Response;
+          if (path === "/api/ui-strings") return reply({ locale: "en", strings });
+          if (path === "/api/uploads/targets") return reply(TARGETS);
+          if (path === "/api/uploads/mappings") return reply({ mappings: [{ id: "map-ln", name: "Lager Nord CSV", version: 2 }] });
+          if (path === "/api/uploads/preview") {
+            if (query.startsWith("layout=xml")) {
+              const name = decodeURIComponent(query.split("name=")[1]);
+              return reply({ invoices: [{ key: `${name}|x`, number: name.replace(".xml", ""), supplier: "Lager Nord GmbH", date: "2026-09-29", currency: "EUR", total: 10, lines: 1, rows: [], status: "ready", problems: [], duplicateOf: null }] });
+            }
+            return reply(PREVIEW);
+          }
+          if (path === "/api/uploads") return reply({ messageId: "MSG-3C41-9A02-7E55", receivedAt: "2026-09-30T16:42:00Z" }, 201);
+          if (path.endsWith("/batch")) {
+            return reply({
+              total: 2,
+              from: 0,
+              made: [
+                { key: "STMT-09|de999", number: "STMT-09", invoiceId: "i1", invoice: { id: "i1", number: "STMT-09", seller: "Hanse Logistik", total: 178.5, currency: "EUR", stage: "Validation", taskId: "t1", taskStageId: "validation" } },
+                { key: "88240|de812345678", number: "88240", invoiceId: "i2", invoice: { id: "i2", number: "88240", seller: "Lager Nord GmbH", total: 738.99, currency: "EUR", stage: "Validation", taskId: "t2", taskStageId: "validation" } },
+              ],
+              failed: [],
+            });
+          }
+          if (path.endsWith("/files")) {
+            const name = decodeURIComponent(query.replace(/^name=/, ""));
+            return reply({ captured: true, invoice: { id: name, number: name.replace(".xml", ""), stage: "Validation" } });
+          }
+          if (path.endsWith("/finish")) return reply({ captured: 2, failed: 0 });
+          throw new Error(`no stub for ${method} ${path}`);
+        })
+      );
+    }
+
+    async function openBatch(calls: Call[]) {
+      stubBatch(calls);
+      await open();
+      (document.getElementById("create-tab-batch") as HTMLButtonElement).click();
+      await settle();
+    }
+
+    it("offers the template, or a supplier's layout by its mapping", async () => {
+      const calls: Call[] = [];
+      await openBatch(calls);
+      expect(texts(".createtabs .doctab")).toEqual(["Upload documents", "Create an invoice", "Batch upload"]);
+      expect((document.getElementById("create-layout-template") as HTMLInputElement).checked).toBe(true);
+      expect(document.getElementById("create-template")?.getAttribute("href")).toBe("/api/uploads/template.csv");
+      expect(texts("#create-mapping option")).toEqual(["Lager Nord CSV · v2"]);
+      expect(document.body.textContent).toContain("Rows with the same invoice number become one invoice");
+      expect(document.body.textContent).toContain("What goes in the template");
+    });
+
+    it("previews a CSV before anything is made, and creates only what is ready unless duplicates are ticked in", async () => {
+      const calls: Call[] = [];
+      await openBatch(calls);
+      const { readForPreview } = await import("/create.js");
+      await readForPreview([new File(["x"], "batch_september.csv", { type: "text/csv" })]);
+      await settle();
+
+      expect(calls.find((c) => c.path === "/api/uploads/preview")?.query).toBe("layout=template&name=batch_september.csv");
+      expect(calls.some((c) => c.path === "/api/uploads")).toBe(false);
+      expect(document.getElementById("create-upload")?.textContent).toContain("batch_september.csv · 5 rows · 4 invoices · VibeFinance template");
+      expect(texts(".createsummary .createpill")).toEqual(["2 ready", "1 possible duplicate", "1 with problems"]);
+      const rows = [...document.querySelectorAll(".createtable tbody tr")];
+      expect(rows.map((r) => r.querySelector(".createpill")?.textContent)).toEqual(["Ready", "Ready", "Possible duplicate", "Problem"]);
+      expect(rows[0].textContent).toContain("2 rows in one invoice");
+      expect(rows[2].textContent).toContain("7781 from this supplier was received on");
+      expect(rows[3].textContent).toContain("Row 6: no VAT rate");
+      expect(document.getElementById("create-problems")).not.toBeNull();
+      expect(document.getElementById("create-batchgo")?.textContent).toBe("Create 2 invoices");
+      (document.getElementById("create-duplicates") as HTMLInputElement).click();
+      expect(document.getElementById("create-batchgo")?.textContent).toBe("Create 3 invoices");
+      (document.getElementById("create-duplicates") as HTMLInputElement).click();
+
+      const { createBatch } = await import("/create.js");
+      await createBatch();
+      await settle();
+      expect(JSON.parse(String(calls.find((c) => c.path === "/api/uploads")?.body))).toMatchObject({ kind: "batch", files: 1 });
+      expect(calls.filter((c) => c.path.endsWith("/batch")).map((c) => c.query)).toEqual([
+        "layout=template&name=batch_september.csv&from=0&count=20&duplicates=0",
+      ]);
+      expect(calls.at(-1)?.path).toBe("/api/uploads/MSG-3C41-9A02-7E55/finish");
+      expect(texts(".createrow .createname")).toEqual(["STMT-09", "88240"]);
+      expect(texts(".createrow .createpill")).toEqual(["Created", "Created"]);
+      expect(document.querySelector(".createrow")?.textContent).toContain("now at Validation");
+      expect(document.querySelectorAll(".createrow .createact button")).toHaveLength(2);
+    });
+
+    it("reads by the chosen mapping, and XML invoices one at a time", async () => {
+      const calls: Call[] = [];
+      await openBatch(calls);
+      (document.getElementById("create-layout-mapping") as HTMLInputElement).click();
+      const { readForPreview, createBatch } = await import("/create.js");
+      await readForPreview([new File(["x"], "ln.csv", { type: "text/csv" })]);
+      expect(calls.find((c) => c.path === "/api/uploads/preview")?.query).toBe("layout=mapping&mapping=map-ln&name=ln.csv");
+
+      await readForPreview([new File(["<a/>"], "88241.xml"), new File(["<a/>"], "88242.xml")]);
+      await settle();
+      expect(calls.filter((c) => c.query.startsWith("layout=xml")).map((c) => c.query)).toEqual(["layout=xml&name=88241.xml", "layout=xml&name=88242.xml"]);
+      expect(document.getElementById("create-upload")?.textContent).toContain("2 XML invoices");
+      await createBatch();
+      await settle();
+      expect(JSON.parse(String(calls.filter((c) => c.path === "/api/uploads").at(-1)?.body))).toMatchObject({ kind: "batch", files: 2 });
+      expect(calls.filter((c) => c.path.endsWith("/files")).map((c) => c.query)).toEqual(["name=88241.xml", "name=88242.xml"]);
     });
   });
 });

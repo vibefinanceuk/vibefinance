@@ -2,6 +2,7 @@ import type { RouteResult } from "./examples-route.js";
 import type { ExtractionModel } from "./extraction.js";
 import { captureAttachmentPart } from "./inbound-email.js";
 import { captureKeyedInvoice } from "./source-capture-route.js";
+import { handleBatchChunk, type BatchLayout } from "./batch-route.js";
 import {
   addRouteEvent,
   finishRouteMessage,
@@ -54,6 +55,8 @@ const ACCEPTED = new Set(["application/pdf", "application/xml", "text/xml", "ima
 export const MAX_UPLOAD_BYTES = 15 * 1024 * 1024;
 /** Files in one upload. */
 export const MAX_UPLOAD_FILES = 50;
+/** Files in one batch upload (decision 0576): as many XML invoices as a batch may hold. */
+export const BATCH_MAX_FILES = 500;
 
 /**
  * What a file is, from its name first and then what the browser said.
@@ -109,11 +112,14 @@ export async function handleOpenUpload(db: D1Database, person: Person, body: unk
   if (typeof sourceId !== "string" || sourceId === "") return { status: 400, body: { error: "sourceId is required" } };
   // Decision 0575: one invoice keyed by hand, with a file or none.
   const keyed = kind === "keyed";
+  // Decision 0576: a batch, one CSV or up to 500 XML invoices.
+  const batch = kind === "batch";
   const count = keyed ? Number(files ?? 0) : Number(files);
   if (!Number.isInteger(count) || count < (keyed ? 0 : 1) || (keyed && count > 1)) {
     return { status: 400, body: { error: keyed ? "an invoice keyed by hand has one file or none" : "files must be a whole number, at least 1" } };
   }
-  if (count > MAX_UPLOAD_FILES) return { status: 400, body: { error: `at most ${MAX_UPLOAD_FILES} files can be uploaded at once` } };
+  const most = batch ? BATCH_MAX_FILES : MAX_UPLOAD_FILES;
+  if (count > most) return { status: 400, body: { error: `at most ${most} files can be uploaded at once` } };
   const source = await db
     .prepare("SELECT id, name, mechanism, status FROM sources WHERE id = ?")
     .bind(sourceId)
@@ -127,12 +133,17 @@ export async function handleOpenUpload(db: D1Database, person: Person, body: unk
     direction: "in",
     counterparty: `${person.name} <${person.email}>`,
     recipient: source.name,
-    subject: keyed ? "Invoice keyed by hand" : `Upload of ${count} ${count === 1 ? "file" : "files"}`,
+    subject: keyed
+      ? "Invoice keyed by hand"
+      : `${batch ? "Batch upload" : "Upload"} of ${count} ${count === 1 ? "file" : "files"}`,
     bytes: 0,
     receivedAt,
   });
   if (!messageId) return { status: 500, body: { error: "the upload could not be recorded" } };
-  await addRouteEvent(db, messageId, "upload_opened", { actor: person.id, detail: keyed ? "keyed by hand" : `${count} files` });
+  await addRouteEvent(db, messageId, "upload_opened", {
+    actor: person.id,
+    detail: keyed ? "keyed by hand" : batch ? `batch of ${count} files` : `${count} files`,
+  });
   return { status: 201, body: { messageId, receivedAt } };
 }
 
@@ -344,4 +355,38 @@ export async function handleFinishUpload(db: D1Database, person: Person, message
   }
   await addRouteEvent(db, messageId, "upload_finished", { actor: person.id, detail: `${captured} created, ${failed} not` });
   return { status: 200, body: { messageId, captured, failed } };
+}
+
+/** One chunk of a batch file into this person's open upload — decision 0576. */
+export async function handleUploadBatchChunk(
+  db: D1Database,
+  person: Person,
+  messageId: string,
+  layout: BatchLayout,
+  file: { filename: string; bytes: Uint8Array },
+  chunk: { from: number; count: number; duplicates: boolean },
+  deps: { model: ExtractionModel; bucket?: R2Bucket; customerId?: string }
+): Promise<RouteResult> {
+  const upload = await openUploadOf(db, messageId, person);
+  if ("status" in upload && "body" in upload) return upload;
+  const result = await handleBatchChunk(db, person, upload as OpenUpload, layout, file, chunk, deps);
+  if (result.status >= 400) return result;
+  // Each invoice made, as the screen shows it: number, supplier, total, stage, and its task to open.
+  const body = result.body as { made: Array<{ key: string; number: string; invoiceId: string }> };
+  const made = [];
+  for (const m of body.made) made.push({ ...m, invoice: await invoiceSummary(db, m.invoiceId) });
+  return { status: 200, body: { ...body, made } };
+}
+
+/** The supplier layouts a batch can be read by: every published CSV mapping — decision 0576. */
+export async function handleBatchMappings(db: D1Database): Promise<RouteResult> {
+  const rows = await db
+    .prepare(
+      `SELECT m.id, m.name, v.version FROM supplier_mappings m
+       JOIN supplier_mapping_versions v ON v.mapping_id = m.id AND v.status = 'live'
+       WHERE m.root = 'CSV' AND m.status = 'active'
+       ORDER BY m.name`
+    )
+    .all<{ id: string; name: string; version: number }>();
+  return { status: 200, body: { mappings: rows.results } };
 }

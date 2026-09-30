@@ -241,7 +241,11 @@ const PROXIED_TO_INSTANCE: RegExp[] = [
   // Create → Upload documents — decision 0573.
   /^\/uploads\/targets$/,
   /^\/uploads$/,
-  /^\/uploads\/[^/]+\/(files|finish|keyed)$/,
+  /^\/uploads\/[^/]+\/(files|finish|keyed|batch)$/,
+  // Batch upload — decision 0576.
+  /^\/uploads\/template\.csv$/,
+  /^\/uploads\/mappings$/,
+  /^\/uploads\/preview$/,
   /^\/route-messages$/,
   /^\/route-messages\/[^/]+$/,
   /^\/route-messages\/[^/]+\/parts\/\d+$/,

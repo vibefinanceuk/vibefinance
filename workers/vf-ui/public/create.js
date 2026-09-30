@@ -29,6 +29,12 @@ let busy = false;
 let tab = "upload";
 let keyedFile = null;
 let selfBilled = false;
+// Decision 0576: Batch upload — the layout, the published CSV mappings, and the preview.
+let batchLayout = "template";
+let batchMapping = "";
+let batchMappings = null;
+let preview = null; // { kind: "csv"|"xml", filename, layout, rows, counts, invoices, problems, problemsCsv, file, files }
+let includeDuplicates = false;
 
 async function getJson(path, init) {
   try {
@@ -41,6 +47,7 @@ async function getJson(path, init) {
 }
 
 function size(bytes) {
+  if (bytes === null || bytes === undefined) return "";
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
@@ -166,7 +173,8 @@ function fileRow(row) {
   return el("div", { class: "createrow" }, [
     el("div", { class: "createfile" }, [
       el("div", { class: "createname", text: row.name }),
-      el("div", { class: "createmeta", text: [size(row.size), kindOf(row.name)].filter(Boolean).join(" · ") }),
+      // A batch's invoice is its number, not a file (0576): no size or type.
+      el("div", { class: "createmeta", text: row.size === null ? "" : [size(row.size), kindOf(row.name)].filter(Boolean).join(" · ") }),
     ]),
     el("div", { class: "createstatus" }, [statusPill(row), detail ? el("div", { class: "createmeta", text: detail }) : null].filter(Boolean)),
     el("div", { class: "createact" }, open ? [open] : []),
@@ -357,6 +365,334 @@ function sendPanel() {
   ]);
 }
 
+async function selectTab(key) {
+  tab = key;
+  render();
+  if (key === "batch" && batchMappings === null) {
+    const result = await getJson("/api/uploads/mappings");
+    batchMappings = result.ok ? result.body?.mappings ?? [] : [];
+    if (!batchMapping && batchMappings[0]) batchMapping = batchMappings[0].id;
+    if (tab === "batch") render();
+  }
+}
+
+/**
+ * **Batch upload — decision 0576**, as the mock-up Dan approved: the
+ * layout (the VibeFinance template, or a supplier's own through its
+ * mapping), the file, and what goes in the template. Choosing a file reads
+ * it into a preview; nothing is made until Create.
+ */
+function batchPanel() {
+  if (targets.length === 0) {
+    return el("div", { class: "panel" }, [
+      el("div", { class: "cardhead" }, [el("h3", { text: t("create.batch") })]),
+      el("div", { class: "muted", text: t("create.notargets") }),
+    ]);
+  }
+  const radio = (value, label, extra) =>
+    el("label", { class: "createradio" }, [
+      el("input", {
+        type: "radio",
+        name: "create-layout",
+        id: `create-layout-${value}`,
+        value,
+        onchange: () => ((batchLayout = value), (preview = null), render()),
+        ...(batchLayout === value ? { checked: "checked" } : {}),
+      }),
+      el("span", { text: label }),
+      extra,
+    ].filter(Boolean));
+  const template = el("a", { class: "actionlink createinline", id: "create-template", href: "/api/uploads/template.csv", download: "vibefinance-batch-template.csv" }, [
+    icon("download"),
+    el("span", { text: t("create.template") }),
+  ]);
+  const mappings = batchMappings ?? [];
+  const mappingSelect =
+    mappings.length > 0
+      ? el(
+          "select",
+          { class: "createinlineselect", id: "create-mapping", onchange: (e) => ((batchMapping = e.target.value), (batchLayout = "mapping"), (preview = null), render()) },
+          mappings.map((m) => el("option", { value: m.id, text: `${m.name} · v${m.version}`, ...(m.id === batchMapping ? { selected: "selected" } : {}) }))
+        )
+      : el("span", { class: "createmeta", text: t(batchMappings === null ? "create.loading" : "create.nomappings") });
+  const picker = el("input", {
+    type: "file",
+    id: "create-batchfiles",
+    multiple: "multiple",
+    accept: ".csv,.xml,.zip",
+    hidden: true,
+    onchange: (e) => readForPreview(e.target.files),
+  });
+  const drop = el("div", { class: busy ? "createdrop busy" : "createdrop", id: "create-batchdrop" }, [
+    el("div", { class: "createdropicon" }, [icon("load")]),
+    el("div", { class: "createdroptitle", text: t("create.batchdrop") }),
+    el("div", { class: "createmeta", text: t("create.batchdropsub") }),
+    el("button", { class: "actionlink primary", onclick: () => picker.click(), ...(busy ? { disabled: "disabled" } : {}) }, [icon("load"), el("span", { text: t("create.choosefile") })]),
+    picker,
+  ]);
+  drop.addEventListener("dragover", (e) => {
+    e.preventDefault();
+    drop.classList.add("over");
+  });
+  drop.addEventListener("dragleave", () => drop.classList.remove("over"));
+  drop.addEventListener("drop", (e) => {
+    e.preventDefault();
+    drop.classList.remove("over");
+    if (!busy) readForPreview(e.dataTransfer.files);
+  });
+  return el("div", { class: "panel" }, [
+    el("div", { class: "cardhead" }, [el("h3", { text: t("create.batch") })]),
+    el("div", { class: "createmeta createintro", text: t("create.batchintro") }),
+    targetField(),
+    el("div", { class: "createfield" }, [
+      el("label", { text: t("create.layout") }),
+      radio("template", t("create.layouttemplate"), template),
+      radio("mapping", t("create.layoutmapping"), mappingSelect),
+      el("div", { class: "createmeta", text: t("create.layouthint") }),
+    ]),
+    drop,
+    el("details", { class: "createdetails" }, [
+      el("summary", { text: t("create.templatewhat") }),
+      el("div", { class: "createmeta", text: t("create.templatecolumns") }),
+    ]),
+  ]);
+}
+
+const STATUS_PILL = { ready: ["create.ready", "ok"], duplicate: ["create.duplicate", "warn"], problem: ["create.problem", "bad"] };
+
+function previewRow(inv) {
+  const [key, tone] = STATUS_PILL[inv.status];
+  const detail =
+    inv.status === "problem"
+      ? inv.problems.join(" · ")
+      : inv.status === "duplicate"
+        ? t("create.duplicateof").replace("{number}", inv.duplicateOf.number).replace("{when}", when(inv.duplicateOf.receivedAt.replace(" ", "T") + (inv.duplicateOf.receivedAt.includes("T") ? "" : "Z")))
+        : inv.lines > 1 && tab === "batch" && preview?.kind === "csv"
+          ? t("create.rowsinone").replace("{n}", String(inv.lines))
+          : null;
+  return el("tr", { class: inv.status === "ready" ? "" : `create${inv.status}` }, [
+    el("td", { text: inv.number || "—" }),
+    el("td", { text: inv.supplier ?? "—" }),
+    el("td", { text: inv.date ?? "—" }),
+    el("td", { class: "num", text: String(inv.lines) }),
+    el("td", { class: "num", text: money(inv.total, inv.currency) ?? "—" }),
+    el("td", {}, [el("span", { class: `createpill ${tone}`, text: t(key) }), detail ? el("div", { class: "createmeta", text: detail }) : null].filter(Boolean)),
+  ]);
+}
+
+function toCreate() {
+  return preview.invoices.filter((i) => i.status === "ready" || (includeDuplicates && i.status === "duplicate"));
+}
+
+function previewPanel() {
+  const n = toCreate().length;
+  const pills = [
+    ["ready", "ok", "create.nready"],
+    ["duplicate", "warn", "create.nduplicate"],
+    ["problem", "bad", "create.nproblem"],
+  ]
+    .filter(([s]) => preview.counts[s] > 0)
+    .map(([s, tone, key]) =>
+      el("span", { class: `createpill ${tone}`, text: t(s === "duplicate" && preview.counts[s] === 1 ? "create.nduplicate1" : key).replace("{n}", String(preview.counts[s])) })
+    );
+  const meta =
+    preview.kind === "csv"
+      ? t("create.previewmeta").replace("{file}", preview.filename).replace("{rows}", String(preview.rows)).replace("{n}", String(preview.invoices.length)).replace("{layout}", preview.layout)
+      : t("create.previewxml").replace("{n}", String(preview.invoices.length));
+  const include = el("input", {
+    type: "checkbox",
+    id: "create-duplicates",
+    onchange: (e) => ((includeDuplicates = e.target.checked), renderUpload()),
+    ...(includeDuplicates ? { checked: "checked" } : {}),
+  });
+  const download = el("button", {
+    class: "actionlink",
+    id: "create-problems",
+    onclick: () => {
+      const a = el("a", { href: URL.createObjectURL(new Blob([preview.problemsCsv], { type: "text/csv" })), download: "problems.csv" });
+      document.body.append(a);
+      a.click();
+      a.remove();
+    },
+  }, [icon("download"), el("span", { text: t("create.downloadproblems") })]);
+  return el("div", { class: "panel" }, [
+    el("div", { class: "cardhead" }, [
+      el("div", {}, [el("h3", { text: t("create.preview") }), el("div", { class: "createmeta", text: meta })]),
+      el("button", { class: "actionlink", id: "create-cancel", onclick: () => ((preview = null), render()) }, [icon("close"), el("span", { text: t("create.cancel") })]),
+    ]),
+    preview.problems.length > 0 ? el("div", { class: "warn", text: preview.problems.join(" ") }) : null,
+    el("div", { class: "createsummary" }, pills),
+    preview.invoices.length > 0
+      ? el("div", { class: "createtablewrap" }, [
+          el("table", { class: "createtable" }, [
+            el("thead", {}, [
+              el("tr", {}, ["create.colinvoice", "create.colsupplier", "create.coldate", "create.collines", "create.coltotal", null].map((k) =>
+                el("th", { class: k === "create.collines" || k === "create.coltotal" ? "num" : "", text: k ? t(k) : "" })
+              )),
+            ]),
+            el("tbody", {}, preview.invoices.map(previewRow)),
+          ]),
+        ])
+      : null,
+    preview.counts.duplicate > 0 ? el("label", { class: "createcheck", for: "create-duplicates" }, [include, el("span", { text: t("create.includeduplicates") })]) : null,
+    el("div", { class: "createfoot" }, [
+      el("div", { class: "createmeta", text: preview.counts.problem > 0 ? t("create.fixhint") : "" }),
+      el("div", { class: "createbtns" }, [
+        preview.counts.problem > 0 || preview.problems.length > 0 ? download : null,
+        el("button", {
+          class: "actionlink primary",
+          id: "create-batchgo",
+          onclick: () => createBatch(),
+          ...(n === 0 || busy || preview.problems.length > 0 ? { disabled: "disabled" } : {}),
+        }, [icon("create"), el("span", { text: t(n === 1 ? "create.createone" : "create.createn").replace("{n}", String(n)) })]),
+      ].filter(Boolean)),
+    ]),
+  ].filter(Boolean));
+}
+
+/**
+ * The file read into a preview: one CSV, by the layout chosen, or XML
+ * invoices (a zip unpacked here), each read on its own. Nothing is kept.
+ */
+export async function readForPreview(fileList) {
+  if (busy || !fileList || fileList.length === 0) return;
+  busy = true;
+  const chosenFiles = [...fileList];
+  const csv = chosenFiles.filter((f) => /\.csv$/i.test(f.name));
+  preview = null;
+  let note = null;
+  if (csv.length > 0) {
+    if (chosenFiles.length > 1) note = t("create.onecsv");
+    const file = csv[0];
+    const q = batchLayout === "mapping" && batchMapping ? `layout=mapping&mapping=${encodeURIComponent(batchMapping)}` : "layout=template";
+    const result = await getJson(`/api/uploads/preview?${q}&name=${encodeURIComponent(file.name)}`, { method: "POST", headers: { "Content-Type": "text/csv" }, body: file });
+    if (result.ok) preview = { kind: "csv", file, ...result.body };
+    else note = result.body?.error ?? t("create.failed");
+  } else {
+    const { files, notes } = await expand(chosenFiles);
+    const xml = files.filter((f) => /\.xml$/i.test(f.name)).slice(0, 500);
+    const invoices = [];
+    for (const f of xml) {
+      const result = await getJson(`/api/uploads/preview?layout=xml&name=${encodeURIComponent(f.name)}`, { method: "POST", headers: { "Content-Type": "application/xml" }, body: f.bytes ?? f.file });
+      for (const inv of result.ok ? result.body?.invoices ?? [] : [{ key: `file|${f.name}`, number: "", status: "problem", problems: [result.body?.error ?? t("create.failed")], lines: 0 }]) {
+        invoices.push({ ...inv, source: f });
+      }
+    }
+    const counts = { ready: 0, duplicate: 0, problem: 0 };
+    for (const inv of invoices) counts[inv.status] += 1;
+    const q = (v) => (/[",\r\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
+    preview = {
+      kind: "xml",
+      filename: "",
+      layout: "XML",
+      rows: invoices.length,
+      counts,
+      invoices,
+      problems: notes,
+      problemsCsv: ["row,invoice_number,problem", ...invoices.flatMap((i) => i.problems.map((p) => ["", q(i.number), q(p)].join(",")))].join("\r\n") + "\r\n",
+    };
+    if (xml.length === 0) note = t("create.nothingtoread");
+  }
+  if (preview && note) preview.problems = [...(preview.problems ?? []), note];
+  if (!preview && note) upload = { messageId: null, receivedAt: null, note, rows: [] };
+  includeDuplicates = false;
+  busy = false;
+  render();
+}
+
+/**
+ * Creates the batch: one upload; a CSV's invoices made a few at a time, or
+ * each XML invoice sent as a file; then the results, as an upload's, with
+ * Open.
+ */
+export async function createBatch() {
+  if (busy || !preview || !chosen) return;
+  const selected = toCreate();
+  if (selected.length === 0) return;
+  busy = true;
+  const p = preview;
+  upload = {
+    messageId: null,
+    receivedAt: null,
+    note: null,
+    rows: selected.map((inv) => ({ key: inv.key, name: inv.number || inv.source?.name || "—", size: null, status: "waiting", why: null, invoice: null })),
+  };
+  preview = null;
+  render();
+  const opened = await getJson("/api/uploads", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ sourceId: chosen, kind: "batch", files: p.kind === "csv" ? 1 : selected.length }),
+  });
+  if (!opened.ok) {
+    upload.note = opened.body?.error ?? t("create.failed");
+    busy = false;
+    render();
+    return;
+  }
+  upload.messageId = opened.body.messageId;
+  upload.receivedAt = opened.body.receivedAt;
+  const id = encodeURIComponent(upload.messageId);
+  const byKey = new Map(upload.rows.map((r) => [r.key, r]));
+  if (p.kind === "csv") {
+    const q = batchLayout === "mapping" && batchMapping ? `layout=mapping&mapping=${encodeURIComponent(batchMapping)}` : "layout=template";
+    const CHUNK = 20;
+    for (let from = 0; from < selected.length; from += CHUNK) {
+      for (const r of upload.rows.slice(from, from + CHUNK)) r.status = "reading";
+      renderUpload();
+      const result = await getJson(
+        `/api/uploads/${id}/batch?${q}&name=${encodeURIComponent(p.filename)}&from=${from}&count=${CHUNK}&duplicates=${includeDuplicates ? 1 : 0}`,
+        { method: "POST", headers: { "Content-Type": "text/csv" }, body: p.file }
+      );
+      if (!result.ok) {
+        for (const r of upload.rows.slice(from, from + CHUNK)) {
+          r.status = "notread";
+          r.why = result.body?.error ?? t("create.failed");
+        }
+        continue;
+      }
+      for (const m of result.body.made ?? []) {
+        const r = byKey.get(m.key);
+        if (r) {
+          r.status = "created";
+          r.invoice = m.invoice ?? null;
+        }
+      }
+      for (const f of result.body.failed ?? []) {
+        const r = byKey.get(f.key);
+        if (r) {
+          r.status = "notread";
+          r.why = f.why;
+        }
+      }
+      renderUpload();
+    }
+  } else {
+    for (const inv of selected) {
+      const r = byKey.get(inv.key);
+      r.status = "reading";
+      renderUpload();
+      const f = inv.source;
+      const result = await getJson(`/api/uploads/${id}/files?name=${encodeURIComponent(f.name)}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/xml" },
+        body: f.bytes ?? f.file,
+      });
+      if (result.ok && result.body?.captured) {
+        r.status = "created";
+        r.invoice = result.body.invoice ?? null;
+      } else {
+        r.status = "notread";
+        r.why = result.body?.why ?? result.body?.error ?? t("create.failed");
+      }
+      renderUpload();
+    }
+  }
+  await getJson(`/api/uploads/${id}/finish`, { method: "POST" });
+  busy = false;
+  render();
+}
+
 function render() {
   const shell = document.getElementById("shell");
   shell.replaceChildren(
@@ -370,20 +706,24 @@ function render() {
           [
             ["upload", "create.upload"],
             ["keyed", "create.keyed"],
+            ["batch", "create.batch"],
           ].map(([key, label]) =>
-            el("button", { class: tab === key ? "doctab on" : "doctab", id: `create-tab-${key}`, onclick: () => ((tab = key), render()) }, [
+            el("button", { class: tab === key ? "doctab on" : "doctab", id: `create-tab-${key}`, onclick: () => selectTab(key) }, [
               el("span", { text: t(label) }),
             ])
           )
         ),
-        el("div", { class: "creategrid" }, [tab === "keyed" ? keyedPanel() : sendPanel(), el("div", { id: "create-upload" }, [uploadPanel()])]),
+        el("div", { class: "creategrid" }, [
+          tab === "keyed" ? keyedPanel() : tab === "batch" ? batchPanel() : sendPanel(),
+          el("div", { id: "create-upload" }, [tab === "batch" && preview ? previewPanel() : uploadPanel()]),
+        ]),
       ])
     )
   );
 }
 
 function renderUpload() {
-  document.getElementById("create-upload")?.replaceChildren(uploadPanel());
+  document.getElementById("create-upload")?.replaceChildren(tab === "batch" && preview ? previewPanel() : uploadPanel());
 }
 
 /**
@@ -522,6 +862,8 @@ export async function open() {
   tab = "upload";
   keyedFile = null;
   selfBilled = false;
+  preview = null;
+  includeDuplicates = false;
   const result = await getJson("/api/uploads/targets");
   targets = result.ok ? result.body?.targets ?? [] : [];
   limits = { maxFiles: result.body?.maxFiles ?? 50, maxBytes: result.body?.maxBytes ?? 15 * 1024 * 1024 };

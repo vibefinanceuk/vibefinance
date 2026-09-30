@@ -209,7 +209,7 @@ export async function nearMiss(
 }
 
 /** A problem, in words, for the message part's reason. */
-function describeProblem(p: AppliedMapping["problems"][number]): string {
+export function describeProblem(p: AppliedMapping["problems"][number]): string {
   const where = p.line !== undefined ? ` on line ${p.line}` : "";
   return `${p.target}${where} (from ${p.source ?? "a fixed value"}): ${p.reason}`;
 }

@@ -6,6 +6,7 @@ import { matchSupplier } from "./match-supplier.js";
 import {
   channelStructure,
   detectStructure,
+  type DetectionResult,
   summariseAttempts,
   detailOfAttempts,
   type DetectedStructure,
@@ -346,7 +347,17 @@ export async function handleCaptureFromSource(
   // part, so retention points at it rather than storing it again.
   stored?: StoredPart,
   // Decision 0561: who sent it, which a supplier mapping may name.
-  sender?: string
+  sender?: string,
+  /**
+   * **Already read — decision 0576**, Batch upload. One invoice of a
+   * batch file, its facts and lines worked out from its rows (the
+   * VibeFinance template, or a supplier's mapping). `bytes` are its own
+   * rows as a CSV, for the table the viewer shows; `stored` is the whole
+   * file, kept once as the message's part. Everything after reading is
+   * this route's own path, unchanged: the channel, placement, supplier
+   * matching, the process, retention.
+   */
+  preRead?: PreRead
 ): Promise<RouteResult> {
   const source = await db
     .prepare("SELECT id, process_id, name, default_org_unit_id FROM sources WHERE id = ?")
@@ -359,7 +370,9 @@ export async function handleCaptureFromSource(
     return { status: 400, body: { error: "a document body is required" } };
   }
 
-  const detection = await detectStructure(bytes);
+  const detection: DetectionResult = preRead
+    ? { structure: "structured_csv", attempted: [{ test: "batch_upload", outcome: `read as ${preRead.format}` }] }
+    : await detectStructure(bytes);
   const attempted = summariseAttempts(detection.attempted);
 
   if (detection.structure === null) {
@@ -430,7 +443,9 @@ export async function handleCaptureFromSource(
   const enricher = buildIntakeEnricher(db, source);
 
   let result: RouteResult;
-  if (detection.structure === "structured_pdfa") {
+  if (preRead) {
+    result = await capturePreRead(db, channel.id, preRead, idOverride, enricher);
+  } else if (detection.structure === "structured_pdfa") {
     // The embedded XML is already in hand from detection, so it is
     // parsed here rather than extracted a second time.
     result = await capturePreExtractedXml(db, channel.id, detection.embeddedXml as string, attempted, idOverride, enricher);
@@ -810,6 +825,54 @@ async function capturePreExtractedXml(
  * rule raise a task: a refusal that produces no facts has nowhere to go,
  * because no instance means no rule can fire.
  */
+export interface PreRead {
+  facts: Record<string, unknown>;
+  lines: Array<Record<string, unknown> & { lineNumber: number }>;
+  format: "vibefinance_csv" | "supplier_csv";
+  mappingId?: string;
+  mappingVersion?: number;
+  en16931?: { checked: string[]; failed: Array<{ rule: string; detail?: string }> } | null;
+}
+
+/** One batch invoice into intake, as `captureThroughMapping` hands a mapped file over — decision 0576. */
+async function capturePreRead(
+  db: D1Database,
+  channelId: string,
+  read: PreRead,
+  idOverride: string | undefined,
+  enrichFacts: ReturnType<typeof buildIntakeEnricher>
+): Promise<RouteResult> {
+  const facts: Record<string, unknown> = {
+    ...read.facts,
+    "intake.format": read.format,
+    ...(read.en16931 ? { "en16931.checked": true, "en16931.failures": read.en16931.failed.map((f) => f.rule).join(",") } : {}),
+  };
+  const result = await handleCaptureIntake(db, channelId, {
+    id: idOverride ?? crypto.randomUUID(),
+    invoiceNumber: facts["BT-1"] as string | undefined,
+    issueDate: facts["BT-2"] as string | undefined,
+    currency: facts["BT-5"] as string | undefined,
+    supplierVatId: facts["BT-31"] as string | undefined,
+    totalWithVat: facts["BT-112"] as number | undefined,
+    facts,
+    lines: read.lines,
+    enrichFacts,
+  } as Parameters<typeof handleCaptureIntake>[2]);
+  if (result.status >= 400) return result;
+  return {
+    status: result.status,
+    body: {
+      ...(result.body as Record<string, unknown>),
+      format: read.format,
+      syntax: null,
+      xmlRoot: "CSV",
+      mappingId: read.mappingId ?? null,
+      mappingVersion: read.mappingVersion ?? null,
+      ...(read.en16931 ? { en16931: { checked: read.en16931.checked.length, failed: read.en16931.failed } } : {}),
+    },
+  };
+}
+
 /**
  * **An invoice keyed by hand — decision 0575**, Create → Create an
  * invoice. The path an unreadable document takes (`captureWithoutFacts`),

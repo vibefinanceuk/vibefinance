@@ -39,7 +39,7 @@ import { handleSupplierPoVariance } from "./supplier-po-variance-route.js";
 import { handleSupplierPaymentTerms } from "./supplier-payment-terms-route.js";
 import { handleSupplierHoldHistory } from "./supplier-hold-history-route.js";
 import { handleSupplierDiscountEligibility } from "./supplier-discount-eligibility-route.js";
-import { evaluateRuleSet, validateRule } from "@vibefinance/shared";
+import { evaluateRuleSet, templateCsv, validateRule } from "@vibefinance/shared";
 import type { CompiledRuleSet, InvoiceFacts } from "@vibefinance/shared";
 import { COMPILER_MODEL_ID, createWorkersAiCompilerModel } from "./compiler-model.js";
 import type { AiRunnable } from "./compiler-model.js";
@@ -256,7 +256,16 @@ import {
 import { handleAddStageReturnTarget, handleRemoveStageReturnTarget } from "./stage-return-targets-route.js";
 import { handlePreflight, withCors } from "@vibefinance/shared";
 import { verifyDocumentToken, mintPageToken, verifyPageToken, mintPartToken, verifyPartToken } from "./document-token.js";
-import { handleFinishUpload, handleKeyedInvoice, handleOpenUpload, handleUploadFile, handleUploadTargets } from "./upload-route.js";
+import {
+  handleBatchMappings,
+  handleFinishUpload,
+  handleKeyedInvoice,
+  handleOpenUpload,
+  handleUploadBatchChunk,
+  handleUploadFile,
+  handleUploadTargets,
+} from "./upload-route.js";
+import { handleBatchPreview, layoutFrom } from "./batch-route.js";
 import { messagesForInvoice, partForInvoice, partResponse, receivedFiles, viewFor } from "./received-files.js";
 import { retrieveInvoiceDocument, renderXmlForDisplay, extForContentType } from "./document-storage.js";
 import { resolveVocabulary } from "@vibefinance/shared";
@@ -4982,7 +4991,14 @@ export default {
      * closing it. Under `AP.Create`, a session or key like any other
      * screen's route; the person is who the upload is from.
      */
-    if (pathname === "/uploads/targets" || pathname === "/uploads" || /^\/uploads\/[^/]+\/(files|finish|keyed)$/.test(pathname)) {
+    if (
+      pathname === "/uploads/targets" ||
+      pathname === "/uploads" ||
+      pathname === "/uploads/template.csv" ||
+      pathname === "/uploads/mappings" ||
+      pathname === "/uploads/preview" ||
+      /^\/uploads\/[^/]+\/(files|finish|keyed|batch)$/.test(pathname)
+    ) {
       const { db, documents } = resolveTenant(request, env);
       const auth = await authenticatePerson(db, request, env);
       if (!auth.user) return json({ error: auth.reason }, 401);
@@ -4992,6 +5008,31 @@ export default {
       const person = auth.user;
       if (pathname === "/uploads/targets" && request.method === "GET") {
         const result = await handleUploadTargets(db);
+        return json(result.body, result.status);
+      }
+      // Batch upload — decision 0576: the template, the layouts, and a preview that keeps nothing.
+      if (pathname === "/uploads/template.csv" && request.method === "GET") {
+        return new Response(templateCsv(), {
+          status: 200,
+          headers: {
+            "Content-Type": "text/csv; charset=utf-8",
+            "Content-Disposition": 'attachment; filename="vibefinance-batch-template.csv"',
+          },
+        });
+      }
+      if (pathname === "/uploads/mappings" && request.method === "GET") {
+        const result = await handleBatchMappings(db);
+        return json(result.body, result.status);
+      }
+      if (pathname === "/uploads/preview" && request.method === "POST") {
+        const layout = layoutFrom(url.searchParams);
+        if (!layout) return json({ error: "layout is template, mapping (with mapping=) or xml" }, 400);
+        const result = await handleBatchPreview(
+          db,
+          layout,
+          url.searchParams.get("name") ?? "batch.csv",
+          new Uint8Array(await request.arrayBuffer())
+        );
         return json(result.body, result.status);
       }
       if (pathname === "/uploads" && request.method === "POST") {
@@ -5004,11 +5045,31 @@ export default {
         const result = await handleOpenUpload(db, person, body);
         return json(result.body, result.status);
       }
-      const uploadMatch = pathname.match(/^\/uploads\/([^/]+)\/(files|finish|keyed)$/);
+      const uploadMatch = pathname.match(/^\/uploads\/([^/]+)\/(files|finish|keyed|batch)$/);
       if (uploadMatch && request.method === "POST") {
         const messageId = decodeURIComponent(uploadMatch[1]);
         if (uploadMatch[2] === "finish") {
           const result = await handleFinishUpload(db, person, messageId);
+          return json(result.body, result.status);
+        }
+        // Decision 0576: the next chunk of a batch file.
+        if (uploadMatch[2] === "batch") {
+          const layout = layoutFrom(url.searchParams);
+          if (!layout) return json({ error: "layout is template or mapping (with mapping=)" }, 400);
+          if (!env.AI) return json({ error: "the AI binding is not configured" }, 500);
+          const result = await handleUploadBatchChunk(
+            db,
+            person,
+            messageId,
+            layout,
+            { filename: url.searchParams.get("name") ?? "batch.csv", bytes: new Uint8Array(await request.arrayBuffer()) },
+            {
+              from: Number(url.searchParams.get("from")) || 0,
+              count: Number(url.searchParams.get("count")) || 20,
+              duplicates: url.searchParams.get("duplicates") === "1",
+            },
+            { model: createWorkersAiExtractionModel(env.AI, env.EXTRACTION_MODEL_ID), bucket: documents, customerId: env.CUSTOMER_ID }
+          );
           return json(result.body, result.status);
         }
         // Decision 0575: an invoice keyed by hand, with no file.
