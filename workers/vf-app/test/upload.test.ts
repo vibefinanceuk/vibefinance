@@ -4,6 +4,7 @@ import { applyTestSchema } from "./setup.js";
 import { generateApiKey, hashApiKey } from "../src/user-auth.js";
 import {
   handleFinishUpload,
+  handleKeyedInvoice,
   handleOpenUpload,
   handleUploadFile,
   handleUploadTargets,
@@ -170,6 +171,55 @@ describe("an upload, file by file", () => {
     expect((await handleOpenUpload(env.DB, DAN, { sourceId: "upload-ap", files: 0 })).status).toBe(400);
     await env.DB.prepare("UPDATE sources SET status = 'retired' WHERE id = 'upload-ap'").run();
     expect((await handleOpenUpload(env.DB, DAN, { sourceId: "upload-ap", files: 1 })).status).toBe(409);
+  });
+});
+
+describe("an invoice keyed by hand — decision 0575", () => {
+  it("makes one invoice with no file, self-billed when asked, placed and started as any other", async () => {
+    const opened = await handleOpenUpload(env.DB, DAN, { sourceId: "upload-ap", kind: "keyed" });
+    expect(opened.status).toBe(201);
+    const { messageId } = opened.body as { messageId: string };
+
+    const made = await handleKeyedInvoice(env.DB, DAN, messageId, { selfBilled: true });
+    expect(made.body).toMatchObject({ captured: true, invoice: { number: null, stage: "Received" } });
+    const invoiceId = (made.body as { invoice: { id: string } }).invoice.id;
+
+    const row = await env.DB.prepare("SELECT facts_json, org_unit_id, mandate_channel FROM invoice_headers WHERE id = ?")
+      .bind(invoiceId)
+      .first<{ facts_json: string; org_unit_id: string; mandate_channel: string }>();
+    const facts = JSON.parse(row!.facts_json) as Record<string, unknown>;
+    expect(facts).toMatchObject({ "BT-3": "389", "invoice.selfBilled": 1, "intake.structure": "keyed" });
+    expect(row).toMatchObject({ org_unit_id: "ou-uk", mandate_channel: "AP upload" });
+
+    // One invoice per keyed upload.
+    expect((await handleKeyedInvoice(env.DB, DAN, messageId, {})).status).toBe(409);
+    expect((await handleFinishUpload(env.DB, DAN, messageId)).body).toEqual({ messageId, captured: 1, failed: 0 });
+
+    const message = await env.DB.prepare("SELECT status, subject FROM route_messages WHERE id = ?").bind(messageId).first();
+    expect(message).toEqual({ status: "delivered", subject: "Invoice keyed by hand" });
+    const activity = (await handleGetActivity(env.DB, invoiceId)).body as { items: Record<string, unknown>[] };
+    expect(activity.items.find((i) => i.kind === "received")).toMatchObject({ messageId, keyed: true, filename: null });
+  });
+
+  it("reads an attached file first, and marks it self-billed", async () => {
+    const { messageId } = (await handleOpenUpload(env.DB, DAN, { sourceId: "upload-ap", kind: "keyed", files: 1 })).body as { messageId: string };
+    const read = await handleUploadFile(
+      env.DB,
+      DAN,
+      messageId,
+      { filename: "Rechnung_88240.xml", contentType: "text/xml", bytes: UBL, selfBilled: true },
+      deps()
+    );
+    expect(read.body).toMatchObject({ captured: true, invoice: { number: "88240" } });
+    const invoiceId = (read.body as { invoice: { id: string } }).invoice.id;
+    const row = await env.DB.prepare("SELECT facts_json FROM invoice_headers WHERE id = ?").bind(invoiceId).first<{ facts_json: string }>();
+    expect(JSON.parse(row!.facts_json)).toMatchObject({ "BT-1": "88240", "BT-3": "389", "invoice.selfBilled": 1 });
+    // No second invoice beside the file's.
+    expect((await handleKeyedInvoice(env.DB, DAN, messageId, {})).status).toBe(409);
+  });
+
+  it("takes one file or none", async () => {
+    expect((await handleOpenUpload(env.DB, DAN, { sourceId: "upload-ap", kind: "keyed", files: 2 })).status).toBe(400);
   });
 });
 

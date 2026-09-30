@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import stringsSql from "../../vf-licence/migrations/0222_create_upload_strings.sql?raw";
+import keyedStringsSql from "../../vf-licence/migrations/0223_create_invoice_strings.sql?raw";
 
 /**
  * **Create → Upload documents — decision 0573.** Where an upload goes,
@@ -10,7 +11,9 @@ import stringsSql from "../../vf-licence/migrations/0222_create_upload_strings.s
  */
 
 const strings: Record<string, string> = { "action.close": "Close" };
-for (const m of stringsSql.matchAll(/\('([^']+)', 'en', '((?:[^']|'')*)'\)/g)) strings[m[1]] = m[2].replace(/''/g, "'");
+for (const sql of [stringsSql, keyedStringsSql]) {
+  for (const m of sql.matchAll(/\('([^']+)', 'en', '((?:[^']|'')*)'\)/g)) strings[m[1]] = m[2].replace(/''/g, "'");
+}
 
 const TARGETS = {
   targets: [
@@ -268,5 +271,88 @@ describe("Create → Upload documents (decision 0573)", () => {
     expect(asked?.query).toBe("task=t-1");
     expect(document.getElementById("viewer")?.hidden).toBe(false);
     expect([...document.querySelectorAll("#viewer button")].some((b) => b.textContent?.includes("Claim"))).toBe(true);
+  });
+
+  describe("Create an invoice — decision 0575", () => {
+    function stubKeyed(calls: Call[]) {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async (url: string, init?: RequestInit) => {
+          const [path, query = ""] = String(url).split("?");
+          const method = init?.method ?? "GET";
+          calls.push({ method, path, query, body: init?.body });
+          const reply = (body: unknown, status = 200) => ({ ok: status < 400, status, json: async () => body }) as Response;
+          if (path === "/api/ui-strings") return reply({ locale: "en", strings: { ...strings, "action.claim": "Claim" } });
+          if (path === "/api/uploads/targets") return reply(TARGETS);
+          if (path === "/api/uploads") return reply({ messageId: "MSG-3C41-9A02-7E55", receivedAt: "2026-09-30T16:42:00Z" }, 201);
+          const made = { captured: true, invoice: { id: "inv-9", number: null, stage: "Validation", taskId: "t-9", taskStageId: "validation" } };
+          if (path.endsWith("/keyed") || path.endsWith("/files")) return reply(made);
+          if (path.endsWith("/finish")) return reply({ captured: 1, failed: 0 });
+          if (path === "/api/tasks") {
+            return reply({ tasks: [{ id: "t-9", stageId: "validation", ownership: "available", actions: ["claim"], subject: { id: "inv-9", type: "invoice" } }] });
+          }
+          if (path === "/api/invoices/inv-9") return reply({ facts: {}, lines: [], validation: { passed: true, checked: [], failures: [] } });
+          if (path === "/api/invoices/inv-9/pages") return reply({ pages: [] });
+          if (path === "/api/documents/inv-9/collaborators") return reply({ collaborators: [] });
+          if (path === "/api/documents/inv-9/activity") return reply({ items: [] });
+          if (path === "/api/invoices/inv-9/progress") return reply({ visits: [] });
+          return reply({});
+        })
+      );
+    }
+    const viewerShowsClaim = async () => {
+      for (let i = 0; i < 100 && ![...document.querySelectorAll("#viewer button")].some((b) => b.textContent?.includes("Claim")); i++) {
+        await new Promise((r) => setTimeout(r, 20));
+      }
+      return [...document.querySelectorAll("#viewer button")].some((b) => b.textContent?.includes("Claim"));
+    };
+
+    it("has its own tab beside Upload documents, with a file to start from and self-billing", async () => {
+      stubKeyed([]);
+      await open();
+      expect(texts(".createtabs .doctab")).toEqual(["Upload documents", "Create an invoice"]);
+      (document.getElementById("create-tab-keyed") as HTMLButtonElement).click();
+      expect(document.getElementById("create-tab-keyed")?.className).toContain("on");
+      expect(document.getElementById("create-drop")).toBeNull();
+      expect(document.getElementById("create-keyedname")?.textContent).toBe("No file");
+      expect(document.body.textContent).toContain("Self-billed invoice");
+      expect(document.body.textContent).toContain("It is marked with invoice type 389.");
+      expect(document.getElementById("create-keyedgo")?.textContent).toBe("Create invoice");
+    });
+
+    it("makes a self-billed invoice with no file, and opens it to be claimed and keyed", async () => {
+      const calls: Call[] = [];
+      stubKeyed(calls);
+      await open();
+      (document.getElementById("create-tab-keyed") as HTMLButtonElement).click();
+      (document.getElementById("create-selfbilled") as HTMLInputElement).click();
+      (document.getElementById("create-keyedgo") as HTMLButtonElement).click();
+
+      expect(await viewerShowsClaim()).toBe(true);
+      const opened = calls.find((c) => c.path === "/api/uploads");
+      expect(JSON.parse(String(opened?.body))).toMatchObject({ kind: "keyed", files: 0 });
+      const keyed = calls.find((c) => c.path === "/api/uploads/MSG-3C41-9A02-7E55/keyed");
+      expect(JSON.parse(String(keyed?.body))).toEqual({ selfBilled: true });
+      expect(calls.some((c) => c.path.endsWith("/finish"))).toBe(true);
+      expect(calls.find((c) => c.path === "/api/tasks")?.query).toBe("task=t-9");
+    });
+
+    it("reads a chosen file first, marked self-billed, instead of an empty invoice", async () => {
+      const calls: Call[] = [];
+      stubKeyed(calls);
+      await open();
+      (document.getElementById("create-tab-keyed") as HTMLButtonElement).click();
+      const input = document.getElementById("create-keyedfile") as HTMLInputElement;
+      Object.defineProperty(input, "files", { value: [new File(["<Invoice/>"], "Rechnung_88240.xml", { type: "text/xml" })] });
+      input.dispatchEvent(new Event("change"));
+      expect(document.getElementById("create-keyedname")?.textContent).toContain("Rechnung_88240.xml");
+      (document.getElementById("create-selfbilled") as HTMLInputElement).click();
+      (document.getElementById("create-keyedgo") as HTMLButtonElement).click();
+
+      expect(await viewerShowsClaim()).toBe(true);
+      expect(calls.find((c) => c.path.endsWith("/files"))?.query).toBe("name=Rechnung_88240.xml&selfBilled=1");
+      expect(calls.some((c) => c.path.endsWith("/keyed"))).toBe(false);
+      expect(JSON.parse(String(calls.find((c) => c.path === "/api/uploads")?.body))).toMatchObject({ kind: "keyed", files: 1 });
+    });
   });
 });

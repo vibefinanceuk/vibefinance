@@ -25,6 +25,8 @@ export interface ReceivedMessage {
   /** The part this invoice was read from, when known. */
   partSeq: number | null;
   filename: string | null;
+  /** Decision 0575: made on Create as an invoice keyed by hand. */
+  keyed: boolean;
 }
 
 export interface ReceivedFile {
@@ -48,7 +50,9 @@ export async function messagesForInvoice(db: D1Database, invoiceId: string): Pro
   const rows = await db
     .prepare(
       `SELECT m.id, s.name AS source, m.counterparty AS sender, m.subject, m.received_at,
-              COALESCE(i.part_seq, d.part_seq) AS part_seq
+              COALESCE(i.part_seq, d.part_seq) AS part_seq,
+              EXISTS (SELECT 1 FROM route_message_events e
+                      WHERE e.message_id = m.id AND e.event = 'upload_opened' AND e.detail = 'keyed by hand') AS keyed
        FROM route_messages m
        LEFT JOIN sources s ON s.id = m.instance_id
        LEFT JOIN route_message_items i ON i.message_id = m.id AND i.item_type = 'invoice' AND i.item_id = ?1
@@ -57,7 +61,7 @@ export async function messagesForInvoice(db: D1Database, invoiceId: string): Pro
        ORDER BY m.received_at, m.id`
     )
     .bind(invoiceId)
-    .all<{ id: string; source: string | null; sender: string | null; subject: string | null; received_at: string; part_seq: number | null }>();
+    .all<{ id: string; source: string | null; sender: string | null; subject: string | null; received_at: string; part_seq: number | null; keyed: number }>();
   const out: ReceivedMessage[] = [];
   for (const r of rows.results) {
     if (out.some((m) => m.id === r.id)) continue;
@@ -76,6 +80,7 @@ export async function messagesForInvoice(db: D1Database, invoiceId: string): Pro
       receivedAt: r.received_at,
       partSeq: r.part_seq,
       filename: part?.filename ?? null,
+      keyed: r.keyed === 1,
     });
   }
   return out;

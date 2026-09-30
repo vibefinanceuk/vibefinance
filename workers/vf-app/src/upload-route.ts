@@ -1,9 +1,11 @@
 import type { RouteResult } from "./examples-route.js";
 import type { ExtractionModel } from "./extraction.js";
 import { captureAttachmentPart } from "./inbound-email.js";
+import { captureKeyedInvoice } from "./source-capture-route.js";
 import {
   addRouteEvent,
   finishRouteMessage,
+  linkRouteItem,
   openRouteMessage,
   routePartKey,
   storeRoutePart,
@@ -103,10 +105,14 @@ export async function handleUploadTargets(db: D1Database): Promise<RouteResult> 
 
 /** Opens an upload: a route message on the source, from this person. */
 export async function handleOpenUpload(db: D1Database, person: Person, body: unknown): Promise<RouteResult> {
-  const { sourceId, files } = (body ?? {}) as { sourceId?: unknown; files?: unknown };
+  const { sourceId, files, kind } = (body ?? {}) as { sourceId?: unknown; files?: unknown; kind?: unknown };
   if (typeof sourceId !== "string" || sourceId === "") return { status: 400, body: { error: "sourceId is required" } };
-  const count = Number(files);
-  if (!Number.isInteger(count) || count < 1) return { status: 400, body: { error: "files must be a whole number, at least 1" } };
+  // Decision 0575: one invoice keyed by hand, with a file or none.
+  const keyed = kind === "keyed";
+  const count = keyed ? Number(files ?? 0) : Number(files);
+  if (!Number.isInteger(count) || count < (keyed ? 0 : 1) || (keyed && count > 1)) {
+    return { status: 400, body: { error: keyed ? "an invoice keyed by hand has one file or none" : "files must be a whole number, at least 1" } };
+  }
   if (count > MAX_UPLOAD_FILES) return { status: 400, body: { error: `at most ${MAX_UPLOAD_FILES} files can be uploaded at once` } };
   const source = await db
     .prepare("SELECT id, name, mechanism, status FROM sources WHERE id = ?")
@@ -121,12 +127,12 @@ export async function handleOpenUpload(db: D1Database, person: Person, body: unk
     direction: "in",
     counterparty: `${person.name} <${person.email}>`,
     recipient: source.name,
-    subject: `Upload of ${count} ${count === 1 ? "file" : "files"}`,
+    subject: keyed ? "Invoice keyed by hand" : `Upload of ${count} ${count === 1 ? "file" : "files"}`,
     bytes: 0,
     receivedAt,
   });
   if (!messageId) return { status: 500, body: { error: "the upload could not be recorded" } };
-  await addRouteEvent(db, messageId, "upload_opened", { actor: person.id, detail: `${count} files` });
+  await addRouteEvent(db, messageId, "upload_opened", { actor: person.id, detail: keyed ? "keyed by hand" : `${count} files` });
   return { status: 201, body: { messageId, receivedAt } };
 }
 
@@ -201,7 +207,7 @@ export async function handleUploadFile(
   db: D1Database,
   person: Person,
   messageId: string,
-  file: { filename: string; contentType: string | null; bytes: Uint8Array },
+  file: { filename: string; contentType: string | null; bytes: Uint8Array; selfBilled?: boolean },
   deps: { model: ExtractionModel; bucket?: R2Bucket; customerId?: string }
 ): Promise<RouteResult> {
   const upload = await openUploadOf(db, messageId, person);
@@ -254,10 +260,59 @@ export async function handleUploadFile(
     sender: person.email,
   });
   if (!outcome.captured) return { status: 200, body: { seq, filename, captured: false, why: outcome.why ?? "the file could not be read as an invoice" } };
+  if (file.selfBilled && outcome.invoiceId) await markSelfBilled(db, outcome.invoiceId);
   return {
     status: 200,
     body: { seq, filename, captured: true, invoice: outcome.invoiceId ? await invoiceSummary(db, outcome.invoiceId) : null },
   };
+}
+
+/**
+ * **Self-billed — decision 0575.** Invoice type code 389 (BT-3), EN
+ * 16931's code for a self-billed invoice, and a fact a rule can test.
+ * Set on the invoice as made, whatever its file said.
+ */
+export const SELF_BILLED_FACTS = { "BT-3": "389", "invoice.selfBilled": 1 } as const;
+
+async function markSelfBilled(db: D1Database, invoiceId: string): Promise<void> {
+  await db
+    .prepare(
+      `UPDATE invoice_headers
+       SET facts_json = json_set(json_set(facts_json, '$."BT-3"', '389'), '$."invoice.selfBilled"', 1)
+       WHERE id = ?`
+    )
+    .bind(invoiceId)
+    .run();
+}
+
+/**
+ * **An invoice keyed by hand, with no file — decision 0575.** Made into
+ * this upload's message as its one item, so the monitor, the Timeline
+ * and the Attachments tab tell where it came from, and started in the
+ * process as any other (`captureKeyedInvoice`). The person then keys it
+ * in the viewer.
+ */
+export async function handleKeyedInvoice(db: D1Database, person: Person, messageId: string, body: unknown): Promise<RouteResult> {
+  const upload = await openUploadOf(db, messageId, person);
+  if ("status" in upload && "body" in upload) return upload;
+  const { instance_id: sourceId } = upload as OpenUpload;
+  const made = await db
+    .prepare("SELECT count(*) AS n FROM route_message_items WHERE message_id = ?")
+    .bind(messageId)
+    .first<{ n: number }>();
+  if ((made?.n ?? 0) > 0) return { status: 409, body: { error: `upload ${messageId} has already made its invoice` } };
+
+  const selfBilled = (body as { selfBilled?: unknown } | null)?.selfBilled === true;
+  const result = await captureKeyedInvoice(db, sourceId, selfBilled ? { ...SELF_BILLED_FACTS } : {});
+  const invoiceId = (result.body as { id?: string } | undefined)?.id;
+  if (result.status >= 400 || !invoiceId) {
+    const why = (result.body as { error?: string } | undefined)?.error ?? "the invoice could not be made";
+    await addRouteEvent(db, messageId, "capture_failed", { detail: why, actor: person.id });
+    return { status: 200, body: { captured: false, why } };
+  }
+  await linkRouteItem(db, messageId, invoiceId, null);
+  await addRouteEvent(db, messageId, "invoice_keyed", { detail: invoiceId, actor: person.id });
+  return { status: 200, body: { captured: true, invoice: await invoiceSummary(db, invoiceId) } };
 }
 
 /**

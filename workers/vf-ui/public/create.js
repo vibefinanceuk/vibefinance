@@ -25,6 +25,10 @@ let limits = { maxFiles: 50, maxBytes: 15 * 1024 * 1024 };
 let chosen = "";
 let upload = null; // { messageId, receivedAt, rows: [{ name, size, status, why, invoice }] }
 let busy = false;
+// Decision 0575: which tab, and the keyed invoice's choices.
+let tab = "upload";
+let keyedFile = null;
+let selfBilled = false;
 
 async function getJson(path, init) {
   try {
@@ -186,7 +190,7 @@ function uploadPanel() {
   if (!upload) {
     return el("div", { class: "panel" }, [
       el("div", { class: "cardhead" }, [el("h3", { text: t("create.thisupload") })]),
-      el("div", { class: "muted createempty", text: t("create.nothingyet") }),
+      el("div", { class: "muted createempty", text: t(tab === "keyed" ? "create.nothingkeyed" : "create.nothingyet") }),
     ]);
   }
   const monitor = upload.messageId && hasMyPermission("Integration.Monitor")
@@ -221,14 +225,8 @@ function uploadPanel() {
   ].filter(Boolean));
 }
 
-function sendPanel() {
-  if (targets.length === 0) {
-    return el("div", { class: "panel" }, [
-      el("div", { class: "cardhead" }, [el("h3", { text: t("create.upload") })]),
-      el("div", { class: "muted", text: t("create.notargets") }),
-    ]);
-  }
-  const select = el(
+function targetSelect() {
+  return el(
     "select",
     { id: "create-target", onchange: (e) => (chosen = e.target.value) },
     targets.map((target) =>
@@ -239,6 +237,84 @@ function sendPanel() {
       })
     )
   );
+}
+
+function targetField() {
+  return el("div", { class: "createfield" }, [
+    el("label", { for: "create-target", text: t("create.sendto") }),
+    targetSelect(),
+    el("div", { class: "createmeta", text: t("create.sendtohint") }),
+  ]);
+}
+
+/**
+ * **Create an invoice — decision 0575.** One invoice keyed by hand:
+ * where it goes, an optional file to start from (read first, so the form
+ * opens filled in), and whether it is self-billed. Create makes it and
+ * opens it straight into the viewer, where it is claimed and keyed as at
+ * Validation.
+ */
+function keyedPanel() {
+  if (targets.length === 0) {
+    return el("div", { class: "panel" }, [
+      el("div", { class: "cardhead" }, [el("h3", { text: t("create.keyed") })]),
+      el("div", { class: "muted", text: t("create.notargets") }),
+    ]);
+  }
+  const picker = el("input", {
+    type: "file",
+    id: "create-keyedfile",
+    accept: ".pdf,.xml,.png,.jpg,.jpeg,.tif,.tiff",
+    hidden: true,
+    onchange: (e) => {
+      keyedFile = e.target.files?.[0] ?? null;
+      render();
+    },
+  });
+  const box = el("input", {
+    type: "checkbox",
+    id: "create-selfbilled",
+    onchange: (e) => (selfBilled = e.target.checked),
+    ...(selfBilled ? { checked: "checked" } : {}),
+  });
+  return el("div", { class: "panel" }, [
+    el("div", { class: "cardhead" }, [el("h3", { text: t("create.keyed") })]),
+    el("div", { class: "createmeta createintro", text: t("create.keyedintro") }),
+    targetField(),
+    el("div", { class: "createfield" }, [
+      el("label", { text: t("create.startfrom") }),
+      el("div", { class: "createfilepick" }, [
+        el("span", { id: "create-keyedname", text: keyedFile ? `${keyedFile.name} · ${size(keyedFile.size)}` : t("create.nofile") }),
+        el("button", { class: "actionlink", onclick: () => picker.click() }, [icon("load"), el("span", { text: t("create.choosefile") })]),
+        keyedFile
+          ? el("button", { class: "actionlink", id: "create-keyedclear", onclick: () => ((keyedFile = null), render()) }, [
+              icon("close"),
+              el("span", { text: t("create.removefile") }),
+            ])
+          : null,
+        picker,
+      ].filter(Boolean)),
+      el("div", { class: "createmeta", text: t("create.startfromhint") }),
+    ]),
+    el("label", { class: "createcheck", for: "create-selfbilled" }, [box, el("span", { text: t("create.selfbilled") })]),
+    el("div", { class: "createmeta", text: t("create.selfbilledhint") }),
+    el("div", { class: "createbuttons" }, [
+      el("button", { class: "actionlink primary", id: "create-keyedgo", onclick: () => createKeyed(), ...(busy ? { disabled: "disabled" } : {}) }, [
+        icon("create"),
+        el("span", { text: t("create.createinvoice") }),
+      ]),
+    ]),
+  ]);
+}
+
+function sendPanel() {
+  if (targets.length === 0) {
+    return el("div", { class: "panel" }, [
+      el("div", { class: "cardhead" }, [el("h3", { text: t("create.upload") })]),
+      el("div", { class: "muted", text: t("create.notargets") }),
+    ]);
+  }
+  const select = targetSelect();
   const picker = el("input", {
     type: "file",
     id: "create-files",
@@ -287,7 +363,20 @@ function render() {
     frame(
       el("div", {}, [
         topbar(t("create.heading"), t("create.subtitle")),
-        el("div", { class: "creategrid" }, [sendPanel(), el("div", { id: "create-upload" }, [uploadPanel()])]),
+        // Decision 0575: a tab each, as the approved mock-up had.
+        el(
+          "div",
+          { class: "doctabs createtabs" },
+          [
+            ["upload", "create.upload"],
+            ["keyed", "create.keyed"],
+          ].map(([key, label]) =>
+            el("button", { class: tab === key ? "doctab on" : "doctab", id: `create-tab-${key}`, onclick: () => ((tab = key), render()) }, [
+              el("span", { text: t(label) }),
+            ])
+          )
+        ),
+        el("div", { class: "creategrid" }, [tab === "keyed" ? keyedPanel() : sendPanel(), el("div", { id: "create-upload" }, [uploadPanel()])]),
       ])
     )
   );
@@ -366,10 +455,73 @@ export async function send(fileList) {
   render();
 }
 
+/**
+ * Makes the invoice: a keyed upload, its file read first if there is
+ * one, then opened in the viewer to be claimed and keyed. Where it has no
+ * task this person can open, it is listed like an upload's file.
+ */
+export async function createKeyed() {
+  if (busy || !chosen) return;
+  busy = true;
+  const file = keyedFile;
+  upload = {
+    messageId: null,
+    receivedAt: null,
+    note: null,
+    rows: [{ name: file ? file.name : t("create.keyedrow"), size: file ? file.size : 0, status: "reading", why: null, invoice: null }],
+  };
+  render();
+  const opened = await getJson("/api/uploads", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ sourceId: chosen, kind: "keyed", files: file ? 1 : 0 }),
+  });
+  if (!opened.ok) {
+    upload.note = opened.body?.error ?? t("create.failed");
+    upload.rows[0].status = "notread";
+    busy = false;
+    render();
+    return;
+  }
+  upload.messageId = opened.body.messageId;
+  upload.receivedAt = opened.body.receivedAt;
+  const id = encodeURIComponent(upload.messageId);
+  const result = file
+    ? await getJson(`/api/uploads/${id}/files?name=${encodeURIComponent(file.name)}${selfBilled ? "&selfBilled=1" : ""}`, {
+        method: "POST",
+        headers: { "Content-Type": file.type || "application/octet-stream" },
+        body: file,
+      })
+    : await getJson(`/api/uploads/${id}/keyed`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ selfBilled }),
+      });
+  await getJson(`/api/uploads/${id}/finish`, { method: "POST" });
+  const row = upload.rows[0];
+  if (result.ok && result.body?.captured) {
+    row.status = "created";
+    row.invoice = result.body.invoice ?? null;
+  } else {
+    row.status = "notread";
+    row.why = result.body?.why ?? result.body?.error ?? t("create.failed");
+  }
+  busy = false;
+  keyedFile = null;
+  selfBilled = false;
+  render();
+  if (row.invoice?.taskId) {
+    await openTaskById({ id: row.invoice.taskId, stageId: row.invoice.taskStageId, subject: { id: row.invoice.id, type: "invoice" } });
+  }
+}
+
 export async function open() {
   setCurrentScreen("create");
   upload = null;
   busy = false;
+  tab = "upload";
+  keyedFile = null;
+  selfBilled = false;
   const result = await getJson("/api/uploads/targets");
   targets = result.ok ? result.body?.targets ?? [] : [];
   limits = { maxFiles: result.body?.maxFiles ?? 50, maxBytes: result.body?.maxBytes ?? 15 * 1024 * 1024 };

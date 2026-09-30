@@ -810,6 +810,31 @@ async function capturePreExtractedXml(
  * rule raise a task: a refusal that produces no facts has nowhere to go,
  * because no instance means no rule can fire.
  */
+/**
+ * **An invoice keyed by hand — decision 0575**, Create → Create an
+ * invoice. The path an unreadable document takes (`captureWithoutFacts`),
+ * with nothing read and no file: the same org placement, supplier
+ * matching and process start, so a keyed invoice is placed and routed
+ * exactly as any other. `intake.structure` is `keyed`, so the viewer
+ * does not call it a document that could not be read.
+ */
+export async function captureKeyedInvoice(
+  db: D1Database,
+  sourceId: string,
+  facts: Record<string, unknown>
+): Promise<RouteResult> {
+  const source = await db
+    .prepare("SELECT id, process_id, name, default_org_unit_id FROM sources WHERE id = ?")
+    .bind(sourceId)
+    .first<SourceRow>();
+  if (!source) return { status: 404, body: { error: `source ${sourceId} does not exist` } };
+  return captureWithoutFacts(db, source, "keyed", [], new Uint8Array(), undefined, undefined, undefined, undefined, {
+    "intake.structure": "keyed",
+    "intake.detail": "keyed by hand",
+    ...facts,
+  });
+}
+
 async function captureWithoutFacts(
   db: D1Database,
   source: SourceRow,
@@ -819,7 +844,9 @@ async function captureWithoutFacts(
   idOverride?: string,
   bucket?: R2Bucket,
   customerId?: string,
-  stored?: StoredPart
+  stored?: StoredPart,
+  /** Decision 0575: facts an invoice keyed by hand starts with. */
+  extraFacts: Record<string, unknown> = {}
 ): Promise<RouteResult> {
   // Any structural channel of this process will do as the row's home:
   // the document has no structure, and the alternative is inventing a
@@ -852,6 +879,7 @@ async function captureWithoutFacts(
       // tests; this says what they answered, which is the difference
       // between a diagnosis and a list of questions.
       "intake.detail": detailOfAttempts(detail),
+      ...extraFacts,
     },
     // No BT-* facts exist on this path, so matchSupplier's own first
     // branch always answers "no_identifier" regardless of timing —

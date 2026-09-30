@@ -173,6 +173,10 @@ function systemMessage(item) {
   if (item.kind === "received") {
     // Decision 0571 — the route message it came in, with its source and sender.
     if (!item.messageId) return t("activity.received");
+    // Decision 0575: made on Create, keyed by hand.
+    if (item.keyed) {
+      return t("activity.receivedkeyed").replace("{sender}", item.sender ?? "").replace("{message}", item.messageId);
+    }
     return t(item.sender ? "activity.receivedroutefrom" : "activity.receivedroute")
       .replace("{source}", item.source ?? "")
       .replace("{sender}", item.sender ?? "")

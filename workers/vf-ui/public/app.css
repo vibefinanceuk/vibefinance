@@ -4965,3 +4965,13 @@
 .createpill.ok { color: var(--text-success); border-color: var(--border-success); }
 .createpill.bad { color: var(--text-danger); border-color: var(--border-danger); }
 .createpill.info { color: var(--text-accent); border-color: var(--border-accent); }
+
+/* Decision 0575 — Create an invoice. */
+.createtabs { margin: 0 0 16px; display: inline-flex; }
+.createintro { margin: 10px 0 0; }
+.createfilepick { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.createfilepick .actionlink { flex-direction: row; padding: 4px 8px; }
+.createfilepick .actionlink svg { width: 16px; height: 16px; }
+.createcheck { display: flex; align-items: center; gap: 8px; margin-top: 4px; font-weight: 500; }
+.createcheck input { width: auto; }
+.createbuttons { display: flex; justify-content: flex-end; margin-top: 16px; }

@@ -112,6 +112,8 @@ async function receivedEvent(db: D1Database, invoiceId: string): Promise<Activit
       source: message.source,
       sender: message.sender,
       filename: message.filename,
+      // Decision 0575: made on Create, keyed by hand.
+      ...(message.keyed ? { keyed: true } : {}),
     },
   ];
 }

@@ -214,6 +214,7 @@ const STRINGS = {
     "activity.receivedroute": "Received by {source}, message {message}",
     "activity.receivedroutefrom": "Received by {source} from {sender}, message {message}",
     "activity.receivedfile": "Read from {file}",
+    "activity.receivedkeyed": "Created by hand by {sender}, message {message}",
     "viewer.tried": "Tried:",
     "viewer.popupblocked": "Your browser blocked the pop-up window. Allow pop-ups for this site and try again.",
     "viewer.openinwindow": "Document open in a separate window",
@@ -4895,6 +4896,27 @@ describe("the document/timeline tabs (decision 0269)", () => {
     );
     expect(line.querySelector(".activityactioncomment")?.textContent).toBe("Read from 88250.pdf");
     expect(document.body.textContent).not.toContain("Invoice received");
+  });
+
+  it("says an invoice keyed by hand was created by hand, by whom — decision 0575", async () => {
+    stubFetch({
+      ...BASE_ROUTES,
+      "/api/documents/inv-1/activity": {
+        items: [
+          { kind: "received", at: "2026-09-30 17:00:00", messageId: "MSG-3C41-9A02-7E55", source: "AP upload", sender: "Dan Young <dan@acme.example>", filename: null, keyed: true },
+        ],
+      },
+    });
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { openViewer } = await import("/viewer.js");
+    await openViewer(TASK, () => {});
+    await new Promise((r) => setTimeout(r, 0));
+    (timelineTabButton() as HTMLButtonElement).click();
+
+    const line = document.querySelector(".activityreceived") as HTMLElement;
+    expect(line.querySelector(".activitymsg")?.textContent).toBe("Created by hand by Dan Young <dan@acme.example>, message MSG-3C41-9A02-7E55");
+    expect(line.querySelector(".activityactioncomment")).toBeNull();
   });
 
   it("phrases a fired rule from its own name and its own actions", async () => {

@@ -256,7 +256,7 @@ import {
 import { handleAddStageReturnTarget, handleRemoveStageReturnTarget } from "./stage-return-targets-route.js";
 import { handlePreflight, withCors } from "@vibefinance/shared";
 import { verifyDocumentToken, mintPageToken, verifyPageToken, mintPartToken, verifyPartToken } from "./document-token.js";
-import { handleFinishUpload, handleOpenUpload, handleUploadFile, handleUploadTargets } from "./upload-route.js";
+import { handleFinishUpload, handleKeyedInvoice, handleOpenUpload, handleUploadFile, handleUploadTargets } from "./upload-route.js";
 import { messagesForInvoice, partForInvoice, partResponse, receivedFiles, viewFor } from "./received-files.js";
 import { retrieveInvoiceDocument, renderXmlForDisplay, extForContentType } from "./document-storage.js";
 import { resolveVocabulary } from "@vibefinance/shared";
@@ -4982,7 +4982,7 @@ export default {
      * closing it. Under `AP.Create`, a session or key like any other
      * screen's route; the person is who the upload is from.
      */
-    if (pathname === "/uploads/targets" || pathname === "/uploads" || /^\/uploads\/[^/]+\/(files|finish)$/.test(pathname)) {
+    if (pathname === "/uploads/targets" || pathname === "/uploads" || /^\/uploads\/[^/]+\/(files|finish|keyed)$/.test(pathname)) {
       const { db, documents } = resolveTenant(request, env);
       const auth = await authenticatePerson(db, request, env);
       if (!auth.user) return json({ error: auth.reason }, 401);
@@ -5004,11 +5004,22 @@ export default {
         const result = await handleOpenUpload(db, person, body);
         return json(result.body, result.status);
       }
-      const uploadMatch = pathname.match(/^\/uploads\/([^/]+)\/(files|finish)$/);
+      const uploadMatch = pathname.match(/^\/uploads\/([^/]+)\/(files|finish|keyed)$/);
       if (uploadMatch && request.method === "POST") {
         const messageId = decodeURIComponent(uploadMatch[1]);
         if (uploadMatch[2] === "finish") {
           const result = await handleFinishUpload(db, person, messageId);
+          return json(result.body, result.status);
+        }
+        // Decision 0575: an invoice keyed by hand, with no file.
+        if (uploadMatch[2] === "keyed") {
+          let body: unknown = {};
+          try {
+            body = await request.json();
+          } catch {
+            // No body: not self-billed.
+          }
+          const result = await handleKeyedInvoice(db, person, messageId, body);
           return json(result.body, result.status);
         }
         if (!env.AI) return json({ error: "the AI binding is not configured" }, 500);
@@ -5020,6 +5031,7 @@ export default {
             filename: url.searchParams.get("name") ?? "file",
             contentType: request.headers.get("Content-Type"),
             bytes: new Uint8Array(await request.arrayBuffer()),
+            selfBilled: url.searchParams.get("selfBilled") === "1",
           },
           { model: createWorkersAiExtractionModel(env.AI, env.EXTRACTION_MODEL_ID), bucket: documents, customerId: env.CUSTOMER_ID }
         );

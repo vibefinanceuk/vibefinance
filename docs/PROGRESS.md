@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 30 September 2026 (decision 0574). A living document: what
+Last updated 30 September 2026 (decision 0575). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,11 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Create → Create an invoice (0575)
+- Key one invoice by hand, optionally starting from a PDF, image or XML
+  file read first, and mark it self-billed (invoice type 389). It opens
+  at once to claim and key, and goes through the process as any other.
 
 ### Open from Create or the dashboard can claim and key (0574)
 - An invoice opened from Create's list, or the dashboard's worklist, now
