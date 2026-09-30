@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 30 September 2026 (decision 0573). A living document: what
+Last updated 30 September 2026 (decision 0574). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,10 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Open from Create or the dashboard can claim and key (0574)
+- An invoice opened from Create's list, or the dashboard's worklist, now
+  has Claim and editable fields, as from Tasks.
 
 ### Create → Upload documents (0573)
 - A Create screen under Accounts payable for the AP team: drop PDFs,

@@ -4093,6 +4093,8 @@ export default {
         // Real, server-side search and pagination — decision 0449, the
         // same `q`/`page`/`pageSize` shape `/documents` already reads.
         search: url.searchParams.get("q") ?? undefined,
+        // One task by id — decision 0573, for Create's Open.
+        taskId: url.searchParams.get("task") ?? undefined,
         page: Number(url.searchParams.get("page")) || undefined,
         pageSize: Number(url.searchParams.get("pageSize")) || undefined,
       });

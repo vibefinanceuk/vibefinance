@@ -219,4 +219,54 @@ describe("Create → Upload documents (decision 0573)", () => {
     await settle();
     expect(document.getElementById("create-upload")?.textContent).toContain("AP upload is retired and no longer receives invoices");
   });
+
+  it("opens a created invoice with its task's full row, so it can be claimed and keyed — decision 0574", async () => {
+    const calls: Call[] = [];
+    const TASK = {
+      id: "t-1",
+      stageId: "validation",
+      stageName: "Validation",
+      ownership: "available",
+      actions: ["claim"],
+      requiredPermission: "AP.Validate",
+      subject: { id: "inv-1", type: "invoice" },
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        const [path, query = ""] = String(url).split("?");
+        const method = init?.method ?? "GET";
+        calls.push({ method, path, query });
+        const reply = (body: unknown) => ({ ok: true, status: 200, json: async () => body }) as Response;
+        if (path === "/api/ui-strings") return reply({ locale: "en", strings: { ...strings, "action.claim": "Claim" } });
+        if (path === "/api/uploads/targets") return reply(TARGETS);
+        if (path === "/api/uploads") return reply({ messageId: "MSG-3C41-9A02-7E55", receivedAt: "2026-09-30T16:42:00Z" });
+        if (path.endsWith("/files")) {
+          return reply({ captured: true, invoice: { id: "inv-1", number: null, stage: "Validation", taskId: "t-1", taskStageId: "validation" } });
+        }
+        if (path.endsWith("/finish")) return reply({ captured: 1, failed: 0 });
+        if (path === "/api/tasks") return reply({ tasks: [TASK], total: 1 });
+        if (path === "/api/invoices/inv-1") return reply({ facts: {}, lines: [], validation: { passed: true, checked: [], failures: [] } });
+        if (path === "/api/invoices/inv-1/pages") return reply({ pages: [] });
+        if (path === "/api/documents/inv-1/collaborators") return reply({ collaborators: [] });
+        if (path === "/api/documents/inv-1/activity") return reply({ items: [] });
+        if (path === "/api/invoices/inv-1/progress") return reply({ visits: [] });
+        return reply({});
+      })
+    );
+    await open();
+    const { send } = await import("/create.js");
+    await send([new File(["%PDF"], "scan.pdf", { type: "application/pdf" })]);
+    await settle();
+
+    (document.querySelector(".createact button") as HTMLButtonElement).click();
+    for (let i = 0; i < 100 && ![...document.querySelectorAll("#viewer button")].some((b) => b.textContent?.includes("Claim")); i++) {
+      await new Promise((r) => setTimeout(r, 20));
+    }
+
+    const asked = calls.find((c) => c.path === "/api/tasks");
+    expect(asked?.query).toBe("task=t-1");
+    expect(document.getElementById("viewer")?.hidden).toBe(false);
+    expect([...document.querySelectorAll("#viewer button")].some((b) => b.textContent?.includes("Claim"))).toBe(true);
+  });
 });

@@ -664,7 +664,27 @@ export async function openTasksFiltered(next) {
  * **A row that reads like a link and does nothing is worse than a row
  * that does not**, because somebody clicks it twice before believing.
  */
-export async function openTaskById(task) {
+export async function openTaskById(given) {
+  /**
+   * **The task's full row, not only its id — decision 0574.** The viewer
+   * decides Claim, and whether any field can be keyed, from who holds
+   * the task and what it offers (`ownership`, `actions`), as the task
+   * list gives them. Create's Open (0573) and the dashboard's worklist
+   * passed the id, stage and invoice only, so every field was locked
+   * and Claim was missing — reported live after an upload. The row is
+   * now read from the task list by id. A task this person may not see
+   * there opens as given, to look at.
+   */
+  let task = given;
+  if (given?.id && !Array.isArray(given.actions)) {
+    try {
+      const response = await fetch(`/api/tasks?task=${encodeURIComponent(given.id)}`);
+      const row = response.ok ? ((await response.json()).tasks ?? []).find((t) => t.id === given.id) : null;
+      if (row) task = row;
+    } catch {
+      // Opened as given.
+    }
+  }
   const { openViewer } = await import("/viewer.js");
   document.getElementById("shell").hidden = true;
   document.getElementById("viewer").hidden = false;

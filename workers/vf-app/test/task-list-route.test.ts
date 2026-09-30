@@ -758,6 +758,23 @@ async function setInvoiceAmount(invoiceId: string, amount: number) {
 }
 
 describe("searching — real SQL, decision 0449", () => {
+  it("returns one task by id, with its ownership and actions, and only one this person may see — decision 0574", async () => {
+    await grant("alice", ["AP.Validate"]);
+    await seedInstance("inv-1", "validation", "v-1");
+    await seedInstance("inv-2", "validation", "v-2");
+    await seedTask("t-1", "validation", "v-1", { user: "alice" });
+    await seedTask("t-2", "validation", "v-2", { user: "alice" });
+
+    const one = (await handleListMyTasks(env.DB, "alice", { taskId: "t-2" })).body as { tasks: TaskRow[]; total: number };
+    expect(one.tasks.map((t) => [t.id, t.ownership])).toEqual([["t-2", "mine"]]);
+    expect(Array.isArray(one.tasks[0].actions)).toBe(true);
+    expect(one.total).toBe(1);
+
+    // Bob holds nothing here, so asking by id shows him nothing either.
+    const none = (await handleListMyTasks(env.DB, "bob", { taskId: "t-2" })).body as { tasks: TaskRow[] };
+    expect(none.tasks).toEqual([]);
+  });
+
   /**
    * **The same three fields the row itself shows** — stage name,
    * supplier (the BT-27 fact `sellerNameOf()` already reads), and

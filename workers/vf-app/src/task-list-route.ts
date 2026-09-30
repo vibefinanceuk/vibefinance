@@ -344,6 +344,13 @@ export interface TaskListOptions {
    */
   search?: string;
   /**
+   * One task, by id — decision 0573. Create's Open needs the task's full
+   * row (who holds it, what it offers) for the viewer to allow Claim and
+   * keying, and has only its id. Still within everything above: a task
+   * this person may not see is simply not returned.
+   */
+  taskId?: string;
+  /**
    * How many rows to return. Bounded, because an unbounded list is a
    * screen that works for one customer and not the next.
    */
@@ -596,7 +603,9 @@ export async function handleListMyTasks(
              OR json_extract(h.facts_json, '$."BT-27"') LIKE ?8 ESCAPE '\\'
              OR CAST(h.total_with_vat AS TEXT) LIKE ?8 ESCAPE '\\'
            )
-         )`;
+         )
+         -- One task by id, decision 0573.
+         AND (?9 IS NULL OR t.id = ?9)`;
 
   const baseBinds = [
     options.includeCompleted ? "completed" : "open",
@@ -607,6 +616,7 @@ export async function handleListMyTasks(
     orgFocusActive,
     JSON.stringify(orgFocusReachable),
     searchPattern,
+    options.taskId ?? null,
   ] as const;
 
   /**
@@ -620,7 +630,7 @@ export async function handleListMyTasks(
            WHEN t.claimed_by IS NOT NULL THEN 'locked'
            ELSE 'available'
          END`;
-  const ownershipClause = ` AND (?9 IS NULL OR (${ownershipCase}) = ?9)`;
+  const ownershipClause = ` AND (?10 IS NULL OR (${ownershipCase}) = ?10)`;
 
   /**
    * **Counted over what the person may see, decision 0255 — still
@@ -642,7 +652,7 @@ export async function handleListMyTasks(
    * has no such gap: each `WHEN` only has to be `TRUE` to match, `NULL`
    * falls through to the next `WHEN` exactly like `FALSE` does, and the
    * final `ELSE` catches everything else — the same reasoning that
-   * already made `ownershipClause` safe to compare with `= ?9`.
+   * already made `ownershipClause` safe to compare with `= ?10`.
    */
   const groupCountsRow = await db
     .prepare(
@@ -684,7 +694,7 @@ export async function handleListMyTasks(
        ${joins}
        ${baseWhereClause}${ownershipClause}
        ORDER BY t.created_at ASC
-       LIMIT ?10 OFFSET ?11`
+       LIMIT ?11 OFFSET ?12`
     )
     // Open only, by default. A completed task is history rather than
     // work, and a queue that showed both would need the person to
