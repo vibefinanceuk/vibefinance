@@ -380,7 +380,7 @@ function supplierXmlCheck(p) {
       ? // Decision 0566: a failed file was tried, not read, and says why.
         captured
         ? t("routemonitor.readwith").replace("{name}", mappingName).replace("{n}", String(p.mapping.version))
-        : `${t("routemonitor.triedwith").replace("{name}", mappingName).replace("{n}", String(p.mapping.version))} ${p.reason ?? ""}`.trim()
+        : `${t("routemonitor.triedwith").replace("{name}", mappingName).replace("{n}", String(p.mapping.version))} ${withoutMappingName(p.reason, mappingName, p.mapping.version)}`.trim()
       : t(p.format === "supplier_csv" ? "routemonitor.nomappingwhy_csv" : "routemonitor.nomappingwhy");
   return el("div", { class: "rmfmt" }, [
     el("div", { class: "rmfmthead" }, [
@@ -405,6 +405,16 @@ function supplierXmlCheck(p) {
       actionLink("coding", { primary: !captured && !p.reread?.can, label: t(p.mapping ? "routemonitor.openmapping" : "routemonitor.mapthis"), onclick: openEditor }),
     ]),
   ]);
+}
+
+/**
+ * A reason without the mapping's name and version at its start — decision
+ * 0567. The server's reason names them ("Lager Nord CSV v2: ..."), for the
+ * technical detail and the history; the card has just said them.
+ */
+function withoutMappingName(reason, name, version) {
+  const prefix = `${name} v${version}: `;
+  return (reason ?? "").startsWith(prefix) ? reason.slice(prefix.length) : reason ?? "";
 }
 
 /** "1 rule broken", "2 rules broken" — decision 0566. */

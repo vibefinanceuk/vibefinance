@@ -610,7 +610,7 @@ describe("tried, and read again — decision 0566", () => {
 
   it("says what was tried and why on a failed file, and counts one broken rule in the singular", async () => {
     await monitorWithParts([
-      { seq: 1, role: "attachment", filename: "Rechnungen_88252_88253.csv", outcome: "failed", reason: "the file holds 2 invoices (88252, 88253); one invoice per file is read", format: "supplier_csv", xmlRoot: "CSV", mapping: { id: "MAP-1", version: 2, name: "Lager Nord CSV", miss: null }, en16931Failed: null, reread: null },
+      { seq: 1, role: "attachment", filename: "Rechnungen_88252_88253.csv", outcome: "failed", reason: "Lager Nord CSV v2: the file holds 2 invoices (88252, 88253); one invoice per file is read", format: "supplier_csv", xmlRoot: "CSV", mapping: { id: "MAP-1", version: 2, name: "Lager Nord CSV", miss: null }, en16931Failed: null, reread: null },
       { seq: 2, role: "attachment", filename: "Rechnung_88251.csv", outcome: "captured", format: "supplier_csv", xmlRoot: "CSV", mapping: { id: "MAP-1", version: 2, name: "Lager Nord CSV", miss: null }, en16931Failed: [{ rule: "BR-CO-15", detail: "BT-112 605.00, expected 508.40" }], reread: null },
     ]);
     const [failed, captured] = cards();
