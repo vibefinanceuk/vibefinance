@@ -29,6 +29,9 @@ let compiled = null;
 let tried = null;
 let publishResult = null;
 let note = null;
+/** Decision 0569: a rule for the whole invoice being said and understood. */
+let ruleSay = "";
+let ruleCompiled = null;
 
 async function call(method, path, body) {
   try {
@@ -60,6 +63,8 @@ const btName = (id) => {
 const targetOf = (id) => data.targets.find((x) => x.id === id);
 const inLines = (path) => !!def.linesPath && path.startsWith(`${def.linesPath}/`);
 const lineFor = (target) => def.lines.find((l) => l.target === target);
+/** Whether a rule for the whole invoice fills this term (decision 0569). */
+const byRule = (target) => (def.rules ?? []).some((r) => r.target === target);
 
 /** A line's source as a path from the root, whatever its scope. */
 function absolute(line) {
@@ -177,7 +182,7 @@ function targetColumn() {
       "button",
       {
         type: "button",
-        class: `meel tgt${selectedTarget === tgt.id ? " sel" : ""}${!line && tgt.required ? " miss" : ""}`,
+        class: `meel tgt${selectedTarget === tgt.id ? " sel" : ""}${!line && !byRule(tgt.id) && tgt.required ? " miss" : ""}`,
         "data-tgt": tgt.id,
         ...(line && line.source !== null ? { "data-from": absolute(line) } : {}),
         ...(line && line.fx.length > 0 ? { "data-fx": "1" } : {}),
@@ -185,7 +190,9 @@ function targetColumn() {
       [
         el("span", { class: "mebt" }, [btName(tgt.id), ...(tgt.required ? [el("span", { class: "mereq", text: "*" })] : []), el("i", { text: tgt.id })]),
         ...(line && line.source === null ? [el("span", { class: "mest", text: t("mapping.fixed") })] : []),
-        ...(!line && tgt.required ? [el("span", { class: "mest", text: t("mapping.needed") })] : []),
+        // Decision 0569: filled by a rule for the whole invoice, not a line.
+        ...(!line && byRule(tgt.id) ? [el("span", { class: "mest", text: t("mapping.rules.filled") })] : []),
+        ...(!line && !byRule(tgt.id) && tgt.required ? [el("span", { class: "mest", text: t("mapping.needed") })] : []),
       ]
     );
     node.onclick = () => pickTarget(tgt.id);
@@ -600,6 +607,112 @@ export function openRetire() {
   document.body.append(backdrop);
 }
 
+/** A rule in words: the term it fills, when, and from what (0569). */
+function ruleWords(rule) {
+  const parts = [
+    `${btName(rule.target)} (${rule.target})`,
+    t(rule.when === "always" ? "mapping.rules.always" : "mapping.rules.missing"),
+    rule.from ? t("mapping.rules.from").replace("{term}", `${btName(rule.from)} (${rule.from})`) : t("mapping.rules.fixed"),
+  ];
+  return parts.join(" · ");
+}
+
+/**
+ * **Rules for the whole invoice — decision 0569.** Defaults and derived
+ * values, kept on the mapping and applied after the lines, in order. Said
+ * in plain words and understood like a line's function, with the term
+ * before and after on the sample as the worked example, then accepted.
+ */
+function rulesPanel() {
+  const retired = data.mapping.status === "retired";
+  const rules = def.rules ?? [];
+  const box = el("textarea", { class: "mesay", rows: "2", placeholder: t("mapping.rules.placeholder"), "aria-label": t("mapping.rules.say") });
+  box.value = ruleSay;
+  box.oninput = () => (ruleSay = box.value);
+  const outcome = ruleCompiled
+    ? ruleCompiled.kind === "refused"
+      ? [el("div", { class: "merefused", text: ruleCompiled.reason })]
+      : [
+          el("div", { class: "muted sm", text: t("mapping.understood") }),
+          el("div", { class: "sm merule", text: ruleWords(ruleCompiled.rule) }),
+          ...(ruleCompiled.rule.fx.length > 0 ? [stepPills(ruleCompiled.rule.fx)] : []),
+          el("div", { class: "muted sm", text: t("mapping.rules.example") }),
+          el("table", { class: "meex" }, [
+            el("tr", {}, [
+              el("td", { class: "ref", text: ruleCompiled.example.before === null ? t("mapping.none") : String(ruleCompiled.example.before) }),
+              el("td", { text: "→" }),
+              el(
+                "td",
+                ruleCompiled.example.reason
+                  ? { class: "bad", text: ruleCompiled.example.reason }
+                  : { text: ruleCompiled.example.after === null ? t("mapping.none") : String(ruleCompiled.example.after) }
+              ),
+            ]),
+          ]),
+          el("div", { class: "statebuttons mebtns" }, [
+            actionLink("done", {
+              primary: true,
+              label: t("mapping.accept"),
+              onclick: async () => {
+                def.rules = [...rules, ruleCompiled.rule];
+                ruleCompiled = null;
+                ruleSay = "";
+                await save();
+                render();
+              },
+            }),
+          ]),
+        ]
+    : [];
+  return el("div", { class: "panel" }, [
+    el("div", { class: "cardhead" }, [el("h3", { text: t("mapping.rules.heading") })]),
+    el("p", { class: "muted sm", text: t("mapping.rules.sub") }),
+    rules.length === 0
+      ? el("p", { class: "muted sm", text: t("mapping.rules.none") })
+      : el(
+          "ol",
+          { class: "merules" },
+          rules.map((rule, i) =>
+            el("li", {}, [
+              ...(rule.say ? [el("div", { class: "mesaid", text: rule.say })] : []),
+              el("div", { class: "sm merule", text: ruleWords(rule) }),
+              ...(rule.fx.length > 0 ? [stepPills(rule.fx)] : []),
+              ...(retired
+                ? []
+                : [
+                    el("div", { class: "statebuttons mebtns" }, [
+                      actionLink("discard", {
+                        label: t("mapping.rules.remove"),
+                        onclick: async () => {
+                          def.rules = rules.filter((_, j) => j !== i);
+                          await save();
+                          render();
+                        },
+                      }),
+                    ]),
+                  ]),
+            ])
+          )
+        ),
+    ...(retired
+      ? []
+      : [
+          box,
+          el("div", { class: "statebuttons mebtns" }, [
+            actionLink("compile", {
+              label: t("mapping.understand"),
+              onclick: async () => {
+                const r = await call("POST", `/supplier-mappings/${encodeURIComponent(mappingId)}/compile-rule`, { say: ruleSay });
+                ruleCompiled = r.ok ? r.body : { kind: "refused", reason: r.body?.error ?? t("mapping.compilefailed") };
+                render();
+              },
+            }),
+          ]),
+          ...outcome,
+        ]),
+  ]);
+}
+
 function render() {
   const shell = document.getElementById("shell");
   if (!shell || !data) return;
@@ -614,7 +727,7 @@ function render() {
     .filter(Boolean)
     .join(" · ");
   const mapped = def.lines.length;
-  const missing = data.targets.filter((x) => x.required && !lineFor(x.id)).length;
+  const missing = data.targets.filter((x) => x.required && !lineFor(x.id) && !byRule(x.id)).length;
   const withFx = def.lines.filter((l) => l.fx.length > 0).length;
 
   const grid = el("div", { class: "megrid" }, [sourceColumn(), el("div", {}), targetColumn()]);
@@ -677,7 +790,7 @@ function render() {
     frame(
       el("div", {}, [
         topbar(t("mapping.title").replace("{name}", data.mapping.name), sub),
-        el("div", { class: "meed" }, [main, el("div", {}, [detailPanel(), ...[tryPanel()].filter(Boolean), settingsPanel()])]),
+        el("div", { class: "meed" }, [main, el("div", {}, [detailPanel(), ...[tryPanel()].filter(Boolean), settingsPanel(), rulesPanel()])]),
       ])
     )
   );
@@ -697,6 +810,8 @@ export async function open(id) {
   tried = null;
   publishResult = null;
   note = null;
+  ruleSay = "";
+  ruleCompiled = null;
   say = "";
   const ok = await load();
   if (!ok) {

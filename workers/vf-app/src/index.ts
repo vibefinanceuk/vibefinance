@@ -205,6 +205,7 @@ import {
 import { handleRereadPart } from "./mapping-reread.js";
 import {
   handleCompileFunction,
+  handleCompileRule,
   handleCreateMapping,
   handleGetMapping,
   handleListMappings,
@@ -1722,7 +1723,7 @@ export default {
       return json({ error: "method not allowed" }, 405);
     }
 
-    if (pathname === "/supplier-mappings" || /^\/supplier-mappings\/[^/]+(\/(draft|compile|try|publish|retire))?$/.test(pathname)) {
+    if (pathname === "/supplier-mappings" || /^\/supplier-mappings\/[^/]+(\/(draft|compile|compile-rule|try|publish|retire))?$/.test(pathname)) {
       const { db, documents } = resolveTenant(request, env);
       const auth = await authenticatePerson(db, request, env);
       if (!auth.user) return json({ error: auth.reason }, 401);
@@ -1741,7 +1742,7 @@ export default {
         }
         return json({ error: "method not allowed" }, 405);
       }
-      const [, rawId, action] = pathname.match(/^\/supplier-mappings\/([^/]+)(?:\/(draft|compile|try|publish|retire))?$/) as RegExpMatchArray;
+      const [, rawId, action] = pathname.match(/^\/supplier-mappings\/([^/]+)(?:\/(draft|compile|compile-rule|try|publish|retire))?$/) as RegExpMatchArray;
       const id = decodeURIComponent(rawId);
       if (!action && request.method === "GET") {
         const result = await handleGetMapping(db, documents, id);
@@ -1754,6 +1755,12 @@ export default {
       if (action === "compile" && request.method === "POST") {
         if (!env.AI) return json({ error: "AI binding not configured" }, 500);
         const result = await handleCompileFunction(db, documents, createWorkersAiCompilerModel(env.AI), id, body);
+        return json(result.body, result.status);
+      }
+      // Decision 0569: a rule for the whole invoice, from plain words.
+      if (action === "compile-rule" && request.method === "POST") {
+        if (!env.AI) return json({ error: "AI binding not configured" }, 500);
+        const result = await handleCompileRule(db, documents, createWorkersAiCompilerModel(env.AI), id, body);
         return json(result.body, result.status);
       }
       if (action === "try" && request.method === "POST") {

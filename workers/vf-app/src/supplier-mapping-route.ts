@@ -1,6 +1,7 @@
 import {
   applyMapping,
   compileFunction,
+  compileDocumentRule,
   CSV_ROOT,
   CsvError,
   decodeText,
@@ -632,6 +633,39 @@ export async function handleCompileFunction(
     targetName: (FIELD_DESCRIPTIONS as Record<string, string>)[target] ?? target,
     kind: MAPPING_TARGETS[target],
     samples,
+    lists,
+    ctx,
+  });
+  return { status: 200, body: outcome };
+}
+
+/**
+ * `POST /supplier-mappings/:id/compile-rule` — **a rule for the whole
+ * invoice, from plain words — decision 0569.** Compiled against what the
+ * draft reads from its own sample now, with the term before and after as
+ * the worked example. Nothing is saved: the person accepts it, and the
+ * draft is saved with it.
+ */
+export async function handleCompileRule(
+  db: D1Database,
+  bucket: R2Bucket | undefined,
+  model: CompilerModel,
+  id: string,
+  body: Record<string, unknown>
+): Promise<RouteResult> {
+  const versions = await versionsOf(db, id);
+  const editing = versions.find((v) => v.status === "draft") ?? versions.find((v) => v.status === "live");
+  if (!editing) return { status: 404, body: { error: `mapping ${id} does not exist` } };
+  const tried = await tryVersion(db, bucket, editing);
+  const def = JSON.parse(editing.definition_json) as MappingDefinition;
+  const terms = Object.entries(MAPPING_TARGETS)
+    .filter(([t]) => !isLineTarget(t))
+    .map(([t, kind]) => ({ id: t, name: (FIELD_DESCRIPTIONS as Record<string, string>)[t] ?? t, kind }));
+  const { lists, ctx } = await allLookups(db);
+  const outcome = await compileDocumentRule(model, String(body.say ?? ""), {
+    terms,
+    facts: "applied" in tried && tried.applied ? tried.applied.facts : {},
+    lines: def.lines,
     lists,
     ctx,
   });

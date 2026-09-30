@@ -54,6 +54,58 @@ export interface MappingDefinition {
    * (`supplier-csv.ts`).
    */
   csv?: CsvOptions;
+  /**
+   * **Rules for the whole invoice — decision 0569**, applied in order after
+   * the lines are read: a default for a term the document does not carry,
+   * or a term worked out from another. See `DocumentRule`.
+   */
+  rules?: DocumentRule[];
+}
+
+/**
+ * **A rule for the whole invoice — decision 0569.** Dan chose *defaults*
+ * ("if the currency is missing, use EUR") and *derived values* ("the due
+ * date is 30 days after the invoice date", "the buyer reference is the
+ * order number") first, kept on the mapping, versioned and tried with it.
+ *
+ * One shape covers both: the `target` term is filled, when it is
+ * `missing` or `always`, from another whole-invoice term (`from`) through
+ * a function chain (`fx`), or from the chain alone (a fixed value) where
+ * `from` is null. Whole-invoice terms only, for now.
+ */
+export interface DocumentRule {
+  target: string;
+  when: "missing" | "always";
+  from: string | null;
+  fx: FunctionStep[];
+  /** What the person said, kept beside it. */
+  say?: string;
+}
+
+/** Why a set of rules cannot be stored, or null where it can. */
+export function validateRules(rules: unknown, lines: MappingLine[]): string | null {
+  if (rules === undefined) return null;
+  if (!Array.isArray(rules)) return "rules are a list";
+  if (rules.length > 20) return "a mapping has at most 20 rules";
+  for (const [i, r] of (rules as DocumentRule[]).entries()) {
+    const n = `rule ${i + 1}`;
+    if (!r || typeof r !== "object") return `${n} is not a rule`;
+    if (!(r.target in MAPPING_TARGETS) || isLineTarget(r.target)) return `${n}: ${String(r.target)} is not a whole-invoice term a rule can fill`;
+    if (r.when !== "missing" && r.when !== "always") return `${n}: when is missing or always`;
+    if (r.from !== null && (typeof r.from !== "string" || !(r.from in MAPPING_TARGETS) || isLineTarget(r.from))) {
+      return `${n}: ${String(r.from)} is not a whole-invoice term to work from`;
+    }
+    if (r.from === r.target) return `${n}: a term cannot be worked out from itself`;
+    const chainError = validateChain(r.fx ?? []);
+    if (chainError) return `${n}: ${chainError}`;
+    if (r.from === null && !(r.fx ?? []).some((s) => s.fn === "always" || s.fn === "if_empty")) {
+      return `${n}: with nothing to work from, it needs a fixed value`;
+    }
+    if (r.when === "always" && lines.some((l) => l.target === r.target)) {
+      return `${n}: ${r.target} is mapped from the document, so a rule may fill it only when it is missing`;
+    }
+  }
+  return null;
 }
 
 export interface DescribedElement {
@@ -219,6 +271,8 @@ export function validateMapping(def: unknown): string | null {
   } else if (d.csv !== undefined) {
     return "only a CSV mapping has CSV options";
   }
+  const rulesError = validateRules(d.rules, d.lines);
+  if (rulesError) return rulesError;
   const seen = new Set<string>();
   for (const line of d.lines) {
     if (!line || typeof line.target !== "string" || !(line.target in MAPPING_TARGETS)) {
@@ -285,6 +339,28 @@ function finish(
   }
   if (kind === "text") value = String(value);
   return { value };
+}
+
+/**
+ * Applies whole-invoice rules to the facts, in order, so a later rule can
+ * work from what an earlier one filled. Each value it cannot make is a
+ * problem naming the rule.
+ */
+export function applyRules(facts: InvoiceFacts, rules: DocumentRule[], ctx?: FnContext): MappingProblem[] {
+  const problems: MappingProblem[] = [];
+  rules.forEach((rule, i) => {
+    const present = facts[rule.target] !== undefined && facts[rule.target] !== "";
+    if (rule.when === "missing" && present) return;
+    const fromValue = rule.from === null ? null : facts[rule.from];
+    // Working from a term the invoice does not have: nothing to do, unless the chain gives a value itself.
+    if (rule.from !== null && (fromValue === undefined || fromValue === "") && !rule.fx.some((s) => s.fn === "always" || s.fn === "if_empty")) return;
+    const asLine: MappingLine = { target: rule.target, source: rule.from ? `rule ${i + 1} (from ${rule.from})` : `rule ${i + 1}`, fx: rule.fx };
+    const raw = fromValue === undefined || fromValue === null ? null : String(fromValue);
+    const { value, problem } = finish(asLine, raw, undefined, ctx);
+    if (problem) problems.push(problem);
+    else if (value !== undefined) facts[rule.target] = value;
+  });
+  return problems;
 }
 
 const decimalsOf = (n: number) => (String(n).split(".")[1] ?? "").length;
@@ -360,6 +436,8 @@ export function applyMapping(xml: string, def: MappingDefinition, ctx?: FnContex
     return lineFacts;
   });
 
+  problems.push(...applyRules(facts, def.rules ?? [], ctx));
+
   const en16931 = checkEn16931(
     facts,
     lines,
@@ -373,5 +451,5 @@ export function applyMapping(xml: string, def: MappingDefinition, ctx?: FnContex
 
 /** Every look-up list a mapping names, by id — decision 0568. */
 export function listsInMapping(def: MappingDefinition): string[] {
-  return [...new Set(def.lines.flatMap((l) => listsInChain(l.fx ?? [])))];
+  return [...new Set([...def.lines, ...(def.rules ?? [])].flatMap((l) => listsInChain(l.fx ?? [])))];
 }

@@ -255,6 +255,16 @@ export const FUNCTIONS = {
       return fail(`"${s}" is not a country this function knows`);
     },
   },
+  add_days: {
+    describe: "add a number of days to an ISO date (2026-09-29), giving an ISO date; a negative number goes back",
+    args: { days: "number" },
+    apply(value, args) {
+      const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text(value).trim());
+      if (!m) return fail(`"${text(value)}" is not an ISO date`);
+      const d = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]) + Number(args.days)));
+      return ok(isoDate(d.getUTCFullYear(), d.getUTCMonth() + 1, d.getUTCDate()));
+    },
+  },
   code_to_country: {
     describe: "turn a two-letter country code into the country's name, in English (en) or German (de)",
     args: { language: "text" },

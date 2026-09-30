@@ -15,6 +15,7 @@ import {
 import {
   domainOf,
   handleCompileFunction,
+  handleCompileRule,
   handleCreateMapping,
   handleGetMapping,
   handleListMappings,
@@ -819,6 +820,71 @@ describe("look-up lists", () => {
       body: { kind: "compiled", steps: [{ fn: "look_up", args: { list: units, otherwise: "refuse" } }], examples: [{ input: "Stk", output: "H87" }] },
     });
     expect(prompts[0]).toContain(`- "${units}": Units, for example "Stk" becomes "H87"`);
+  });
+});
+
+/**
+ * **Rules for the whole invoice — decision 0569.** Defaults and derived
+ * values, kept on the mapping: validated on saving, compiled from plain
+ * words against the sample, tried, published, and applied at intake.
+ */
+describe("rules for the whole invoice", () => {
+  const NO_DUE_NO_CURRENCY = {
+    ...CSV_DEFINITION,
+    lines: CSV_DEFINITION.lines.filter((l) => l.target !== "BT-9" && l.target !== "BT-5"),
+  };
+  const RULES = [
+    { target: "BT-5", when: "missing", from: null, fx: [{ fn: "always", args: { value: "EUR" } }], say: "if the currency is missing, use EUR" },
+    { target: "BT-9", when: "missing", from: "BT-2", fx: [{ fn: "add_days", args: { days: 30 } }], say: "the due date is 30 days after the invoice date" },
+  ];
+
+  it("are saved with the draft, refused in words, tried, published and applied at intake", async () => {
+    const failed = await receiveCsv("rechnung@lagernord.de", LAGER_CSV);
+    const id = ((await handleCreateMapping(env.DB, env.DOCUMENTS, "u-dan", { messageId: failed.id, partSeq: 1 })).body as { id: string }).id;
+    expect(
+      await handleSaveDraft(env.DB, "u-dan", id, { definition: { ...NO_DUE_NO_CURRENCY, rules: [{ ...RULES[0], target: "BT-129" }] } })
+    ).toMatchObject({ status: 422, body: { error: "rule 1: BT-129 is not a whole-invoice term a rule can fill" } });
+    expect(
+      await handleSaveDraft(env.DB, "u-dan", id, {
+        definition: { ...NO_DUE_NO_CURRENCY, rules: [{ target: "BT-10", when: "missing", from: "BT-1", fx: [{ fn: "look_up", args: { list: "LL-NONE-0000", otherwise: "keep" } }] }] },
+      })
+    ).toMatchObject({ status: 422, body: { reason: "unknown_list" } });
+
+    await handleSaveDraft(env.DB, "u-dan", id, { definition: { ...NO_DUE_NO_CURRENCY, rules: RULES } });
+    const tried = (await handleTryMapping(env.DB, env.DOCUMENTS, id)).body as { facts: Record<string, unknown>; problems: unknown[] };
+    expect(tried.problems).toEqual([]);
+    expect(tried.facts).toMatchObject({ "BT-5": "EUR", "BT-2": "2026-09-29", "BT-9": "2026-10-29" });
+    expect(((await handleGetMapping(env.DB, env.DOCUMENTS, id)).body as { editing: { definition: { rules: unknown[] } } }).editing.definition.rules).toEqual(RULES);
+
+    await handlePublishMapping(env.DB, env.DOCUMENTS, "u-dan", id);
+    const next = await receiveCsv("rechnung@lagernord.de", LAGER_CSV.replace(/88250/g, "88270"));
+    expect(next.status).toBe("delivered");
+    expect(await facts(next.id)).toMatchObject({ "BT-1": "88270", "BT-5": "EUR", "BT-9": "2026-10-29" });
+  });
+
+  it("are compiled from plain words against what the draft reads from its sample", async () => {
+    const failed = await receiveCsv("rechnung@lagernord.de", LAGER_CSV);
+    const id = ((await handleCreateMapping(env.DB, env.DOCUMENTS, "u-dan", { messageId: failed.id, partSeq: 1 })).body as { id: string }).id;
+    await handleSaveDraft(env.DB, "u-dan", id, { definition: NO_DUE_NO_CURRENCY });
+    const prompts: string[] = [];
+    const model = {
+      compile: async (prompt: string) => {
+        prompts.push(prompt);
+        return JSON.stringify({ rule: { target: "BT-9", when: "missing", from: "BT-2", steps: [{ fn: "add_days", args: { days: 14 } }] } });
+      },
+    };
+    const result = await handleCompileRule(env.DB, env.DOCUMENTS, model, id, { say: "due 14 days after the invoice date" });
+    expect(result).toEqual({
+      status: 200,
+      body: {
+        kind: "compiled",
+        rule: { target: "BT-9", when: "missing", from: "BT-2", fx: [{ fn: "add_days", args: { days: 14 } }], say: "due 14 days after the invoice date" },
+        example: { target: "BT-9", before: null, after: "2026-10-13" },
+      },
+    });
+    expect(prompts[0]).toContain('- BT-2 (');
+    expect(prompts[0]).toContain('"2026-09-29"');
+    expect(prompts[0]).not.toContain("- BT-129 (");
   });
 });
 

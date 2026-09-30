@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 30 September 2026 (decision 0568). A living document: what
+Last updated 30 September 2026 (decision 0569). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,12 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Routes phase 2, slice 3: rules for the whole invoice (0569) — slice 3 complete
+- A supplier mapping carries rules for the whole invoice: defaults ("if
+  the currency is missing, use EUR") and derived values ("the due date is
+  30 days after the invoice date"), said in plain words, understood with
+  a worked example on the sample, versioned and published with it.
 
 ### Routes phase 2, slice 3: look-up lists (0568)
 - Shared look-up lists (From, To) on the Routes screen: a supplier's unit

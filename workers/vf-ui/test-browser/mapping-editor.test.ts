@@ -8,6 +8,7 @@ import retirePopoutStringsSql from "../../vf-licence/migrations/0215_mapping_ret
 import csvStringsSql from "../../vf-licence/migrations/0216_supplier_csv_strings.sql?raw";
 import rereadStringsSql from "../../vf-licence/migrations/0217_mapping_reread_strings.sql?raw";
 import lookupStringsSql from "../../vf-licence/migrations/0218_lookup_list_strings.sql?raw";
+import ruleStringsSql from "../../vf-licence/migrations/0219_document_rule_strings.sql?raw";
 
 /**
  * **The mapping editor — decision 0561**, with the real strings: draw a
@@ -19,7 +20,7 @@ import lookupStringsSql from "../../vf-licence/migrations/0218_lookup_list_strin
  */
 
 const strings: Record<string, string> = { "action.close": "Close", "action.save": "Save" };
-for (const sql of [mappingStringsSql, formatStringsSql, monitorStringsSql, routesStringsSql, missStringsSql, retirePopoutStringsSql, csvStringsSql, rereadStringsSql, lookupStringsSql]) {
+for (const sql of [mappingStringsSql, formatStringsSql, monitorStringsSql, routesStringsSql, missStringsSql, retirePopoutStringsSql, csvStringsSql, rereadStringsSql, lookupStringsSql, ruleStringsSql]) {
   for (const m of sql.matchAll(/\('([^']+)', 'en', '((?:[^']|'')*)'\)/g)) strings[m[1]] = m[2].replace(/''/g, "'");
   // Later migrations change some words in place.
   for (const m of sql.matchAll(/UPDATE ui_strings SET value = '((?:[^']|'')*)' WHERE key = '([^']+)' AND locale = 'en'/g)) strings[m[2]] = m[1].replace(/''/g, "'");
@@ -668,5 +669,74 @@ describe("a look-up in a function — decision 0568", () => {
     tgt("BT-1").click();
     await settle();
     expect(text(".mestep")).toBe("look up in Units (otherwise keep it)");
+  });
+});
+
+/**
+ * **Rules for the whole invoice — decision 0569**: said, understood with
+ * the term before and after on the sample, accepted into the draft, shown
+ * in words, and removed.
+ */
+describe("rules for the whole invoice — decision 0569", () => {
+  const panel = () => [...document.querySelectorAll(".panel")].find((p) => p.querySelector("h3")?.textContent === "Rules for the whole invoice") as HTMLElement;
+  const withTargets = () => ({
+    ...MAPPING(),
+    targets: [...TARGETS, { id: "BT-9", kind: "date", line: false, required: false }],
+  });
+
+  it("understands a rule, shows the example on the sample, and accepts it into the draft", async () => {
+    const calls: Call[] = [];
+    stub(calls, {
+      "GET /api/supplier-mappings/MAP-1": () => ({ body: withTargets() }),
+      "POST /api/supplier-mappings/MAP-1/compile-rule": () => ({
+        body: {
+          kind: "compiled",
+          rule: { target: "BT-9", when: "missing", from: "BT-2", fx: [{ fn: "add_days", args: { days: 30 } }], say: "the due date is 30 days after the invoice date" },
+          example: { target: "BT-9", before: null, after: "2026-10-29" },
+        },
+      }),
+    });
+    await openEditor();
+    expect(panel().textContent).toContain("No rules yet.");
+    const box = panel().querySelector("textarea[aria-label='A rule for the whole invoice']") as HTMLTextAreaElement;
+    box.value = "the due date is 30 days after the invoice date";
+    box.dispatchEvent(new Event("input"));
+    button("Understand").click();
+    await settle();
+    expect(calls.find((c) => c.path === "/api/supplier-mappings/MAP-1/compile-rule")?.body).toEqual({ say: "the due date is 30 days after the invoice date" });
+    expect(panel().querySelector(".merule")?.textContent).toBe("Payment due date (BT-9) · when it is missing · from Issue date (BT-2)");
+    expect([...panel().querySelectorAll(".meex td")].map((td) => td.textContent)).toEqual(["(nothing)", "→", "2026-10-29"]);
+    expect(panel().querySelector(".mestep")?.textContent).toBe("add days 30");
+
+    [...panel().querySelectorAll("button")].find((b) => b.textContent === "Accept")!.click();
+    await settle();
+    const put = calls.filter((c) => c.method === "PUT").at(-1)?.body as { definition: { rules: unknown[] } };
+    expect(put.definition.rules).toEqual([
+      { target: "BT-9", when: "missing", from: "BT-2", fx: [{ fn: "add_days", args: { days: 30 } }], say: "the due date is 30 days after the invoice date" },
+    ]);
+    expect(panel().querySelector(".merules .mesaid")?.textContent).toBe("the due date is 30 days after the invoice date");
+  });
+
+  it("shows a refusal in words, and removes a rule", async () => {
+    const calls: Call[] = [];
+    const withRule = () => {
+      const m = withTargets();
+      (m.editing.definition as Record<string, unknown>).rules = [{ target: "BT-9", when: "missing", from: null, fx: [{ fn: "always", args: { value: "2026-12-31" } }], say: "due at year end" }];
+      return m;
+    };
+    stub(calls, {
+      "GET /api/supplier-mappings/MAP-1": () => ({ body: withRule() }),
+      "POST /api/supplier-mappings/MAP-1/compile-rule": () => ({ body: { kind: "refused", reason: "A rule cannot send an email." } }),
+    });
+    await openEditor();
+    expect(panel().querySelector(".merules .merule")?.textContent).toContain("a fixed value");
+    // The term a rule fills says so in the right-hand column.
+    expect(tgt("BT-9").querySelector(".mest")?.textContent).toBe("By a rule");
+    button("Understand").click();
+    await settle();
+    expect(panel().querySelector(".merefused")?.textContent).toBe("A rule cannot send an email.");
+    button("Remove rule").click();
+    await settle();
+    expect((calls.filter((c) => c.method === "PUT").at(-1)?.body as { definition: { rules: unknown[] } }).definition.rules).toEqual([]);
   });
 });

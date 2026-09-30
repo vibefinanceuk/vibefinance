@@ -4849,6 +4849,10 @@
 /* Decisions 0563 and 0564: confirming a mapping's retirement, in a pop-out. */
 .popout.meretirepop { width: min(480px, 100%); }
 .rmfmtact { margin-top: 6px; }
+/* Decision 0569: rules for the whole invoice, in the mapping editor. */
+.merules { margin: 8px 0; padding-left: 20px; }
+.merules li { margin-bottom: 10px; }
+.merule { color: var(--text-muted); }
 /* Decision 0568: look-up lists on the Routes screen, and one open in a pop-out. */
 .rtlookupnew { display: flex; gap: 8px; align-items: center; margin-top: 10px; }
 .rtlookupnew .meinput { max-width: 280px; }

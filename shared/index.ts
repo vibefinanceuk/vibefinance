@@ -20,3 +20,4 @@ export * from "./ingestion/mapping-functions.js";
 export * from "./ingestion/mapping-engine.js";
 export * from "./ingestion/function-compiler.js";
 export * from "./ingestion/supplier-csv.js";
+export * from "./ingestion/document-rules.js";
