@@ -60,7 +60,7 @@ export async function handleReprocessMessage(
   deps: ReprocessDeps
 ): Promise<RouteResult> {
   const m = await db
-    .prepare("SELECT id, instance_id, direction, status, received_at, attempts FROM route_messages WHERE id = ?")
+    .prepare("SELECT id, instance_id, direction, status, received_at, attempts, counterparty FROM route_messages WHERE id = ?")
     .bind(id)
     .first<MessageRow>();
   if (!m) return { status: 404, body: { error: `message ${id} does not exist` } };
@@ -142,6 +142,7 @@ export async function handleReprocessMessage(
       bucket: deps.bucket,
       customerId: deps.customerId,
       actor,
+      sender: (m as { counterparty?: string | null }).counterparty ?? undefined,
     });
     if (!outcome.captured) reasons.push(outcome.why ? `${a.filename}: ${outcome.why}` : a.filename);
   }

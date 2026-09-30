@@ -4953,3 +4953,23 @@ describe("the ERP export, through the real router (decision 0552)", () => {
     expect(((await (await SELF.fetch("https://example.com/erp-exports", { headers })).json()) as { pending: { count: number } }).pending.count).toBe(1);
   });
 });
+
+describe("supplier mappings, through the real router (decision 0561)", () => {
+  it("need Admin.Configure, and say what is missing", async () => {
+    const monitor = await seedUserWithPermissions(["Integration.Monitor"]);
+    for (const [method, path] of [["GET", "/supplier-mappings"], ["GET", "/supplier-mappings/MAP-1"], ["POST", "/supplier-mappings/MAP-1/publish"]]) {
+      expect((await SELF.fetch(`https://example.com${path}`, { method, headers: { Authorization: `Bearer ${monitor}` } })).status).toBe(403);
+    }
+    const admin = await seedUserWithPermissions(["Admin.Configure"]);
+    const headers = { Authorization: `Bearer ${admin}`, "Content-Type": "application/json" };
+    const listed = await SELF.fetch("https://example.com/supplier-mappings?route=email-in", { headers });
+    expect(listed.status).toBe(200);
+    expect(await listed.json()).toEqual({ mappings: [] });
+    const created = await SELF.fetch("https://example.com/supplier-mappings", { method: "POST", headers, body: JSON.stringify({}) });
+    expect(created.status).toBe(400);
+    expect(((await created.json()) as { reason: string }).reason).toBe("no_sample");
+    expect((await SELF.fetch("https://example.com/supplier-mappings/MAP-NONE", { headers })).status).toBe(404);
+    expect((await SELF.fetch("https://example.com/supplier-mappings/MAP-NONE/publish", { method: "POST", headers })).status).toBe(404);
+    expect((await SELF.fetch("https://example.com/supplier-mappings/MAP-NONE/draft", { method: "DELETE", headers })).status).toBe(405);
+  });
+});

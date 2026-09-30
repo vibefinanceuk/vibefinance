@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 29 September 2026 (decision 0560). A living document: what
+Last updated 30 September 2026 (decision 0561). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,15 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Routes phase 2, slice 2: supplier mappings and the mapping editor (0561)
+- A supplier's own XML is read through a supplier mapping on its route,
+  recognised by root element and sender; versioned (draft and live).
+- Functions (Fx) from a closed vocabulary of 19, compiled from plain words
+  like rules, with worked examples our code computes from the sample.
+- The mapping editor as approved: draw lines, give functions or fixed
+  values, try on the sample, publish, reprocess. Reached from the Route
+  monitor (Map this format) and the Routes screen (Supplier mappings).
 
 ### Routes phase 2, slice 1: structured formats in (0560)
 - UBL and CII read as data through one entry point; the CII inside a real

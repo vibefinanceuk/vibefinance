@@ -10,7 +10,8 @@ import {
 } from "./detect-structure.js";
 import { handleCaptureIntake, handleCaptureImage, handleCaptureUblXml, withFormat } from "./intake-capture-route.js";
 import type { ExtractionModel } from "./extraction.js";
-import { formatFacts, readInvoiceXml, UblParseError } from "@vibefinance/shared";
+import { formatFacts, readInvoiceXml, rootElementOf, UblParseError } from "@vibefinance/shared";
+import { captureThroughMapping, SUPPLIER_ROOTS_NOT_MAPPED } from "./supplier-mapping-route.js";
 import {
   storeInvoiceDocument,
   referenceStoredDocument,
@@ -323,7 +324,9 @@ export async function handleCaptureFromSource(
   customerId?: string,
   // Decision 0555: where the document already sits in R2, as a message
   // part, so retention points at it rather than storing it again.
-  stored?: StoredPart
+  stored?: StoredPart,
+  // Decision 0561: who sent it, which a supplier mapping may name.
+  sender?: string
 ): Promise<RouteResult> {
   const source = await db
     .prepare("SELECT id, process_id, name, default_org_unit_id FROM sources WHERE id = ?")
@@ -410,7 +413,18 @@ export async function handleCaptureFromSource(
     // parsed here rather than extracted a second time.
     result = await capturePreExtractedXml(db, channel.id, detection.embeddedXml as string, attempted, idOverride, enricher);
   } else if (detection.structure === "structured_xml") {
-    result = await handleCaptureUblXml(db, channel.id, new TextDecoder().decode(bytes), idOverride, enricher);
+    /**
+     * **A supplier's own XML — decision 0561.** Neither UBL nor CII, so
+     * no standard mapping reads it: the route's supplier mapping for its
+     * root element does, or the attachment fails with the root kept, for
+     * the monitor to offer mapping it.
+     */
+    const xml = new TextDecoder().decode(bytes);
+    const root = rootElementOf(xml);
+    result =
+      root !== null && !SUPPLIER_ROOTS_NOT_MAPPED.has(root)
+        ? await captureThroughMapping(db, source.id, channel.id, xml, root, sender, idOverride, enricher)
+        : await handleCaptureUblXml(db, channel.id, xml, idOverride, enricher);
   } else {
     result = await handleCaptureImage(db, channel.id, bytes, model, idOverride, enricher);
 

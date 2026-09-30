@@ -94,6 +94,7 @@ export default defineConfig({
       "/process-routes.js": resolve(__dirname, "public/process-routes.js"),
       // The Route monitor — decision 0556.
       "/route-monitor.js": resolve(__dirname, "public/route-monitor.js"),
+      "/mapping-editor.js": resolve(__dirname, "public/mapping-editor.js"),
       "/dashboard.js": resolve(__dirname, "public/dashboard.js"),
       "/workload.js": resolve(__dirname, "public/workload.js"),
       "/workload-open-tasks.js": resolve(__dirname, "public/workload-open-tasks.js"),

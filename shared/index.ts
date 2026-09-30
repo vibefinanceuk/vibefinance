@@ -16,3 +16,6 @@ export * from "./ingestion/cii-parser.js";
 export * from "./ingestion/invoice-format.js";
 export * from "./ingestion/en16931-rules.js";
 export * from "./ingestion/invoice-xml.js";
+export * from "./ingestion/mapping-functions.js";
+export * from "./ingestion/mapping-engine.js";
+export * from "./ingestion/function-compiler.js";

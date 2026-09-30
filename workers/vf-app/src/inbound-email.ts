@@ -260,6 +260,8 @@ export async function captureAttachmentPart(
     bucket?: R2Bucket;
     customerId?: string;
     actor?: string;
+    /** Who sent it, which a supplier mapping may name (0561). */
+    sender?: string;
   }
 ): Promise<{ captured: boolean; invoiceId?: string; why?: string }> {
   const { messageId, seq, stored } = args;
@@ -271,9 +273,39 @@ export async function captureAttachmentPart(
     undefined,
     args.bucket,
     args.customerId,
-    stored
+    stored,
+    args.sender
   );
+  const read = result.body as
+    | {
+        id?: string;
+        error?: string;
+        format?: string;
+        syntax?: string | null;
+        xmlRoot?: string;
+        mappingId?: string | null;
+        mappingVersion?: number;
+        en16931?: { failed: Array<{ rule: string; detail?: string }> } | null;
+      }
+    | undefined;
+  /**
+   * **What it was, and what read it — decisions 0560 and 0561** — recorded
+   * whether it was captured or not: a supplier's own XML that failed keeps
+   * its root element and the mapping that tried, for the monitor.
+   */
+  const recordFormat = async () => {
+    if (!messageId || !stored || !read?.format) return;
+    await setPartFormat(db, messageId, seq, {
+      format: read.format,
+      syntax: read.syntax ?? null,
+      failed: result.status < 400 && read.en16931 ? read.en16931.failed : null,
+      xmlRoot: read.xmlRoot ?? null,
+      mappingId: read.mappingId ?? null,
+      mappingVersion: read.mappingVersion ?? null,
+    });
+  };
   if (result.status >= 400) {
+    await recordFormat();
     /**
      * **Why, not just that** — decision 0162.
      *
@@ -294,24 +326,13 @@ export async function captureAttachmentPart(
     }
     return { captured: false, ...(why ? { why } : {}) };
   }
-  const body = result.body as
-    | {
-        id?: string;
-        format?: string;
-        syntax?: string;
-        en16931?: { failed: Array<{ rule: string; detail?: string }> } | null;
-      }
-    | undefined;
+  const body = read;
   const invoiceId = body?.id;
   if (messageId) {
     if (stored) await setPartOutcome(db, messageId, seq, "captured", null);
     // Decision 0560: what it was, and what the EN 16931 checks found.
-    if (stored && body?.format && body.syntax) {
-      await setPartFormat(db, messageId, seq, {
-        format: body.format,
-        syntax: body.syntax,
-        failed: body.en16931 ? body.en16931.failed : null,
-      });
+    if (stored && body?.format) {
+      await recordFormat();
       if (body.en16931 && body.en16931.failed.length > 0) {
         await addRouteEvent(db, messageId, "en16931_failed", {
           partSeq: seq,
@@ -485,6 +506,7 @@ async function receiveInboundEmail(
       model,
       bucket,
       customerId,
+      sender: message.from,
     });
     if (!outcome.captured) failures.push(outcome.why ? `${attachment.filename}: ${outcome.why}` : attachment.filename);
   }

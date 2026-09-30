@@ -36,7 +36,7 @@ import { resolveVocabulary } from "@vibefinance/shared";
  * customer's own rule set, not here.
  */
 
-interface CaptureIntakeBody {
+export interface CaptureIntakeBody {
   id?: unknown;
   subjectType?: unknown;
   mandateChannel?: unknown;

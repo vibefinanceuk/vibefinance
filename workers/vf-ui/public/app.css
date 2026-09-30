@@ -4798,6 +4798,51 @@
 .rtnote { border-radius: var(--radius); padding: 10px 12px; background: color-mix(in srgb, var(--text-accent) 7%, var(--surface-1)); border: 0.5px solid var(--border-accent); font-size: var(--text-sm); margin-top: 12px; }
 .rtnote .h { font-weight: 700; color: var(--text-accent); margin-bottom: 3px; }
 
+/* Decision 0561 — the mapping editor: a supplier's XML on the left, EN 16931 on the right, a line for each mapping. */
+.meed { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 14px; align-items: start; }
+.meed > .panel, .meed > div > .panel { margin-bottom: 14px; }
+.megrid { display: grid; grid-template-columns: minmax(0, 1fr) 150px minmax(0, 1fr); position: relative; }
+.megrid svg.melines { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
+.meline { fill: none; stroke: var(--text-accent); stroke-width: 1.4; opacity: 0.8; }
+.meline.sel { stroke-width: 2.6; opacity: 1; }
+.mecol h4 { margin: 0 0 2px; font-size: var(--text-sm); text-transform: uppercase; letter-spacing: 0.03em; color: var(--text-accent); }
+.meh4s { font-size: var(--text-sm); color: var(--text-secondary); margin-bottom: 10px; }
+.megrp { font-size: var(--text-sm); color: var(--text-muted); margin: 12px 0 5px; font-weight: 600; }
+.meel { display: flex; width: 100%; box-sizing: border-box; justify-content: space-between; gap: 8px; align-items: baseline; border: 0.5px solid var(--border); border-radius: var(--radius); background: var(--surface-1); color: var(--text-primary); padding: 6px 10px; margin-bottom: 6px; font: inherit; font-size: var(--text-sm); text-align: left; cursor: pointer; min-height: 32px; }
+.meel.unused { opacity: 0.7; }
+.meel.sel { border: 1.5px solid var(--border-accent); background: color-mix(in srgb, var(--text-accent) 9%, var(--surface-1)); opacity: 1; }
+.meel.miss { border: 1px dashed var(--border-danger); background: color-mix(in srgb, var(--text-danger) 8%, transparent); }
+.meel.miss .mebt, .meel.miss .mest { color: var(--text-danger); }
+.mep { font-family: ui-monospace, Menlo, Consolas, monospace; }
+.mesv { color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 50%; }
+.mebt { font-weight: 600; }
+.mebt i { font-style: normal; font-weight: 400; color: var(--text-muted); margin-left: 6px; }
+.mereq { color: var(--text-danger); font-weight: 700; margin-left: 2px; }
+.mest { color: var(--text-secondary); white-space: nowrap; }
+.mefx { position: absolute; transform: translate(-50%, -50%); font-style: italic; font-weight: 700; font-size: var(--text-sm); padding: 2px 7px; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--border-strong); color: var(--text-primary); z-index: 2; }
+.mefx.on { background: var(--text-accent); color: var(--surface-2); border-color: transparent; }
+.mefx.static { position: static; transform: none; display: inline-block; }
+.melegend { display: flex; flex-wrap: wrap; gap: 16px; font-size: var(--text-sm); color: var(--text-secondary); margin: 2px 0 12px; align-items: center; }
+.mesw { display: inline-block; width: 22px; border-top: 2px solid var(--text-accent); vertical-align: middle; margin-right: 6px; }
+.menote { border-radius: var(--radius); padding: 8px 12px; margin: 0 0 12px; font-size: var(--text-sm); background: var(--severity-warning-bg); color: var(--severity-warning-text); }
+.menote.ok { background: var(--severity-ok-bg); color: var(--severity-ok-text); }
+.mekv { display: grid; grid-template-columns: 90px minmax(0, 1fr); gap: 6px 10px; font-size: var(--text-sm); margin: 8px 0; align-items: center; }
+.mekv.wide { grid-template-columns: 120px minmax(0, 1fr); }
+.mekv .l { color: var(--text-muted); }
+.meinput, .mesay { width: 100%; box-sizing: border-box; font: inherit; font-size: var(--text-sm); padding: 6px 10px; border: 0.5px solid var(--border-strong); border-radius: var(--radius); background: var(--surface-2); color: var(--text-primary); }
+.mesay { margin-top: 8px; resize: vertical; }
+.mesaid { border: 1.5px solid var(--border-accent); border-radius: var(--radius); padding: 6px 10px; font-size: var(--text-sm); margin-bottom: 6px; }
+.mesteps { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 6px; }
+.mestep { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: var(--text-sm); padding: 2px 9px; border-radius: 999px; background: color-mix(in srgb, var(--text-accent) 12%, transparent); color: var(--text-accent); }
+.mearg { color: var(--text-primary); }
+.meex { font-size: var(--text-sm); border-collapse: collapse; margin: 4px 0 8px; }
+.meex td { padding: 2px 8px 2px 0; }
+.meex td.bad, .rtformats .bad { color: var(--text-danger); }
+.merefused { border-radius: var(--radius); padding: 8px 12px; background: var(--severity-danger-bg); color: var(--severity-danger-text); font-size: var(--text-sm); margin-top: 8px; }
+.mebtns { margin-top: 8px; flex-wrap: wrap; }
+.rmfmtact { margin-top: 6px; }
+@media (max-width: 1100px) { .meed { grid-template-columns: 1fr; } }
+
 /* Decision 0557 — Process routes: sources into the entry stage, destinations out of the exit stage. */
 .prgrid { display: grid; grid-template-columns: 250px 44px minmax(0, 1fr) 44px 250px; align-items: center; margin: 44px 0 6px; }
 .prstack { position: relative; display: flex; flex-direction: column; gap: 12px; }

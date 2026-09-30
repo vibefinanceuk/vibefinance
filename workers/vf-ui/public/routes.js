@@ -1,5 +1,6 @@
 import { t } from "/strings.js";
 import { el, frame, topbar, setCurrentScreen } from "/tasks.js";
+import { actionLink } from "/viewer.js";
 
 /**
  * **Routes — decision 0557**, slice 3 of the Routes design, as mocked up
@@ -84,9 +85,13 @@ function routeTable(direction) {
           el("td", { text: placed(r) }),
           el("td", {}, [versionPill(r)]),
         ]);
-        row.onclick = () => {
+        row.onclick = async () => {
           selectedId = r.id;
           render();
+          if (r.direction === "source" && r.current?.receivingFormat === "detected") {
+            await loadMappings(r.id);
+            if (selectedId === r.id) render();
+          }
         };
         return row;
       })
@@ -119,7 +124,7 @@ function chain(route) {
  * many, and how many broke an EN 16931 rule. Counted from the message
  * parts the Route monitor already keeps.
  */
-export const FORMAT_ROWS = ["xrechnung", "peppol_bis_3", "en16931", "factur_x", "other", "picture"];
+export const FORMAT_ROWS = ["xrechnung", "peppol_bis_3", "en16931", "factur_x", "other", "supplier_xml", "picture"];
 
 /**
  * Which row an attachment counts in. Anything read as data from inside a
@@ -189,6 +194,72 @@ function formatsPanel(route) {
   ]);
 }
 
+/**
+ * **Supplier mappings on this route — decision 0561.** Each with its live
+ * and draft versions, what it read in the last 30 days, and the failed
+ * messages it may read once published; opened in the mapping editor. A
+ * new one is drawn from a kept message, in the Route monitor.
+ */
+let mappings = {};
+
+async function loadMappings(routeId) {
+  try {
+    const response = await fetch(`/api/supplier-mappings?route=${encodeURIComponent(routeId)}`);
+    mappings[routeId] = response.ok ? (await response.json()).mappings ?? [] : null;
+  } catch {
+    mappings[routeId] = null;
+  }
+}
+
+function mappingsPanel(route) {
+  if (route.direction !== "source" || route.current?.receivingFormat !== "detected") return null;
+  const list = mappings[route.id];
+  if (list === undefined) return null;
+  const open = async (id) => {
+    const { open: openEditor } = await import("/mapping-editor.js");
+    await openEditor(id);
+  };
+  return el("div", { class: "panel" }, [
+    el("div", { class: "cardhead" }, [el("h3", { text: t("routes.mappings.heading") })]),
+    el("p", { class: "muted sm", text: t("routes.mappings.sub") }),
+    list === null
+      ? el("p", { class: "muted sm", text: t("routes.mappings.failed") })
+      : list.length === 0
+        ? el("p", { class: "muted sm", text: t("routes.mappings.none") })
+        : el("table", { class: "rtformats rtmappings" }, [
+            el("thead", {}, [
+              el("tr", {}, [
+                el("th", { text: t("routes.mappings.col.mapping") }),
+                el("th", { text: t("routes.mappings.col.version") }),
+                el("th", { class: "n", text: t("routes.formats.col.days") }),
+                el("th", {}),
+              ]),
+            ]),
+            el(
+              "tbody",
+              {},
+              list.map((m) =>
+                el("tr", {}, [
+                  el("td", {}, [
+                    el("div", { class: "fname", text: m.name }),
+                    el("div", { class: "muted", text: `<${m.root}> · ${m.senders ? m.senders.join(", ") : t("routes.mappings.anyone")}` }),
+                  ]),
+                  el("td", {}, [
+                    ...(m.liveVersion ? [el("span", {}, [`v${m.liveVersion} `, el("span", { class: "rmpill ok", text: t("routes.live") })])] : []),
+                    ...(m.draftVersion ? [el("div", {}, [`v${m.draftVersion} `, el("span", { class: "rmpill q", text: t("routes.draft") })])] : []),
+                  ]),
+                  el("td", { class: "n" }, [
+                    el("div", { text: t("routes.mappings.read").replace("{n}", String(m.read30d)) }),
+                    ...(m.waiting > 0 ? [el("div", { class: "bad", text: t("routes.mappings.waiting").replace("{n}", String(m.waiting)) })] : []),
+                  ]),
+                  el("td", { class: "n" }, [actionLink("coding", { label: t("routes.mappings.open"), onclick: () => open(m.id) })]),
+                ])
+              )
+            ),
+          ]),
+  ]);
+}
+
 function detailPanel() {
   const route = routes.find((r) => r.id === selectedId);
   if (!route || !route.current) return null;
@@ -226,7 +297,11 @@ function render() {
         topbar(t("routes.heading"), t("routes.subtitle")),
         el("div", { id: "routes-note", class: "warn" }),
         el("div", { class: "rtgrid" }, [panel("source"), panel("destination")]),
-        ...[detailPanel(), formatsPanel(routes.find((r) => r.id === selectedId) ?? {})].filter(Boolean),
+        ...[
+          detailPanel(),
+          formatsPanel(routes.find((r) => r.id === selectedId) ?? {}),
+          mappingsPanel(routes.find((r) => r.id === selectedId) ?? {}),
+        ].filter(Boolean),
       ])
     )
   );
@@ -238,7 +313,13 @@ export async function open() {
   if (!selectedId || !routes.some((r) => r.id === selectedId)) {
     selectedId = routes.find((r) => r.direction === "source" && r.live)?.id ?? routes.at(0)?.id ?? null;
   }
+  mappings = {};
   render();
+  const chosen = routes.find((r) => r.id === selectedId);
+  if (chosen?.direction === "source" && chosen.current?.receivingFormat === "detected") {
+    await loadMappings(chosen.id);
+    render();
+  }
   if (!ok) {
     const note = document.getElementById("routes-note");
     if (note) note.textContent = t("routes.failed");

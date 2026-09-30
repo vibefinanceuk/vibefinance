@@ -196,6 +196,15 @@ import { handleGetRouteMessage, handleListRouteMessages, routeMessagePart } from
 import { handleListRoutes, handleProcessRoutes, handleSetInstanceStatus } from "./routes-route.js";
 import { handleDismissMessage, handleReprocessMessage } from "./route-reprocess.js";
 import {
+  handleCompileFunction,
+  handleCreateMapping,
+  handleGetMapping,
+  handleListMappings,
+  handlePublishMapping,
+  handleSaveDraft,
+  handleTryMapping,
+} from "./supplier-mapping-route.js";
+import {
   alertTransport,
   checkSilentRoutes,
   handleDeleteAlert,
@@ -1654,6 +1663,57 @@ export default {
       }
       const result = pathname === "/routes" ? await handleListRoutes(db) : await handleProcessRoutes(db, url.searchParams);
       return json(result.body, result.status);
+    }
+
+    /**
+     * **Supplier mappings — decision 0561.** Admin.Configure, like Routes:
+     * list (by route), create from a kept message part, read with its
+     * sample described, save the draft, compile a function from plain
+     * words, try the draft on its sample, and publish it.
+     */
+    if (pathname === "/supplier-mappings" || /^\/supplier-mappings\/[^/]+(\/(draft|compile|try|publish))?$/.test(pathname)) {
+      const { db, documents } = resolveTenant(request, env);
+      const auth = await authenticatePerson(db, request, env);
+      if (!auth.user) return json({ error: auth.reason }, 401);
+      if (!(await hasPermission(db, auth.user.id, "Admin.Configure"))) {
+        return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
+      }
+      const body = request.method === "GET" ? {} : ((await request.json().catch(() => ({}))) as Record<string, unknown>);
+      if (pathname === "/supplier-mappings") {
+        if (request.method === "GET") {
+          const result = await handleListMappings(db, url.searchParams);
+          return json(result.body, result.status);
+        }
+        if (request.method === "POST") {
+          const result = await handleCreateMapping(db, documents, auth.user.id, body);
+          return json(result.body, result.status);
+        }
+        return json({ error: "method not allowed" }, 405);
+      }
+      const [, rawId, action] = pathname.match(/^\/supplier-mappings\/([^/]+)(?:\/(draft|compile|try|publish))?$/) as RegExpMatchArray;
+      const id = decodeURIComponent(rawId);
+      if (!action && request.method === "GET") {
+        const result = await handleGetMapping(db, documents, id);
+        return json(result.body, result.status);
+      }
+      if (action === "draft" && request.method === "PUT") {
+        const result = await handleSaveDraft(db, auth.user.id, id, body);
+        return json(result.body, result.status);
+      }
+      if (action === "compile" && request.method === "POST") {
+        if (!env.AI) return json({ error: "AI binding not configured" }, 500);
+        const result = await handleCompileFunction(db, documents, createWorkersAiCompilerModel(env.AI), id, body);
+        return json(result.body, result.status);
+      }
+      if (action === "try" && request.method === "POST") {
+        const result = await handleTryMapping(db, documents, id);
+        return json(result.body, result.status);
+      }
+      if (action === "publish" && request.method === "POST") {
+        const result = await handlePublishMapping(db, documents, auth.user.id, id);
+        return json(result.body, result.status);
+      }
+      return json({ error: "method not allowed" }, 405);
     }
 
     // Pause or resume a Destination — decision 0558. Admin.Configure, as

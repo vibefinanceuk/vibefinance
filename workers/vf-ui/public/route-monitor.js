@@ -249,10 +249,26 @@ function chain(message) {
  * has no words for still says something: the generic explanation, with
  * the server's own reason below it in the technical detail.
  */
-function explanation(message) {
+/**
+ * **What the failed files have in common — decision 0561.** When every
+ * file that failed is a supplier's own XML, "check it is legible" is the
+ * wrong advice: it needs a mapping, or its mapping could not read it.
+ */
+function supplierXmlCode(parts) {
+  const failed = (parts ?? []).filter((p) => p.role === "attachment" && p.outcome === "failed");
+  if (failed.length === 0 || !failed.every((p) => p.format === "supplier_xml")) return null;
+  return failed.some((p) => !p.mapping) ? "no_mapping" : "mapping_failed";
+}
+
+function explanation(message, parts) {
   const undone = statusKey(message) === "undone";
   if (message.status !== "failed" && message.status !== "partial" && !undone) return [];
-  const code = message.status === "partial" ? "partial" : message.errorCode ?? "unknown";
+  const code =
+    message.status === "failed" && supplierXmlCode(parts)
+      ? supplierXmlCode(parts)
+      : message.status === "partial"
+        ? "partial"
+        : message.errorCode ?? "unknown";
   const known = t(`routemonitor.error.${code}.title`) !== `routemonitor.error.${code}.title`;
   const key = known ? code : "unknown";
   return [
@@ -290,6 +306,7 @@ export function formatChecks(parts) {
   return [
     el("h4", { class: "rmh4", text: t("routemonitor.checks") }),
     ...read.map((p) => {
+      if (p.format === "supplier_xml") return supplierXmlCheck(p);
       const name = `${words("routes.format", p.format)}${p.syntax ? ` (${t(`routes.syntax.${p.syntax}`)})` : ""}`;
       const failed = p.en16931Failed;
       const verdict =
@@ -321,6 +338,45 @@ export function formatChecks(parts) {
       ]);
     }),
   ];
+}
+
+/**
+ * **A supplier's own XML — decision 0561.** Which mapping read it, or
+ * tried to, or that none exists yet; and the way to the editor: open the
+ * mapping, or draw a new one from this very file.
+ */
+function supplierXmlCheck(p) {
+  const openEditor = async () => {
+    const editor = await import("/mapping-editor.js");
+    if (p.mapping) {
+      await editor.open(p.mapping.id);
+      return;
+    }
+    const made = await editor.createFrom(selectedId, p.seq);
+    if (!made.ok) note(t(made.reason === "forbidden" ? "routemonitor.mapforbidden" : "routemonitor.mapfailed"));
+  };
+  const captured = p.outcome === "captured";
+  const verdict = captured
+    ? el("span", { class: `rmpill ${(p.en16931Failed ?? []).length > 0 ? "bad" : "ok"}`, text: (p.en16931Failed ?? []).length > 0 ? t("routemonitor.brokenn").replace("{n}", String(p.en16931Failed.length)) : t("routemonitor.passed") })
+    : el("span", { class: `rmpill ${p.mapping ? "bad" : "q"}`, text: t(p.mapping ? "routemonitor.mappingfailed" : "routemonitor.nomapping") });
+  return el("div", { class: "rmfmt" }, [
+    el("div", { class: "rmfmthead" }, [
+      el("span", { class: "rmfmtname", text: `${p.filename}: ${t("routes.format.supplier_xml")} <${p.xmlRoot ?? "?"}>` }),
+      verdict,
+    ]),
+    el("div", {
+      class: "muted sm",
+      text: p.mapping
+        ? t("routemonitor.readwith").replace("{name}", p.mapping.name ?? p.mapping.id).replace("{n}", String(p.mapping.version))
+        : t("routemonitor.nomappingwhy"),
+    }),
+    ...(captured && (p.en16931Failed ?? []).length > 0
+      ? [el("ul", { class: "rmrules" }, p.en16931Failed.map((f) => el("li", {}, [el("span", { class: "rmrule", text: f.rule }), el("span", { text: ` ${words("en16931.rule", f.rule.toLowerCase())}` }), ...(f.detail ? [el("span", { class: "muted", text: ` · ${f.detail}` })] : [])])))]
+      : []),
+    el("div", { class: "statebuttons rmfmtact" }, [
+      actionLink("coding", { primary: !captured, label: t(p.mapping ? "routemonitor.openmapping" : "routemonitor.mapthis"), onclick: openEditor }),
+    ]),
+  ]);
 }
 
 /** A value's words, or the value itself where the interface has none. */
@@ -366,7 +422,7 @@ function detailPanel() {
       text: [message.sourceName ?? t("routemonitor.unclaimed"), when(message.receivedAt), message.id].join(" · "),
     }),
     chain(message),
-    ...explanation(message),
+    ...explanation(message, parts),
     // Why it cannot be run again, where it failed and cannot (0559).
     ...((message.status === "failed" || message.status === "partial") && !detail.canReprocess && detail.cannotReprocess
       ? [el("p", { class: "muted sm", text: t(`routemonitor.cannot.${detail.cannotReprocess}`) })]

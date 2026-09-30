@@ -544,7 +544,7 @@ export const DERIVED_FIELD_DESCRIPTIONS: Record<DerivedField, string> = {
   "intake.attempted":
     "a comma-separated list of the detection tests intake tried, in order. Distinguishes a supplier who has not adopted e-invoicing from one whose implementation is broken — 'a PDF with no embedded invoice' and 'a PDF declaring one that could not be read' are opposite conversations. A string so the existing contains operator works.",
   "intake.format":
-    "which e-invoice format a structured document declared itself to be: 'peppol_bis_3', 'xrechnung', 'en16931', 'factur_x_extended', 'factur_x_basic', 'factur_x_basic_wl', 'factur_x_minimum', or 'ubl_other' / 'cii_other' for a UBL or CII invoice declaring something else. Absent on a picture or a PDF with nothing inside. Read from the document's own specification identifier (BT-24), never from who sent it.",
+    "which e-invoice format a structured document declared itself to be: 'peppol_bis_3', 'xrechnung', 'en16931', 'factur_x_extended', 'factur_x_basic', 'factur_x_basic_wl', 'factur_x_minimum', 'ubl_other' / 'cii_other' for a UBL or CII invoice declaring something else, or 'supplier_xml' for a supplier's own XML read through a supplier mapping. Absent on a picture or a PDF with nothing inside. Read from the document's own specification identifier (BT-24), never from who sent it.",
   "en16931.checked":
     "true where the document was checked against the EN 16931 business rules at intake. False for a Factur-X MINIMUM or BASIC WL, which are not EN 16931 invoices and would fail every check; absent on a document that was not structured at all.",
   "en16931.failures":

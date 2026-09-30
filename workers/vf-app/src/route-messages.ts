@@ -266,12 +266,32 @@ export async function setPartFormat(
   db: D1Database,
   messageId: string,
   seq: number,
-  read: { format: string; syntax: string; failed: ReadonlyArray<{ rule: string; detail?: string }> | null }
+  read: {
+    format: string;
+    syntax: string | null;
+    failed: ReadonlyArray<{ rule: string; detail?: string }> | null;
+    /** Decision 0561: a supplier's own XML — its root, and the mapping that read it or tried to. */
+    xmlRoot?: string | null;
+    mappingId?: string | null;
+    mappingVersion?: number | null;
+  }
 ): Promise<void> {
   try {
     await db
-      .prepare("UPDATE route_message_parts SET format = ?, syntax = ?, en16931_failed = ? WHERE message_id = ? AND seq = ?")
-      .bind(read.format, read.syntax, read.failed === null ? null : JSON.stringify(read.failed), messageId, seq)
+      .prepare(
+        `UPDATE route_message_parts SET format = ?, syntax = ?, en16931_failed = ?, xml_root = ?, mapping_id = ?, mapping_version = ?
+         WHERE message_id = ? AND seq = ?`
+      )
+      .bind(
+        read.format,
+        read.syntax,
+        read.failed === null ? null : JSON.stringify(read.failed),
+        read.xmlRoot ?? null,
+        read.mappingId ?? null,
+        read.mappingVersion ?? null,
+        messageId,
+        seq
+      )
       .run();
   } catch {
     // Deliberately silent.

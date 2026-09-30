@@ -77,10 +77,20 @@ export function checkEn16931(
   facts: InvoiceFacts,
   lines: readonly Line[],
   inputs: InvoiceCheckInputs,
-  options: { xrechnung: boolean }
+  options: {
+    xrechnung: boolean;
+    /**
+     * A supplier's own XML read through a mapping (0561). It declares no
+     * specification, being no EN 16931 syntax, so BR-01 does not apply;
+     * every other rule does, to what the mapping made of it.
+     */
+    mapped?: boolean;
+  }
 ): En16931Result {
   const failed: En16931Failure[] = [];
-  const checked: En16931Rule[] = EN16931_RULES.filter((r) => r !== "BR-DE-15" || options.xrechnung);
+  const checked: En16931Rule[] = EN16931_RULES.filter(
+    (r) => (r !== "BR-DE-15" || options.xrechnung) && (r !== "BR-01" || !options.mapped)
+  );
   const fail = (rule: En16931Rule, detail?: string) => failed.push(detail ? { rule, detail } : { rule });
 
   // The document must say these.
@@ -93,7 +103,7 @@ export function checkEn16931(
     ["BR-06", "BT-27"],
     ["BR-07", "BT-44"],
   ];
-  for (const [rule, term] of required) if (!present(facts[term])) fail(rule);
+  for (const [rule, term] of required) if (checked.includes(rule) && !present(facts[term])) fail(rule);
   if (!inputs.sellerAddress) fail("BR-08");
   if (!present(facts["BT-40"])) fail("BR-09");
   if (!inputs.buyerAddress) fail("BR-10");

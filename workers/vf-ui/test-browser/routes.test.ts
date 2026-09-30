@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import stringsSql from "../../vf-licence/migrations/0208_routes_and_process_routes_strings.sql?raw";
 import destinationStringsSql from "../../vf-licence/migrations/0209_erp_destination_strings.sql?raw";
 import formatStringsSql from "../../vf-licence/migrations/0211_formats_and_en16931_strings.sql?raw";
+import mappingStringsSql from "../../vf-licence/migrations/0212_supplier_mapping_strings.sql?raw";
 
 /**
  * **Routes and Process routes — decision 0557.** The standard routes with
@@ -35,7 +36,7 @@ const strings: Record<string, string> = {
   "mechanism.file_import": "File import",
   "mechanism.edi": "EDI",
 };
-for (const sql of [stringsSql, destinationStringsSql, formatStringsSql]) {
+for (const sql of [stringsSql, destinationStringsSql, formatStringsSql, mappingStringsSql]) {
   for (const m of sql.matchAll(/\('([^']+)', 'en', '((?:[^']|'')*)'\)/g)) strings[m[1]] = m[2].replace(/''/g, "'");
 }
 // 0209 updates the ERP note rather than inserting it.
@@ -95,6 +96,7 @@ function stub(calls: Call[], extra: Record<string, unknown> = {}) {
       if (path === "/api/ui-strings") return { ok: true, json: async () => ({ locale: "en", strings }) } as Response;
       if (path in extra) return { ok: true, status: 200, json: async () => extra[path] } as Response;
       if (path === "/api/routes") return { ok: true, json: async () => ROUTES } as Response;
+      if (path === "/api/supplier-mappings") return { ok: true, json: async () => ({ mappings: [] }) } as Response;
       if (path === "/api/process-routes") return { ok: true, json: async () => FLOW } as Response;
       if (path === "/api/org/units") return { ok: true, json: async () => ({ units: [] }) } as Response;
       if (path === "/api/processes/ap/sources" && method === "POST") return { ok: true, status: 201, json: async () => ({}) } as Response;
@@ -201,13 +203,14 @@ describe("Receiving formats — decision 0560", () => {
       "EN 16931UBL or CII, with no national rules",
       "ZUGFeRD / Factur-XA PDF with the XML inside",
       "Another UBL or CII invoiceDeclaring another specification",
+      "A supplier's own XMLNeither UBL nor CII",
       "PDF or imageNo data inside",
     ]);
     // Anything read from inside a PDF counts as Factur-X / ZUGFeRD, whatever profile it declares.
     const counts = [...document.querySelectorAll(".rtformats tbody td.n")].map((td) =>
       [...td.children].map((c) => c.textContent)
     );
-    expect(counts).toEqual([["41", "2 broke a rule"], ["3"], ["0"], ["86"], ["0"], ["1204"]]);
+    expect(counts).toEqual([["41", "2 broke a rule"], ["3"], ["0"], ["86"], ["0"], ["0"], ["1204"]]);
     expect(rows[0][2]).toBe("EN 16931, and the buyer reference XRechnung requires (BR-DE-15)");
     expect(text(".rtformats").includes("undefined")).toBe(false);
     expect(document.body.textContent).toContain("5 attachments in the last 30 days could not be read at all");
@@ -221,6 +224,35 @@ describe("Receiving formats — decision 0560", () => {
     expect(document.querySelector(".rtformats")).not.toBeNull();
     await choose("ERP CSV file");
     expect(document.querySelector(".rtformats")).toBeNull();
+  });
+});
+
+describe("Supplier mappings — decision 0561", () => {
+  it("lists a Source route's mappings with their versions and what they read, and opens one in the editor", async () => {
+    const calls: Call[] = [];
+    stub(calls, {
+      "/api/supplier-mappings": {
+        mappings: [
+          { id: "MAP-1", routeId: "email-in", name: "Munch GmbH XML", root: "Rechnung", senders: ["@munch.de"], liveVersion: 1, draftVersion: 2, read30d: 14, waiting: 2 },
+        ],
+      },
+      "/api/supplier-mappings/MAP-1": {
+        mapping: { id: "MAP-1", routeId: "email-in", name: "Munch GmbH XML", root: "Rechnung", senders: ["@munch.de"] },
+        versions: [{ version: 2, status: "draft" }, { version: 1, status: "live" }],
+        editing: { version: 2, status: "draft", definition: { root: "Rechnung", linesPath: null, lines: [] }, sample: null },
+        described: null,
+        targets: [],
+        waiting: 2,
+      },
+    });
+    await openScreen("/routes.js");
+    ([...document.querySelectorAll(".rttable tbody tr")].find((r) => r.textContent?.startsWith("Email in")) as HTMLElement).click();
+    await settle();
+    expect(calls.some((c) => c.path === "/api/supplier-mappings" && c.query === "route=email-in")).toBe(true);
+    const row = [...document.querySelectorAll(".rtmappings tbody td")].map((td) => td.textContent);
+    expect(row.slice(0, 3)).toEqual(["Munch GmbH XML<Rechnung> · @munch.de", "v1 Livev2 Draft", "14 read2 failed, waiting"]);
+    ([...document.querySelectorAll(".rtmappings button")][0] as HTMLButtonElement).click();
+    await vi.waitFor(() => expect(text(".topbar h2")).toBe("Mapping: Munch GmbH XML"));
   });
 });
 

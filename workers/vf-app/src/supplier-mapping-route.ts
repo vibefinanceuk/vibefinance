@@ -1,0 +1,563 @@
+import {
+  applyMapping,
+  compileFunction,
+  describeXml,
+  FIELD_DESCRIPTIONS,
+  isLineTarget,
+  MAPPING_TARGETS,
+  MappingXmlError,
+  validateMapping,
+  valuesAt,
+  type AppliedMapping,
+  type CompilerModel,
+  type MappingDefinition,
+} from "@vibefinance/shared";
+import type { RouteResult } from "./org-route.js";
+import { handleCaptureIntake, type CaptureIntakeBody } from "./intake-capture-route.js";
+
+/**
+ * **Supplier mappings — decision 0561**, Routes phase 2 slice 2 (with the
+ * editor's basics, as Dan chose on 30 September 2026).
+ *
+ * A supplier who sends its own XML is read through a mapping: which
+ * element becomes which Business Term, and what function changes the
+ * value on the way (`shared/ingestion/mapping-engine.ts`). Here:
+ *
+ * - **At intake**, `mappingFor` finds the live mapping on the receiving
+ *   route for the document's root element (and sender, where the mapping
+ *   names them), and `captureThroughMapping` reads the document through
+ *   it. No mapping, or a value it cannot read, fails the attachment at
+ *   translation with the reason in words; the message part keeps the root
+ *   element, so the monitor can offer to map it.
+ * - **For the editor** (`Admin.Configure`, like Routes): list, create from
+ *   a kept message, read with the sample described, save the draft,
+ *   compile a function from plain words, try the draft on the sample, and
+ *   publish it — refused while the draft cannot read its own sample.
+ *
+ * Versions: one draft and one live at most. Saving edits the draft (made
+ * from the live version when there is none); publishing retires the live
+ * one and makes the draft live. What a message was read with is recorded
+ * on its part, by mapping and version.
+ */
+
+export const SUPPLIER_ROOTS_NOT_MAPPED = new Set(["Invoice", "CrossIndustryInvoice", "CreditNote", "CrossIndustryDocument"]);
+
+interface MappingRow {
+  id: string;
+  route_id: string;
+  name: string;
+  root: string;
+  senders: string | null;
+  status: string;
+  created_at: string;
+}
+
+interface VersionRow {
+  mapping_id: string;
+  version: number;
+  status: "draft" | "live" | "retired";
+  definition_json: string;
+  sample_message_id: string | null;
+  sample_part_seq: number | null;
+  created_at: string;
+  published_at: string | null;
+  published_by_name?: string | null;
+}
+
+const now = () => new Date().toISOString();
+
+function newMappingId(): string {
+  const hex = [...crypto.getRandomValues(new Uint8Array(6))].map((b) => b.toString(16).padStart(2, "0")).join("").toUpperCase();
+  return `MAP-${hex.slice(0, 4)}-${hex.slice(4, 8)}-${hex.slice(8, 12)}`;
+}
+
+function sendersOf(row: MappingRow): string[] | null {
+  if (!row.senders) return null;
+  try {
+    const list = JSON.parse(row.senders) as unknown;
+    return Array.isArray(list) ? list.map((s) => String(s).toLowerCase()) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** An address matches `anna@munch.de` exactly, or `@munch.de` by its domain. */
+export function senderMatches(senders: string[] | null, sender: string | undefined): boolean {
+  if (senders === null) return true;
+  if (!sender) return false;
+  const address = sender.toLowerCase().replace(/^.*<([^>]+)>.*$/, "$1").trim();
+  return senders.some((s) => (s.startsWith("@") ? address.endsWith(s) : address === s));
+}
+
+/** The domain of an address, as a sender a new mapping is for: `@munch.de`. */
+export function domainOf(address: string | null): string | null {
+  if (!address) return null;
+  const bare = address.toLowerCase().replace(/^.*<([^>]+)>.*$/, "$1").trim();
+  const at = bare.lastIndexOf("@");
+  return at > 0 && at < bare.length - 1 ? bare.slice(at) : null;
+}
+
+/**
+ * The live mapping that reads this document on this Source's route: the
+ * same root element, and a sender it names — one that names the sender
+ * before one for anyone, then the most recently published.
+ */
+export async function mappingFor(
+  db: D1Database,
+  sourceId: string,
+  root: string,
+  sender: string | undefined
+): Promise<{ mapping: MappingRow; version: VersionRow } | null> {
+  const rows = await db
+    .prepare(
+      `SELECT m.*, v.version, v.status AS v_status, v.definition_json, v.published_at
+       FROM supplier_mappings m
+       JOIN route_instances i ON i.route_id = m.route_id AND i.source_id = ?
+       JOIN supplier_mapping_versions v ON v.mapping_id = m.id AND v.status = 'live'
+       WHERE m.root = ? AND m.status = 'active'
+       ORDER BY v.published_at DESC`
+    )
+    .bind(sourceId, root)
+    .all<MappingRow & { version: number; v_status: string; definition_json: string; published_at: string }>();
+  const candidates = rows.results.filter((r) => senderMatches(sendersOf(r), sender));
+  const best = candidates.find((r) => sendersOf(r) !== null) ?? candidates[0];
+  if (!best) return null;
+  return {
+    mapping: best,
+    version: {
+      mapping_id: best.id,
+      version: best.version,
+      status: "live",
+      definition_json: best.definition_json,
+      sample_message_id: null,
+      sample_part_seq: null,
+      created_at: best.created_at,
+      published_at: best.published_at,
+    },
+  };
+}
+
+/** A problem, in words, for the message part's reason. */
+function describeProblem(p: AppliedMapping["problems"][number]): string {
+  const where = p.line !== undefined ? ` on line ${p.line}` : "";
+  return `${p.target}${where} (from ${p.source ?? "a fixed value"}): ${p.reason}`;
+}
+
+/**
+ * Reads a supplier's own XML through its live mapping and captures the
+ * invoice. The response carries `format: "supplier_xml"`, the root, and the
+ * mapping and version used (or `mappingId: null` where none reads it), so
+ * the route records them on the message part either way.
+ */
+export async function captureThroughMapping(
+  db: D1Database,
+  sourceId: string,
+  channelId: string,
+  xml: string,
+  root: string,
+  sender: string | undefined,
+  idOverride: string | undefined,
+  enrichFacts: CaptureIntakeBody["enrichFacts"]
+): Promise<RouteResult> {
+  const found = await mappingFor(db, sourceId, root, sender);
+  const base = { format: "supplier_xml", syntax: null, xmlRoot: root };
+  if (!found) {
+    return {
+      status: 422,
+      body: {
+        ...base,
+        mappingId: null,
+        error: `this is <${root}>, a supplier's own XML, and no mapping on this route reads it yet`,
+      },
+    };
+  }
+  const where = { mappingId: found.mapping.id, mappingVersion: found.version.version };
+  let applied: AppliedMapping;
+  try {
+    applied = applyMapping(xml, JSON.parse(found.version.definition_json) as MappingDefinition);
+  } catch (err) {
+    if (err instanceof MappingXmlError) return { status: 422, body: { ...base, ...where, error: err.message } };
+    throw err;
+  }
+  if (applied.problems.length > 0) {
+    return {
+      status: 422,
+      body: {
+        ...base,
+        ...where,
+        problems: applied.problems,
+        error: `${found.mapping.name} v${found.version.version} could not read it: ${applied.problems.map(describeProblem).join("; ")}`,
+      },
+    };
+  }
+  const facts: Record<string, unknown> = {
+    ...applied.facts,
+    "intake.format": "supplier_xml",
+    "en16931.checked": true,
+    "en16931.failures": applied.en16931.failed.map((f) => f.rule).join(","),
+  };
+  const result = await handleCaptureIntake(db, channelId, {
+    id: idOverride ?? crypto.randomUUID(),
+    invoiceNumber: facts["BT-1"] as string | undefined,
+    issueDate: facts["BT-2"] as string | undefined,
+    currency: facts["BT-5"] as string | undefined,
+    supplierVatId: facts["BT-31"] as string | undefined,
+    totalWithVat: facts["BT-112"] as number | undefined,
+    facts,
+    lines: applied.lines,
+    enrichFacts,
+  });
+  if (result.status >= 400) return { status: result.status, body: { ...(result.body as object), ...base, ...where } };
+  return {
+    status: result.status,
+    body: {
+      ...(result.body as Record<string, unknown>),
+      ...base,
+      ...where,
+      en16931: { checked: applied.en16931.checked.length, failed: applied.en16931.failed },
+    },
+  };
+}
+
+// ---------------------------------------------------------------- the editor
+
+async function samplePart(
+  db: D1Database,
+  bucket: R2Bucket | undefined,
+  messageId: string | null,
+  seq: number | null
+): Promise<{ xml: string; filename: string } | null> {
+  if (!bucket || !messageId || seq === null) return null;
+  const part = await db
+    .prepare("SELECT r2_key, filename FROM route_message_parts WHERE message_id = ? AND seq = ?")
+    .bind(messageId, seq)
+    .first<{ r2_key: string; filename: string }>();
+  if (!part) return null;
+  const object = await bucket.get(part.r2_key);
+  if (!object) return null;
+  return { xml: new TextDecoder().decode(await object.arrayBuffer()), filename: part.filename };
+}
+
+/** The Business Terms a mapping can fill, in words, with what EN 16931 requires. */
+export const REQUIRED_TARGETS = new Set([
+  "BT-1", "BT-2", "BT-3", "BT-5", "BT-27", "BT-40", "BT-44", "BT-55", "BT-106", "BT-109", "BT-112", "BT-115",
+  "BT-126", "BT-129", "BT-130", "BT-131", "BT-146", "BT-153",
+]);
+
+function targets() {
+  return Object.entries(MAPPING_TARGETS).map(([id, kind]) => ({
+    id,
+    kind,
+    line: isLineTarget(id),
+    required: REQUIRED_TARGETS.has(id),
+    description: (FIELD_DESCRIPTIONS as Record<string, string>)[id] ?? id,
+  }));
+}
+
+async function versionsOf(db: D1Database, id: string): Promise<VersionRow[]> {
+  return (
+    await db
+      .prepare(
+        `SELECT v.*, u.name AS published_by_name FROM supplier_mapping_versions v
+         LEFT JOIN org_users u ON u.id = v.published_by
+         WHERE v.mapping_id = ? ORDER BY v.version DESC`
+      )
+      .bind(id)
+      .all<VersionRow>()
+  ).results;
+}
+
+/** Messages on this route whose supplier XML with this root no mapping read, or one failed to: what publishing may fix. */
+async function waitingFor(db: D1Database, routeId: string, root: string): Promise<string[]> {
+  return (
+    await db
+      .prepare(
+        `SELECT DISTINCT m.id FROM route_message_parts p
+         JOIN route_messages m ON m.id = p.message_id
+         JOIN route_instances i ON i.source_id = m.instance_id AND i.route_id = ?
+         WHERE p.xml_root = ? AND p.outcome = 'failed' AND m.status IN ('failed', 'partial')
+         ORDER BY m.received_at DESC LIMIT 50`
+      )
+      .bind(routeId, root)
+      .all<{ id: string }>()
+  ).results.map((r) => r.id);
+}
+
+export async function handleListMappings(db: D1Database, params: URLSearchParams): Promise<RouteResult> {
+  const route = params.get("route");
+  const rows = await db
+    .prepare(
+      `SELECT m.*,
+              (SELECT version FROM supplier_mapping_versions v WHERE v.mapping_id = m.id AND v.status = 'live') AS live_version,
+              (SELECT version FROM supplier_mapping_versions v WHERE v.mapping_id = m.id AND v.status = 'draft') AS draft_version,
+              (SELECT count(*) FROM route_message_parts p JOIN route_messages rm ON rm.id = p.message_id
+                 WHERE p.mapping_id = m.id AND p.outcome = 'captured'
+                   AND rm.received_at >= strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-30 days')) AS read_30d
+       FROM supplier_mappings m
+       WHERE m.status = 'active' ${route ? "AND m.route_id = ?" : ""}
+       ORDER BY m.name`
+    )
+    .bind(...(route ? [route] : []))
+    .all<MappingRow & { live_version: number | null; draft_version: number | null; read_30d: number }>();
+  const mappings = [];
+  for (const r of rows.results) {
+    mappings.push({
+      id: r.id,
+      routeId: r.route_id,
+      name: r.name,
+      root: r.root,
+      senders: sendersOf(r),
+      liveVersion: r.live_version,
+      draftVersion: r.draft_version,
+      read30d: r.read_30d,
+      waiting: (await waitingFor(db, r.route_id, r.root)).length,
+    });
+  }
+  return { status: 200, body: { mappings } };
+}
+
+/**
+ * `POST /supplier-mappings` — a new mapping, drawn from a kept message
+ * part: its route, its root element, the lines' group, and the sender's
+ * domain as who it is for. An empty draft; lines are drawn in the editor.
+ */
+export async function handleCreateMapping(
+  db: D1Database,
+  bucket: R2Bucket | undefined,
+  userId: string,
+  body: Record<string, unknown>
+): Promise<RouteResult> {
+  const messageId = typeof body.messageId === "string" ? body.messageId : null;
+  const seq = typeof body.partSeq === "number" ? body.partSeq : null;
+  if (!messageId || seq === null) return { status: 400, body: { error: "a kept message and part to draw from are required", reason: "no_sample" } };
+  const message = await db
+    .prepare(
+      `SELECT m.id, m.counterparty, i.route_id FROM route_messages m
+       JOIN route_instances i ON i.source_id = m.instance_id WHERE m.id = ? AND m.direction = 'in'`
+    )
+    .bind(messageId)
+    .first<{ id: string; counterparty: string | null; route_id: string }>();
+  if (!message) return { status: 404, body: { error: `message ${messageId} did not arrive on a Source route`, reason: "no_message" } };
+  const sample = await samplePart(db, bucket, messageId, seq);
+  if (!sample) return { status: 404, body: { error: "that part is not kept", reason: "no_sample" } };
+
+  let described;
+  try {
+    described = describeXml(sample.xml);
+  } catch (err) {
+    return { status: 422, body: { error: (err as Error).message, reason: "not_xml" } };
+  }
+  if (SUPPLIER_ROOTS_NOT_MAPPED.has(described.root)) {
+    return { status: 422, body: { error: `<${described.root}> is read by a standard mapping`, reason: "standard_format" } };
+  }
+
+  const id = newMappingId();
+  const domain = domainOf(message.counterparty);
+  const name =
+    typeof body.name === "string" && body.name.trim() !== ""
+      ? body.name.trim().slice(0, 80)
+      : `${domain ? domain.slice(1) : "Supplier"} <${described.root}>`;
+  const definition: MappingDefinition = { root: described.root, linesPath: described.repeating[0] ?? null, lines: [] };
+  await db.batch([
+    db
+      .prepare("INSERT INTO supplier_mappings (id, route_id, name, root, senders, created_at, created_by) VALUES (?, ?, ?, ?, ?, ?, ?)")
+      .bind(id, message.route_id, name, described.root, domain ? JSON.stringify([domain]) : null, now(), userId),
+    db
+      .prepare(
+        `INSERT INTO supplier_mapping_versions (mapping_id, version, status, definition_json, sample_message_id, sample_part_seq, created_at, created_by)
+         VALUES (?, 1, 'draft', ?, ?, ?, ?, ?)`
+      )
+      .bind(id, JSON.stringify(definition), messageId, seq, now(), userId),
+  ]);
+  return { status: 201, body: { id, name, root: described.root } };
+}
+
+/**
+ * `GET /supplier-mappings/:id` — the mapping, its versions, the one being
+ * edited (the draft, else the live one), and its sample described: every
+ * element with a value, and the groups that repeat.
+ */
+export async function handleGetMapping(db: D1Database, bucket: R2Bucket | undefined, id: string): Promise<RouteResult> {
+  const mapping = await db.prepare("SELECT * FROM supplier_mappings WHERE id = ?").bind(id).first<MappingRow>();
+  if (!mapping) return { status: 404, body: { error: `mapping ${id} does not exist` } };
+  const versions = await versionsOf(db, id);
+  const editing = versions.find((v) => v.status === "draft") ?? versions.find((v) => v.status === "live") ?? versions[0];
+  const sample = await samplePart(db, bucket, editing?.sample_message_id ?? null, editing?.sample_part_seq ?? null);
+  let described = null;
+  if (sample) {
+    try {
+      described = describeXml(sample.xml);
+    } catch {
+      described = null;
+    }
+  }
+  return {
+    status: 200,
+    body: {
+      mapping: { id: mapping.id, routeId: mapping.route_id, name: mapping.name, root: mapping.root, senders: sendersOf(mapping) },
+      versions: versions.map((v) => ({
+        version: v.version,
+        status: v.status,
+        createdAt: v.created_at,
+        publishedAt: v.published_at,
+        publishedBy: v.published_by_name ?? null,
+      })),
+      editing: editing
+        ? {
+            version: editing.version,
+            status: editing.status,
+            definition: JSON.parse(editing.definition_json) as MappingDefinition,
+            sample: sample ? { messageId: editing.sample_message_id, partSeq: editing.sample_part_seq, filename: sample.filename } : null,
+          }
+        : null,
+      described,
+      targets: targets(),
+      waiting: (await waitingFor(db, mapping.route_id, mapping.root)).length,
+    },
+  };
+}
+
+async function draftOf(db: D1Database, id: string, userId: string): Promise<VersionRow | null> {
+  const versions = await versionsOf(db, id);
+  const draft = versions.find((v) => v.status === "draft");
+  if (draft) return draft;
+  const from = versions.find((v) => v.status === "live") ?? versions[0];
+  if (!from) return null;
+  const version = Math.max(...versions.map((v) => v.version)) + 1;
+  await db
+    .prepare(
+      `INSERT INTO supplier_mapping_versions (mapping_id, version, status, definition_json, sample_message_id, sample_part_seq, created_at, created_by)
+       VALUES (?, ?, 'draft', ?, ?, ?, ?, ?)`
+    )
+    .bind(id, version, from.definition_json, from.sample_message_id, from.sample_part_seq, now(), userId)
+    .run();
+  return { ...from, version, status: "draft", published_at: null };
+}
+
+/** `PUT /supplier-mappings/:id/draft` — the draft's lines, its lines' group, and who it is for. */
+export async function handleSaveDraft(db: D1Database, userId: string, id: string, body: Record<string, unknown>): Promise<RouteResult> {
+  const mapping = await db.prepare("SELECT * FROM supplier_mappings WHERE id = ?").bind(id).first<MappingRow>();
+  if (!mapping) return { status: 404, body: { error: `mapping ${id} does not exist` } };
+  const definition = { ...(body.definition as MappingDefinition), root: mapping.root };
+  const invalid = validateMapping(definition);
+  if (invalid) return { status: 422, body: { error: invalid, reason: "invalid_mapping" } };
+  const draft = await draftOf(db, id, userId);
+  if (!draft) return { status: 404, body: { error: "the mapping has no version" } };
+  await db
+    .prepare("UPDATE supplier_mapping_versions SET definition_json = ? WHERE mapping_id = ? AND version = ?")
+    .bind(JSON.stringify(definition), id, draft.version)
+    .run();
+  if (Array.isArray(body.senders) || body.senders === null || typeof body.name === "string") {
+    const senders = Array.isArray(body.senders)
+      ? (body.senders as unknown[]).map((s) => String(s).trim().toLowerCase()).filter((s) => /^@?[^@\s]+(@[^@\s]+)?$/.test(s))
+      : body.senders === null
+        ? null
+        : sendersOf(mapping);
+    const name = typeof body.name === "string" && body.name.trim() !== "" ? body.name.trim().slice(0, 80) : mapping.name;
+    await db
+      .prepare("UPDATE supplier_mappings SET senders = ?, name = ? WHERE id = ?")
+      .bind(senders && senders.length > 0 ? JSON.stringify(senders) : null, name, id)
+      .run();
+  }
+  return { status: 200, body: { id, version: draft.version, status: "draft" } };
+}
+
+/**
+ * `POST /supplier-mappings/:id/compile` — a function from plain words for
+ * one line, with worked examples from every value the element holds in
+ * the sample. Nothing is saved: the person accepts it, and the draft is
+ * saved with it.
+ */
+export async function handleCompileFunction(
+  db: D1Database,
+  bucket: R2Bucket | undefined,
+  model: CompilerModel,
+  id: string,
+  body: Record<string, unknown>
+): Promise<RouteResult> {
+  const target = String(body.target ?? "");
+  if (!(target in MAPPING_TARGETS)) return { status: 422, body: { error: `"${target}" is not a Business Term a mapping can fill` } };
+  const versions = await versionsOf(db, id);
+  const editing = versions.find((v) => v.status === "draft") ?? versions.find((v) => v.status === "live");
+  if (!editing) return { status: 404, body: { error: `mapping ${id} does not exist` } };
+  const sample = await samplePart(db, bucket, editing.sample_message_id, editing.sample_part_seq);
+  const source = typeof body.source === "string" ? body.source : null;
+  let samples: string[] = [];
+  if (sample && source) {
+    try {
+      samples = valuesAt(sample.xml, source);
+    } catch {
+      samples = [];
+    }
+  }
+  const outcome = await compileFunction(model, String(body.say ?? ""), {
+    target,
+    targetName: (FIELD_DESCRIPTIONS as Record<string, string>)[target] ?? target,
+    kind: MAPPING_TARGETS[target],
+    samples,
+  });
+  return { status: 200, body: outcome };
+}
+
+/** Applies a version to its own sample. */
+async function tryVersion(db: D1Database, bucket: R2Bucket | undefined, version: VersionRow) {
+  const sample = await samplePart(db, bucket, version.sample_message_id, version.sample_part_seq);
+  if (!sample) return { error: "the sample is no longer kept" as const };
+  try {
+    return { applied: applyMapping(sample.xml, JSON.parse(version.definition_json) as MappingDefinition), filename: sample.filename };
+  } catch (err) {
+    return { error: (err as Error).message };
+  }
+}
+
+/** `POST /supplier-mappings/:id/try` — what the draft makes of its sample: facts, lines, problems, EN 16931. */
+export async function handleTryMapping(db: D1Database, bucket: R2Bucket | undefined, id: string): Promise<RouteResult> {
+  const versions = await versionsOf(db, id);
+  const editing = versions.find((v) => v.status === "draft") ?? versions.find((v) => v.status === "live");
+  if (!editing) return { status: 404, body: { error: `mapping ${id} does not exist` } };
+  const tried = await tryVersion(db, bucket, editing);
+  if ("error" in tried) return { status: 422, body: { error: tried.error } };
+  return {
+    status: 200,
+    body: {
+      version: editing.version,
+      filename: tried.filename,
+      facts: tried.applied.facts,
+      lines: tried.applied.lines,
+      problems: tried.applied.problems,
+      en16931: { checked: tried.applied.en16931.checked.length, failed: tried.applied.en16931.failed },
+    },
+  };
+}
+
+/**
+ * `POST /supplier-mappings/:id/publish` — the draft becomes the live
+ * version, and the one before it is retired. Refused while the draft
+ * cannot read its own sample, or maps nothing. The response lists the
+ * failed messages on the route it may now read, to reprocess.
+ */
+export async function handlePublishMapping(db: D1Database, bucket: R2Bucket | undefined, userId: string, id: string): Promise<RouteResult> {
+  const mapping = await db.prepare("SELECT * FROM supplier_mappings WHERE id = ?").bind(id).first<MappingRow>();
+  if (!mapping) return { status: 404, body: { error: `mapping ${id} does not exist` } };
+  const draft = (await versionsOf(db, id)).find((v) => v.status === "draft");
+  if (!draft) return { status: 409, body: { error: "there is no draft to publish", reason: "no_draft" } };
+  const definition = JSON.parse(draft.definition_json) as MappingDefinition;
+  if (definition.lines.length === 0) return { status: 422, body: { error: "the draft maps nothing yet", reason: "empty" } };
+  const invalid = validateMapping(definition);
+  if (invalid) return { status: 422, body: { error: invalid, reason: "invalid_mapping" } };
+  const tried = await tryVersion(db, bucket, draft);
+  if ("error" in tried) return { status: 422, body: { error: tried.error, reason: "no_sample" } };
+  if (tried.applied.problems.length > 0) {
+    return {
+      status: 422,
+      body: { error: "the draft cannot read its own sample", reason: "sample_problems", problems: tried.applied.problems },
+    };
+  }
+  await db.batch([
+    db.prepare("UPDATE supplier_mapping_versions SET status = 'retired' WHERE mapping_id = ? AND status = 'live'").bind(id),
+    db
+      .prepare("UPDATE supplier_mapping_versions SET status = 'live', published_at = ?, published_by = ? WHERE mapping_id = ? AND version = ?")
+      .bind(now(), userId, id, draft.version),
+  ]);
+  return { status: 200, body: { id, version: draft.version, status: "live", waiting: await waitingFor(db, mapping.route_id, mapping.root) } };
+}

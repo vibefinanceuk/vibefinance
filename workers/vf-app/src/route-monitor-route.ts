@@ -187,8 +187,10 @@ export async function handleGetRouteMessage(db: D1Database, id: string): Promise
 
   const parts = await db
     .prepare(
-      `SELECT seq, role, filename, content_type, bytes, sha256, outcome, reason, stored_at, format, syntax, en16931_failed
-       FROM route_message_parts WHERE message_id = ? ORDER BY seq`
+      `SELECT p.seq, p.role, p.filename, p.content_type, p.bytes, p.sha256, p.outcome, p.reason, p.stored_at, p.format, p.syntax,
+              p.en16931_failed, p.xml_root, p.mapping_id, p.mapping_version, sm.name AS mapping_name
+       FROM route_message_parts p LEFT JOIN supplier_mappings sm ON sm.id = p.mapping_id
+       WHERE p.message_id = ? ORDER BY p.seq`
     )
     .bind(id)
     .all<{
@@ -204,6 +206,10 @@ export async function handleGetRouteMessage(db: D1Database, id: string): Promise
       format: string | null;
       syntax: string | null;
       en16931_failed: string | null;
+      xml_root: string | null;
+      mapping_id: string | null;
+      mapping_version: number | null;
+      mapping_name: string | null;
     }>();
   const events = await db
     .prepare(
@@ -291,6 +297,10 @@ export async function handleGetRouteMessage(db: D1Database, id: string): Promise
         format: p.format,
         syntax: p.syntax,
         en16931Failed: parseFailed(p.en16931_failed),
+        // Decision 0561: a supplier's own XML — its root, and the mapping
+        // that read it or tried to (null where none exists yet).
+        xmlRoot: p.xml_root,
+        mapping: p.mapping_id ? { id: p.mapping_id, version: p.mapping_version, name: p.mapping_name } : null,
       })),
       // Who did it, for what a person did (an export made or undone, 0558).
       events: events.results.map((e) => ({ seq: e.seq, at: e.at, event: e.event, partSeq: e.part_seq, detail: e.detail, actorName: e.actor_name })),
