@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 30 September 2026 (decision 0564). A living document: what
+Last updated 30 September 2026 (decision 0565). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,15 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Routes phase 2, slice 3: a supplier's own CSV (0565)
+- A supplier's CSV is mapped like its XML: read as the first row and
+  every row, with the separator and column names guessed and changeable
+  on the Mapping card; UTF-8 or Windows-1252.
+- A whole-invoice amount drawn from the lines is their sum; one invoice
+  per file, a file with several refused in words.
+- CSV attachments are accepted however the mail client labels or encodes
+  them, and shown in the viewer as a table.
 
 ### Retiring a mapping, in a pop-out (0564)
 - Retire now reaches vf-app (its path was missing from the vf-ui proxy).

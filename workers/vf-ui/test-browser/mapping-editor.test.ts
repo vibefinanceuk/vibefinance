@@ -5,6 +5,7 @@ import monitorStringsSql from "../../vf-licence/migrations/0207_route_monitor_st
 import routesStringsSql from "../../vf-licence/migrations/0208_routes_and_process_routes_strings.sql?raw";
 import missStringsSql from "../../vf-licence/migrations/0214_mapping_miss_strings.sql?raw";
 import retirePopoutStringsSql from "../../vf-licence/migrations/0215_mapping_retire_popout_strings.sql?raw";
+import csvStringsSql from "../../vf-licence/migrations/0216_supplier_csv_strings.sql?raw";
 
 /**
  * **The mapping editor — decision 0561**, with the real strings: draw a
@@ -16,7 +17,7 @@ import retirePopoutStringsSql from "../../vf-licence/migrations/0215_mapping_ret
  */
 
 const strings: Record<string, string> = { "action.close": "Close", "action.save": "Save" };
-for (const sql of [mappingStringsSql, formatStringsSql, monitorStringsSql, routesStringsSql, missStringsSql, retirePopoutStringsSql]) {
+for (const sql of [mappingStringsSql, formatStringsSql, monitorStringsSql, routesStringsSql, missStringsSql, retirePopoutStringsSql, csvStringsSql]) {
   for (const m of sql.matchAll(/\('([^']+)', 'en', '((?:[^']|'')*)'\)/g)) strings[m[1]] = m[2].replace(/''/g, "'");
   // Later migrations change some words in place.
   for (const m of sql.matchAll(/UPDATE ui_strings SET value = '((?:[^']|'')*)' WHERE key = '([^']+)' AND locale = 'en'/g)) strings[m[2]] = m[1].replace(/''/g, "'");
@@ -445,5 +446,126 @@ describe("near misses and retiring — decision 0563", () => {
     expect(button("Publish")).toBeUndefined();
     expect(button("Retire this mapping")).toBeUndefined();
     expect(button("Save")).toBeUndefined();
+  });
+});
+
+/**
+ * **A supplier's CSV in the editor — decision 0565**: its columns by the
+ * names in the file, the first row and every row as the two groups, how
+ * the file is read on the Mapping card, and a whole-invoice amount drawn
+ * from the rows, which adds them up.
+ */
+describe("a CSV mapping — decision 0565", () => {
+  const CSV_MAPPING = () => ({
+    mapping: { id: "MAP-1", routeId: "email-in", name: "lagernord.de CSV", root: "CSV", senders: ["@lagernord.de"], status: "active" },
+    versions: [{ version: 1, status: "draft" }],
+    editing: {
+      version: 1,
+      status: "draft",
+      definition: { root: "CSV", linesPath: "CSV/Row", csv: { delimiter: ";", header: true, skip: 0 }, lines: [] },
+      sample: { messageId: "MSG-1", partSeq: 1, filename: "Rechnung_88250.csv" },
+    },
+    described: {
+      root: "CSV",
+      repeating: ["CSV/Row"],
+      groups: ["CSV/First", "CSV/Row"],
+      elements: [
+        { path: "CSV/First/Rechnungsnr", sample: "88250", count: 1 },
+        { path: "CSV/First/USt-IdNr", sample: "DE298765432", count: 1 },
+        { path: "CSV/Row/Menge", sample: "4", count: 2 },
+        { path: "CSV/Row/Netto", sample: "480,00", count: 2 },
+      ],
+    },
+    columns: [
+      { name: "Rechnungsnr", element: "Rechnungsnr" },
+      { name: "USt-IdNr", element: "USt-IdNr" },
+      { name: "Menge (Stk)", element: "Menge" },
+      { name: "Netto", element: "Netto" },
+    ],
+    targets: [...TARGETS, { id: "BT-106", kind: "number", line: false, required: true }],
+    waiting: 0,
+  });
+
+  it("shows the columns by their names in the file, grouped as the first row and every row", async () => {
+    stub([], { "GET /api/supplier-mappings/MAP-1": () => ({ body: CSV_MAPPING() }) });
+    await openEditor();
+    expect(text(".megrid .mecol h4 + .meh4s")).toBe("The supplier's CSV · column and sample value");
+    expect([...document.querySelectorAll(".megrid .mecol:first-child .megrp")].map((g) => g.textContent)).toEqual([
+      "First row · the whole invoice",
+      "Every row · each line",
+    ]);
+    expect(src("CSV/Row/Menge").querySelector(".mep")?.textContent).toBe("Menge (Stk)");
+    expect(document.body.textContent).toContain("CSV file → EN 16931 invoice");
+  });
+
+  it("changes how the file is read on the Mapping card, saving the draft and reading the sample again", async () => {
+    const calls: Call[] = [];
+    stub(calls, { "GET /api/supplier-mappings/MAP-1": () => ({ body: CSV_MAPPING() }) });
+    await openEditor();
+    expect(document.querySelector("select[aria-label='Lines repeat at']")).toBeNull();
+    const sep = document.querySelector("select[aria-label='Separator']") as HTMLSelectElement;
+    expect([...sep.options].map((o) => o.textContent)).toEqual(["Semicolon ;", "Comma ,", "Tab", "Vertical bar |"]);
+    expect(sep.value).toBe(";");
+    sep.value = ",";
+    sep.dispatchEvent(new Event("change"));
+    await settle();
+    const put = calls.filter((c) => c.method === "PUT").at(-1);
+    expect((put?.body as { definition: { csv: unknown } }).definition.csv).toEqual({ delimiter: ",", header: true, skip: 0 });
+    expect(calls.filter((c) => c.method === "GET" && c.path === "/api/supplier-mappings/MAP-1")).toHaveLength(2);
+
+    const header = document.querySelector("input[aria-label='Column names']") as HTMLInputElement;
+    expect(header.checked).toBe(true);
+    header.checked = false;
+    header.dispatchEvent(new Event("change"));
+    await settle();
+    expect((calls.filter((c) => c.method === "PUT").at(-1)?.body as { definition: { csv: { header: boolean } } }).definition.csv.header).toBe(false);
+  });
+
+  it("takes a whole-invoice amount from a column on every row, saying it adds them up", async () => {
+    const calls: Call[] = [];
+    stub(calls, { "GET /api/supplier-mappings/MAP-1": () => ({ body: CSV_MAPPING() }) });
+    await openEditor();
+    src("CSV/Row/Netto").click();
+    await settle();
+    tgt("BT-106").click();
+    await settle();
+    const put = calls.filter((c) => c.method === "PUT").at(-1)?.body as { definition: { lines: unknown[] } };
+    expect(put.definition.lines).toEqual([{ target: "BT-106", source: "CSV/Row/Netto", fx: [], origin: "person" }]);
+    expect(text(".mesum")).toBe("An amount for the whole invoice, drawn from the lines: every line's value is read, then added up.");
+
+    // A text term still cannot come from the rows.
+    src("CSV/Row/Menge").click();
+    await settle();
+    tgt("BT-1").click();
+    await settle();
+    expect(text(".menote")).toBe("That term belongs to the whole invoice: choose an element outside the lines. An amount may also come from inside the lines, which adds them up.");
+  });
+
+  it("shows a failed CSV in the Route monitor as a supplier's CSV, offering to map it", async () => {
+    stub([], {
+      "GET /api/route-messages": () => ({ body: { period: "today", summary: {}, sources: [], destinations: [], messages: [{ id: "MSG-1", sourceName: "AP mailbox", status: "failed", failedPart: "translation", subject: "Rechnung", receivedAt: new Date().toISOString(), invoices: 0 }] } }),
+      "GET /api/route-messages/MSG-1": () => ({
+        body: {
+          canReprocess: true,
+          similar: [],
+          canDismiss: true,
+          message: { id: "MSG-1", sourceName: "AP mailbox", status: "failed", failedPart: "translation", subject: "Rechnung", receivedAt: new Date().toISOString() },
+          parts: [{ seq: 1, role: "attachment", filename: "Rechnung_88250.csv", bytes: 400, outcome: "failed", format: "supplier_csv", xmlRoot: "CSV", mapping: null, en16931Failed: null }],
+          events: [],
+          invoices: [],
+        },
+      }),
+    });
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { open } = await import("/route-monitor.js");
+    await open();
+    await settle();
+    (document.querySelector(".rmtable tbody tr") as HTMLElement).click();
+    await settle();
+    expect(text(".rmfmtname")).toBe("Rechnung_88250.csv: A supplier's CSV");
+    expect(text(".rmexplain .h")).toBe("A supplier's CSV, and no mapping reads it yet");
+    expect(text(".rmfmt .muted.sm")).toBe("This supplier sends a CSV. Map it once, from this file, and every CSV like it is read as data.");
+    expect(button("Map this format")).toBeTruthy();
   });
 });

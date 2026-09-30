@@ -1,7 +1,14 @@
 import {
   applyMapping,
   compileFunction,
+  CSV_ROOT,
+  CsvError,
+  decodeText,
+  csvToXml,
   describeXml,
+  detectCsvOptions,
+  distinctInColumn,
+  mappableXml,
   FIELD_DESCRIPTIONS,
   isLineTarget,
   MAPPING_TARGETS,
@@ -81,6 +88,17 @@ function sendersOf(row: MappingRow): string[] | null {
   }
 }
 
+/** Whether every column a CSV mapping reads is in this file. */
+function csvFits(text: string, definitionJson: string): boolean {
+  try {
+    const def = JSON.parse(definitionJson) as MappingDefinition;
+    const present = new Set(csvToXml(text, def.csv ?? detectCsvOptions(text)).columns.map((c) => c.element));
+    return def.lines.every((l) => l.source === null || present.has(l.source.split("/").pop() ?? ""));
+  } catch {
+    return false;
+  }
+}
+
 /** An address matches `anna@munch.de` exactly, or `@munch.de` by its domain. */
 export function senderMatches(senders: string[] | null, sender: string | undefined): boolean {
   if (senders === null) return true;
@@ -106,7 +124,8 @@ export async function mappingFor(
   db: D1Database,
   sourceId: string,
   root: string,
-  sender: string | undefined
+  sender: string | undefined,
+  text?: string
 ): Promise<{ mapping: MappingRow; version: VersionRow } | null> {
   const rows = await db
     .prepare(
@@ -120,7 +139,15 @@ export async function mappingFor(
     .bind(sourceId, root)
     .all<MappingRow & { version: number; v_status: string; definition_json: string; published_at: string }>();
   const candidates = rows.results.filter((r) => senderMatches(sendersOf(r), sender));
-  const best = candidates.find((r) => sendersOf(r) !== null) ?? candidates[0];
+  /**
+   * **Every CSV has the same root — decision 0565.** Where one sender has
+   * several CSV mappings (an invoice file and a credit file, say), the one
+   * whose columns are all in this file comes first; where none fits, the
+   * usual order stands, and the mapping says what it could not read.
+   */
+  const fitting = root === CSV_ROOT && text !== undefined ? candidates.filter((r) => csvFits(text, r.definition_json)) : [];
+  const pool = fitting.length > 0 ? fitting : candidates;
+  const best = pool.find((r) => sendersOf(r) !== null) ?? pool[0];
   if (!best) return null;
   return {
     mapping: best,
@@ -194,35 +221,60 @@ export async function captureThroughMapping(
   db: D1Database,
   sourceId: string,
   channelId: string,
-  xml: string,
+  /** The file's text: a supplier's XML, or (decision 0565) its CSV. */
+  text: string,
   root: string,
   sender: string | undefined,
   idOverride: string | undefined,
   enrichFacts: CaptureIntakeBody["enrichFacts"]
 ): Promise<RouteResult> {
-  const found = await mappingFor(db, sourceId, root, sender);
-  const base = { format: "supplier_xml", syntax: null, xmlRoot: root };
+  const found = await mappingFor(db, sourceId, root, sender, text);
+  const isCsv = root === CSV_ROOT;
+  const base = { format: isCsv ? "supplier_csv" : "supplier_xml", syntax: null, xmlRoot: root };
+  const what = isCsv ? "this is a CSV file" : `this is <${root}>, a supplier's own XML`;
   if (!found) {
     const near = await nearMiss(db, sourceId, root, sender);
     const from = sender ? sender.toLowerCase().replace(/^.*<([^>]+)>.*$/, "$1").trim() : "an unknown sender";
+    const kind = isCsv ? "CSV files" : `<${root}>`;
     const error =
       near?.miss === "not_published"
-        ? `this is <${root}>, a supplier's own XML; the mapping "${near.name}" would read it, but has not been published`
+        ? `${what}; the mapping "${near.name}" would read it, but has not been published`
         : near?.miss === "not_for_sender"
-          ? `this is <${root}>, a supplier's own XML; the mapping "${near.name}" reads <${root}> on this route, but is not for ${from}`
-          : `this is <${root}>, a supplier's own XML, and no mapping on this route reads it yet`;
+          ? `${what}; the mapping "${near.name}" reads ${kind} on this route, but is not for ${from}`
+          : `${what}, and no mapping on this route reads it yet`;
     return {
       status: 422,
       body: { ...base, mappingId: near?.id ?? null, mappingMiss: near?.miss ?? null, error },
     };
   }
   const where = { mappingId: found.mapping.id, mappingVersion: found.version.version };
+  const definition = JSON.parse(found.version.definition_json) as MappingDefinition;
   let applied: AppliedMapping;
   try {
-    applied = applyMapping(xml, JSON.parse(found.version.definition_json) as MappingDefinition);
+    applied = applyMapping(mappableXml(text, definition), definition);
   } catch (err) {
-    if (err instanceof MappingXmlError) return { status: 422, body: { ...base, ...where, error: err.message } };
+    if (err instanceof MappingXmlError || err instanceof CsvError) return { status: 422, body: { ...base, ...where, error: err.message } };
     throw err;
+  }
+  /**
+   * **One invoice per file — decision 0565.** A CSV whose invoice numbers
+   * differ between rows holds several invoices; reading it as one would
+   * make an invoice nobody sent. Refused in words, with the numbers.
+   */
+  const numberFrom = definition.lines.find((l) => l.target === "BT-1")?.source ?? null;
+  if (isCsv && numberFrom) {
+    const numbers = distinctInColumn(text, definition.csv ?? detectCsvOptions(text), numberFrom);
+    if (numbers.length > 1) {
+      const shown = numbers.slice(0, 5).join(", ") + (numbers.length > 5 ? ", ..." : "");
+      return {
+        status: 422,
+        body: {
+          ...base,
+          ...where,
+          error: `${found.mapping.name} v${found.version.version}: the file holds ${numbers.length} invoices (${shown}); one invoice per file is read`,
+        },
+      };
+    }
   }
   if (applied.problems.length > 0) {
     return {
@@ -237,7 +289,7 @@ export async function captureThroughMapping(
   }
   const facts: Record<string, unknown> = {
     ...applied.facts,
-    "intake.format": "supplier_xml",
+    "intake.format": base.format,
     "en16931.checked": true,
     "en16931.failures": applied.en16931.failed.map((f) => f.rule).join(","),
   };
@@ -271,16 +323,17 @@ async function samplePart(
   bucket: R2Bucket | undefined,
   messageId: string | null,
   seq: number | null
-): Promise<{ xml: string; filename: string } | null> {
+): Promise<{ text: string; filename: string; root: string | null } | null> {
   if (!bucket || !messageId || seq === null) return null;
   const part = await db
-    .prepare("SELECT r2_key, filename FROM route_message_parts WHERE message_id = ? AND seq = ?")
+    .prepare("SELECT r2_key, filename, xml_root FROM route_message_parts WHERE message_id = ? AND seq = ?")
     .bind(messageId, seq)
-    .first<{ r2_key: string; filename: string }>();
+    .first<{ r2_key: string; filename: string; xml_root: string | null }>();
   if (!part) return null;
   const object = await bucket.get(part.r2_key);
   if (!object) return null;
-  return { xml: new TextDecoder().decode(await object.arrayBuffer()), filename: part.filename };
+  // Decision 0565: a CSV may be Windows-1252, as Excel saves it.
+  return { text: decodeText(new Uint8Array(await object.arrayBuffer())), filename: part.filename, root: part.xml_root };
 }
 
 /** The Business Terms a mapping can fill, in words, with what EN 16931 requires. */
@@ -396,11 +449,14 @@ export async function handleCreateMapping(
   const sample = await samplePart(db, bucket, messageId, seq);
   if (!sample) return { status: 404, body: { error: "that part is not kept", reason: "no_sample" } };
 
+  // Decision 0565: a CSV is described as the document its mapping reads,
+  // with the separator and column names guessed from the file.
+  const csv = sample.root === CSV_ROOT ? detectCsvOptions(sample.text) : undefined;
   let described;
   try {
-    described = describeXml(sample.xml);
+    described = describeXml(csv ? csvToXml(sample.text, csv).xml : sample.text);
   } catch (err) {
-    return { status: 422, body: { error: (err as Error).message, reason: "not_xml" } };
+    return { status: 422, body: { error: (err as Error).message, reason: csv ? "not_csv" : "not_xml" } };
   }
   if (SUPPLIER_ROOTS_NOT_MAPPED.has(described.root)) {
     return { status: 422, body: { error: `<${described.root}> is read by a standard mapping`, reason: "standard_format" } };
@@ -411,8 +467,8 @@ export async function handleCreateMapping(
   const name =
     typeof body.name === "string" && body.name.trim() !== ""
       ? body.name.trim().slice(0, 80)
-      : `${domain ? domain.slice(1) : "Supplier"} <${described.root}>`;
-  const definition: MappingDefinition = { root: described.root, linesPath: described.repeating[0] ?? null, lines: [] };
+      : `${domain ? domain.slice(1) : "Supplier"} ${csv ? "CSV" : `<${described.root}>`}`;
+  const definition: MappingDefinition = { root: described.root, linesPath: described.repeating[0] ?? null, lines: [], ...(csv ? { csv } : {}) };
   await db.batch([
     db
       .prepare("INSERT INTO supplier_mappings (id, route_id, name, root, senders, created_at, created_by) VALUES (?, ?, ?, ?, ?, ?, ?)")
@@ -439,9 +495,13 @@ export async function handleGetMapping(db: D1Database, bucket: R2Bucket | undefi
   const editing = versions.find((v) => v.status === "draft") ?? versions.find((v) => v.status === "live") ?? versions[0];
   const sample = await samplePart(db, bucket, editing?.sample_message_id ?? null, editing?.sample_part_seq ?? null);
   let described = null;
+  let columns: Array<{ name: string; element: string }> | null = null;
   if (sample) {
     try {
-      described = describeXml(sample.xml);
+      const def = editing ? (JSON.parse(editing.definition_json) as MappingDefinition) : { root: mapping.root, linesPath: null, lines: [] };
+      described = describeXml(mappableXml(sample.text, def));
+      // Decision 0565: a CSV's columns as written, beside their names in the paths.
+      if (def.root === CSV_ROOT) columns = csvToXml(sample.text, def.csv ?? detectCsvOptions(sample.text)).columns;
     } catch {
       described = null;
     }
@@ -473,6 +533,7 @@ export async function handleGetMapping(db: D1Database, bucket: R2Bucket | undefi
           }
         : null,
       described,
+      columns,
       targets: targets(),
       waiting: (await waitingFor(db, mapping)).length,
     },
@@ -548,7 +609,7 @@ export async function handleCompileFunction(
   let samples: string[] = [];
   if (sample && source) {
     try {
-      samples = valuesAt(sample.xml, source);
+      samples = valuesAt(mappableXml(sample.text, JSON.parse(editing.definition_json) as MappingDefinition), source);
     } catch {
       samples = [];
     }
@@ -567,7 +628,8 @@ async function tryVersion(db: D1Database, bucket: R2Bucket | undefined, version:
   const sample = await samplePart(db, bucket, version.sample_message_id, version.sample_part_seq);
   if (!sample) return { error: "the sample is no longer kept" as const };
   try {
-    return { applied: applyMapping(sample.xml, JSON.parse(version.definition_json) as MappingDefinition), filename: sample.filename };
+    const def = JSON.parse(version.definition_json) as MappingDefinition;
+    return { applied: applyMapping(mappableXml(sample.text, def), def), filename: sample.filename };
   } catch (err) {
     return { error: (err as Error).message };
   }

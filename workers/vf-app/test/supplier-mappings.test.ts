@@ -403,6 +403,217 @@ describe("retiring a mapping", () => {
   });
 });
 
+/**
+ * **A supplier's own CSV — decision 0565.** Received, failed with its kind
+ * kept, mapped from the kept file with its separator and column names
+ * guessed, published, reprocessed, and the next one read directly. The
+ * invoice's amounts are the rows added up; a file with several invoices
+ * is refused in words.
+ */
+const LAGER_CSV = [
+  "Rechnungsnr;Datum;Fällig;Währung;Lieferant;USt-IdNr;Kunde;Land;Pos;Artikel;Menge;Einheit;Einzelpreis;Netto;MwSt;Brutto",
+  "88250;29.09.2026;29.10.2026;EUR;Lager Nord GmbH;DE298765432;Acme UK Ltd;GB;1;Palettenregal;4;Stk;120,00;480,00;91,20;571,20",
+  '88250;29.09.2026;29.10.2026;EUR;Lager Nord GmbH;DE298765432;Acme UK Ltd;GB;2;"Schrauben; M8";100;Stk;0,25;25,00;4,75;29,75',
+].join("\r\n");
+
+const CSV_DEFINITION = {
+  root: "CSV",
+  linesPath: "CSV/Row",
+  csv: { delimiter: ";", header: true, skip: 0 },
+  lines: [
+    { target: "BT-1", source: "CSV/First/Rechnungsnr", fx: [] },
+    { target: "BT-2", source: "CSV/First/Datum", fx: [{ fn: "read_date", args: { pattern: "dd.MM.yyyy" } }] },
+    { target: "BT-3", source: null, fx: [{ fn: "always", args: { value: "380" } }] },
+    { target: "BT-5", source: "CSV/First/Währung", fx: [] },
+    { target: "BT-9", source: "CSV/First/Fällig", fx: [{ fn: "read_date", args: { pattern: "dd.MM.yyyy" } }] },
+    { target: "BT-27", source: "CSV/First/Lieferant", fx: [] },
+    { target: "BT-31", source: "CSV/First/USt-IdNr", fx: [] },
+    { target: "BT-40", source: "CSV/First/USt-IdNr", fx: [{ fn: "first_letters", args: { n: 2 } }] },
+    { target: "BT-44", source: "CSV/First/Kunde", fx: [] },
+    { target: "BT-55", source: "CSV/First/Land", fx: [] },
+    { target: "BT-106", source: "CSV/Row/Netto", fx: dc },
+    { target: "BT-109", source: "CSV/Row/Netto", fx: dc },
+    { target: "BT-110", source: "CSV/Row/MwSt", fx: dc },
+    { target: "BT-112", source: "CSV/Row/Brutto", fx: dc },
+    { target: "BT-115", source: "CSV/Row/Brutto", fx: dc },
+    { target: "BT-126", source: "Pos", fx: [] },
+    { target: "BT-129", source: "Menge", fx: [] },
+    { target: "BT-130", source: "Einheit", fx: [{ fn: "unit_code" }] },
+    { target: "BT-131", source: "Netto", fx: dc },
+    { target: "BT-146", source: "Einzelpreis", fx: dc },
+    { target: "BT-153", source: "Artikel", fx: [] },
+  ],
+};
+
+/** A CSV attachment, labelled and encoded as a mail client might. */
+function csvEmail(
+  from: string,
+  csv: string | Uint8Array,
+  opts: { filename?: string; type?: string; encoding?: "base64" | "quoted-printable" } = {}
+): EmailMessage {
+  const boundary = "----vf-csv-boundary";
+  const filename = opts.filename ?? "Rechnung_88250.csv";
+  const bytes = typeof csv === "string" ? new TextEncoder().encode(csv) : csv;
+  const encoding = opts.encoding ?? "base64";
+  const body =
+    encoding === "base64"
+      ? base64(bytes)
+      : [...bytes].map((b) => (b === 0x3d || b > 0x7e ? `=${b.toString(16).toUpperCase().padStart(2, "0")}` : String.fromCharCode(b))).join("");
+  const raw =
+    `From: ${from}\r\nTo: ${ADDRESS}\r\nSubject: Rechnung\r\nContent-Type: multipart/mixed; boundary="${boundary}"\r\n\r\n` +
+    `--${boundary}\r\nContent-Type: text/plain\r\n\r\nAnbei.\r\n` +
+    `--${boundary}\r\nContent-Type: ${opts.type ?? "text/csv"}; name="${filename}"\r\nContent-Transfer-Encoding: ${encoding}\r\n` +
+    `Content-Disposition: attachment; filename="${filename}"\r\n\r\n${body}\r\n--${boundary}--`;
+  return { from, to: ADDRESS, raw: new Response(raw).body as ReadableStream, rawSize: raw.length, setReject() {}, async forward() {} } as EmailMessage;
+}
+
+async function receiveCsv(from: string, csv: string | Uint8Array, opts: Parameters<typeof csvEmail>[2] = {}) {
+  await handleInboundEmail(csvEmail(from, csv, opts), env.DB, model, env.DOCUMENTS, CUSTOMER);
+  return (await env.DB.prepare("SELECT id, status FROM route_messages ORDER BY received_at DESC, rowid DESC LIMIT 1").first<{ id: string; status: string }>())!;
+}
+
+async function publishedCsvMapping() {
+  const failed = await receiveCsv("rechnung@lagernord.de", LAGER_CSV);
+  const created = await handleCreateMapping(env.DB, env.DOCUMENTS, "u-dan", { messageId: failed.id, partSeq: 1 });
+  const id = (created.body as { id: string }).id;
+  await handleSaveDraft(env.DB, "u-dan", id, { definition: CSV_DEFINITION });
+  const published = await handlePublishMapping(env.DB, env.DOCUMENTS, "u-dan", id);
+  return { failed, id, created, published };
+}
+
+describe("a supplier's own CSV", () => {
+  it("fails at translation as a CSV no mapping reads yet, keeping it", async () => {
+    const m = await receiveCsv("rechnung@lagernord.de", LAGER_CSV);
+    expect(m.status).toBe("failed");
+    expect(await part(m.id)).toMatchObject({
+      outcome: "failed",
+      format: "supplier_csv",
+      xml_root: "CSV",
+      mapping_id: null,
+      reason: "this is a CSV file, and no mapping on this route reads it yet",
+    });
+  });
+
+  it("is taken as a CSV however the mail client labels and encodes it, and in Windows-1252", async () => {
+    const outlook = await receiveCsv("rechnung@lagernord.de", LAGER_CSV, { type: "application/vnd.ms-excel", encoding: "quoted-printable" });
+    expect(await part(outlook.id)).toMatchObject({ format: "supplier_csv", xml_root: "CSV" });
+    // As Excel saves it on Windows: ä is 0xE4.
+    const cp1252 = new Uint8Array([...LAGER_CSV].map((c) => (c === "ä" ? 0xe4 : c.charCodeAt(0))));
+    const excel = await receiveCsv("rechnung@lagernord.de", cp1252, { type: "application/octet-stream" });
+    expect(await part(excel.id)).toMatchObject({ format: "supplier_csv" });
+    // A .txt labelled as plain text is not taken for a CSV.
+    const text = await receiveCsv("rechnung@lagernord.de", LAGER_CSV, { type: "text/plain", filename: "notes.txt" });
+    expect((await env.DB.prepare("SELECT count(*) AS n FROM route_message_parts WHERE message_id = ? AND role = 'attachment'").bind(text.id).first<{ n: number }>())?.n).toBe(0);
+  });
+
+  it("is mapped from the kept file: the separator and column names guessed, the rows as the lines", async () => {
+    const failed = await receiveCsv("rechnung@lagernord.de", LAGER_CSV);
+    const created = await handleCreateMapping(env.DB, env.DOCUMENTS, "u-dan", { messageId: failed.id, partSeq: 1 });
+    expect(created).toMatchObject({ status: 201, body: { name: "lagernord.de CSV", root: "CSV" } });
+    const id = (created.body as { id: string }).id;
+    const got = (await handleGetMapping(env.DB, env.DOCUMENTS, id)).body as {
+      mapping: { senders: string[] };
+      editing: { definition: { linesPath: string; csv: unknown } };
+      described: { groups: string[]; elements: Array<{ path: string; sample: string }> };
+      columns: Array<{ name: string; element: string }>;
+    };
+    expect(got.mapping.senders).toEqual(["@lagernord.de"]);
+    expect(got.editing.definition).toMatchObject({ linesPath: "CSV/Row", csv: { delimiter: ";", header: true, skip: 0 } });
+    expect(got.described.groups).toEqual(expect.arrayContaining(["CSV/First", "CSV/Row"]));
+    expect(got.described.elements.find((e) => e.path === "CSV/First/Währung")?.sample).toBe("EUR");
+    expect(got.columns.find((c) => c.element === "USt-IdNr")?.name).toBe("USt-IdNr");
+
+    // Options it cannot use are refused; ones it can are saved and read with.
+    const bad = await handleSaveDraft(env.DB, "u-dan", id, { definition: { ...CSV_DEFINITION, csv: { delimiter: ":", header: true, skip: 0 } } });
+    expect(bad).toMatchObject({ status: 422, body: { error: "the separator is one of ; , tab or |" } });
+    await handleSaveDraft(env.DB, "u-dan", id, { definition: { ...CSV_DEFINITION, lines: [], csv: { delimiter: ";", header: false, skip: 0 } } });
+    const noNames = (await handleGetMapping(env.DB, env.DOCUMENTS, id)).body as { columns: Array<{ element: string }> };
+    expect(noNames.columns[0].element).toBe("Column1");
+  });
+
+  it("publishes, reprocesses with the amounts added up from the rows, and reads the next one directly", async () => {
+    const { failed, id, published } = await publishedCsvMapping();
+    expect(published).toMatchObject({ status: 200, body: { status: "live", waiting: [failed.id] } });
+    const tried = await handleTryMapping(env.DB, env.DOCUMENTS, id);
+    expect(tried).toMatchObject({ status: 200 });
+
+    const rerun = await handleReprocessMessage(env.DB, failed.id, "u-dan", { model, bucket: env.DOCUMENTS, customerId: CUSTOMER });
+    expect(rerun).toMatchObject({ status: 200, body: { status: "delivered" } });
+    expect(await part(failed.id)).toMatchObject({ outcome: "captured", format: "supplier_csv", mapping_id: id, mapping_version: 1, en16931_failed: "[]" });
+    expect(await facts(failed.id)).toMatchObject({
+      "BT-1": "88250",
+      "BT-2": "2026-09-29",
+      "BT-106": 505,
+      "BT-110": 95.95,
+      "BT-112": 600.95,
+      "intake.format": "supplier_csv",
+    });
+
+    // A table a person can read, beside the original CSV.
+    const docs = await env.DB.prepare(
+      `SELECT d.document_type, d.content_type FROM invoice_documents d JOIN route_message_items i ON i.item_id = d.invoice_id WHERE i.message_id = ? ORDER BY d.document_type`
+    )
+      .bind(failed.id)
+      .all<{ document_type: string; content_type: string }>();
+    expect(docs.results).toEqual([
+      { document_type: "generated_rendering", content_type: "text/html; charset=utf-8" },
+      { document_type: "original", content_type: "text/csv" },
+    ]);
+
+    const next = await receiveCsv("buchhaltung@lagernord.de", LAGER_CSV.replace(/88250/g, "88251"));
+    expect(next.status).toBe("delivered");
+    expect((await facts(next.id))?.["BT-1"]).toBe("88251");
+  });
+
+  it("refuses a file that holds several invoices, naming them", async () => {
+    const { id } = await publishedCsvMapping();
+    const two = `${LAGER_CSV}\r\n88252;30.09.2026;30.10.2026;EUR;Lager Nord GmbH;DE298765432;Acme UK Ltd;GB;1;Palettenregal;1;Stk;120,00;120,00;22,80;142,80`;
+    const m = await receiveCsv("rechnung@lagernord.de", two);
+    expect(m.status).toBe("failed");
+    expect(await part(m.id)).toMatchObject({
+      mapping_id: id,
+      mapping_version: 1,
+      reason: "lagernord.de CSV v1: the file holds 2 invoices (88250, 88252); one invoice per file is read",
+    });
+  });
+
+  it("names the near miss for a CSV from another sender", async () => {
+    const { id } = await publishedCsvMapping();
+    const m = await receiveCsv("billing@other.example", LAGER_CSV);
+    expect(await part(m.id)).toMatchObject({
+      mapping_id: id,
+      mapping_miss: "not_for_sender",
+      reason: 'this is a CSV file; the mapping "lagernord.de CSV" reads CSV files on this route, but is not for billing@other.example',
+    });
+  });
+
+  it("chooses, of a sender's CSV mappings, the one whose columns are in the file", async () => {
+    const { id } = await publishedCsvMapping();
+    // A second mapping for the same sender, for a file with other columns.
+    const other = "Beleg;Betrag\r\nG-1;10,00\r\nG-1;5,00";
+    const credit = await receiveCsv("rechnung@lagernord.de", other);
+    const made = await handleCreateMapping(env.DB, env.DOCUMENTS, "u-dan", { messageId: credit.id, partSeq: 1, name: "Lager Nord credits" });
+    const creditId = (made.body as { id: string }).id;
+    await handleSaveDraft(env.DB, "u-dan", creditId, {
+      definition: {
+        root: "CSV",
+        linesPath: "CSV/Row",
+        csv: { delimiter: ";", header: true, skip: 0 },
+        lines: [
+          { target: "BT-1", source: "CSV/First/Beleg", fx: [] },
+          { target: "BT-3", source: null, fx: [{ fn: "always", args: { value: "380" } }] },
+        ],
+      },
+    });
+    // Published directly, as its sample cannot pass EN 16931: only which mapping is chosen matters here.
+    await env.DB.prepare("UPDATE supplier_mapping_versions SET status = 'live', published_at = ?, published_by = 'u-dan' WHERE mapping_id = ?")
+      .bind(new Date(Date.now() + 1000).toISOString(), creditId)
+      .run();
+    const invoice = await receiveCsv("rechnung@lagernord.de", LAGER_CSV.replace(/88250/g, "88253"));
+    expect(await part(invoice.id)).toMatchObject({ mapping_id: id, outcome: "captured" });
+  });
+});
+
 describe("who a mapping is for", () => {
   it("matches an address exactly, or by its domain, and anyone when it names no one", () => {
     expect(senderMatches(["@munch.de"], "Buchhaltung <buchhaltung@munch.de>")).toBe(true);

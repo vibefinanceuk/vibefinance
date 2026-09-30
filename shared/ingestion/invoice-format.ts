@@ -30,6 +30,8 @@ export const INVOICE_FORMATS = [
   "cii_other",
   // Decision 0561: a supplier's own XML, read through a supplier mapping.
   "supplier_xml",
+  // Decision 0565: a supplier's own CSV, read the same way.
+  "supplier_csv",
 ] as const;
 export type InvoiceFormat = (typeof INVOICE_FORMATS)[number];
 

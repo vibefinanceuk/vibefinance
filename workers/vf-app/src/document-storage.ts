@@ -63,6 +63,7 @@ export function contentTypeForDetection(detection: {
 }): string {
   if (detection.structure === "structured_pdfa") return "application/pdf";
   if (detection.structure === "structured_xml") return "application/xml";
+  if (detection.structure === "structured_csv") return "text/csv";
 
   const outcomeOf = (test: string) => detection.attempted.find((a) => a.test === test)?.outcome;
 
@@ -98,6 +99,7 @@ export function contentTypeForDetection(detection: {
 export function extForContentType(contentType: string): string {
   if (contentType.includes("pdf")) return "pdf";
   if (contentType.includes("xml")) return "xml";
+  if (contentType.includes("csv")) return "csv";
   if (contentType.includes("jpeg") || contentType.includes("jpg")) return "jpg";
   if (contentType.includes("png")) return "png";
   if (contentType.includes("webp")) return "webp";

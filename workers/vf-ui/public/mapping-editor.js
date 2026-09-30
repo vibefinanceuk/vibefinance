@@ -68,6 +68,12 @@ function absolute(line) {
 }
 const sampleOf = (path) => data.described?.elements.find((e) => e.path === path)?.sample ?? null;
 const lastSegment = (path) => path.split("/").pop();
+/** Decision 0565: a CSV mapping, whose file is read as `CSV/First` and `CSV/Row`. */
+const isCsv = () => data.mapping.root === "CSV";
+/** An element's name as the person knows it: a CSV column as written in the file. */
+const nameOf = (path) => (isCsv() ? data.columns?.find((c) => c.element === lastSegment(path))?.name : null) ?? lastSegment(path);
+/** A whole-invoice amount drawn from the lines adds them up (decision 0565). */
+const sumsLines = (line) => !targetOf(line.target)?.line && line.source !== null && inLines(line.source);
 
 async function save() {
   const result = await call("PUT", `/supplier-mappings/${encodeURIComponent(mappingId)}/draft`, { definition: def });
@@ -86,7 +92,9 @@ async function save() {
 
 async function connect(source, target) {
   const tgt = targetOf(target);
-  if (tgt.line !== inLines(source)) {
+  // Decision 0565: a whole-invoice amount may come from the lines, and is their sum.
+  const sums = !tgt.line && tgt.kind === "number" && inLines(source);
+  if (tgt.line !== inLines(source) && !sums) {
     note = { text: t(tgt.line ? "mapping.scope.line" : "mapping.scope.header"), ok: false };
     render();
     return;
@@ -141,16 +149,24 @@ function sourceColumn() {
         "data-src": e.path,
         title: e.path,
       },
-      [el("span", { class: "mep", text: lastSegment(e.path) }), el("span", { class: "mesv", text: e.sample })]
+      [el("span", { class: "mep", text: nameOf(e.path) }), el("span", { class: "mesv", text: e.sample })]
     );
     node.onclick = () => pickSource(e.path);
     return node;
   };
   return el("div", { class: "mecol" }, [
     el("h4", { text: t("mapping.receiving") }),
-    el("div", { class: "meh4s", text: t("mapping.receivingsub").replace("{root}", data.mapping.root) }),
-    ...[...byParent.entries()].flatMap(([parent, list]) => [el("div", { class: "megrp", text: lastSegment(parent) }), ...list.map(row)]),
-    ...(lines.length > 0 ? [el("div", { class: "megrp", text: `${lastSegment(def.linesPath)} · ${t("mapping.eachline")}` }), ...lines.map(row)] : []),
+    el("div", { class: "meh4s", text: isCsv() ? t("mapping.csv.receivingsub") : t("mapping.receivingsub").replace("{root}", data.mapping.root) }),
+    ...[...byParent.entries()].flatMap(([parent, list]) => [
+      el("div", { class: "megrp", text: isCsv() && parent === "CSV/First" ? t("mapping.csv.first") : lastSegment(parent) }),
+      ...list.map(row),
+    ]),
+    ...(lines.length > 0
+      ? [
+          el("div", { class: "megrp", text: isCsv() && def.linesPath === "CSV/Row" ? t("mapping.csv.rows") : `${lastSegment(def.linesPath)} · ${t("mapping.eachline")}` }),
+          ...lines.map(row),
+        ]
+      : []),
   ]);
 }
 
@@ -313,6 +329,7 @@ function detailPanel() {
       el("span", { class: "ref", text: from ?? t("mapping.fixed") }),
       ...(from ? [el("span", { class: "l", text: t("mapping.sample") }), el("span", { class: "ref", text: sampleOf(from) ?? "—" })] : []),
     ]),
+    ...(sumsLines(line) ? [el("p", { class: "sm mesum", text: t("mapping.sumlines") })] : []),
     el("h4", { class: "rmh4" }, [el("span", { class: "mefx static", text: "Fx" }), ` ${t("mapping.function")}`]),
     ...(line.fx.length > 0
       ? [...(line.say ? [el("div", { class: "mesaid", text: line.say })] : []), stepPills(line.fx)]
@@ -470,10 +487,55 @@ function settingsPanel() {
       name,
       el("span", { class: "l", text: t("mapping.senders") }),
       senders,
-      el("span", { class: "l", text: t("mapping.linesat") }),
-      groups,
+      ...(isCsv() ? csvOptions(retired) : [el("span", { class: "l", text: t("mapping.linesat") }), groups]),
     ]),
   ]);
+}
+
+/**
+ * **How a CSV is read — decision 0565.** The separator, whether the first
+ * row holds column names, and lines to skip at the top: guessed from the
+ * file when the mapping is drawn, changed here. A change saves the draft
+ * and reads the sample again, so the columns on the left follow it.
+ */
+function csvOptions(retired) {
+  const current = def.csv ?? { delimiter: ";", header: true, skip: 0 };
+  const change = async (next) => {
+    def.csv = { ...current, ...next };
+    note = null;
+    if (await save()) await load();
+    render();
+  };
+  const delimiter = el(
+    "select",
+    { class: "meinput", "aria-label": t("mapping.csv.delimiter") },
+    // The character itself is shown beside its name; stored words hold no ";" (0013).
+    [
+      [";", "semicolon", " ;"],
+      [",", "comma", " ,"],
+      ["\t", "tab", ""],
+      ["|", "bar", " |"],
+    ].map(([d, key, shown]) => el("option", { value: d, text: `${t(`mapping.csv.delim.${key}`)}${shown}` }))
+  );
+  delimiter.value = current.delimiter;
+  delimiter.onchange = () => change({ delimiter: delimiter.value });
+  const header = el("input", { type: "checkbox", "aria-label": t("mapping.csv.header") });
+  header.checked = current.header;
+  header.onchange = () => change({ header: header.checked });
+  const skip = el("input", { class: "meinput", type: "number", min: "0", max: "50", value: String(current.skip), "aria-label": t("mapping.csv.skip") });
+  skip.onchange = () => {
+    const n = Math.max(0, Math.min(50, Math.trunc(Number(skip.value) || 0)));
+    change({ skip: n });
+  };
+  for (const input of [delimiter, header, skip]) input.disabled = retired;
+  return [
+    el("span", { class: "l", text: t("mapping.csv.delimiter") }),
+    delimiter,
+    el("span", { class: "l", text: t("mapping.csv.header") }),
+    el("label", { class: "mecheck sm" }, [header, el("span", { text: t("mapping.csv.headeryes") })]),
+    el("span", { class: "l", text: t("mapping.csv.skip") }),
+    skip,
+  ];
 }
 
 /**
@@ -549,7 +611,7 @@ function render() {
   const grid = el("div", { class: "megrid" }, [sourceColumn(), el("div", {}), targetColumn()]);
   const main = el("div", { class: "panel" }, [
     el("div", { class: "cardhead" }, [
-      el("h3", { text: t("mapping.heading").replace("{root}", data.mapping.root) }),
+      el("h3", { text: isCsv() ? t("mapping.csv.heading") : t("mapping.heading").replace("{root}", data.mapping.root) }),
       el("div", { class: "statebuttons" }, [
         actionLink("backtest", {
           label: t("mapping.try"),

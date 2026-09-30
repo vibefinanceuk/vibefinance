@@ -124,7 +124,7 @@ function chain(route) {
  * many, and how many broke an EN 16931 rule. Counted from the message
  * parts the Route monitor already keeps.
  */
-export const FORMAT_ROWS = ["xrechnung", "peppol_bis_3", "en16931", "factur_x", "other", "supplier_xml", "picture"];
+export const FORMAT_ROWS = ["xrechnung", "peppol_bis_3", "en16931", "factur_x", "other", "supplier_xml", "supplier_csv", "picture"];
 
 /**
  * Which row an attachment counts in. Anything read as data from inside a
@@ -242,7 +242,7 @@ function mappingsPanel(route) {
                 el("tr", {}, [
                   el("td", {}, [
                     el("div", { class: "fname", text: m.name }),
-                    el("div", { class: "muted", text: `<${m.root}> · ${m.senders ? m.senders.join(", ") : t("routes.mappings.anyone")}` }),
+                    el("div", { class: "muted", text: `${m.root === "CSV" ? t("routes.format.supplier_csv") : `<${m.root}>`} · ${m.senders ? m.senders.join(", ") : t("routes.mappings.anyone")}` }),
                   ]),
                   el("td", {}, [
                     ...(m.liveVersion ? [el("span", {}, [`v${m.liveVersion} `, el("span", { class: "rmpill ok", text: t("routes.live") })])] : []),

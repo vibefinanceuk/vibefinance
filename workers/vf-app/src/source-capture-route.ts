@@ -1,8 +1,10 @@
 import type { RouteResult } from "./org-route.js";
 import { deriveOrgUnit } from "./derive-org.js";
 import { renderPeppolDocument } from "./peppol-render.js";
+import { renderCsvTable } from "./csv-render.js";
 import { matchSupplier } from "./match-supplier.js";
 import {
+  channelStructure,
   detectStructure,
   summariseAttempts,
   detailOfAttempts,
@@ -10,7 +12,7 @@ import {
 } from "./detect-structure.js";
 import { handleCaptureIntake, handleCaptureImage, handleCaptureUblXml, withFormat } from "./intake-capture-route.js";
 import type { ExtractionModel } from "./extraction.js";
-import { formatFacts, readInvoiceXml, rootElementOf, UblParseError } from "@vibefinance/shared";
+import { CSV_ROOT, decodeText, formatFacts, readInvoiceXml, rootElementOf, UblParseError } from "@vibefinance/shared";
 import { captureThroughMapping, SUPPLIER_ROOTS_NOT_MAPPED } from "./supplier-mapping-route.js";
 import {
   storeInvoiceDocument,
@@ -262,6 +264,24 @@ async function retainOriginal(
       }
     }
 
+    // Decision 0565: a CSV, rendered as a table for the viewer.
+    if (detection.structure === "structured_csv") {
+      try {
+        const { html } = renderCsvTable(bytes);
+        if (html) {
+          await storeInvoiceDocument(bucket, db, {
+            invoiceId,
+            documentType: "generated_rendering",
+            contentType: "text/html; charset=utf-8",
+            key: computeDocumentKey(customerId, invoiceId, "html", issueDate),
+            bytes: new TextEncoder().encode(html).buffer as ArrayBuffer,
+          });
+        }
+      } catch {
+        // As for XML: the original is kept, and read as it is.
+      }
+    }
+
     /**
      * **And the embedded XML, retained on its own — decision 0383**,
      * phase 3 of `docs/design/document-viewer.md`.
@@ -349,7 +369,9 @@ export async function handleCaptureFromSource(
     return captureWithoutFacts(db, source, attempted, detection.attempted, bytes, idOverride, bucket, customerId, stored);
   }
 
-  let channel = await channelFor(db, source.process_id, detection.structure);
+  // Decision 0565: a CSV is read on the structured-data channel.
+  const structure = channelStructure(detection.structure);
+  let channel = await channelFor(db, source.process_id, structure);
 
   /**
    * A channel for a structure this process has never received —
@@ -372,16 +394,16 @@ export async function handleCaptureFromSource(
    * deletion.
    */
   if (!channel) {
-    const created = `ch-${source.process_id}-${detection.structure}`;
+    const created = `ch-${source.process_id}-${structure}`;
     await db
       .prepare(
         `INSERT OR IGNORE INTO intake_channels (id, process_id, name, structure)
          VALUES (?, ?, ?, ?)`
       )
-      .bind(created, source.process_id, detection.structure, detection.structure)
+      .bind(created, source.process_id, structure, structure)
       .run();
 
-    channel = await channelFor(db, source.process_id, detection.structure);
+    channel = await channelFor(db, source.process_id, structure);
   }
 
   if (!channel) {
@@ -392,7 +414,7 @@ export async function handleCaptureFromSource(
     return {
       status: 422,
       body: {
-        error: `process ${source.process_id} has no ${detection.structure} intake channel`,
+        error: `process ${source.process_id} has no ${structure} intake channel`,
         detail: "detection recognised the document; no channel is configured to handle it",
         intake: { structure: detection.structure, attempted },
       },
@@ -425,6 +447,13 @@ export async function handleCaptureFromSource(
       root !== null && !SUPPLIER_ROOTS_NOT_MAPPED.has(root)
         ? await captureThroughMapping(db, source.id, channel.id, xml, root, sender, idOverride, enricher)
         : await handleCaptureUblXml(db, channel.id, xml, idOverride, enricher);
+  } else if (detection.structure === "structured_csv") {
+    /**
+     * **A supplier's own CSV — decision 0565.** Read through the route's
+     * supplier mapping for CSV files and this sender, or failed with its
+     * kind kept, for the monitor to offer mapping it.
+     */
+    result = await captureThroughMapping(db, source.id, channel.id, decodeText(bytes), CSV_ROOT, sender, idOverride, enricher);
   } else {
     result = await handleCaptureImage(db, channel.id, bytes, model, idOverride, enricher);
 

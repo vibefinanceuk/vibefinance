@@ -1,5 +1,6 @@
 import { looksLikePdf, extractEmbeddedInvoiceXml, PdfExtractionError } from "./pdf-attachment.js";
 import { sniffImageType } from "./extraction.js";
+import { looksLikeCsv } from "@vibefinance/shared";
 
 /**
  * Detecting what a document actually is — decision 0062.
@@ -29,7 +30,15 @@ import { sniffImageType } from "./extraction.js";
  * person (decision 0055 section 7). What it must not do is guess.
  */
 
-export const DETECTED_STRUCTURES = ["structured_xml", "structured_pdfa", "image"] as const;
+/**
+ * `structured_csv` — decision 0565: a supplier's own CSV, read through a
+ * supplier mapping. It has no intake channel of its own: it is read on
+ * the process's structured-data channel, `structured_xml`, as its
+ * mapping turns it into the same facts (`channelStructure`).
+ */
+export const DETECTED_STRUCTURES = ["structured_xml", "structured_pdfa", "image", "structured_csv"] as const;
+export type ChannelStructure = "structured_xml" | "structured_pdfa" | "image";
+export const channelStructure = (s: DetectedStructure): ChannelStructure => (s === "structured_csv" ? "structured_xml" : s);
 export type DetectedStructure = (typeof DETECTED_STRUCTURES)[number];
 
 export interface DetectionResult {
@@ -142,7 +151,16 @@ export async function detectStructure(bytes: Uint8Array): Promise<DetectionResul
     outcome: bytes.length === 0 ? "no bytes at all" : `unrecognised (starts ${opening})`,
   });
 
-  // 4. Nothing matched. Not an error — a document for a human.
+  // 4. A supplier's own CSV — decision 0565. Last, because the test is
+  //    the loosest: text that one separator splits into the same number
+  //    of columns on at least two rows. Recorded only when found, so an
+  //    undetected document's attempts read as they always have.
+  if (looksLikeCsv(bytes)) {
+    attempted.push({ test: "csv_rows", outcome: "found" });
+    return { structure: "structured_csv", attempted };
+  }
+
+  // 5. Nothing matched. Not an error — a document for a human.
   return { structure: null, attempted };
 }
 

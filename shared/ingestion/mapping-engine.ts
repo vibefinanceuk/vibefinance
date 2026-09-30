@@ -3,6 +3,7 @@ import type { InvoiceFacts } from "../interpreter/types.js";
 import { INVOICE_LINE_FIELDS } from "../interpreter/vocabulary.js";
 import { checkEn16931, type En16931Result } from "./en16931-rules.js";
 import { applyChain, validateChain, type FnValue, type FunctionStep } from "./mapping-functions.js";
+import { CSV_ROOT, validateCsvOptions, type CsvOptions } from "./supplier-csv.js";
 
 /**
  * A supplier's own XML, read through a mapping — decision 0561.
@@ -47,6 +48,12 @@ export interface MappingDefinition {
   /** The repeating group that holds the invoice lines, or null. */
   linesPath: string | null;
   lines: MappingLine[];
+  /**
+   * How a CSV file is read — decision 0565. Present exactly when the root
+   * is `CSV`; the file is then read as `CSV/First` and `CSV/Row`
+   * (`supplier-csv.ts`).
+   */
+  csv?: CsvOptions;
 }
 
 export interface DescribedElement {
@@ -206,6 +213,12 @@ export function validateMapping(def: unknown): string | null {
   if (typeof d.root !== "string" || d.root.trim() === "") return "a mapping names the document's root element";
   if (d.linesPath !== null && typeof d.linesPath !== "string") return "linesPath is a path or null";
   if (!Array.isArray(d.lines)) return "a mapping has a list of lines";
+  if (d.root === CSV_ROOT) {
+    const csvError = validateCsvOptions(d.csv);
+    if (csvError) return csvError;
+  } else if (d.csv !== undefined) {
+    return "only a CSV mapping has CSV options";
+  }
   const seen = new Set<string>();
   for (const line of d.lines) {
     if (!line || typeof line.target !== "string" || !(line.target in MAPPING_TARGETS)) {
@@ -273,6 +286,33 @@ function finish(
   return { value };
 }
 
+const decimalsOf = (n: number) => (String(n).split(".")[1] ?? "").length;
+
+/** Every row's value at a path, through the line's functions, added up; each value it could not read is a problem on its row. */
+function sumOverLines(node: unknown, path: string, line: MappingLine): { value?: number; problems: MappingProblem[] } {
+  const raws = nodesAt(node, split(path)).map((n) => textOf(n));
+  const problems: MappingProblem[] = [];
+  let total = 0;
+  let places = 0;
+  let any = false;
+  raws.forEach((raw, idx) => {
+    if (raw === null || raw === "") return;
+    const { value, problem } = finish(line, raw, idx + 1);
+    if (problem) problems.push(problem);
+    else if (typeof value === "number") {
+      total += value;
+      places = Math.max(places, decimalsOf(value));
+      any = true;
+    }
+  });
+  if (!any) {
+    const { value, problem } = finish(line, null, undefined);
+    return { value: typeof value === "number" ? value : undefined, problems: problem ? [...problems, problem] : problems };
+  }
+  // Rounded to the most decimals any row had, so 91.20 + 4.75 is 95.95.
+  return { value: Number(total.toFixed(Math.min(places, 6))), problems };
+}
+
 export function applyMapping(xml: string, def: MappingDefinition): AppliedMapping {
   const { root, node } = parse(xml);
   if (root !== def.root) {
@@ -284,6 +324,19 @@ export function applyMapping(xml: string, def: MappingDefinition): AppliedMappin
   const relative = (path: string) => (path.startsWith(rootPrefix) ? path.slice(rootPrefix.length) : path === root ? "" : path);
 
   for (const line of def.lines.filter((l) => !isLineTarget(l.target))) {
+    /**
+     * **A whole-invoice amount drawn from the lines is their sum —
+     * decision 0565.** A supplier's CSV carries amounts on every row and
+     * often no totals: the invoice's net total is the Netto column added
+     * up. Each row's value goes through the line's functions first (a
+     * decimal comma, say), then the rows are added.
+     */
+    if (line.source !== null && def.linesPath && line.source.startsWith(`${def.linesPath}/`) && MAPPING_TARGETS[line.target] === "number") {
+      const summed = sumOverLines(node, relative(line.source), line);
+      problems.push(...summed.problems);
+      if (summed.problems.length === 0 && summed.value !== undefined) facts[line.target] = summed.value;
+      continue;
+    }
     const raw = line.source === null ? null : valueAt(node, relative(line.source));
     const { value, problem } = finish(line, raw, undefined);
     if (problem) problems.push(problem);

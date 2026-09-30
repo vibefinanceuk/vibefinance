@@ -44,7 +44,36 @@ const CAPTURABLE = [
   "image/jpeg",
   "image/png",
   "image/tiff",
+  // Decision 0565: a supplier's own CSV.
+  "text/csv",
+  "application/csv",
+  "text/comma-separated-values",
 ];
+
+/**
+ * **What a CSV is labelled as, by the mail client that attached it —
+ * decision 0565.** Outlook labels a `.csv` as an Excel file, others as
+ * plain text or bytes. Taken as a CSV only with a `.csv` name; detection
+ * then decides from the bytes.
+ */
+const CSV_BY_NAME = ["application/vnd.ms-excel", "text/plain", "application/octet-stream"];
+
+/** Quoted-printable, as a mail client may send a text attachment: `=XX` bytes and soft line breaks. */
+function decodeQuotedPrintable(body: string): Uint8Array {
+  const joined = body.replace(/=\r?\n/g, "");
+  const out: number[] = [];
+  const encoder = new TextEncoder();
+  for (let i = 0; i < joined.length; i++) {
+    const c = joined[i];
+    if (c === "=" && /^[0-9A-Fa-f]{2}$/.test(joined.slice(i + 1, i + 3))) {
+      out.push(parseInt(joined.slice(i + 1, i + 3), 16));
+      i += 2;
+    } else {
+      out.push(...encoder.encode(c));
+    }
+  }
+  return new Uint8Array(out);
+}
 
 export interface EmailMessage {
   readonly from: string;
@@ -100,15 +129,27 @@ export function attachmentsOf(raw: string): { filename: string; contentType: str
 
     const headers = part.slice(0, headerEnd).toLowerCase();
     const contentType = part.slice(0, headerEnd).match(/content-type:\s*([^;\r\n]+)/i)?.[1]?.trim();
-    if (!contentType || !CAPTURABLE.includes(contentType.toLowerCase())) continue;
-
-    // Base64 is what a mail system uses for anything that is not text,
-    // and the only encoding worth handling: a PDF sent as anything else
-    // did not survive the journey.
-    if (!headers.includes("base64")) continue;
-
     const filename =
       part.slice(0, headerEnd).match(/filename="?([^"\r\n;]+)"?/i)?.[1]?.trim() ?? "attachment";
+    const csvByName = !!contentType && CSV_BY_NAME.includes(contentType.toLowerCase()) && /\.csv$/i.test(filename);
+    if (!contentType || (!CAPTURABLE.includes(contentType.toLowerCase()) && !csvByName)) continue;
+    const isCsv = csvByName || /csv|comma-separated/i.test(contentType);
+
+    // Base64 is what a mail system uses for anything that is not text,
+    // and the only encoding worth handling for one: a PDF sent as anything
+    // else did not survive the journey. **A CSV is text — decision
+    // 0565** — and may arrive quoted-printable, or as it is.
+    if (!headers.includes("base64")) {
+      if (!isCsv) continue;
+      const raw = part.slice(headerEnd + 4).replace(/\r?\n$/, "");
+      const bytes = /content-transfer-encoding:\s*quoted-printable/i.test(headers)
+        ? decodeQuotedPrintable(raw)
+        : new TextEncoder().encode(raw);
+      if (bytes.length > 0 && bytes.length <= MAX_ATTACHMENT_BYTES) {
+        found.push({ filename, contentType: "text/csv", bytes });
+      }
+      continue;
+    }
 
     /**
      * **Everything that is not base64 goes** — decision 0168.

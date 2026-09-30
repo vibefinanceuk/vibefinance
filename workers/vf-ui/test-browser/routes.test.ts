@@ -3,6 +3,7 @@ import stringsSql from "../../vf-licence/migrations/0208_routes_and_process_rout
 import destinationStringsSql from "../../vf-licence/migrations/0209_erp_destination_strings.sql?raw";
 import formatStringsSql from "../../vf-licence/migrations/0211_formats_and_en16931_strings.sql?raw";
 import mappingStringsSql from "../../vf-licence/migrations/0212_supplier_mapping_strings.sql?raw";
+import csvStringsSql from "../../vf-licence/migrations/0216_supplier_csv_strings.sql?raw";
 
 /**
  * **Routes and Process routes — decision 0557.** The standard routes with
@@ -36,7 +37,7 @@ const strings: Record<string, string> = {
   "mechanism.file_import": "File import",
   "mechanism.edi": "EDI",
 };
-for (const sql of [stringsSql, destinationStringsSql, formatStringsSql, mappingStringsSql]) {
+for (const sql of [stringsSql, destinationStringsSql, formatStringsSql, mappingStringsSql, csvStringsSql]) {
   for (const m of sql.matchAll(/\('([^']+)', 'en', '((?:[^']|'')*)'\)/g)) strings[m[1]] = m[2].replace(/''/g, "'");
 }
 // 0209 updates the ERP note rather than inserting it.
@@ -204,13 +205,15 @@ describe("Receiving formats — decision 0560", () => {
       "ZUGFeRD / Factur-XA PDF with the XML inside",
       "Another UBL or CII invoiceDeclaring another specification",
       "A supplier's own XMLNeither UBL nor CII",
+      // Decision 0565.
+      "A supplier's CSVColumns, one row per line",
       "PDF or imageNo data inside",
     ]);
     // Anything read from inside a PDF counts as Factur-X / ZUGFeRD, whatever profile it declares.
     const counts = [...document.querySelectorAll(".rtformats tbody td.n")].map((td) =>
       [...td.children].map((c) => c.textContent)
     );
-    expect(counts).toEqual([["41", "2 broke a rule"], ["3"], ["0"], ["86"], ["0"], ["0"], ["1204"]]);
+    expect(counts).toEqual([["41", "2 broke a rule"], ["3"], ["0"], ["86"], ["0"], ["0"], ["0"], ["1204"]]);
     expect(rows[0][2]).toBe("EN 16931, and the buyer reference XRechnung requires (BR-DE-15)");
     expect(text(".rtformats").includes("undefined")).toBe(false);
     expect(document.body.textContent).toContain("5 attachments in the last 30 days could not be read at all");

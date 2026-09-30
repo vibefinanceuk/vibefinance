@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { detectStructure, looksLikeXml, summariseAttempts } from "../src/detect-structure.js";
+import { channelStructure, detectStructure, looksLikeXml, summariseAttempts } from "../src/detect-structure.js";
 import {
   FACTURX_PLAIN_B64,
   FACTURX_COMPRESSED_B64,
@@ -142,5 +142,28 @@ describe("summariseAttempts", () => {
       { test: "xml_declaration", outcome: "not XML" },
     ]);
     expect(summary).toBe("pdf_header,xml_declaration");
+  });
+});
+
+/**
+ * **A supplier's CSV — decision 0565.** Tried last, as the loosest test,
+ * and read on the structured-data channel.
+ */
+describe("detectStructure — a CSV", () => {
+  const enc = (s: string) => new TextEncoder().encode(s);
+
+  it("finds a CSV after PDF, XML and images, and records the test only when it matched", async () => {
+    const found = await detectStructure(enc("Rechnungsnr;Datum;Netto\n88250;29.09.2026;480,00\n88250;29.09.2026;25,00"));
+    expect(found.structure).toBe("structured_csv");
+    expect(found.attempted.at(-1)).toEqual({ test: "csv_rows", outcome: "found" });
+    const none = await detectStructure(enc("just a line of text"));
+    expect(none.structure).toBeNull();
+    expect(none.attempted.some((a) => a.test === "csv_rows")).toBe(false);
+    expect((await detectStructure(enc("<Rechnung><a>1;2</a></Rechnung>\n<x/>"))).structure).toBe("structured_xml");
+  });
+
+  it("is read on the structured-data channel", () => {
+    expect(channelStructure("structured_csv")).toBe("structured_xml");
+    expect(channelStructure("image")).toBe("image");
   });
 });

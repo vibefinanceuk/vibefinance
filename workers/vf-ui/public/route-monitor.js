@@ -254,13 +254,18 @@ function chain(message) {
  * file that failed is a supplier's own XML, "check it is legible" is the
  * wrong advice: it needs a mapping, or its mapping could not read it.
  */
+/** A supplier's own file, read through a supplier mapping: XML (0561) or CSV (0565). */
+const SUPPLIER_FORMATS = ["supplier_xml", "supplier_csv"];
+
 function supplierXmlCode(parts) {
   const failed = (parts ?? []).filter((p) => p.role === "attachment" && p.outcome === "failed");
-  if (failed.length === 0 || !failed.every((p) => p.format === "supplier_xml")) return null;
-  if (failed.some((p) => !p.mapping)) return "no_mapping";
+  if (failed.length === 0 || !failed.every((p) => SUPPLIER_FORMATS.includes(p.format))) return null;
+  // Decision 0565: a CSV has its own words where they differ from XML's.
+  const csv = failed.every((p) => p.format === "supplier_csv") ? "_csv" : "";
+  if (failed.some((p) => !p.mapping)) return `no_mapping${csv}`;
   // Decision 0563: a mapping came close, and the part says why it did not read.
   const miss = failed.find((p) => p.mapping?.miss)?.mapping.miss;
-  return miss ?? "mapping_failed";
+  return miss ?? `mapping_failed${csv}`;
 }
 
 function explanation(message, parts) {
@@ -309,7 +314,7 @@ export function formatChecks(parts) {
   return [
     el("h4", { class: "rmh4", text: t("routemonitor.checks") }),
     ...read.map((p) => {
-      if (p.format === "supplier_xml") return supplierXmlCheck(p);
+      if (SUPPLIER_FORMATS.includes(p.format)) return supplierXmlCheck(p);
       const name = `${words("routes.format", p.format)}${p.syntax ? ` (${t(`routes.syntax.${p.syntax}`)})` : ""}`;
       const failed = p.en16931Failed;
       const verdict =
@@ -373,10 +378,13 @@ function supplierXmlCheck(p) {
         .replace("{sender}", detail?.message?.counterparty ?? "—")
     : p.mapping
       ? t("routemonitor.readwith").replace("{name}", mappingName).replace("{n}", String(p.mapping.version))
-      : t("routemonitor.nomappingwhy");
+      : t(p.format === "supplier_csv" ? "routemonitor.nomappingwhy_csv" : "routemonitor.nomappingwhy");
   return el("div", { class: "rmfmt" }, [
     el("div", { class: "rmfmthead" }, [
-      el("span", { class: "rmfmtname", text: `${p.filename}: ${t("routes.format.supplier_xml")} <${p.xmlRoot ?? "?"}>` }),
+      el("span", {
+        class: "rmfmtname",
+        text: p.format === "supplier_csv" ? `${p.filename}: ${t("routes.format.supplier_csv")}` : `${p.filename}: ${t("routes.format.supplier_xml")} <${p.xmlRoot ?? "?"}>`,
+      }),
       verdict,
     ]),
     el("div", { class: "muted sm", text: why }),

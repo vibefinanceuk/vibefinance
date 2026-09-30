@@ -4843,6 +4843,9 @@
 .meex td.bad, .rtformats .bad { color: var(--text-danger); }
 .merefused { border-radius: var(--radius); padding: 8px 12px; background: var(--severity-danger-bg); color: var(--severity-danger-text); font-size: var(--text-sm); margin-top: 8px; }
 .mebtns { margin-top: 8px; flex-wrap: wrap; }
+/* Decision 0565: a CSV mapping's options, and an amount that adds up the lines. */
+.mecheck { display: flex; align-items: center; gap: 6px; }
+.mesum { margin: 4px 0 8px; color: var(--text-muted); }
 /* Decisions 0563 and 0564: confirming a mapping's retirement, in a pop-out. */
 .popout.meretirepop { width: min(480px, 100%); }
 .rmfmtact { margin-top: 6px; }

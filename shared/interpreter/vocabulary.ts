@@ -540,7 +540,7 @@ export const DERIVED_FIELD_DESCRIPTIONS: Record<DerivedField, string> = {
   "provenance.keyed":
     "a comma-separated list of the fields a person typed by reading the document, rather than the platform extracting them. Keyed facts are high-trust — somebody read the document — but not reproducible the way a parsed field is, so a rule may reasonably treat them differently. Cumulative: a second person keying a different field does not erase the first.",
   "intake.structure":
-    "the document structure intake detected — 'structured_xml', 'structured_pdfa', 'image', or empty when nothing was recognised. An empty value means the document arrived with no facts and needs a person: a rule testing for it is how an undetectable document reaches somebody.",
+    "the document structure intake detected — 'structured_xml', 'structured_pdfa', 'image', 'structured_csv' (a supplier's own CSV, decision 0565), or empty when nothing was recognised. An empty value means the document arrived with no facts and needs a person: a rule testing for it is how an undetectable document reaches somebody.",
   "intake.attempted":
     "a comma-separated list of the detection tests intake tried, in order. Distinguishes a supplier who has not adopted e-invoicing from one whose implementation is broken — 'a PDF with no embedded invoice' and 'a PDF declaring one that could not be read' are opposite conversations. A string so the existing contains operator works.",
   "intake.format":
