@@ -11,6 +11,8 @@ import {
   detectCsvOptions,
   distinctInColumn,
   mappableXml,
+  splitCsvByColumn,
+  type CsvGroup,
   FIELD_DESCRIPTIONS,
   isLineTarget,
   MAPPING_TARGETS,
@@ -206,6 +208,37 @@ export async function nearMiss(
   const live = rows.find((r) => r.live_version !== null && !senderMatches(sendersOf(r), sender));
   if (live) return { id: live.id, name: live.name, miss: "not_for_sender" };
   return null;
+}
+
+/**
+ * **A supplier's CSV holding several invoices — decision 0577.** Until
+ * now it was refused ("the file holds 2 invoices … One invoice per file
+ * is read", 0565). Batch upload (0576) showed the answer: the rows are
+ * grouped by the column the mapping reads the invoice number (BT-1)
+ * from, and each group is read as a file of its own.
+ *
+ * Returns the groups where the file is a CSV that the sender's mapping
+ * reads and it holds more than one invoice number; otherwise null, and
+ * the file is read as one, as before.
+ */
+export async function csvInvoiceGroups(
+  db: D1Database,
+  sourceId: string,
+  text: string,
+  sender: string | undefined
+): Promise<CsvGroup[] | null> {
+  const found = await mappingFor(db, sourceId, CSV_ROOT, sender, text);
+  if (!found) return null;
+  const def = JSON.parse(found.version.definition_json) as MappingDefinition;
+  const numberFrom = def.lines.find((l) => l.target === "BT-1")?.source ?? null;
+  if (!numberFrom) return null;
+  try {
+    const groups = splitCsvByColumn(text, def.csv ?? detectCsvOptions(text), numberFrom);
+    return groups.length > 1 ? groups : null;
+  } catch (err) {
+    if (err instanceof CsvError) return null;
+    throw err;
+  }
 }
 
 /** A problem, in words, for the message part's reason. */

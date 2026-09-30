@@ -3,6 +3,7 @@ import stringsSql from "../../vf-licence/migrations/0207_route_monitor_strings.s
 import destinationStringsSql from "../../vf-licence/migrations/0209_erp_destination_strings.sql?raw";
 import fixStringsSql from "../../vf-licence/migrations/0210_route_fix_and_tell_strings.sql?raw";
 import formatStringsSql from "../../vf-licence/migrations/0211_formats_and_en16931_strings.sql?raw";
+import splitStringsSql from "../../vf-licence/migrations/0225_csv_several_invoices_strings.sql?raw";
 
 /**
  * The Route monitor — decision 0556. Four counts, the messages with
@@ -15,7 +16,7 @@ import formatStringsSql from "../../vf-licence/migrations/0211_formats_and_en169
  */
 
 const strings: Record<string, string> = { "action.close": "Close", "action.save": "Save" };
-for (const sql of [stringsSql, destinationStringsSql, fixStringsSql, formatStringsSql]) {
+for (const sql of [stringsSql, destinationStringsSql, fixStringsSql, formatStringsSql, splitStringsSql]) {
   for (const m of sql.matchAll(/\('([^']+)', 'en', '((?:[^']|'')*)'\)/g)) strings[m[1]] = m[2].replace(/''/g, "'");
 }
 
@@ -542,5 +543,32 @@ describe("the Route monitor opened on one message — decision 0573", () => {
     const { open: openScreen } = await import("/route-monitor.js");
     await openScreen({ message: "MSG-7F3A-2291-0C4E" });
     expect(calls.some((c) => c.path === "/api/route-messages/MSG-7F3A-2291-0C4E")).toBe(true);
+  });
+
+  it("names a CSV split into invoices in the history — decision 0577", async () => {
+    const calls: Call[] = [];
+    const detail = {
+      ...DETAIL,
+      events: [
+        { seq: 1, at: TODAY, event: "received", partSeq: null, detail: null },
+        { seq: 2, at: TODAY, event: "csv_split", partSeq: 1, detail: "3 invoices (88250, 88252, 88253)" },
+        { seq: 3, at: TODAY, event: "delivered", partSeq: null, detail: null },
+      ],
+    };
+    stub(calls);
+    const real = globalThis.fetch as unknown as (u: string, i?: RequestInit) => Promise<Response>;
+    vi.stubGlobal("fetch", vi.fn(async (u: string, i?: RequestInit) =>
+      String(u).split("?")[0] === "/api/route-messages/MSG-7F3A-2291-0C4E" ? ({ ok: true, json: async () => detail } as Response) : real(u, i)
+    ));
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { open: openScreen } = await import("/route-monitor.js");
+    await openScreen({ message: "MSG-7F3A-2291-0C4E" });
+    await settle();
+    const history = [...document.querySelectorAll(".rmhistory li")].map((li) =>
+      (li.textContent ?? "").slice((li.querySelector(".rmtime")?.textContent ?? "").length).trim()
+    );
+    expect(history[1]).toContain("Split into invoices");
+    expect(history[1]).toContain("3 invoices (88250, 88252, 88253)");
   });
 });

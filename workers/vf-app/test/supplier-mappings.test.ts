@@ -575,16 +575,46 @@ describe("a supplier's own CSV", () => {
     expect((await facts(next.id))?.["BT-1"]).toBe("88251");
   });
 
-  it("refuses a file that holds several invoices, naming them", async () => {
+  it("reads a file that holds several invoices as one invoice each, all pointing at the one file — decision 0577", async () => {
     const { id } = await publishedCsvMapping();
-    const two = `${LAGER_CSV}\r\n88252;30.09.2026;30.10.2026;EUR;Lager Nord GmbH;DE298765432;Acme UK Ltd;GB;1;Palettenregal;1;Stk;120,00;120,00;22,80;142,80`;
-    const m = await receiveCsv("rechnung@lagernord.de", two);
-    expect(m.status).toBe("failed");
-    expect(await part(m.id)).toMatchObject({
-      mapping_id: id,
-      mapping_version: 1,
-      reason: "lagernord.de CSV v1: the file holds 2 invoices (88250, 88252). One invoice per file is read",
-    });
+    const extra = (n: string, pos = "1") =>
+      `\r\n${n};30.09.2026;30.10.2026;EUR;Lager Nord GmbH;DE298765432;Acme UK Ltd;GB;${pos};Palettenregal;1;Stk;120,00;120,00;22,80;142,80`;
+    // 88252's second row comes after 88253's, as a supplier's export may put it.
+    const three = `${LAGER_CSV}${extra("88252")}${extra("88253")}${extra("88252", "2")}`;
+    const m = await receiveCsv("rechnung@lagernord.de", three);
+    expect(m.status).toBe("delivered");
+    const made = await env.DB.prepare(
+      `SELECT h.invoice_number, h.total_with_vat, i.part_seq FROM route_message_items i JOIN invoice_headers h ON h.id = i.item_id
+       WHERE i.message_id = ? ORDER BY h.invoice_number`
+    )
+      .bind(m.id)
+      .all<{ invoice_number: string; total_with_vat: number; part_seq: number }>();
+    expect(made.results).toEqual([
+      { invoice_number: "88250", total_with_vat: 600.95, part_seq: 1 },
+      { invoice_number: "88252", total_with_vat: 285.6, part_seq: 1 },
+      { invoice_number: "88253", total_with_vat: 142.8, part_seq: 1 },
+    ]);
+    expect(await part(m.id)).toMatchObject({ outcome: "captured", mapping_id: id, reason: null });
+    const split = await env.DB.prepare("SELECT detail FROM route_message_events WHERE message_id = ? AND event = 'csv_split'").bind(m.id).first<{ detail: string }>();
+    expect(split?.detail).toBe("3 invoices (88250, 88252, 88253)");
+    // Each invoice's original is the one file.
+    const originals = await env.DB.prepare(
+      `SELECT DISTINCT d.route_message_id, d.part_seq FROM invoice_documents d JOIN route_message_items i ON i.item_id = d.invoice_id
+       WHERE i.message_id = ? AND d.document_type = 'original'`
+    )
+      .bind(m.id)
+      .all();
+    expect(originals.results).toEqual([{ route_message_id: m.id, part_seq: 1 }]);
+  });
+
+  it("makes the invoices it can, and says which it could not and why — decision 0577", async () => {
+    await publishedCsvMapping();
+    const bad = `${LAGER_CSV}\r\n88252;32.09.2026;30.10.2026;EUR;Lager Nord GmbH;DE298765432;Acme UK Ltd;GB;1;Palettenregal;1;Stk;120,00;120,00;22,80;142,80`;
+    const m = await receiveCsv("rechnung@lagernord.de", bad);
+    expect(m.status).toBe("partial");
+    const p = await part(m.id);
+    expect(p).toMatchObject({ outcome: "captured" });
+    expect(String(p?.reason)).toMatch(/^1 of 2 invoices made\. 88252: /);
   });
 
   it("names the near miss for a CSV from another sender", async () => {

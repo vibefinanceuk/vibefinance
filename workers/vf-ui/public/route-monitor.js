@@ -538,7 +538,8 @@ function detailPanel() {
           // Who, for what a person did: an export made or undone (0558).
           ...(e.actorName ? [el("span", { class: "muted", text: ` · ${t("routemonitor.by").replace("{who}", e.actorName)}` })] : []),
           // The reason a person gave, for what they closed (0558, 0559).
-          ...((e.event === "dismissed" || e.event === "undone") && e.detail ? [el("div", { class: "muted sm rmreason", text: e.detail })] : []),
+          // Decision 0577: a CSV split says into which invoices.
+          ...((e.event === "dismissed" || e.event === "undone" || e.event === "csv_split") && e.detail ? [el("div", { class: "muted sm rmreason", text: e.detail })] : []),
           ...(e.partSeq ? [el("span", { class: "muted", text: ` · ${t("routemonitor.partn").replace("{n}", String(e.partSeq))}` })] : []),
         ])
       )

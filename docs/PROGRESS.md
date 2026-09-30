@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 30 September 2026 (decision 0576). A living document: what
+Last updated 30 September 2026 (decision 0577). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,11 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### A supplier's CSV of several invoices, by email (0577)
+- A supplier's CSV whose rows carry several invoice numbers is no longer
+  refused: each invoice's rows become an invoice, all pointing at the one
+  file, and the Route monitor names the split. Any not made say why.
 
 ### Create → Batch upload (0576)
 - Many invoices from one file: the VibeFinance CSV template (one row per

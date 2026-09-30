@@ -1,4 +1,7 @@
 import { handleCaptureFromSource } from "./source-capture-route.js";
+import { detectStructure } from "./detect-structure.js";
+import { decodeText } from "@vibefinance/shared";
+import { csvInvoiceGroups } from "./supplier-mapping-route.js";
 import type { ExtractionModel } from "./extraction.js";
 import {
   addRouteEvent,
@@ -290,20 +293,75 @@ export async function handleInboundEmail(
  */
 export async function captureAttachmentPart(
   db: D1Database,
-  args: {
-    messageId: string | null;
-    sourceId: string;
-    seq: number;
-    filename: string;
-    bytes: Uint8Array;
-    stored?: StoredPart;
-    model: ExtractionModel;
-    bucket?: R2Bucket;
-    customerId?: string;
-    actor?: string;
-    /** Who sent it, which a supplier mapping may name (0561). */
-    sender?: string;
+  args: CapturePartArgs
+): Promise<{ captured: boolean; invoiceId?: string; invoiceIds?: string[]; why?: string }> {
+  /**
+   * **A supplier's CSV holding several invoices — decision 0577.** Each
+   * invoice's rows are read as a file of their own, through the same
+   * path as any attachment, and the invoices all point at this one part.
+   * The part is captured when any of them was made; each one not made is
+   * a failure in its history, with why.
+   */
+  {
+    const detected = await detectStructure(args.bytes);
+    const groups = detected.structure === "structured_csv" ? await csvInvoiceGroups(db, args.sourceId, decodeText(args.bytes), args.sender) : null;
+    if (groups) {
+      const { messageId, seq, stored } = args;
+      if (messageId) {
+        await addRouteEvent(db, messageId, "csv_split", {
+          partSeq: seq,
+          detail: `${groups.length} invoices (${groups.map((g) => g.value || "no number").join(", ")})`,
+        });
+      }
+      const made: string[] = [];
+      const whys: string[] = [];
+      for (const group of groups) {
+        if (group.value === "") {
+          const why = `rows ${group.rows.join(", ")}: no invoice number`;
+          whys.push(why);
+          if (messageId) await addRouteEvent(db, messageId, "capture_failed", { partSeq: seq, detail: why });
+          continue;
+        }
+        const one = await captureOnePart(db, { ...args, bytes: new TextEncoder().encode(group.text) });
+        if (one.captured && one.invoiceId) made.push(one.invoiceId);
+        else whys.push(`${group.value}: ${one.why ?? "not read"}`);
+      }
+      if (messageId && stored) {
+        await setPartOutcome(
+          db,
+          messageId,
+          seq,
+          made.length > 0 ? "captured" : "failed",
+          whys.length > 0 ? `${made.length} of ${groups.length} invoices made. ${whys.join(" · ")}` : null
+        );
+      }
+      return made.length > 0
+        ? { captured: true, invoiceId: made[0], invoiceIds: made, ...(whys.length > 0 ? { why: whys.join(" · ") } : {}) }
+        : { captured: false, why: whys.join(" · ") };
+    }
   }
+  return captureOnePart(db, args);
+}
+
+interface CapturePartArgs {
+  messageId: string | null;
+  sourceId: string;
+  seq: number;
+  filename: string;
+  bytes: Uint8Array;
+  stored?: StoredPart;
+  model: ExtractionModel;
+  bucket?: R2Bucket;
+  customerId?: string;
+  actor?: string;
+  /** Who sent it, which a supplier mapping may name (0561). */
+  sender?: string;
+}
+
+/** One file, one invoice: the path every attachment took before 0577. */
+async function captureOnePart(
+  db: D1Database,
+  args: CapturePartArgs
 ): Promise<{ captured: boolean; invoiceId?: string; why?: string }> {
   const { messageId, seq, stored } = args;
   const result = await handleCaptureFromSource(
@@ -514,6 +572,7 @@ async function receiveInboundEmail(
    * would lose two silently.
    */
   const failures: string[] = [];
+  let incomplete = false;
   for (const [index, attachment] of attachments.entries()) {
     const seq = index + 1;
 
@@ -552,6 +611,8 @@ async function receiveInboundEmail(
       sender: message.from,
     });
     if (!outcome.captured) failures.push(outcome.why ? `${attachment.filename}: ${outcome.why}` : attachment.filename);
+    // Decision 0577: a CSV of several invoices where some were not made is only partly delivered.
+    else if (outcome.why) incomplete = true;
   }
 
   // **Rejected only if nothing got through.** A message with one good
@@ -584,7 +645,7 @@ async function receiveInboundEmail(
   }
 
   await record(db, message, "captured", null, source.id, attachments.length, captured);
-  if (messageId) await finishRouteMessage(db, messageId, { status: failures.length > 0 ? "partial" : "delivered" });
+  if (messageId) await finishRouteMessage(db, messageId, { status: failures.length > 0 || incomplete ? "partial" : "delivered" });
   await markReceiving(db, source.id);
   return messageId;
 }
