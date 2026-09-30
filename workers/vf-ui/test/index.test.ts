@@ -562,6 +562,8 @@ describe("the proxy carries every path a screen calls (decision 0131)", () => {
     ["POST", "/api/supplier-mappings/MAP-1/compile"],
     ["POST", "/api/supplier-mappings/MAP-1/try"],
     ["POST", "/api/supplier-mappings/MAP-1/publish"],
+    // Decision 0564: retire was left out of 0563's allowlist, and 404'd live.
+    ["POST", "/api/supplier-mappings/MAP-1/retire"],
     ["POST", "/api/erp-exports/x-1/undo"],
     ["GET", "/api/coding-lists/project"],
     ["POST", "/api/coding-lists/project"],

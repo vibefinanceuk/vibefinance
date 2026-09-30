@@ -29,8 +29,6 @@ let compiled = null;
 let tried = null;
 let publishResult = null;
 let note = null;
-/** Decision 0563: asking before retiring, on the Mapping card. */
-let confirmRetire = false;
 
 async function call(method, path, body) {
   try {
@@ -443,59 +441,30 @@ function settingsPanel() {
     render();
   };
   const retired = data.mapping.status === "retired";
-  const live = data.versions.some((v) => v.status === "live");
-  /**
-   * **Retiring — decision 0563.** Asked on the card itself, never a
-   * browser dialog, saying what retiring does to invoices: a live mapping
-   * stops reading them, a draft never did.
-   */
-  const retireRow = retired
-    ? []
-    : confirmRetire
-      ? [
-          el("div", { class: "meretire" }, [
-            el("p", { class: "sm", text: t(live ? "mapping.retireconfirm.live" : "mapping.retireconfirm.draft").replace("{name}", data.mapping.name) }),
-            el("div", { class: "statebuttons mebtns" }, [
-              actionLink("discard", {
-                primary: true,
-                label: t("mapping.retireyes"),
-                onclick: async () => {
-                  const r = await call("POST", `/supplier-mappings/${encodeURIComponent(mappingId)}/retire`);
-                  confirmRetire = false;
-                  if (!r.ok) {
-                    note = { text: r.body?.error ?? t("mapping.retirefailed"), ok: false };
-                    render();
-                    return;
-                  }
-                  const name = data.mapping.name;
-                  mappingId = null;
-                  const { open: openRoutes } = await import("/routes.js");
-                  await openRoutes({ notice: t("mapping.retireddone").replace("{name}", name) });
-                },
-              }),
-              actionLink("back", {
-                label: t("mapping.retireno"),
-                onclick: () => {
-                  confirmRetire = false;
-                  render();
-                },
-              }),
+  const saveDraft = async () => {
+    const list = senders.value.split(",").map((s) => s.trim()).filter(Boolean);
+    const r = await call("PUT", `/supplier-mappings/${encodeURIComponent(mappingId)}/draft`, {
+      definition: def,
+      name: name.value,
+      senders: list.length > 0 ? list : null,
+    });
+    note = r.ok ? { text: t("mapping.saved"), ok: true } : { text: r.body?.error ?? t("mapping.savefailed"), ok: false };
+    await load();
+    render();
+  };
+  // Buttons top right of the card, like every other card (decision 0564).
+  return el("div", { class: "panel" }, [
+    el("div", { class: "cardhead" }, [
+      el("h3", { text: t("mapping.settings") }),
+      ...(retired
+        ? []
+        : [
+            el("div", { class: "statebuttons" }, [
+              actionLink("save", { onclick: saveDraft }),
+              actionLink("discard", { label: t("mapping.retire"), onclick: openRetire }),
             ]),
           ]),
-        ]
-      : [
-          el("div", { class: "statebuttons mebtns" }, [
-            actionLink("discard", {
-              label: t("mapping.retire"),
-              onclick: () => {
-                confirmRetire = true;
-                render();
-              },
-            }),
-          ]),
-        ];
-  return el("div", { class: "panel" }, [
-    el("div", { class: "cardhead" }, [el("h3", { text: t("mapping.settings") })]),
+    ]),
     el("div", { class: "mekv wide" }, [
       el("span", { class: "l", text: t("mapping.name") }),
       name,
@@ -504,23 +473,60 @@ function settingsPanel() {
       el("span", { class: "l", text: t("mapping.linesat") }),
       groups,
     ]),
-    ...(retired ? [] : [el("div", { class: "statebuttons mebtns" }, [
-      actionLink("save", {
-        onclick: async () => {
-          const list = senders.value.split(",").map((s) => s.trim()).filter(Boolean);
-          const r = await call("PUT", `/supplier-mappings/${encodeURIComponent(mappingId)}/draft`, {
-            definition: def,
-            name: name.value,
-            senders: list.length > 0 ? list : null,
-          });
-          note = r.ok ? { text: t("mapping.saved"), ok: true } : { text: r.body?.error ?? t("mapping.savefailed"), ok: false };
-          await load();
-          render();
-        },
-      }),
-    ])]),
-    ...retireRow,
   ]);
+}
+
+/**
+ * **Retiring, confirmed in a pop-out — decisions 0563 and 0564.** Says
+ * what retiring does to invoices (a live mapping stops reading them, a
+ * draft never did), then Retire mapping or Cancel. Escape, Cancel or a
+ * click outside closes it; a refusal is shown inside it.
+ */
+export function openRetire() {
+  const live = data.versions.some((v) => v.status === "live");
+  const errorBox = el("div", { class: "merefused" });
+  errorBox.hidden = true;
+  let busy = false;
+  const onKey = (e) => {
+    if (e.key === "Escape") close();
+  };
+  const close = () => {
+    backdrop.remove();
+    document.removeEventListener("keydown", onKey);
+  };
+  const doRetire = async () => {
+    if (busy) return;
+    busy = true;
+    const r = await call("POST", `/supplier-mappings/${encodeURIComponent(mappingId)}/retire`);
+    busy = false;
+    if (!r.ok) {
+      errorBox.hidden = false;
+      errorBox.textContent = r.body?.error ?? t("mapping.retirefailed");
+      return;
+    }
+    close();
+    const name = data.mapping.name;
+    mappingId = null;
+    const { open: openRoutes } = await import("/routes.js");
+    await openRoutes({ notice: t("mapping.retireddone").replace("{name}", name) });
+  };
+  const box = el("div", { class: "popout meretirepop", role: "dialog", "aria-label": t("mapping.retiretitle") }, [
+    el("div", { class: "cardhead" }, [
+      el("h3", { text: t("mapping.retiretitle") }),
+      el("div", { class: "statebuttons" }, [
+        actionLink("discard", { primary: true, label: t("mapping.retireyes"), onclick: doRetire }),
+        actionLink("close", { label: t("mapping.retireno"), onclick: close }),
+      ]),
+    ]),
+    el("p", { class: "sm", text: t(live ? "mapping.retireconfirm.live" : "mapping.retireconfirm.draft").replace("{name}", data.mapping.name) }),
+    errorBox,
+  ]);
+  const backdrop = el("div", { class: "backdrop" }, [box]);
+  backdrop.onclick = (e) => {
+    if (e.target === backdrop) close();
+  };
+  document.addEventListener("keydown", onKey);
+  document.body.append(backdrop);
 }
 
 function render() {
@@ -620,7 +626,6 @@ export async function open(id) {
   tried = null;
   publishResult = null;
   note = null;
-  confirmRetire = false;
   say = "";
   const ok = await load();
   if (!ok) {

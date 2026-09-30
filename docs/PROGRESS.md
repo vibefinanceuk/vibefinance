@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 30 September 2026 (decision 0563). A living document: what
+Last updated 30 September 2026 (decision 0564). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,11 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Retiring a mapping, in a pop-out (0564)
+- Retire now reaches vf-app (its path was missing from the vf-ui proxy).
+- Save and Retire sit top right of the Mapping card; retiring is
+  confirmed in a pop-out, Retire mapping or Cancel.
 
 ### Supplier mappings: near misses and retiring (0563)
 - Reprocess is offered only for failed messages from a sender the mapping

@@ -1680,6 +1680,7 @@ const KEYS_THE_INTERFACE_USES = [
   "help.screen.mapping.33",
   "help.screen.mapping.34",
   "mapping.retire",
+  "mapping.retiretitle",
   "mapping.retireconfirm.live",
   "mapping.retireconfirm.draft",
   "mapping.retireyes",

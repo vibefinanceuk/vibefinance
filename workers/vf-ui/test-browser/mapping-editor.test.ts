@@ -4,6 +4,7 @@ import formatStringsSql from "../../vf-licence/migrations/0211_formats_and_en169
 import monitorStringsSql from "../../vf-licence/migrations/0207_route_monitor_strings.sql?raw";
 import routesStringsSql from "../../vf-licence/migrations/0208_routes_and_process_routes_strings.sql?raw";
 import missStringsSql from "../../vf-licence/migrations/0214_mapping_miss_strings.sql?raw";
+import retirePopoutStringsSql from "../../vf-licence/migrations/0215_mapping_retire_popout_strings.sql?raw";
 
 /**
  * **The mapping editor — decision 0561**, with the real strings: draw a
@@ -15,8 +16,10 @@ import missStringsSql from "../../vf-licence/migrations/0214_mapping_miss_string
  */
 
 const strings: Record<string, string> = { "action.close": "Close", "action.save": "Save" };
-for (const sql of [mappingStringsSql, formatStringsSql, monitorStringsSql, routesStringsSql, missStringsSql]) {
+for (const sql of [mappingStringsSql, formatStringsSql, monitorStringsSql, routesStringsSql, missStringsSql, retirePopoutStringsSql]) {
   for (const m of sql.matchAll(/\('([^']+)', 'en', '((?:[^']|'')*)'\)/g)) strings[m[1]] = m[2].replace(/''/g, "'");
+  // Later migrations change some words in place.
+  for (const m of sql.matchAll(/UPDATE ui_strings SET value = '((?:[^']|'')*)' WHERE key = '([^']+)' AND locale = 'en'/g)) strings[m[2]] = m[1].replace(/''/g, "'");
 }
 
 const TARGETS = [
@@ -368,7 +371,15 @@ describe("near misses and retiring — decision 0563", () => {
     expect(text(".rmexplain .h")).toBe("A mapping would read it, but has not been published");
   });
 
-  it("retires a draft after saying no invoice is affected, then shows Routes with a notice", async () => {
+  it("keeps Save and Retire at the top right of the Mapping card", async () => {
+    stub([]);
+    await openEditor();
+    const head = [...document.querySelectorAll(".cardhead")].find((h) => h.querySelector("h3")?.textContent === "Mapping") as HTMLElement;
+    const labels = [...head.querySelectorAll(".statebuttons button")].map((b) => b.textContent);
+    expect(labels).toEqual(["Save", "Retire this mapping"]);
+  });
+
+  it("confirms retiring a draft in a pop-out, Cancel closing it, then shows Routes with a notice", async () => {
     const calls: Call[] = [];
     stub(calls, {
       "POST /api/supplier-mappings/MAP-1/retire": () => ({ body: { id: "MAP-1", status: "retired", wasLive: false } }),
@@ -377,19 +388,41 @@ describe("near misses and retiring — decision 0563", () => {
     await openEditor();
     button("Retire this mapping").click();
     await settle();
-    expect(text(".meretire p")).toBe("Retire munch.de <Rechnung>? It has never been published, so no invoice is affected. Its versions are kept as history.");
-    button("Keep it").click();
+    const pop = document.querySelector(".backdrop .popout[role=dialog]") as HTMLElement;
+    expect(pop.querySelector("h3")?.textContent).toBe("Retire mapping");
+    expect(pop.querySelector("p")?.textContent).toBe(
+      "Retire munch.de <Rechnung>? It has never been published, so no invoice is affected. Its versions are kept as history."
+    );
+    expect([...pop.querySelectorAll(".statebuttons button")].map((b) => b.textContent)).toEqual(["Retire mapping", "Cancel"]);
+    button("Cancel").click();
     await settle();
-    expect(document.querySelector(".meretire")).toBeNull();
+    expect(document.querySelector(".backdrop")).toBeNull();
     expect(calls.some((c) => c.path.endsWith("/retire"))).toBe(false);
 
     button("Retire this mapping").click();
     await settle();
-    button("Retire it").click();
+    (document.querySelector(".backdrop .statebuttons button") as HTMLButtonElement).click();
     await settle();
     expect(calls.find((c) => c.path === "/api/supplier-mappings/MAP-1/retire")?.method).toBe("POST");
     // Routes is imported on demand, which takes longer than a few ticks.
     await vi.waitFor(() => expect(text("#routes-note")).toBe("munch.de <Rechnung> is retired."));
+    expect(document.querySelector(".backdrop")).toBeNull();
+  });
+
+  it("says why inside the pop-out when retiring is refused, and closes on Escape", async () => {
+    stub([], {
+      "POST /api/supplier-mappings/MAP-1/retire": () => ({ status: 404, body: { error: "mapping MAP-1 does not exist" } }),
+    });
+    await openEditor();
+    button("Retire this mapping").click();
+    await settle();
+    (document.querySelector(".backdrop .statebuttons button") as HTMLButtonElement).click();
+    await settle();
+    const refused = document.querySelector(".backdrop .merefused") as HTMLElement;
+    expect(refused.hidden).toBe(false);
+    expect(refused.textContent).toBe("mapping MAP-1 does not exist");
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    expect(document.querySelector(".backdrop")).toBeNull();
   });
 
   it("warns that retiring a live mapping stops it reading invoices", async () => {
@@ -399,7 +432,8 @@ describe("near misses and retiring — decision 0563", () => {
     await openEditor();
     button("Retire this mapping").click();
     await settle();
-    expect(text(".meretire p")).toContain("It is live: invoices it reads today will fail until another mapping reads them.");
+    expect(text(".backdrop .popout p")).toContain("It is live: invoices it reads today will fail until another mapping reads them.");
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
   });
 
   it("shows a retired mapping as retired, with nothing to publish, save or retire", async () => {
