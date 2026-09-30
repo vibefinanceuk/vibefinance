@@ -201,6 +201,7 @@ import routeFixStringsSql from "../migrations/0210_route_fix_and_tell_strings.sq
 import formatStringsSql from "../migrations/0211_formats_and_en16931_strings.sql?raw";
 import supplierMappingStringsSql from "../migrations/0212_supplier_mapping_strings.sql?raw";
 import mappingHelpStringsSql from "../migrations/0213_mapping_help_strings.sql?raw";
+import mappingMissStringsSql from "../migrations/0214_mapping_miss_strings.sql?raw";
 
 function stripSqlComments(sql: string): string {
   return sql
@@ -435,5 +436,6 @@ export async function applyTestSchema(): Promise<void> {
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(formatStringsSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(supplierMappingStringsSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(mappingHelpStringsSql)));
+  await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(mappingMissStringsSql)));
 
 }

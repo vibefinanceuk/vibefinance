@@ -29,6 +29,8 @@ let compiled = null;
 let tried = null;
 let publishResult = null;
 let note = null;
+/** Decision 0563: asking before retiring, on the Mapping card. */
+let confirmRetire = false;
 
 async function call(method, path, body) {
   try {
@@ -440,6 +442,58 @@ function settingsPanel() {
     await save();
     render();
   };
+  const retired = data.mapping.status === "retired";
+  const live = data.versions.some((v) => v.status === "live");
+  /**
+   * **Retiring — decision 0563.** Asked on the card itself, never a
+   * browser dialog, saying what retiring does to invoices: a live mapping
+   * stops reading them, a draft never did.
+   */
+  const retireRow = retired
+    ? []
+    : confirmRetire
+      ? [
+          el("div", { class: "meretire" }, [
+            el("p", { class: "sm", text: t(live ? "mapping.retireconfirm.live" : "mapping.retireconfirm.draft").replace("{name}", data.mapping.name) }),
+            el("div", { class: "statebuttons mebtns" }, [
+              actionLink("discard", {
+                primary: true,
+                label: t("mapping.retireyes"),
+                onclick: async () => {
+                  const r = await call("POST", `/supplier-mappings/${encodeURIComponent(mappingId)}/retire`);
+                  confirmRetire = false;
+                  if (!r.ok) {
+                    note = { text: r.body?.error ?? t("mapping.retirefailed"), ok: false };
+                    render();
+                    return;
+                  }
+                  const name = data.mapping.name;
+                  mappingId = null;
+                  const { open: openRoutes } = await import("/routes.js");
+                  await openRoutes({ notice: t("mapping.retireddone").replace("{name}", name) });
+                },
+              }),
+              actionLink("back", {
+                label: t("mapping.retireno"),
+                onclick: () => {
+                  confirmRetire = false;
+                  render();
+                },
+              }),
+            ]),
+          ]),
+        ]
+      : [
+          el("div", { class: "statebuttons mebtns" }, [
+            actionLink("discard", {
+              label: t("mapping.retire"),
+              onclick: () => {
+                confirmRetire = true;
+                render();
+              },
+            }),
+          ]),
+        ];
   return el("div", { class: "panel" }, [
     el("div", { class: "cardhead" }, [el("h3", { text: t("mapping.settings") })]),
     el("div", { class: "mekv wide" }, [
@@ -450,7 +504,7 @@ function settingsPanel() {
       el("span", { class: "l", text: t("mapping.linesat") }),
       groups,
     ]),
-    el("div", { class: "statebuttons mebtns" }, [
+    ...(retired ? [] : [el("div", { class: "statebuttons mebtns" }, [
       actionLink("save", {
         onclick: async () => {
           const list = senders.value.split(",").map((s) => s.trim()).filter(Boolean);
@@ -464,7 +518,8 @@ function settingsPanel() {
           render();
         },
       }),
-    ]),
+    ])]),
+    ...retireRow,
   ]);
 }
 
@@ -499,7 +554,7 @@ function render() {
             render();
           },
         }),
-        actionLink("publish", {
+        ...(data.mapping.status === "retired" ? [] : [actionLink("publish", {
           primary: true,
           label: t("mapping.publish"),
           onclick: async () => {
@@ -517,7 +572,7 @@ function render() {
             }
             render();
           },
-        }),
+        })]),
         actionLink("back", {
           label: t("mapping.back"),
           onclick: async () => {
@@ -536,6 +591,7 @@ function render() {
       el("span", {}, [el("span", { class: "mefx static", text: "Fx" }), ` ${t("mapping.legend.fx")}`]),
       el("span", {}, [el("span", { class: "mereq", text: "*" }), ` ${t("mapping.legend.required")}`]),
     ]),
+    ...(data.mapping.status === "retired" ? [el("div", { class: "menote", text: t("mapping.retired") })] : []),
     ...(note ? [el("div", { class: `menote${note.ok ? " ok" : ""}`, text: note.text })] : []),
     data.described ? grid : el("p", { class: "muted sm", text: t("mapping.nosample") }),
   ]);
@@ -564,6 +620,7 @@ export async function open(id) {
   tried = null;
   publishResult = null;
   note = null;
+  confirmRetire = false;
   say = "";
   const ok = await load();
   if (!ok) {

@@ -137,6 +137,47 @@ export async function mappingFor(
   };
 }
 
+/**
+ * **Why no mapping read it, where one came close — decision 0563.** On
+ * 30 September Dan's invoice failed six times with "no mapping on this
+ * route reads it yet" while a live mapping for `<Rechnung>` sat on the
+ * route: it was for another sender. Two near misses are named:
+ *
+ * - `not_published`: a mapping for this root and this sender exists, but
+ *   has never been published. Drafts never read real invoices.
+ * - `not_for_sender`: a live mapping reads this root, but "Who it is for"
+ *   does not include this sender.
+ *
+ * The first comes first: it is the closer of the two, and publishing is
+ * what fixes it. Null where nothing on the route came close.
+ */
+export async function nearMiss(
+  db: D1Database,
+  sourceId: string,
+  root: string,
+  sender: string | undefined
+): Promise<{ id: string; name: string; miss: "not_published" | "not_for_sender" } | null> {
+  const rows = (
+    await db
+      .prepare(
+        `SELECT m.*,
+                (SELECT version FROM supplier_mapping_versions v WHERE v.mapping_id = m.id AND v.status = 'live') AS live_version
+         FROM supplier_mappings m
+         JOIN route_instances i ON i.route_id = m.route_id AND i.source_id = ?
+         WHERE m.root = ? AND m.status = 'active'
+         ORDER BY m.created_at DESC`
+      )
+      .bind(sourceId, root)
+      .all<MappingRow & { live_version: number | null }>()
+  ).results;
+  const unpublished = rows.filter((r) => r.live_version === null && senderMatches(sendersOf(r), sender));
+  const draft = unpublished.find((r) => sendersOf(r) !== null) ?? unpublished[0];
+  if (draft) return { id: draft.id, name: draft.name, miss: "not_published" };
+  const live = rows.find((r) => r.live_version !== null && !senderMatches(sendersOf(r), sender));
+  if (live) return { id: live.id, name: live.name, miss: "not_for_sender" };
+  return null;
+}
+
 /** A problem, in words, for the message part's reason. */
 function describeProblem(p: AppliedMapping["problems"][number]): string {
   const where = p.line !== undefined ? ` on line ${p.line}` : "";
@@ -162,13 +203,17 @@ export async function captureThroughMapping(
   const found = await mappingFor(db, sourceId, root, sender);
   const base = { format: "supplier_xml", syntax: null, xmlRoot: root };
   if (!found) {
+    const near = await nearMiss(db, sourceId, root, sender);
+    const from = sender ? sender.toLowerCase().replace(/^.*<([^>]+)>.*$/, "$1").trim() : "an unknown sender";
+    const error =
+      near?.miss === "not_published"
+        ? `this is <${root}>, a supplier's own XML; the mapping "${near.name}" would read it, but has not been published`
+        : near?.miss === "not_for_sender"
+          ? `this is <${root}>, a supplier's own XML; the mapping "${near.name}" reads <${root}> on this route, but is not for ${from}`
+          : `this is <${root}>, a supplier's own XML, and no mapping on this route reads it yet`;
     return {
       status: 422,
-      body: {
-        ...base,
-        mappingId: null,
-        error: `this is <${root}>, a supplier's own XML, and no mapping on this route reads it yet`,
-      },
+      body: { ...base, mappingId: near?.id ?? null, mappingMiss: near?.miss ?? null, error },
     };
   }
   const where = { mappingId: found.mapping.id, mappingVersion: found.version.version };
@@ -267,20 +312,30 @@ async function versionsOf(db: D1Database, id: string): Promise<VersionRow[]> {
   ).results;
 }
 
-/** Messages on this route whose supplier XML with this root no mapping read, or one failed to: what publishing may fix. */
-async function waitingFor(db: D1Database, routeId: string, root: string): Promise<string[]> {
+/**
+ * Messages on this route whose supplier XML with this root no mapping
+ * read, or one failed to: what publishing may fix. **Only those from a
+ * sender this mapping is for — decision 0563**: a message it would never
+ * read is not waiting for it, and offering to reprocess it only fails
+ * again.
+ */
+async function waitingFor(db: D1Database, mapping: MappingRow): Promise<string[]> {
+  const senders = sendersOf(mapping);
   return (
     await db
       .prepare(
-        `SELECT DISTINCT m.id FROM route_message_parts p
+        `SELECT DISTINCT m.id, m.counterparty, m.received_at FROM route_message_parts p
          JOIN route_messages m ON m.id = p.message_id
          JOIN route_instances i ON i.source_id = m.instance_id AND i.route_id = ?
          WHERE p.xml_root = ? AND p.outcome = 'failed' AND m.status IN ('failed', 'partial')
-         ORDER BY m.received_at DESC LIMIT 50`
+         ORDER BY m.received_at DESC LIMIT 200`
       )
-      .bind(routeId, root)
-      .all<{ id: string }>()
-  ).results.map((r) => r.id);
+      .bind(mapping.route_id, mapping.root)
+      .all<{ id: string; counterparty: string | null }>()
+  ).results
+    .filter((r) => senderMatches(senders, r.counterparty ?? undefined))
+    .slice(0, 50)
+    .map((r) => r.id);
 }
 
 export async function handleListMappings(db: D1Database, params: URLSearchParams): Promise<RouteResult> {
@@ -310,7 +365,7 @@ export async function handleListMappings(db: D1Database, params: URLSearchParams
       liveVersion: r.live_version,
       draftVersion: r.draft_version,
       read30d: r.read_30d,
-      waiting: (await waitingFor(db, r.route_id, r.root)).length,
+      waiting: (await waitingFor(db, r)).length,
     });
   }
   return { status: 200, body: { mappings } };
@@ -394,7 +449,14 @@ export async function handleGetMapping(db: D1Database, bucket: R2Bucket | undefi
   return {
     status: 200,
     body: {
-      mapping: { id: mapping.id, routeId: mapping.route_id, name: mapping.name, root: mapping.root, senders: sendersOf(mapping) },
+      mapping: {
+        id: mapping.id,
+        routeId: mapping.route_id,
+        name: mapping.name,
+        root: mapping.root,
+        senders: sendersOf(mapping),
+        status: mapping.status,
+      },
       versions: versions.map((v) => ({
         version: v.version,
         status: v.status,
@@ -412,7 +474,7 @@ export async function handleGetMapping(db: D1Database, bucket: R2Bucket | undefi
         : null,
       described,
       targets: targets(),
-      waiting: (await waitingFor(db, mapping.route_id, mapping.root)).length,
+      waiting: (await waitingFor(db, mapping)).length,
     },
   };
 }
@@ -438,6 +500,7 @@ async function draftOf(db: D1Database, id: string, userId: string): Promise<Vers
 export async function handleSaveDraft(db: D1Database, userId: string, id: string, body: Record<string, unknown>): Promise<RouteResult> {
   const mapping = await db.prepare("SELECT * FROM supplier_mappings WHERE id = ?").bind(id).first<MappingRow>();
   if (!mapping) return { status: 404, body: { error: `mapping ${id} does not exist` } };
+  if (mapping.status === "retired") return { status: 409, body: { error: "the mapping is retired", reason: "retired" } };
   const definition = { ...(body.definition as MappingDefinition), root: mapping.root };
   const invalid = validateMapping(definition);
   if (invalid) return { status: 422, body: { error: invalid, reason: "invalid_mapping" } };
@@ -539,6 +602,7 @@ export async function handleTryMapping(db: D1Database, bucket: R2Bucket | undefi
 export async function handlePublishMapping(db: D1Database, bucket: R2Bucket | undefined, userId: string, id: string): Promise<RouteResult> {
   const mapping = await db.prepare("SELECT * FROM supplier_mappings WHERE id = ?").bind(id).first<MappingRow>();
   if (!mapping) return { status: 404, body: { error: `mapping ${id} does not exist` } };
+  if (mapping.status === "retired") return { status: 409, body: { error: "the mapping is retired", reason: "retired" } };
   const draft = (await versionsOf(db, id)).find((v) => v.status === "draft");
   if (!draft) return { status: 409, body: { error: "there is no draft to publish", reason: "no_draft" } };
   const definition = JSON.parse(draft.definition_json) as MappingDefinition;
@@ -559,5 +623,27 @@ export async function handlePublishMapping(db: D1Database, bucket: R2Bucket | un
       .prepare("UPDATE supplier_mapping_versions SET status = 'live', published_at = ?, published_by = ? WHERE mapping_id = ? AND version = ?")
       .bind(now(), userId, id, draft.version),
   ]);
-  return { status: 200, body: { id, version: draft.version, status: "live", waiting: await waitingFor(db, mapping.route_id, mapping.root) } };
+  return { status: 200, body: { id, version: draft.version, status: "live", waiting: await waitingFor(db, mapping) } };
+}
+
+/**
+ * `POST /supplier-mappings/:id/retire` — **decision 0563.** The mapping
+ * stops reading anything, and leaves the Routes screen's list. Its
+ * versions are kept as they were, as history, and the message parts it
+ * read still name it. Retiring one that is live is allowed: the response
+ * says it was, so the editor can have said what that means first.
+ */
+export async function handleRetireMapping(db: D1Database, userId: string, id: string): Promise<RouteResult> {
+  const mapping = await db.prepare("SELECT * FROM supplier_mappings WHERE id = ?").bind(id).first<MappingRow>();
+  if (!mapping) return { status: 404, body: { error: `mapping ${id} does not exist` } };
+  if (mapping.status === "retired") return { status: 409, body: { error: "the mapping is already retired", reason: "retired" } };
+  const live = await db
+    .prepare("SELECT version FROM supplier_mapping_versions WHERE mapping_id = ? AND status = 'live'")
+    .bind(id)
+    .first<{ version: number }>();
+  await db
+    .prepare("UPDATE supplier_mappings SET status = 'retired', retired_at = ?, retired_by = ? WHERE id = ?")
+    .bind(now(), userId, id)
+    .run();
+  return { status: 200, body: { id, status: "retired", wasLive: live !== null } };
 }

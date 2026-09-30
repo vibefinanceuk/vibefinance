@@ -4957,7 +4957,7 @@ describe("the ERP export, through the real router (decision 0552)", () => {
 describe("supplier mappings, through the real router (decision 0561)", () => {
   it("need Admin.Configure, and say what is missing", async () => {
     const monitor = await seedUserWithPermissions(["Integration.Monitor"]);
-    for (const [method, path] of [["GET", "/supplier-mappings"], ["GET", "/supplier-mappings/MAP-1"], ["POST", "/supplier-mappings/MAP-1/publish"]]) {
+    for (const [method, path] of [["GET", "/supplier-mappings"], ["GET", "/supplier-mappings/MAP-1"], ["POST", "/supplier-mappings/MAP-1/publish"], ["POST", "/supplier-mappings/MAP-1/retire"]]) {
       expect((await SELF.fetch(`https://example.com${path}`, { method, headers: { Authorization: `Bearer ${monitor}` } })).status).toBe(403);
     }
     const admin = await seedUserWithPermissions(["Admin.Configure"]);
@@ -4970,6 +4970,9 @@ describe("supplier mappings, through the real router (decision 0561)", () => {
     expect(((await created.json()) as { reason: string }).reason).toBe("no_sample");
     expect((await SELF.fetch("https://example.com/supplier-mappings/MAP-NONE", { headers })).status).toBe(404);
     expect((await SELF.fetch("https://example.com/supplier-mappings/MAP-NONE/publish", { method: "POST", headers })).status).toBe(404);
+    // Decision 0563: retiring, through the real router.
+    expect((await SELF.fetch("https://example.com/supplier-mappings/MAP-NONE/retire", { method: "POST", headers })).status).toBe(404);
+    expect((await SELF.fetch("https://example.com/supplier-mappings/MAP-NONE/retire", { headers })).status).toBe(405);
     expect((await SELF.fetch("https://example.com/supplier-mappings/MAP-NONE/draft", { method: "DELETE", headers })).status).toBe(405);
   });
 });

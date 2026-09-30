@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 30 September 2026 (decision 0562). A living document: what
+Last updated 30 September 2026 (decision 0563). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,15 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Supplier mappings: near misses and retiring (0563)
+- Reprocess is offered only for failed messages from a sender the mapping
+  is for.
+- A supplier XML that no mapping read names the mapping that came close,
+  and why: not published yet, or not for this sender. The Route monitor
+  offers Open the mapping.
+- A mapping made by mistake can be retired from its Mapping card; its
+  versions are kept as history.
 
 ### Help written at length; the mapping editor's own help (0562)
 - A screen's help can run to headings, lists and paragraphs (numbered

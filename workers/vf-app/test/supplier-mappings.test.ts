@@ -11,6 +11,7 @@ import {
   handleGetMapping,
   handleListMappings,
   handlePublishMapping,
+  handleRetireMapping,
   handleSaveDraft,
   handleTryMapping,
   senderMatches,
@@ -105,7 +106,7 @@ async function receive(from: string, xml: string) {
 
 async function part(messageId: string) {
   return (await env.DB.prepare(
-    "SELECT outcome, reason, format, syntax, xml_root, mapping_id, mapping_version, en16931_failed FROM route_message_parts WHERE message_id = ? AND role = 'attachment'"
+    "SELECT outcome, reason, format, syntax, xml_root, mapping_id, mapping_version, mapping_miss, en16931_failed FROM route_message_parts WHERE message_id = ? AND role = 'attachment'"
   )
     .bind(messageId)
     .first<Record<string, unknown>>())!;
@@ -255,7 +256,8 @@ describe("try, publish, and reprocess", () => {
 
     const stranger = await receive("billing@other.example", munch({ number: "X-1" }));
     expect(stranger.status).toBe("failed");
-    expect(await part(stranger.id)).toMatchObject({ xml_root: "Rechnung", mapping_id: null });
+    // Decision 0563: the live mapping came close, and the part says so.
+    expect(await part(stranger.id)).toMatchObject({ xml_root: "Rechnung", mapping_id: id, mapping_version: null, mapping_miss: "not_for_sender" });
   });
 
   it("fails an invoice it cannot read, saying which value, where and why, with the mapping that tried", async () => {
@@ -308,6 +310,96 @@ describe("a function from plain words", () => {
       body: { kind: "compiled", steps: [{ fn: "decimal_comma", args: {} }], examples: [{ input: "546,00", output: 546 }] },
     });
     expect(prompts[0]).toContain('"546,00"');
+  });
+});
+
+/**
+ * **Near misses, and retiring — decision 0563.** On 30 September a
+ * `<Rechnung>` from vibefinanceuk@gmail.com failed six times as "no
+ * mapping reads it yet", while a live mapping for `<Rechnung>` was for
+ * another address, and two drafts that would have read it were never
+ * published. The editor had offered to reprocess it all the same.
+ */
+describe("when a mapping came close", () => {
+  it("says a live mapping reads this root but is not for this sender, and names it", async () => {
+    const { id } = await publishedMapping();
+    const stranger = await receive("billing@other.example", munch({ number: "X-1" }));
+    const p = await part(stranger.id);
+    expect(p).toMatchObject({ outcome: "failed", mapping_id: id, mapping_version: null, mapping_miss: "not_for_sender" });
+    expect(p.reason).toBe(
+      `this is <Rechnung>, a supplier's own XML; the mapping "munch.de <Rechnung>" reads <Rechnung> on this route, but is not for billing@other.example`
+    );
+    const detail = await handleGetRouteMessage(env.DB, stranger.id);
+    const parts = (detail.body as { parts: Array<{ role: string; mapping: unknown }> }).parts;
+    expect(parts.find((x) => x.role === "attachment")?.mapping).toEqual({ id, version: null, name: "munch.de <Rechnung>", miss: "not_for_sender" });
+  });
+
+  it("says a mapping for this sender would read it but has not been published", async () => {
+    const failed = await receive("buchhaltung@munch.de", munch());
+    const created = await handleCreateMapping(env.DB, env.DOCUMENTS, "u-dan", { messageId: failed.id, partSeq: 1 });
+    const id = (created.body as { id: string }).id;
+    await handleSaveDraft(env.DB, "u-dan", id, { definition: DEFINITION });
+    const again = await receive("buchhaltung@munch.de", munch({ number: "88241" }));
+    const p = await part(again.id);
+    expect(p).toMatchObject({ outcome: "failed", mapping_id: id, mapping_version: null, mapping_miss: "not_published" });
+    expect(p.reason).toBe(`this is <Rechnung>, a supplier's own XML; the mapping "munch.de <Rechnung>" would read it, but has not been published`);
+  });
+
+  it("still says no mapping reads it where nothing came close", async () => {
+    const m = await receive("buchhaltung@munch.de", munch());
+    expect(await part(m.id)).toMatchObject({ mapping_id: null, mapping_version: null, mapping_miss: null });
+  });
+
+  it("counts as waiting only the failed messages from a sender the mapping is for", async () => {
+    const { id } = await publishedMapping();
+    const stranger = await receive("billing@other.example", munch({ number: "X-1" }));
+    const got = await handleGetMapping(env.DB, env.DOCUMENTS, id);
+    expect((got.body as { waiting: number }).waiting).toBe(1);
+    const list = await handleListMappings(env.DB, new URLSearchParams("route=email-in"));
+    expect((list.body as { mappings: Array<{ waiting: number }> }).mappings[0].waiting).toBe(1);
+
+    // Adding the sender makes that message one it may read, at once.
+    await handleSaveDraft(env.DB, "u-dan", id, { definition: DEFINITION, senders: ["@munch.de", "billing@other.example"] });
+    const after = await handleGetMapping(env.DB, env.DOCUMENTS, id);
+    expect((after.body as { waiting: number }).waiting).toBe(2);
+    const rerun = await handleReprocessMessage(env.DB, stranger.id, "u-dan", { model, bucket: env.DOCUMENTS, customerId: CUSTOMER });
+    expect(rerun).toMatchObject({ status: 200, body: { status: "delivered" } });
+    expect(await part(stranger.id)).toMatchObject({ outcome: "captured", mapping_id: id, mapping_miss: null });
+  });
+});
+
+describe("retiring a mapping", () => {
+  it("stops it reading, leaves the list, keeps its versions, and refuses further edits", async () => {
+    const { id } = await publishedMapping();
+    const retired = await handleRetireMapping(env.DB, "u-dan", id);
+    expect(retired).toEqual({ status: 200, body: { id, status: "retired", wasLive: true } });
+
+    const row = await env.DB.prepare("SELECT status, retired_at, retired_by FROM supplier_mappings WHERE id = ?").bind(id).first<Record<string, unknown>>();
+    expect(row).toMatchObject({ status: "retired", retired_by: "u-dan" });
+    expect(row?.retired_at).toEqual(expect.any(String));
+    const versions = await env.DB.prepare("SELECT version, status FROM supplier_mapping_versions WHERE mapping_id = ?").bind(id).all();
+    expect(versions.results).toEqual([{ version: 1, status: "live" }]);
+
+    const list = await handleListMappings(env.DB, new URLSearchParams("route=email-in"));
+    expect((list.body as { mappings: unknown[] }).mappings).toEqual([]);
+    const got = await handleGetMapping(env.DB, env.DOCUMENTS, id);
+    expect((got.body as { mapping: { status: string } }).mapping.status).toBe("retired");
+
+    const next = await receive("rechnung@munch.de", munch({ number: "88241" }));
+    expect(next.status).toBe("failed");
+    expect(await part(next.id)).toMatchObject({ mapping_id: null, mapping_miss: null });
+
+    expect(await handleSaveDraft(env.DB, "u-dan", id, { definition: DEFINITION })).toMatchObject({ status: 409, body: { reason: "retired" } });
+    expect(await handlePublishMapping(env.DB, env.DOCUMENTS, "u-dan", id)).toMatchObject({ status: 409, body: { reason: "retired" } });
+    expect(await handleRetireMapping(env.DB, "u-dan", id)).toMatchObject({ status: 409, body: { reason: "retired" } });
+    expect(await handleRetireMapping(env.DB, "u-dan", "MAP-NONE")).toMatchObject({ status: 404 });
+  });
+
+  it("retires a draft that was never published, saying it was not live", async () => {
+    const failed = await receive("buchhaltung@munch.de", munch());
+    const created = await handleCreateMapping(env.DB, env.DOCUMENTS, "u-dan", { messageId: failed.id, partSeq: 1 });
+    const id = (created.body as { id: string }).id;
+    expect(await handleRetireMapping(env.DB, "u-dan", id)).toEqual({ status: 200, body: { id, status: "retired", wasLive: false } });
   });
 });
 

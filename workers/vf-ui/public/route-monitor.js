@@ -257,7 +257,10 @@ function chain(message) {
 function supplierXmlCode(parts) {
   const failed = (parts ?? []).filter((p) => p.role === "attachment" && p.outcome === "failed");
   if (failed.length === 0 || !failed.every((p) => p.format === "supplier_xml")) return null;
-  return failed.some((p) => !p.mapping) ? "no_mapping" : "mapping_failed";
+  if (failed.some((p) => !p.mapping)) return "no_mapping";
+  // Decision 0563: a mapping came close, and the part says why it did not read.
+  const miss = failed.find((p) => p.mapping?.miss)?.mapping.miss;
+  return miss ?? "mapping_failed";
 }
 
 function explanation(message, parts) {
@@ -356,20 +359,27 @@ function supplierXmlCheck(p) {
     if (!made.ok) note(t(made.reason === "forbidden" ? "routemonitor.mapforbidden" : "routemonitor.mapfailed"));
   };
   const captured = p.outcome === "captured";
+  // Decision 0563: a mapping that came close, and why it did not read this file.
+  const miss = !captured ? p.mapping?.miss ?? null : null;
+  const mappingName = p.mapping ? p.mapping.name ?? p.mapping.id : "";
   const verdict = captured
     ? el("span", { class: `rmpill ${(p.en16931Failed ?? []).length > 0 ? "bad" : "ok"}`, text: (p.en16931Failed ?? []).length > 0 ? t("routemonitor.brokenn").replace("{n}", String(p.en16931Failed.length)) : t("routemonitor.passed") })
-    : el("span", { class: `rmpill ${p.mapping ? "bad" : "q"}`, text: t(p.mapping ? "routemonitor.mappingfailed" : "routemonitor.nomapping") });
+    : miss
+      ? el("span", { class: "rmpill q", text: t(miss === "not_published" ? "routemonitor.notpublished" : "routemonitor.notforsender") })
+      : el("span", { class: `rmpill ${p.mapping ? "bad" : "q"}`, text: t(p.mapping ? "routemonitor.mappingfailed" : "routemonitor.nomapping") });
+  const why = miss
+    ? t(miss === "not_published" ? "routemonitor.notpublishedwhy" : "routemonitor.notforsenderwhy")
+        .replace("{name}", mappingName)
+        .replace("{sender}", detail?.message?.counterparty ?? "—")
+    : p.mapping
+      ? t("routemonitor.readwith").replace("{name}", mappingName).replace("{n}", String(p.mapping.version))
+      : t("routemonitor.nomappingwhy");
   return el("div", { class: "rmfmt" }, [
     el("div", { class: "rmfmthead" }, [
       el("span", { class: "rmfmtname", text: `${p.filename}: ${t("routes.format.supplier_xml")} <${p.xmlRoot ?? "?"}>` }),
       verdict,
     ]),
-    el("div", {
-      class: "muted sm",
-      text: p.mapping
-        ? t("routemonitor.readwith").replace("{name}", p.mapping.name ?? p.mapping.id).replace("{n}", String(p.mapping.version))
-        : t("routemonitor.nomappingwhy"),
-    }),
+    el("div", { class: "muted sm", text: why }),
     ...(captured && (p.en16931Failed ?? []).length > 0
       ? [el("ul", { class: "rmrules" }, p.en16931Failed.map((f) => el("li", {}, [el("span", { class: "rmrule", text: f.rule }), el("span", { text: ` ${words("en16931.rule", f.rule.toLowerCase())}` }), ...(f.detail ? [el("span", { class: "muted", text: ` · ${f.detail}` })] : [])])))]
       : []),

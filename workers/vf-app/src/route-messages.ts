@@ -274,12 +274,14 @@ export async function setPartFormat(
     xmlRoot?: string | null;
     mappingId?: string | null;
     mappingVersion?: number | null;
+    /** Decision 0563: why no mapping read it, where one came close. */
+    mappingMiss?: "not_for_sender" | "not_published" | null;
   }
 ): Promise<void> {
   try {
     await db
       .prepare(
-        `UPDATE route_message_parts SET format = ?, syntax = ?, en16931_failed = ?, xml_root = ?, mapping_id = ?, mapping_version = ?
+        `UPDATE route_message_parts SET format = ?, syntax = ?, en16931_failed = ?, xml_root = ?, mapping_id = ?, mapping_version = ?, mapping_miss = ?
          WHERE message_id = ? AND seq = ?`
       )
       .bind(
@@ -289,6 +291,7 @@ export async function setPartFormat(
         read.xmlRoot ?? null,
         read.mappingId ?? null,
         read.mappingVersion ?? null,
+        read.mappingMiss ?? null,
         messageId,
         seq
       )

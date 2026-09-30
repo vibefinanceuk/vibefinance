@@ -307,7 +307,11 @@ function render() {
   );
 }
 
-export async function open() {
+/**
+ * `notice`: a line to say what just happened, such as a mapping retired
+ * from the editor (decision 0563).
+ */
+export async function open({ notice } = {}) {
   setCurrentScreen("routes");
   const ok = await load();
   if (!selectedId || !routes.some((r) => r.id === selectedId)) {
@@ -323,5 +327,11 @@ export async function open() {
   if (!ok) {
     const note = document.getElementById("routes-note");
     if (note) note.textContent = t("routes.failed");
+  } else if (notice) {
+    const note = document.getElementById("routes-note");
+    if (note) {
+      note.className = "menote ok";
+      note.textContent = notice;
+    }
   }
 }

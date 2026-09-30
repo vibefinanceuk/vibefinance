@@ -3,6 +3,7 @@ import mappingStringsSql from "../../vf-licence/migrations/0212_supplier_mapping
 import formatStringsSql from "../../vf-licence/migrations/0211_formats_and_en16931_strings.sql?raw";
 import monitorStringsSql from "../../vf-licence/migrations/0207_route_monitor_strings.sql?raw";
 import routesStringsSql from "../../vf-licence/migrations/0208_routes_and_process_routes_strings.sql?raw";
+import missStringsSql from "../../vf-licence/migrations/0214_mapping_miss_strings.sql?raw";
 
 /**
  * **The mapping editor — decision 0561**, with the real strings: draw a
@@ -14,7 +15,7 @@ import routesStringsSql from "../../vf-licence/migrations/0208_routes_and_proces
  */
 
 const strings: Record<string, string> = { "action.close": "Close", "action.save": "Save" };
-for (const sql of [mappingStringsSql, formatStringsSql, monitorStringsSql, routesStringsSql]) {
+for (const sql of [mappingStringsSql, formatStringsSql, monitorStringsSql, routesStringsSql, missStringsSql]) {
   for (const m of sql.matchAll(/\('([^']+)', 'en', '((?:[^']|'')*)'\)/g)) strings[m[1]] = m[2].replace(/''/g, "'");
 }
 
@@ -317,5 +318,98 @@ describe("the ways in", () => {
     await settle();
     expect(calls.find((c) => c.method === "POST" && c.path === "/api/supplier-mappings")?.body).toEqual({ messageId: "MSG-1", partSeq: 1 });
     expect(text(".topbar h2")).toBe("Mapping: munch.de <Rechnung>");
+  });
+});
+
+/**
+ * **Near misses and retiring — decision 0563**: the monitor says which
+ * mapping came close and why, and a mapping made by mistake is retired
+ * from its own card, after saying what that does.
+ */
+describe("near misses and retiring — decision 0563", () => {
+  async function monitorWith(mapping: unknown) {
+    stub([], {
+      "GET /api/route-messages": () => ({ body: { period: "today", summary: {}, sources: [], destinations: [], messages: [{ id: "MSG-1", sourceName: "AP mailbox", status: "failed", failedPart: "translation", subject: "Rechnung", receivedAt: new Date().toISOString(), invoices: 0 }] } }),
+      "GET /api/route-messages/MSG-1": () => ({
+        body: {
+          canReprocess: true,
+          similar: [],
+          canDismiss: true,
+          message: { id: "MSG-1", sourceName: "AP mailbox", status: "failed", failedPart: "translation", counterparty: "vibefinanceuk@gmail.com", subject: "Rechnung", receivedAt: new Date().toISOString() },
+          parts: [{ seq: 1, role: "attachment", filename: "Rechnung_88240.xml", bytes: 900, outcome: "failed", format: "supplier_xml", xmlRoot: "Rechnung", mapping, en16931Failed: null }],
+          events: [],
+          invoices: [],
+        },
+      }),
+    });
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { open } = await import("/route-monitor.js");
+    await open();
+    await settle();
+    (document.querySelector(".rmtable tbody tr") as HTMLElement).click();
+    await settle();
+  }
+
+  it("says a live mapping is not for this sender, names it, and opens it", async () => {
+    await monitorWith({ id: "MAP-1", version: null, name: "Lager Nord", miss: "not_for_sender" });
+    expect(text(".rmfmt .rmpill")).toBe("Not for this sender");
+    expect(text(".rmfmt .muted.sm")).toBe("Lager Nord reads this format on this route, but is not for vibefinanceuk@gmail.com.");
+    expect(text(".rmexplain .h")).toBe("A mapping reads this format, but not from this sender");
+    expect(text(".rmexplain")).toContain("Who it is for applies at once, without publishing again.");
+    expect(button("Open the mapping")).toBeTruthy();
+    expect(button("Map this format")).toBeUndefined();
+  });
+
+  it("says a mapping would read it but has not been published", async () => {
+    await monitorWith({ id: "MAP-1", version: null, name: "gmail.com <Rechnung>", miss: "not_published" });
+    expect(text(".rmfmt .rmpill")).toBe("Mapping not published");
+    expect(text(".rmfmt .muted.sm")).toBe("gmail.com <Rechnung> would read it, but has never been published.");
+    expect(text(".rmexplain .h")).toBe("A mapping would read it, but has not been published");
+  });
+
+  it("retires a draft after saying no invoice is affected, then shows Routes with a notice", async () => {
+    const calls: Call[] = [];
+    stub(calls, {
+      "POST /api/supplier-mappings/MAP-1/retire": () => ({ body: { id: "MAP-1", status: "retired", wasLive: false } }),
+      "GET /api/routes": () => ({ body: { routes: [] } }),
+    });
+    await openEditor();
+    button("Retire this mapping").click();
+    await settle();
+    expect(text(".meretire p")).toBe("Retire munch.de <Rechnung>? It has never been published, so no invoice is affected. Its versions are kept as history.");
+    button("Keep it").click();
+    await settle();
+    expect(document.querySelector(".meretire")).toBeNull();
+    expect(calls.some((c) => c.path.endsWith("/retire"))).toBe(false);
+
+    button("Retire this mapping").click();
+    await settle();
+    button("Retire it").click();
+    await settle();
+    expect(calls.find((c) => c.path === "/api/supplier-mappings/MAP-1/retire")?.method).toBe("POST");
+    // Routes is imported on demand, which takes longer than a few ticks.
+    await vi.waitFor(() => expect(text("#routes-note")).toBe("munch.de <Rechnung> is retired."));
+  });
+
+  it("warns that retiring a live mapping stops it reading invoices", async () => {
+    stub([], {
+      "GET /api/supplier-mappings/MAP-1": () => ({ body: { ...MAPPING(), versions: [{ version: 1, status: "live" }] } }),
+    });
+    await openEditor();
+    button("Retire this mapping").click();
+    await settle();
+    expect(text(".meretire p")).toContain("It is live: invoices it reads today will fail until another mapping reads them.");
+  });
+
+  it("shows a retired mapping as retired, with nothing to publish, save or retire", async () => {
+    stub([], {
+      "GET /api/supplier-mappings/MAP-1": () => ({ body: { ...MAPPING(), mapping: { ...MAPPING().mapping, status: "retired" } } }),
+    });
+    await openEditor();
+    expect(text(".menote")).toBe("This mapping is retired. It reads nothing, and can no longer be changed.");
+    expect(button("Publish")).toBeUndefined();
+    expect(button("Retire this mapping")).toBeUndefined();
+    expect(button("Save")).toBeUndefined();
   });
 });

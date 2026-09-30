@@ -201,6 +201,7 @@ import {
   handleGetMapping,
   handleListMappings,
   handlePublishMapping,
+  handleRetireMapping,
   handleSaveDraft,
   handleTryMapping,
 } from "./supplier-mapping-route.js";
@@ -1671,7 +1672,7 @@ export default {
      * sample described, save the draft, compile a function from plain
      * words, try the draft on its sample, and publish it.
      */
-    if (pathname === "/supplier-mappings" || /^\/supplier-mappings\/[^/]+(\/(draft|compile|try|publish))?$/.test(pathname)) {
+    if (pathname === "/supplier-mappings" || /^\/supplier-mappings\/[^/]+(\/(draft|compile|try|publish|retire))?$/.test(pathname)) {
       const { db, documents } = resolveTenant(request, env);
       const auth = await authenticatePerson(db, request, env);
       if (!auth.user) return json({ error: auth.reason }, 401);
@@ -1690,7 +1691,7 @@ export default {
         }
         return json({ error: "method not allowed" }, 405);
       }
-      const [, rawId, action] = pathname.match(/^\/supplier-mappings\/([^/]+)(?:\/(draft|compile|try|publish))?$/) as RegExpMatchArray;
+      const [, rawId, action] = pathname.match(/^\/supplier-mappings\/([^/]+)(?:\/(draft|compile|try|publish|retire))?$/) as RegExpMatchArray;
       const id = decodeURIComponent(rawId);
       if (!action && request.method === "GET") {
         const result = await handleGetMapping(db, documents, id);
@@ -1711,6 +1712,10 @@ export default {
       }
       if (action === "publish" && request.method === "POST") {
         const result = await handlePublishMapping(db, documents, auth.user.id, id);
+        return json(result.body, result.status);
+      }
+      if (action === "retire" && request.method === "POST") {
+        const result = await handleRetireMapping(db, auth.user.id, id);
         return json(result.body, result.status);
       }
       return json({ error: "method not allowed" }, 405);

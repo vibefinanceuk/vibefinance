@@ -285,6 +285,7 @@ export async function captureAttachmentPart(
         xmlRoot?: string;
         mappingId?: string | null;
         mappingVersion?: number;
+        mappingMiss?: "not_for_sender" | "not_published" | null;
         en16931?: { failed: Array<{ rule: string; detail?: string }> } | null;
       }
     | undefined;
@@ -302,6 +303,7 @@ export async function captureAttachmentPart(
       xmlRoot: read.xmlRoot ?? null,
       mappingId: read.mappingId ?? null,
       mappingVersion: read.mappingVersion ?? null,
+      mappingMiss: read.mappingMiss ?? null,
     });
   };
   if (result.status >= 400) {
