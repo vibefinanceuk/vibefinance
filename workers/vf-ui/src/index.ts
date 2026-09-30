@@ -255,8 +255,8 @@ const PROXIED_TO_INSTANCE: RegExp[] = [
   // Supplier mappings — decision 0561: list, create, read, draft, compile, try, publish.
   /^\/supplier-mappings$/,
   /^\/supplier-mappings\/[^/]+$/,
-  // Decision 0569: compile-rule, a rule for the whole invoice.
-  /^\/supplier-mappings\/[^/]+\/(draft|compile|compile-rule|try|publish|retire)$/,
+  // Decisions 0569 and 0570: compile-rule for a whole-invoice rule, propose for AI proposals.
+  /^\/supplier-mappings\/[^/]+\/(draft|compile|compile-rule|propose|try|publish|retire)$/,
   // Decision 0553 — undoing an export.
   /^\/erp-exports\/[^/]+\/undo$/,
   /^\/invoices\/[^/]+\/document-url$/,

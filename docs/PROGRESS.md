@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 30 September 2026 (decision 0569). A living document: what
+Last updated 30 September 2026 (decision 0570). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,13 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Routes phase 2, slice 4: AI proposals (0570)
+- Propose with AI in the mapping editor: the AI proposes a line for each
+  term not yet mapped; VibeFinance scores each on names, values and
+  whether the invoice adds up.
+- Apply everything at or above a chosen threshold at once; the rest are
+  grouped as you check, weak guesses, and required with nothing found.
 
 ### Routes phase 2, slice 3: rules for the whole invoice (0569) — slice 3 complete
 - A supplier mapping carries rules for the whole invoice: defaults ("if

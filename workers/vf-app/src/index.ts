@@ -207,6 +207,7 @@ import {
   handleCompileFunction,
   handleCompileRule,
   handleCreateMapping,
+  handleProposeMapping,
   handleGetMapping,
   handleListMappings,
   handlePublishMapping,
@@ -1723,7 +1724,7 @@ export default {
       return json({ error: "method not allowed" }, 405);
     }
 
-    if (pathname === "/supplier-mappings" || /^\/supplier-mappings\/[^/]+(\/(draft|compile|compile-rule|try|publish|retire))?$/.test(pathname)) {
+    if (pathname === "/supplier-mappings" || /^\/supplier-mappings\/[^/]+(\/(draft|compile|compile-rule|propose|try|publish|retire))?$/.test(pathname)) {
       const { db, documents } = resolveTenant(request, env);
       const auth = await authenticatePerson(db, request, env);
       if (!auth.user) return json({ error: auth.reason }, 401);
@@ -1742,7 +1743,7 @@ export default {
         }
         return json({ error: "method not allowed" }, 405);
       }
-      const [, rawId, action] = pathname.match(/^\/supplier-mappings\/([^/]+)(?:\/(draft|compile|compile-rule|try|publish|retire))?$/) as RegExpMatchArray;
+      const [, rawId, action] = pathname.match(/^\/supplier-mappings\/([^/]+)(?:\/(draft|compile|compile-rule|propose|try|publish|retire))?$/) as RegExpMatchArray;
       const id = decodeURIComponent(rawId);
       if (!action && request.method === "GET") {
         const result = await handleGetMapping(db, documents, id);
@@ -1755,6 +1756,12 @@ export default {
       if (action === "compile" && request.method === "POST") {
         if (!env.AI) return json({ error: "AI binding not configured" }, 500);
         const result = await handleCompileFunction(db, documents, createWorkersAiCompilerModel(env.AI), id, body);
+        return json(result.body, result.status);
+      }
+      // Decision 0570: AI proposes the lines, scored by our code.
+      if (action === "propose" && request.method === "POST") {
+        if (!env.AI) return json({ error: "AI binding not configured" }, 500);
+        const result = await handleProposeMapping(db, documents, createWorkersAiCompilerModel(env.AI, { maxTokens: 12000 }), id);
         return json(result.body, result.status);
       }
       // Decision 0569: a rule for the whole invoice, from plain words.

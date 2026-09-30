@@ -2,6 +2,7 @@ import {
   applyMapping,
   compileFunction,
   compileDocumentRule,
+  proposeMapping,
   CSV_ROOT,
   CsvError,
   decodeText,
@@ -670,6 +671,49 @@ export async function handleCompileRule(
     ctx,
   });
   return { status: 200, body: outcome };
+}
+
+/**
+ * `POST /supplier-mappings/:id/propose` — **AI proposes the lines —
+ * decision 0570.** The model proposes which element becomes which term,
+ * for the terms not yet mapped; our code checks each proposal and scores
+ * it on names, values and whether the invoice adds up. Nothing is saved:
+ * the person applies proposals, and the draft is saved with them.
+ */
+export async function handleProposeMapping(
+  db: D1Database,
+  bucket: R2Bucket | undefined,
+  model: CompilerModel,
+  id: string
+): Promise<RouteResult> {
+  const mapping = await db.prepare("SELECT * FROM supplier_mappings WHERE id = ?").bind(id).first<MappingRow>();
+  if (!mapping) return { status: 404, body: { error: `mapping ${id} does not exist` } };
+  if (mapping.status === "retired") return { status: 409, body: { error: "the mapping is retired", reason: "retired" } };
+  const versions = await versionsOf(db, id);
+  const editing = versions.find((v) => v.status === "draft") ?? versions.find((v) => v.status === "live");
+  if (!editing) return { status: 404, body: { error: `mapping ${id} has no version` } };
+  const sample = await samplePart(db, bucket, editing.sample_message_id, editing.sample_part_seq);
+  if (!sample) return { status: 409, body: { error: "the sample is no longer kept", reason: "no_sample" } };
+  const def = JSON.parse(editing.definition_json) as MappingDefinition;
+  let xml: string;
+  let columns: Array<{ name: string; element: string }> | null = null;
+  try {
+    xml = mappableXml(sample.text, def);
+    if (def.root === CSV_ROOT) columns = csvToXml(sample.text, def.csv ?? detectCsvOptions(sample.text)).columns;
+  } catch (err) {
+    return { status: 422, body: { error: (err as Error).message, reason: "unreadable_sample" } };
+  }
+  const { lists, ctx } = await allLookups(db);
+  const result = await proposeMapping(model, {
+    described: describeXml(xml),
+    xml,
+    def,
+    targets: targets().map((t) => ({ id: t.id, name: t.description, kind: t.kind, line: t.line, required: t.required })),
+    lists,
+    ctx,
+    columns,
+  });
+  return { status: 200, body: result };
 }
 
 /** Applies a version to its own sample. */

@@ -69,7 +69,12 @@ export function extractResponseText(raw: unknown): string {
   return JSON.stringify(raw);
 }
 
-export function createWorkersAiCompilerModel(ai: AiRunnable): CompilerModel {
+/**
+ * `maxTokens` — decision 0570: proposing a whole mapping answers with a
+ * line for each of up to 35 terms, after the model's own reasoning, and
+ * needs more room than a rule or a function does.
+ */
+export function createWorkersAiCompilerModel(ai: AiRunnable, options: { maxTokens?: number } = {}): CompilerModel {
   return {
     async compile(prompt: string): Promise<string> {
       const raw = await ai.run(COMPILER_MODEL_ID, {
@@ -92,7 +97,7 @@ export function createWorkersAiCompilerModel(ai: AiRunnable): CompilerModel {
         // for every prompt — the honest claim is "addresses the
         // specific, diagnosed cause of the one real failure seen so
         // far," not "impossible now."
-        max_tokens: 4096,
+        max_tokens: options.maxTokens ?? 4096,
       });
       return extractResponseText(raw);
     },

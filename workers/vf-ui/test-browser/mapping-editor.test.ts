@@ -9,6 +9,7 @@ import csvStringsSql from "../../vf-licence/migrations/0216_supplier_csv_strings
 import rereadStringsSql from "../../vf-licence/migrations/0217_mapping_reread_strings.sql?raw";
 import lookupStringsSql from "../../vf-licence/migrations/0218_lookup_list_strings.sql?raw";
 import ruleStringsSql from "../../vf-licence/migrations/0219_document_rule_strings.sql?raw";
+import aiStringsSql from "../../vf-licence/migrations/0220_ai_proposal_strings.sql?raw";
 
 /**
  * **The mapping editor — decision 0561**, with the real strings: draw a
@@ -20,7 +21,7 @@ import ruleStringsSql from "../../vf-licence/migrations/0219_document_rule_strin
  */
 
 const strings: Record<string, string> = { "action.close": "Close", "action.save": "Save" };
-for (const sql of [mappingStringsSql, formatStringsSql, monitorStringsSql, routesStringsSql, missStringsSql, retirePopoutStringsSql, csvStringsSql, rereadStringsSql, lookupStringsSql, ruleStringsSql]) {
+for (const sql of [mappingStringsSql, formatStringsSql, monitorStringsSql, routesStringsSql, missStringsSql, retirePopoutStringsSql, csvStringsSql, rereadStringsSql, lookupStringsSql, ruleStringsSql, aiStringsSql]) {
   for (const m of sql.matchAll(/\('([^']+)', 'en', '((?:[^']|'')*)'\)/g)) strings[m[1]] = m[2].replace(/''/g, "'");
   // Later migrations change some words in place.
   for (const m of sql.matchAll(/UPDATE ui_strings SET value = '((?:[^']|'')*)' WHERE key = '([^']+)' AND locale = 'en'/g)) strings[m[2]] = m[1].replace(/''/g, "'");
@@ -738,5 +739,91 @@ describe("rules for the whole invoice — decision 0569", () => {
     button("Remove rule").click();
     await settle();
     expect((calls.filter((c) => c.method === "PUT").at(-1)?.body as { definition: { rules: unknown[] } }).definition.rules).toEqual([]);
+  });
+});
+
+/**
+ * **AI proposals — decision 0570**: proposed, grouped by the threshold,
+ * applied at once or one by one, dismissed, and the required terms nothing
+ * was found for listed. Applied lines are marked AI.
+ */
+describe("AI proposals — decision 0570", () => {
+  const P = (target: string, path: string, source: string, confidence: number, extra: Record<string, unknown> = {}) => ({
+    target,
+    path,
+    line: { target, source, fx: [], origin: "ai" },
+    confidence,
+    signals: { name: 1, value: 1, addsUp: null },
+    sample: "x",
+    becomes: "x",
+    ...extra,
+  });
+  const PROPOSALS = {
+    proposals: [
+      P("BT-2", "Rechnung/Kopf/Datum", "Rechnung/Kopf/Datum", 100, { sample: "29.09.2026", becomes: "2026-09-29", line: { target: "BT-2", source: "Rechnung/Kopf/Datum", fx: [{ fn: "read_date", args: { pattern: "dd.MM.yyyy" } }], origin: "ai" } }),
+      P("BT-129", "Rechnung/Position/Menge", "Menge", 92),
+      P("BT-131", "Rechnung/Position/Netto", "Netto", 72, { problem: "the invoice does not add up with it" }),
+      P("BT-13", "Rechnung/Kopf/Rechnungsnummer", "Rechnung/Kopf/Rechnungsnummer", 40, { why: "a number" }),
+    ],
+    dropped: 1,
+    missingRequired: ["BT-3"],
+  };
+  const panel = () => document.querySelector(".meai") as HTMLElement;
+  const heads = () => [...panel().querySelectorAll("h4")].map((h) => h.textContent);
+
+  it("proposes, grouped by the threshold, with the required terms nothing was found for", async () => {
+    const calls: Call[] = [];
+    stub(calls, { "POST /api/supplier-mappings/MAP-1/propose": () => ({ body: PROPOSALS }) });
+    await openEditor();
+    button("Propose with AI").click();
+    await settle();
+    expect(calls.some((c) => c.method === "POST" && c.path === "/api/supplier-mappings/MAP-1/propose")).toBe(true);
+    expect(heads()).toEqual(["Ready, 90% or more (2)", "You check (1)", "Weak guesses (1)", "Required, nothing found (1)"]);
+    expect(panel().textContent).toContain("the invoice does not add up with it");
+    expect(button("Apply 2 at or above 90%")).toBeTruthy();
+
+    const slider = panel().querySelector("input[type=range]") as HTMLInputElement;
+    slider.value = "70";
+    slider.dispatchEvent(new Event("input"));
+    await settle();
+    expect(heads()).toEqual(["Ready, 70% or more (3)", "Weak guesses (1)", "Required, nothing found (1)"]);
+  });
+
+  it("applies everything at or above the threshold into the draft, marked AI, and dismisses one", async () => {
+    const calls: Call[] = [];
+    stub(calls, { "POST /api/supplier-mappings/MAP-1/propose": () => ({ body: PROPOSALS }) });
+    await openEditor();
+    button("Propose with AI").click();
+    await settle();
+    button("Apply 2 at or above 90%").click();
+    await settle();
+    const put = calls.filter((c) => c.method === "PUT").at(-1)?.body as { definition: { lines: Array<{ target: string; origin?: string }> } };
+    expect(put.definition.lines.map((l) => [l.target, l.origin])).toEqual([
+      ["BT-1", undefined],
+      ["BT-2", "ai"],
+      ["BT-129", "ai"],
+    ]);
+    expect(text(".menote")).toBe("2 lines applied. Try on the sample to check them.");
+    expect(tgt("BT-2").querySelector(".meaitag")?.textContent).toBe("AI");
+    expect(tgt("BT-1").querySelector(".meaitag")).toBeNull();
+    expect(heads()).toEqual(["You check (1)", "Weak guesses (1)", "Required, nothing found (1)"]);
+
+    const weak = [...panel().querySelectorAll(".meprop")].find((li) => li.querySelector(".mebt i")?.textContent === " BT-13") as HTMLElement;
+    [...weak.querySelectorAll("button")].find((b) => b.textContent === "Dismiss")!.click();
+    await settle();
+    expect(heads()).toEqual(["You check (1)", "Required, nothing found (1)"]);
+  });
+
+  it("says so when nothing could be proposed, and when proposing failed", async () => {
+    stub([], { "POST /api/supplier-mappings/MAP-1/propose": () => ({ body: { proposals: [], dropped: 3, missingRequired: [] } }) });
+    await openEditor();
+    button("Propose with AI").click();
+    await settle();
+    expect(text(".menote")).toBe("The AI proposed nothing that could be checked. Map the lines by hand.");
+    stub([], { "POST /api/supplier-mappings/MAP-1/propose": () => ({ status: 500, body: {} }) });
+    await openEditor();
+    button("Propose with AI").click();
+    await settle();
+    expect(text(".menote")).toBe("The proposals could not be made. Try again, or map the lines by hand.");
   });
 });

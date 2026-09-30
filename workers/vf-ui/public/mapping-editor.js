@@ -32,6 +32,10 @@ let note = null;
 /** Decision 0569: a rule for the whole invoice being said and understood. */
 let ruleSay = "";
 let ruleCompiled = null;
+/** Decision 0570: AI proposals, and the threshold for applying them. */
+let proposals = null;
+let threshold = 90;
+let proposing = false;
 
 async function call(method, path, body) {
   try {
@@ -188,7 +192,13 @@ function targetColumn() {
         ...(line && line.fx.length > 0 ? { "data-fx": "1" } : {}),
       },
       [
-        el("span", { class: "mebt" }, [btName(tgt.id), ...(tgt.required ? [el("span", { class: "mereq", text: "*" })] : []), el("i", { text: tgt.id })]),
+        el("span", { class: "mebt" }, [
+          btName(tgt.id),
+          ...(tgt.required ? [el("span", { class: "mereq", text: "*" })] : []),
+          el("i", { text: tgt.id }),
+          // Decision 0570: a line an AI proposal drew, until a person changes it.
+          ...(line?.origin === "ai" ? [el("span", { class: "meaitag", title: t("mapping.ai.tag"), text: "AI" })] : []),
+        ]),
         ...(line && line.source === null ? [el("span", { class: "mest", text: t("mapping.fixed") })] : []),
         // Decision 0569: filled by a rule for the whole invoice, not a line.
         ...(!line && byRule(tgt.id) ? [el("span", { class: "mest", text: t("mapping.rules.filled") })] : []),
@@ -713,6 +723,109 @@ function rulesPanel() {
   ]);
 }
 
+/**
+ * **AI proposals — decision 0570**, as Dan approved them in the mock-up.
+ * Each proposal carries a confidence our code computed from names,
+ * values and whether the invoice adds up. Everything at or above the
+ * threshold is applied at once; the rest are grouped as *you check*,
+ * *weak guesses*, and *required, nothing found*, each to apply or dismiss.
+ */
+async function propose() {
+  proposing = true;
+  note = null;
+  render();
+  const r = await call("POST", `/supplier-mappings/${encodeURIComponent(mappingId)}/propose`);
+  proposing = false;
+  if (!r.ok) {
+    note = { text: r.body?.error ?? t("mapping.ai.failed"), ok: false };
+    proposals = null;
+  } else {
+    proposals = r.body;
+    if (proposals.proposals.length === 0) note = { text: t("mapping.ai.nothing"), ok: false };
+  }
+  render();
+}
+
+async function applyProposals(list) {
+  const fresh = list.filter((p) => !lineFor(p.target));
+  def.lines = [...def.lines, ...fresh.map((p) => p.line)];
+  proposals = { ...proposals, proposals: proposals.proposals.filter((p) => !list.includes(p)) };
+  note = { text: t("mapping.ai.applied").replace("{n}", String(fresh.length)), ok: true };
+  await save();
+  render();
+}
+
+function proposalsPanel() {
+  if (!proposals) return null;
+  const all = proposals.proposals;
+  const ready = all.filter((p) => p.confidence >= threshold);
+  const check = all.filter((p) => p.confidence < threshold && p.confidence >= 60);
+  const weak = all.filter((p) => p.confidence < 60);
+  const slider = el("input", { type: "range", min: "50", max: "100", step: "5", value: String(threshold), "aria-label": t("mapping.ai.threshold") });
+  slider.oninput = () => {
+    threshold = Number(slider.value);
+    render();
+  };
+  const row = (p) =>
+    el("li", { class: "meprop" }, [
+      el("div", { class: "meprophead" }, [
+        el("span", { class: "mebt" }, [btName(p.target), el("i", { text: ` ${p.target}` })]),
+        el("span", { class: `rmpill ${p.confidence >= threshold ? "ok" : p.confidence >= 60 ? "q" : "bad"}`, text: `${p.confidence}%` }),
+      ]),
+      el("div", { class: "sm" }, [
+        el("span", { class: "mep", text: `← ${nameOf(p.path)}` }),
+        el("span", { class: "muted", text: `  ${p.sample ?? t("mapping.none")} → ${p.becomes === undefined || p.becomes === null ? t("mapping.none") : p.becomes}` }),
+      ]),
+      ...(p.line.fx.length > 0 ? [stepPills(p.line.fx)] : []),
+      ...(p.why ? [el("div", { class: "muted sm", text: p.why })] : []),
+      ...(p.problem ? [el("div", { class: "bad sm", text: p.problem })] : []),
+      el("div", { class: "statebuttons mebtns" }, [
+        actionLink("done", { label: t("mapping.ai.apply"), onclick: () => applyProposals([p]) }),
+        actionLink("discard", {
+          label: t("mapping.ai.dismiss"),
+          onclick: () => {
+            proposals = { ...proposals, proposals: proposals.proposals.filter((x) => x !== p) };
+            render();
+          },
+        }),
+      ]),
+    ]);
+  const group = (title, list) => (list.length === 0 ? [] : [el("h4", { class: "rmh4", text: `${title} (${list.length})` }), el("ul", { class: "meprops" }, list.map(row))]);
+  const missing = proposals.missingRequired.filter((id) => !lineFor(id) && !byRule(id));
+  return el("div", { class: "panel meai" }, [
+    el("div", { class: "cardhead" }, [
+      el("h3", { text: t("mapping.ai.heading") }),
+      el("div", { class: "statebuttons" }, [
+        actionLink("close", {
+          onclick: () => {
+            proposals = null;
+            render();
+          },
+        }),
+      ]),
+    ]),
+    el("p", { class: "muted sm", text: t("mapping.ai.sub") }),
+    el("label", { class: "sm meai-threshold" }, [el("span", { text: t("mapping.ai.thresholdn").replace("{n}", String(threshold)) }), slider]),
+    el("div", { class: "statebuttons mebtns" }, [
+      actionLink("done", {
+        primary: ready.length > 0,
+        label: t("mapping.ai.applyall").replace("{k}", String(ready.length)).replace("{n}", String(threshold)),
+        onclick: () => (ready.length > 0 ? applyProposals(ready) : undefined),
+      }),
+    ]),
+    ...group(t("mapping.ai.ready").replace("{n}", String(threshold)), ready),
+    ...group(t("mapping.ai.check"), check),
+    ...group(t("mapping.ai.weak"), weak),
+    ...(missing.length > 0
+      ? [
+          el("h4", { class: "rmh4", text: `${t("mapping.ai.missing")} (${missing.length})` }),
+          el("ul", { class: "meprops" }, missing.map((id) => el("li", { class: "sm", text: `${btName(id)} ${id}` }))),
+          el("p", { class: "muted sm", text: t("mapping.ai.missinghow") }),
+        ]
+      : []),
+  ]);
+}
+
 function render() {
   const shell = document.getElementById("shell");
   if (!shell || !data) return;
@@ -735,6 +848,14 @@ function render() {
     el("div", { class: "cardhead" }, [
       el("h3", { text: isCsv() ? t("mapping.csv.heading") : t("mapping.heading").replace("{root}", data.mapping.root) }),
       el("div", { class: "statebuttons" }, [
+        ...(data.mapping.status === "retired"
+          ? []
+          : [
+              actionLink("compile", {
+                label: proposing ? t("mapping.ai.working") : t("mapping.ai.propose"),
+                onclick: () => (proposing ? undefined : propose()),
+              }),
+            ]),
         actionLink("backtest", {
           label: t("mapping.try"),
           onclick: async () => {
@@ -776,6 +897,7 @@ function render() {
       class: "muted sm",
       text: t("mapping.counts").replace("{m}", String(mapped)).replace("{f}", String(withFx)).replace("{r}", String(missing)),
     }),
+    ...(mapped === 0 && !proposals && data.mapping.status !== "retired" ? [el("div", { class: "menote ok", text: t("mapping.ai.hint") })] : []),
     el("div", { class: "melegend" }, [
       el("span", {}, [el("span", { class: "mesw" }), t("mapping.legend.line")]),
       el("span", {}, [el("span", { class: "mefx static", text: "Fx" }), ` ${t("mapping.legend.fx")}`]),
@@ -790,7 +912,7 @@ function render() {
     frame(
       el("div", {}, [
         topbar(t("mapping.title").replace("{name}", data.mapping.name), sub),
-        el("div", { class: "meed" }, [main, el("div", {}, [detailPanel(), ...[tryPanel()].filter(Boolean), settingsPanel(), rulesPanel()])]),
+        el("div", { class: "meed" }, [main, el("div", {}, [...[proposalsPanel()].filter(Boolean), detailPanel(), ...[tryPanel()].filter(Boolean), settingsPanel(), rulesPanel()])]),
       ])
     )
   );
@@ -812,6 +934,9 @@ export async function open(id) {
   note = null;
   ruleSay = "";
   ruleCompiled = null;
+  proposals = null;
+  proposing = false;
+  threshold = 90;
   say = "";
   const ok = await load();
   if (!ok) {

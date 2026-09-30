@@ -17,6 +17,7 @@ import {
   handleCompileFunction,
   handleCompileRule,
   handleCreateMapping,
+  handleProposeMapping,
   handleGetMapping,
   handleListMappings,
   handlePublishMapping,
@@ -885,6 +886,56 @@ describe("rules for the whole invoice", () => {
     expect(prompts[0]).toContain('- BT-2 (');
     expect(prompts[0]).toContain('"2026-09-29"');
     expect(prompts[0]).not.toContain("- BT-129 (");
+  });
+});
+
+/**
+ * **AI proposals — decision 0570.** The model proposes; our code checks
+ * and scores on names, values and whether the invoice adds up. Nothing is
+ * saved until the person applies proposals.
+ */
+describe("AI proposing a mapping", () => {
+  it("proposes lines for the terms not yet mapped, scored by our code, and saves nothing", async () => {
+    const failed = await receiveCsv("rechnung@lagernord.de", LAGER_CSV);
+    const id = ((await handleCreateMapping(env.DB, env.DOCUMENTS, "u-dan", { messageId: failed.id, partSeq: 1 })).body as { id: string }).id;
+    await handleSaveDraft(env.DB, "u-dan", id, { definition: { ...CSV_DEFINITION, lines: CSV_DEFINITION.lines.filter((l) => l.target === "BT-1") } });
+    const prompts: string[] = [];
+    const answer = CSV_DEFINITION.lines
+      .filter((l) => l.source !== null && l.target !== "BT-1")
+      .map((l) => ({ target: l.target, source: l.source!.startsWith("CSV/") ? l.source : `CSV/Row/${l.source}`, steps: l.fx }));
+    const model = {
+      compile: async (prompt: string) => {
+        prompts.push(prompt);
+        return JSON.stringify({ lines: [...answer, { target: "BT-44", source: "CSV/First/Nirgends", steps: [] }] });
+      },
+    };
+    const result = await handleProposeMapping(env.DB, env.DOCUMENTS, model, id);
+    expect(result.status).toBe(200);
+    const body = result.body as { proposals: Array<{ target: string; confidence: number; line: unknown; becomes: unknown }>; dropped: number; missingRequired: string[] };
+    expect(body.dropped).toBe(1);
+    expect(body.proposals.map((p) => p.target)).not.toContain("BT-1");
+    const by = Object.fromEntries(body.proposals.map((p) => [p.target, p]));
+    expect(by["BT-112"]).toMatchObject({ confidence: 100, becomes: 600.95 });
+    expect(by["BT-129"].line).toEqual({ target: "BT-129", source: "Menge", fx: [], origin: "ai" });
+    // BT-3 has no element (a fixed value), so it is a required term nothing covers.
+    expect(body.missingRequired).toEqual(["BT-3"]);
+    expect(prompts[0]).toContain('- CSV/First/Währung [whole invoice]: "EUR"');
+    expect(prompts[0]).not.toContain("- BT-1: ");
+
+    const got = (await handleGetMapping(env.DB, env.DOCUMENTS, id)).body as { editing: { definition: { lines: unknown[] } } };
+    expect(got.editing.definition.lines).toHaveLength(1);
+  });
+
+  it("refuses a retired mapping and one whose sample is gone", async () => {
+    const failed = await receiveCsv("rechnung@lagernord.de", LAGER_CSV);
+    const id = ((await handleCreateMapping(env.DB, env.DOCUMENTS, "u-dan", { messageId: failed.id, partSeq: 1 })).body as { id: string }).id;
+    const model = { compile: async () => '{"lines":[]}' };
+    const part = await env.DB.prepare("SELECT r2_key FROM route_message_parts WHERE message_id = ? AND seq = 1").bind(failed.id).first<{ r2_key: string }>();
+    await env.DOCUMENTS.delete(part!.r2_key);
+    expect(await handleProposeMapping(env.DB, env.DOCUMENTS, model, id)).toMatchObject({ status: 409, body: { reason: "no_sample" } });
+    await handleRetireMapping(env.DB, "u-dan", id);
+    expect(await handleProposeMapping(env.DB, env.DOCUMENTS, model, id)).toMatchObject({ status: 409, body: { reason: "retired" } });
+    expect(await handleProposeMapping(env.DB, env.DOCUMENTS, model, "MAP-NONE")).toMatchObject({ status: 404 });
   });
 });
 

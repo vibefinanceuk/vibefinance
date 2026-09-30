@@ -4978,7 +4978,7 @@ describe("look-up lists, through the real router (decision 0568)", () => {
 describe("supplier mappings, through the real router (decision 0561)", () => {
   it("need Admin.Configure, and say what is missing", async () => {
     const monitor = await seedUserWithPermissions(["Integration.Monitor"]);
-    for (const [method, path] of [["GET", "/supplier-mappings"], ["GET", "/supplier-mappings/MAP-1"], ["POST", "/supplier-mappings/MAP-1/publish"], ["POST", "/supplier-mappings/MAP-1/compile-rule"], ["POST", "/supplier-mappings/MAP-1/retire"], ["GET", "/lookup-lists"], ["PUT", "/lookup-lists/LL-1"], ["POST", "/lookup-lists/LL-1/retire"]]) {
+    for (const [method, path] of [["GET", "/supplier-mappings"], ["GET", "/supplier-mappings/MAP-1"], ["POST", "/supplier-mappings/MAP-1/publish"], ["POST", "/supplier-mappings/MAP-1/compile-rule"], ["POST", "/supplier-mappings/MAP-1/propose"], ["POST", "/supplier-mappings/MAP-1/retire"], ["GET", "/lookup-lists"], ["PUT", "/lookup-lists/LL-1"], ["POST", "/lookup-lists/LL-1/retire"]]) {
       expect((await SELF.fetch(`https://example.com${path}`, { method, headers: { Authorization: `Bearer ${monitor}` } })).status).toBe(403);
     }
     const admin = await seedUserWithPermissions(["Admin.Configure"]);

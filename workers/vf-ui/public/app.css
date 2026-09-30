@@ -4849,6 +4849,13 @@
 /* Decisions 0563 and 0564: confirming a mapping's retirement, in a pop-out. */
 .popout.meretirepop { width: min(480px, 100%); }
 .rmfmtact { margin-top: 6px; }
+/* Decision 0570: AI proposals in the mapping editor. */
+.meprops { list-style: none; padding: 0; margin: 6px 0 10px; }
+.meprop { border-top: 1px solid var(--border); padding: 8px 0; }
+.meprophead { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.meai-threshold { display: flex; align-items: center; gap: 10px; margin: 8px 0; }
+.meai-threshold input { flex: 1; }
+.meaitag { margin-left: 6px; font-size: var(--text-sm); font-weight: 600; color: var(--text-accent); border: 1px solid var(--border-accent); border-radius: var(--radius); padding: 0 4px; }
 /* Decision 0569: rules for the whole invoice, in the mapping editor. */
 .merules { margin: 8px 0; padding-left: 20px; }
 .merules li { margin-bottom: 10px; }

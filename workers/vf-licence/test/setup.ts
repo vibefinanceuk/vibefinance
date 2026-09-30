@@ -207,6 +207,7 @@ import supplierCsvStringsSql from "../migrations/0216_supplier_csv_strings.sql?r
 import mappingRereadStringsSql from "../migrations/0217_mapping_reread_strings.sql?raw";
 import lookupListStringsSql from "../migrations/0218_lookup_list_strings.sql?raw";
 import documentRuleStringsSql from "../migrations/0219_document_rule_strings.sql?raw";
+import aiProposalStringsSql from "../migrations/0220_ai_proposal_strings.sql?raw";
 
 function stripSqlComments(sql: string): string {
   return sql
@@ -447,5 +448,6 @@ export async function applyTestSchema(): Promise<void> {
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(mappingRereadStringsSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(lookupListStringsSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(documentRuleStringsSql)));
+  await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(aiProposalStringsSql)));
 
 }
