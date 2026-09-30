@@ -529,3 +529,18 @@ describe("e-invoice checks — decision 0560", () => {
     expect(host.children).toHaveLength(0);
   });
 });
+
+/**
+ * Last in the file: it leaves a message chosen, which the module keeps.
+ */
+describe("the Route monitor opened on one message — decision 0573", () => {
+  it("opens one message's detail at once when asked — decision 0573", async () => {
+    const calls: Call[] = [];
+    stub(calls);
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { open: openScreen } = await import("/route-monitor.js");
+    await openScreen({ message: "MSG-7F3A-2291-0C4E" });
+    expect(calls.some((c) => c.path === "/api/route-messages/MSG-7F3A-2291-0C4E")).toBe(true);
+  });
+});

@@ -553,6 +553,28 @@ describe("the flat nav, permission-filtered (decisions 0274 and 0276)", () => {
     expect(css).not.toContain(".frame.collapsed .navgroup { display: none; }");
   });
 
+  it("puts Create after Tasks for someone holding AP.Create, without changing any other colour — decision 0573", async () => {
+    Object.assign(STRINGS.strings, { "nav.create": "Create" });
+    stubFetch({
+      "/api/ui-strings": STRINGS,
+      "/api/whoami": { id: "u-dan", name: "Dan", permissions: [...ALL_NAV_PERMISSIONS, "AP.Create"] },
+      "/api/tasks": { tasks: [APPROVAL_TASK], counts: {} },
+      "/api/dashboard": { cards: [], usingDefault: true },
+    });
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { start } = await import("/tasks.js");
+    await start();
+    const labels = [...document.querySelectorAll(".navitem")].map((a) => a.textContent);
+    expect(labels.indexOf("Create")).toBe(labels.indexOf("Tasks") + 1);
+    const hueOf = (label: string) =>
+      [...document.querySelectorAll(".navitem")].find((a) => a.textContent === label)?.className.match(/navhue(\d)/)?.[1];
+    expect(hueOf("Create")).toBe("5");
+    expect(hueOf("Documents")).toBe("4");
+    expect(hueOf("Suppliers")).toBe("5");
+    expect(hueOf("Rules")).toBe("4");
+  });
+
   it("gives each nav item its own fixed colour, whatever else the person can see — decision 0527", async () => {
     /**
      * Option D from the mock-up, the operator's choice: "D please".

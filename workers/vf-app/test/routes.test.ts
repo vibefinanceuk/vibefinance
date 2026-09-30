@@ -26,14 +26,15 @@ beforeEach(async () => {
 });
 
 describe("the standard routes", () => {
-  it("are seeded: five sources and the ERP CSV file, email, HTTPS and the ERP live", async () => {
+  it("are seeded: five sources and the ERP CSV file, email, HTTPS, AP upload and the ERP live", async () => {
     const body = (await handleListRoutes(env.DB)).body as {
       routes: { id: string; direction: string; origin: string; live: boolean; current: Record<string, unknown> }[];
     };
+    // Decision 0573: File import is live, as AP upload, so it sorts first by name.
     expect(body.routes.map((r) => [r.id, r.direction, r.origin, r.live])).toEqual([
+      ["file-import", "source", "standard", true],
       ["edi-in", "source", "standard", false],
       ["email-in", "source", "standard", true],
-      ["file-import", "source", "standard", false],
       ["https-in", "source", "standard", true],
       ["sftp-in", "source", "standard", false],
       ["erp-csv", "destination", "standard", true],

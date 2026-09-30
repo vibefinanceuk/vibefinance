@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 30 September 2026 (decision 0572). A living document: what
+Last updated 30 September 2026 (decision 0573). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,14 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Create → Upload documents (0573)
+- A Create screen under Accounts payable for the AP team: drop PDFs,
+  images, XML or CSV files, or a zip, and each becomes an invoice, read
+  as an emailed attachment is, shown file by file with Open.
+- Each upload is one message on the AP upload route (File import, now
+  live), so the Route monitor and each invoice's Timeline show it.
+- Create an invoice by hand and batch upload come next.
 
 ### `hidden` always hides (0572)
 - The Attachments pane no longer shows under the Document and Timeline

@@ -755,6 +755,11 @@ describe("paths the app is allowed to reach (decision 0212)", () => {
     // Everything received with an invoice — decision 0571.
     "/invoices/inv-1/attachments",
     "/invoices/inv-1/attachments/MSG-7A86-7670-F2A5/1/url",
+    // Create → Upload documents — decision 0573.
+    "/uploads/targets",
+    "/uploads",
+    "/uploads/MSG-3C41-9A02-7E55/files",
+    "/uploads/MSG-3C41-9A02-7E55/finish",
   ];
 
   for (const path of reachable) {

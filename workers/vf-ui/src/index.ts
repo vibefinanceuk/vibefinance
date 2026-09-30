@@ -238,6 +238,10 @@ const PROXIED_TO_INSTANCE: RegExp[] = [
   /^\/routes$/,
   /^\/process-routes$/,
   // The Route monitor — decision 0556: the list, one message, one stored file.
+  // Create → Upload documents — decision 0573.
+  /^\/uploads\/targets$/,
+  /^\/uploads$/,
+  /^\/uploads\/[^/]+\/(files|finish)$/,
   /^\/route-messages$/,
   /^\/route-messages\/[^/]+$/,
   /^\/route-messages\/[^/]+\/parts\/\d+$/,

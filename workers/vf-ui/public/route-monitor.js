@@ -826,8 +826,13 @@ function render() {
   );
 }
 
-export async function open() {
+/**
+ * `message` opens one message's detail at once — decision 0573, from
+ * Create's "Route monitor" button for the upload just made.
+ */
+export async function open({ message } = {}) {
   setCurrentScreen("routemonitor");
+  if (message) selectedId = message;
   const ok = await load();
   if (ok && selectedId) await loadDetail(selectedId);
   render();

@@ -117,6 +117,7 @@ import routeMessageFormatsSql from "../../../migrations/0110_route_message_forma
 import supplierMappingsSql from "../../../migrations/0111_supplier_mappings.sql?raw";
 import supplierMappingMissesSql from "../../../migrations/0112_supplier_mapping_misses.sql?raw";
 import lookupListsSql from "../../../migrations/0113_lookup_lists.sql?raw";
+import apUploadSql from "../../../migrations/0114_ap_upload.sql?raw";
 
 // Another known divergence from production, on top of the one below:
 // D1's exec() splits its input by newline and executes each non-empty
@@ -430,6 +431,7 @@ export async function applyTestSchema(): Promise<void> {
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(supplierMappingsSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(supplierMappingMissesSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(lookupListsSql)));
+  await env.DB.exec(toOneStatementPerLine(stripSqlComments(apUploadSql)));
 }
 
 /**

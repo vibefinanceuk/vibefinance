@@ -174,6 +174,13 @@ const AP_PERMISSIONS = [
    * by unit like every other grant.
    */
   "AP.Export",
+  /**
+   * **Decision 0573.** Bring invoices in by hand: Create → Upload
+   * documents. Its own permission: an AP team member who keys and
+   * uploads need not configure routes, and a reviewer need not create.
+   * Granted by migration 0114 to every role that already validates.
+   */
+  "AP.Create",
 ] as const;
 
 /**
@@ -374,6 +381,7 @@ export const PERMISSION_DESCRIPTIONS: Record<Permission, string> = {
   "AP.Discard": "Discard a document that cannot be processed",
   "AP.FraudReview": "See the AP Analytics screen's Fraud Prevention tab",
   "AP.TaskManage": "See, release, and reassign every user's tasks, not just your own",
+  "AP.Create": "Bring invoices in by hand from the Create screen: upload PDFs, images, XML or CSV, each read into an invoice as email is (decision 0573)",
   "AP.Export": "Export payment-eligible invoices to the ERP as a CSV file, each once, and download past exports (decision 0552)",
   "AP.Assistant": "Ask the AP Analytics screen's Talk to an AP Expert tab a question — each answer still scoped by whatever else you hold",
   "AP.Manager": "Remove a collaborator from an invoice's conversation — decision 0476, deliberately narrower than the AP.Review that can add one",

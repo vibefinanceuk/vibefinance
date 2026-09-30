@@ -209,6 +209,7 @@ import lookupListStringsSql from "../migrations/0218_lookup_list_strings.sql?raw
 import documentRuleStringsSql from "../migrations/0219_document_rule_strings.sql?raw";
 import aiProposalStringsSql from "../migrations/0220_ai_proposal_strings.sql?raw";
 import attachmentsStringsSql from "../migrations/0221_attachments_strings.sql?raw";
+import createUploadStringsSql from "../migrations/0222_create_upload_strings.sql?raw";
 
 function stripSqlComments(sql: string): string {
   return sql
@@ -451,5 +452,6 @@ export async function applyTestSchema(): Promise<void> {
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(documentRuleStringsSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(aiProposalStringsSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(attachmentsStringsSql)));
+  await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(createUploadStringsSql)));
 
 }

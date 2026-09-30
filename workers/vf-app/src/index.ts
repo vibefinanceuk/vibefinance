@@ -256,6 +256,7 @@ import {
 import { handleAddStageReturnTarget, handleRemoveStageReturnTarget } from "./stage-return-targets-route.js";
 import { handlePreflight, withCors } from "@vibefinance/shared";
 import { verifyDocumentToken, mintPageToken, verifyPageToken, mintPartToken, verifyPartToken } from "./document-token.js";
+import { handleFinishUpload, handleOpenUpload, handleUploadFile, handleUploadTargets } from "./upload-route.js";
 import { messagesForInvoice, partForInvoice, partResponse, receivedFiles, viewFor } from "./received-files.js";
 import { retrieveInvoiceDocument, renderXmlForDisplay, extForContentType } from "./document-storage.js";
 import { resolveVocabulary } from "@vibefinance/shared";
@@ -4972,6 +4973,58 @@ export default {
       return json(result.body, result.status);
     }
 
+
+    /**
+     * **Create → Upload documents — decision 0573.** The AP team's own
+     * way in: where an upload can go, opening one, each file, and
+     * closing it. Under `AP.Create`, a session or key like any other
+     * screen's route; the person is who the upload is from.
+     */
+    if (pathname === "/uploads/targets" || pathname === "/uploads" || /^\/uploads\/[^/]+\/(files|finish)$/.test(pathname)) {
+      const { db, documents } = resolveTenant(request, env);
+      const auth = await authenticatePerson(db, request, env);
+      if (!auth.user) return json({ error: auth.reason }, 401);
+      if (!(await hasPermission(db, auth.user.id, "AP.Create"))) {
+        return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
+      }
+      const person = auth.user;
+      if (pathname === "/uploads/targets" && request.method === "GET") {
+        const result = await handleUploadTargets(db);
+        return json(result.body, result.status);
+      }
+      if (pathname === "/uploads" && request.method === "POST") {
+        let body: unknown;
+        try {
+          body = await request.json();
+        } catch {
+          return json({ error: "the body must be JSON" }, 400);
+        }
+        const result = await handleOpenUpload(db, person, body);
+        return json(result.body, result.status);
+      }
+      const uploadMatch = pathname.match(/^\/uploads\/([^/]+)\/(files|finish)$/);
+      if (uploadMatch && request.method === "POST") {
+        const messageId = decodeURIComponent(uploadMatch[1]);
+        if (uploadMatch[2] === "finish") {
+          const result = await handleFinishUpload(db, person, messageId);
+          return json(result.body, result.status);
+        }
+        if (!env.AI) return json({ error: "the AI binding is not configured" }, 500);
+        const result = await handleUploadFile(
+          db,
+          person,
+          messageId,
+          {
+            filename: url.searchParams.get("name") ?? "file",
+            contentType: request.headers.get("Content-Type"),
+            bytes: new Uint8Array(await request.arrayBuffer()),
+          },
+          { model: createWorkersAiExtractionModel(env.AI, env.EXTRACTION_MODEL_ID), bucket: documents, customerId: env.CUSTOMER_ID }
+        );
+        return json(result.body, result.status);
+      }
+      return json({ error: "method not allowed" }, 405);
+    }
 
     const sourceCaptureMatch = pathname.match(/^\/sources\/([^/]+)\/capture$/);
     if (sourceCaptureMatch && request.method === "POST") {

@@ -731,6 +731,10 @@ async function go(screen) {
     // Route monitor, never the nav; this is the org switcher's relaunch.
     const { reopen } = await import("/mapping-editor.js");
     await reopen();
+  } else if (screen === "create") {
+    // Create → Upload documents — decision 0573.
+    const { open } = await import("/create.js");
+    await open();
   } else if (screen === "routemonitor") {
     // The Route monitor — decision 0556.
     const { open } = await import("/route-monitor.js");
@@ -849,6 +853,8 @@ const NAV_PERMISSIONS = {
   processroutes: "Admin.Configure",
   // The Route monitor — decision 0556: for a customer's own IT team.
   routemonitor: "Integration.Monitor",
+  // Create → Upload documents — decision 0573.
+  create: "AP.Create",
   /**
    * **Either standing opens it, decision 0321** — extending decision
    * 0320's own `Admin.Configure` correction rather than reverting it:
@@ -938,6 +944,8 @@ export function frame(main) {
         ["dashboard", "dashboard"],
         ["apanalytics", "apanalytics"],
         ["tasks", "tasks"],
+        // Create — decision 0573: the AP team's own way in, after Tasks.
+        ["create", "create"],
         ["documents", "documents"],
       ],
     },
@@ -993,7 +1001,20 @@ export function frame(main) {
    * its place among the screens this person can see. So Rules is the
    * same colour for everyone, whatever else they are missing.
    */
-  const HUES = new Map(NAV_GROUPS.flatMap(({ screens }) => screens).map(([screen], i) => [screen, (i % 5) + 1]));
+  /**
+   * **Create keeps everyone else's colour — decision 0573.** It sits
+   * under Accounts payable, where Dan asked for it, so numbering it with
+   * the rest would shift every screen after it. It is left out of the
+   * count and takes the fifth colour, which neither neighbour
+   * (Tasks, third; Documents, fourth) has.
+   */
+  const FIXED_HUES = new Map([["create", 5]]);
+  const HUES = new Map([
+    ...NAV_GROUPS.flatMap(({ screens }) => screens)
+      .filter(([screen]) => !FIXED_HUES.has(screen))
+      .map(([screen], i) => [screen, (i % 5) + 1]),
+    ...FIXED_HUES,
+  ]);
 
   const navItems = NAV_GROUPS.flatMap(({ heading, screens }) => {
     const unlockedScreens = screens.filter(([screen]) => unlocked(screen));
