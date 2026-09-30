@@ -1,6 +1,7 @@
 import type { RouteResult } from "./org-route.js";
 import { applyMapping, CSV_ROOT, decodeText, mappableXml, type MappingDefinition } from "@vibefinance/shared";
 import { captureThroughMapping } from "./supplier-mapping-route.js";
+import { lookupsFor } from "./lookup-lists-route.js";
 import { buildIntakeEnricher } from "./source-capture-route.js";
 import { addRouteEvent, setPartFormat } from "./route-messages.js";
 
@@ -176,7 +177,7 @@ export async function handleRereadPart(
   if (!live) return { status: 409, body: { error: "the mapping has no live version", reason: "mapping_retired" } };
   try {
     const def = JSON.parse(live.definition_json) as MappingDefinition;
-    const tried = applyMapping(mappableXml(text, def), def);
+    const tried = applyMapping(mappableXml(text, def), def, await lookupsFor(db, def));
     if (tried.problems.length > 0) {
       return {
         status: 422,

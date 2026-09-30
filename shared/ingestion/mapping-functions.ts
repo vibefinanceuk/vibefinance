@@ -29,12 +29,29 @@ export interface FunctionStep {
   args?: Record<string, string | number>;
 }
 
+/**
+ * **The customer's own look-up lists — decision 0568.** Read by
+ * `look_up`, and loaded by the caller for the lists a mapping names: the
+ * functions stay pure, and never reach a database themselves. Keys are the
+ * values as a supplier writes them, trimmed and in lower case.
+ */
+export interface LookupList {
+  name: string;
+  entries: Record<string, string>;
+}
+export interface FnContext {
+  lookups?: Record<string, LookupList>;
+}
+
+/** A value as a look-up list keys it: trimmed, in lower case. */
+export const lookupKey = (v: string) => v.trim().toLowerCase();
+
 interface FunctionDef {
   /** What it does, for the compiler's prompt and for people. */
   describe: string;
   /** Its arguments: name → what it is. Every one is required. */
   args: Record<string, "text" | "number">;
-  apply(value: FnValue, args: Record<string, string | number>): FnResult;
+  apply(value: FnValue, args: Record<string, string | number>, ctx?: FnContext): FnResult;
 }
 
 const text = (v: FnValue) => (v === null ? "" : String(v));
@@ -254,7 +271,28 @@ export const FUNCTIONS = {
       const s = text(value).trim();
       if (/^[A-Z0-9]{2,3}$/.test(s) && Object.values(UNITS).includes(s)) return ok(s);
       const code = UNITS[s.toLowerCase()];
-      return code ? ok(code) : fail(`"${s}" is not a unit this function knows`);
+      if (code) return ok(code);
+      /**
+       * **A code already, as a look-up list gives it — decision 0568.** A
+       * word it does not know, written as a code is (two or three capital
+       * letters or digits, such as RO from a Units list), is taken as the
+       * code. Words it knows come first, so "ST" is still a piece (H87).
+       */
+      if (/^[A-Z0-9]{2,3}$/.test(s) && /[A-Z]/.test(s)) return ok(s);
+      return fail(`"${s}" is not a unit this function knows`);
+    },
+  },
+  look_up: {
+    describe:
+      "look the value up in one of the customer's own look-up lists (by the list's id) and give what the list says it becomes; otherwise is refuse (a value not in the list is a problem) or keep (it is left as it is, for the next step)",
+    args: { list: "text", otherwise: "text" },
+    apply(value, args, ctx) {
+      const list = ctx?.lookups?.[String(args.list)];
+      if (!list) return fail(`the look-up list "${args.list}" is not available: it may have been retired`);
+      const s = text(value);
+      const hit = list.entries[lookupKey(s)];
+      if (hit !== undefined) return ok(hit);
+      return String(args.otherwise) === "keep" ? ok(value) : fail(`"${s}" is not in the list ${list.name}`);
     },
   },
   if_empty: {
@@ -293,15 +331,18 @@ export function validateChain(chain: unknown): string | null {
     if ((s.fn === "read_date" || s.fn === "write_date") && !datePattern(String(args.pattern))) {
       return `"${args.pattern}" is not a date pattern`;
     }
+    if (s.fn === "look_up" && args.otherwise !== "refuse" && args.otherwise !== "keep") {
+      return "look_up's otherwise is refuse or keep";
+    }
   }
   return null;
 }
 
 /** Runs a chain over a value, stopping at the first step that fails. */
-export function applyChain(chain: readonly FunctionStep[], value: FnValue): FnResult {
+export function applyChain(chain: readonly FunctionStep[], value: FnValue, ctx?: FnContext): FnResult {
   let current: FnValue = value;
   for (const step of chain) {
-    const r = (FUNCTIONS[step.fn] as FunctionDef).apply(current, step.args ?? {});
+    const r = (FUNCTIONS[step.fn] as FunctionDef).apply(current, step.args ?? {}, ctx);
     if (!r.ok) return r;
     current = r.value;
   }
@@ -317,4 +358,9 @@ export function describeFunctions(): string {
       .join(", ");
     return `- ${name}(${args}): ${def.describe}`;
   }).join("\n");
+}
+
+/** The look-up lists a chain names, by id: what a caller loads before running it (0568). */
+export function listsInChain(chain: readonly FunctionStep[]): string[] {
+  return chain.filter((s) => s.fn === "look_up").map((s) => String(s.args?.list ?? ""));
 }

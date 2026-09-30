@@ -20,6 +20,7 @@ import {
   type MappingDefinition,
 } from "@vibefinance/shared";
 import type { RouteResult } from "./org-route.js";
+import { allLookups, lookupsFor, unknownLists } from "./lookup-lists-route.js";
 import { handleCaptureIntake, type CaptureIntakeBody } from "./intake-capture-route.js";
 
 /**
@@ -253,7 +254,7 @@ export async function captureThroughMapping(
   const definition = JSON.parse(found.version.definition_json) as MappingDefinition;
   let applied: AppliedMapping;
   try {
-    applied = applyMapping(mappableXml(text, definition), definition);
+    applied = applyMapping(mappableXml(text, definition), definition, await lookupsFor(db, definition));
   } catch (err) {
     if (err instanceof MappingXmlError || err instanceof CsvError) return { status: 422, body: { ...base, ...where, error: err.message } };
     throw err;
@@ -273,7 +274,7 @@ export async function captureThroughMapping(
         body: {
           ...base,
           ...where,
-          error: `${found.mapping.name} v${found.version.version}: the file holds ${numbers.length} invoices (${shown}); one invoice per file is read`,
+          error: `${found.mapping.name} v${found.version.version}: the file holds ${numbers.length} invoices (${shown}). One invoice per file is read`,
         },
       };
     }
@@ -537,6 +538,8 @@ export async function handleGetMapping(db: D1Database, bucket: R2Bucket | undefi
         : null,
       described,
       columns,
+      // Decision 0568: the look-up lists, by id and name, for showing a function's list.
+      lists: (await allLookups(db)).lists.map((l) => ({ id: l.id, name: l.name })),
       targets: targets(),
       waiting: (await waitingFor(db, mapping)).length,
     },
@@ -568,6 +571,11 @@ export async function handleSaveDraft(db: D1Database, userId: string, id: string
   const definition = { ...(body.definition as MappingDefinition), root: mapping.root };
   const invalid = validateMapping(definition);
   if (invalid) return { status: 422, body: { error: invalid, reason: "invalid_mapping" } };
+  // Decision 0568: a look-up names a list that exists and is not retired.
+  const missing = await unknownLists(db, definition);
+  if (missing.length > 0) {
+    return { status: 422, body: { error: `there is no look-up list ${missing.join(", ")}, or it is retired`, reason: "unknown_list" } };
+  }
   const draft = await draftOf(db, id, userId);
   if (!draft) return { status: 404, body: { error: "the mapping has no version" } };
   await db
@@ -617,11 +625,15 @@ export async function handleCompileFunction(
       samples = [];
     }
   }
+  // Decision 0568: the customer's look-up lists, for "look it up in Units".
+  const { lists, ctx } = await allLookups(db);
   const outcome = await compileFunction(model, String(body.say ?? ""), {
     target,
     targetName: (FIELD_DESCRIPTIONS as Record<string, string>)[target] ?? target,
     kind: MAPPING_TARGETS[target],
     samples,
+    lists,
+    ctx,
   });
   return { status: 200, body: outcome };
 }
@@ -632,7 +644,7 @@ async function tryVersion(db: D1Database, bucket: R2Bucket | undefined, version:
   if (!sample) return { error: "the sample is no longer kept" as const };
   try {
     const def = JSON.parse(version.definition_json) as MappingDefinition;
-    return { applied: applyMapping(mappableXml(sample.text, def), def), filename: sample.filename };
+    return { applied: applyMapping(mappableXml(sample.text, def), def, await lookupsFor(db, def)), filename: sample.filename };
   } catch (err) {
     return { error: (err as Error).message };
   }

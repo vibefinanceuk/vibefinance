@@ -116,6 +116,7 @@ import routeAlertsSql from "../../../migrations/0109_route_alerts.sql?raw";
 import routeMessageFormatsSql from "../../../migrations/0110_route_message_formats.sql?raw";
 import supplierMappingsSql from "../../../migrations/0111_supplier_mappings.sql?raw";
 import supplierMappingMissesSql from "../../../migrations/0112_supplier_mapping_misses.sql?raw";
+import lookupListsSql from "../../../migrations/0113_lookup_lists.sql?raw";
 
 // Another known divergence from production, on top of the one below:
 // D1's exec() splits its input by newline and executes each non-empty
@@ -165,7 +166,7 @@ const TABLES_IN_DROP_ORDER = [
   // route_messages, so both go first, invoice_documents before it.
   "route_alert_log", "route_alerts",
   // Supplier mappings (decision 0561): parts reference mappings, versions reference messages.
-  "route_message_items", "route_message_events", "route_message_parts", "supplier_mapping_versions", "supplier_mappings", "invoice_documents", "route_messages",
+  "route_message_items", "route_message_events", "route_message_parts", "supplier_mapping_versions", "supplier_mappings", "lookup_entries", "lookup_lists", "invoice_documents", "route_messages",
   // Routes, slice 3 (decision 0557): instances reference sources and processes.
   "route_instances", "route_versions", "routes",
   "erp_export_rows", "erp_export_invoices", "erp_exports", "invoice_line_coding_splits", "invoice_line_po_pairings", "cost_centre_gl_codes", "document_comments",
@@ -428,6 +429,7 @@ export async function applyTestSchema(): Promise<void> {
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(routeMessageFormatsSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(supplierMappingsSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(supplierMappingMissesSql)));
+  await env.DB.exec(toOneStatementPerLine(stripSqlComments(lookupListsSql)));
 }
 
 /**

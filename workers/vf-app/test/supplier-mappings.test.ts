@@ -6,6 +6,13 @@ import { handleGetRouteMessage } from "../src/route-monitor-route.js";
 import { handleReprocessMessage } from "../src/route-reprocess.js";
 import { handleRereadPart } from "../src/mapping-reread.js";
 import {
+  handleCreateLookupList,
+  handleGetLookupList,
+  handleListLookupLists,
+  handleRetireLookupList,
+  handleSaveLookupList,
+} from "../src/lookup-lists-route.js";
+import {
   domainOf,
   handleCompileFunction,
   handleCreateMapping,
@@ -574,7 +581,7 @@ describe("a supplier's own CSV", () => {
     expect(await part(m.id)).toMatchObject({
       mapping_id: id,
       mapping_version: 1,
-      reason: "lagernord.de CSV v1: the file holds 2 invoices (88250, 88252); one invoice per file is read",
+      reason: "lagernord.de CSV v1: the file holds 2 invoices (88250, 88252). One invoice per file is read",
     });
   });
 
@@ -709,6 +716,109 @@ describe("reading a captured file again", () => {
     const refused = await handleRereadPart(env.DB, env.DOCUMENTS, next.id, 1, "u-dan");
     expect(refused).toMatchObject({ status: 422, body: { reason: "read_failed", error: "version 3 cannot read this file" } });
     expect(await part(next.id)).toMatchObject({ mapping_version: 1 });
+  });
+});
+
+/**
+ * **Look-up lists — decision 0568.** Shared lists a mapping reads through
+ * `look_up`: a supplier's unit "Rolle" to a code, their article number to
+ * the customer's own. Saved whole, refused in words, and retired keeping
+ * their entries.
+ */
+describe("look-up lists", () => {
+  it("are made with a name, saved whole, and refuse what a person would not mean", async () => {
+    expect(await handleCreateLookupList(env.DB, "u-dan", {})).toMatchObject({ status: 400, body: { reason: "no_name" } });
+    const made = await handleCreateLookupList(env.DB, "u-dan", { name: " Units " });
+    expect(made).toMatchObject({ status: 201, body: { name: "Units" } });
+    const id = (made.body as { id: string }).id;
+    expect(id).toMatch(/^LL-[0-9A-F]{4}-[0-9A-F]{4}$/);
+    expect(await handleCreateLookupList(env.DB, "u-dan", { name: "units" })).toMatchObject({ status: 409, body: { reason: "name_taken" } });
+
+    const saved = await handleSaveLookupList(env.DB, "u-dan", id, {
+      entries: [{ from: "Rolle", to: "RO" }, { from: " Karton ", to: "CT" }, { from: "", to: "" }],
+    });
+    expect(saved).toEqual({ status: 200, body: { id, name: "Units", entries: 2 } });
+    expect((await handleGetLookupList(env.DB, id)).body).toMatchObject({
+      list: { name: "Units", status: "active" },
+      entries: [{ from: "Karton", to: "CT" }, { from: "Rolle", to: "RO" }],
+      usedBy: [],
+    });
+
+    expect(await handleSaveLookupList(env.DB, "u-dan", id, { entries: [{ from: "Rolle", to: "RO" }, { from: "ROLLE ", to: "RL" }] })).toMatchObject({
+      status: 422,
+      body: { error: "ROLLE is in the list twice (rows 1 and 2)", reason: "duplicate" },
+    });
+    expect(await handleSaveLookupList(env.DB, "u-dan", id, { entries: [{ from: "Rolle", to: "" }] })).toMatchObject({
+      status: 422,
+      body: { error: "row 1 (Rolle) has nothing in To", reason: "empty_to" },
+    });
+    expect(await handleSaveLookupList(env.DB, "u-dan", id, { entries: [{ from: "", to: "RO" }] })).toMatchObject({ status: 422, body: { reason: "empty_from" } });
+    // A refused save changes nothing.
+    expect(((await handleGetLookupList(env.DB, id)).body as { entries: unknown[] }).entries).toHaveLength(2);
+
+    const listed = (await handleListLookupLists(env.DB)).body as { lists: Array<{ id: string; entries: number }> };
+    expect(listed.lists).toEqual([expect.objectContaining({ id, name: "Units", entries: 2, usedBy: [] })]);
+
+    expect(await handleRetireLookupList(env.DB, "u-dan", id)).toMatchObject({ status: 200, body: { status: "retired" } });
+    expect(((await handleListLookupLists(env.DB)).body as { lists: unknown[] }).lists).toEqual([]);
+    expect(await handleSaveLookupList(env.DB, "u-dan", id, { entries: [] })).toMatchObject({ status: 409, body: { reason: "retired" } });
+    // Retired, the name is free again.
+    expect(await handleCreateLookupList(env.DB, "u-dan", { name: "Units" })).toMatchObject({ status: 201 });
+  });
+
+  it("read a supplier's unit through a list in a mapping, refuse a list that is not there, and say when one is retired", async () => {
+    const units = ((await handleCreateLookupList(env.DB, "u-dan", { name: "Units" })).body as { id: string }).id;
+    await handleSaveLookupList(env.DB, "u-dan", units, { entries: [{ from: "Rolle", to: "RO" }] });
+    const withRolle = LAGER_CSV.replace(';100;Stk;0,25;', ';100;Rolle;0,25;');
+    const failed = await receiveCsv("rechnung@lagernord.de", withRolle);
+    const id = ((await handleCreateMapping(env.DB, env.DOCUMENTS, "u-dan", { messageId: failed.id, partSeq: 1 })).body as { id: string }).id;
+    const withLookup = {
+      ...CSV_DEFINITION,
+      lines: CSV_DEFINITION.lines.map((l) =>
+        l.target === "BT-130" ? { ...l, fx: [{ fn: "look_up", args: { list: units, otherwise: "keep" } }, { fn: "unit_code" }] } : l
+      ),
+    };
+    expect(
+      await handleSaveDraft(env.DB, "u-dan", id, {
+        definition: { ...withLookup, lines: [{ target: "BT-130", source: "Einheit", fx: [{ fn: "look_up", args: { list: "LL-NONE-0000", otherwise: "keep" } }] }] },
+      })
+    ).toMatchObject({ status: 422, body: { reason: "unknown_list", error: "there is no look-up list LL-NONE-0000, or it is retired" } });
+    await handleSaveDraft(env.DB, "u-dan", id, { definition: withLookup });
+
+    const tried = (await handleTryMapping(env.DB, env.DOCUMENTS, id)).body as { lines: Array<Record<string, unknown>>; problems: unknown[] };
+    expect(tried.problems).toEqual([]);
+    expect(tried.lines.map((l) => l["BT-130"])).toEqual(["H87", "RO"]);
+    expect(((await handleListLookupLists(env.DB)).body as { lists: Array<{ usedBy: string[] }> }).lists[0].usedBy).toEqual(["lagernord.de CSV"]);
+    expect(((await handleGetMapping(env.DB, env.DOCUMENTS, id)).body as { lists: unknown }).lists).toEqual([{ id: units, name: "Units" }]);
+
+    await handlePublishMapping(env.DB, env.DOCUMENTS, "u-dan", id);
+    const next = await receiveCsv("rechnung@lagernord.de", withRolle.replace(/88250/g, "88260"));
+    expect(next.status).toBe("delivered");
+
+    expect(await handleRetireLookupList(env.DB, "u-dan", units)).toMatchObject({ body: { usedBy: ["lagernord.de CSV"] } });
+    const after = await receiveCsv("rechnung@lagernord.de", withRolle.replace(/88250/g, "88261"));
+    expect(after.status).toBe("failed");
+    expect((await part(after.id)).reason).toContain(`BT-130 on line 2 (from Einheit): the look-up list "${units}" is not available: it may have been retired`);
+  });
+
+  it("are offered to the function compiler, with worked examples through the list", async () => {
+    const units = ((await handleCreateLookupList(env.DB, "u-dan", { name: "Units" })).body as { id: string }).id;
+    await handleSaveLookupList(env.DB, "u-dan", units, { entries: [{ from: "Stk", to: "H87" }] });
+    const m = await receiveCsv("rechnung@lagernord.de", LAGER_CSV);
+    const id = ((await handleCreateMapping(env.DB, env.DOCUMENTS, "u-dan", { messageId: m.id, partSeq: 1 })).body as { id: string }).id;
+    const prompts: string[] = [];
+    const compiler = {
+      compile: async (prompt: string) => {
+        prompts.push(prompt);
+        return JSON.stringify({ steps: [{ fn: "look_up", args: { list: units, otherwise: "refuse" } }] });
+      },
+    };
+    const result = await handleCompileFunction(env.DB, env.DOCUMENTS, compiler, id, { target: "BT-130", source: "CSV/Row/Einheit", say: "look it up in Units" });
+    expect(result).toEqual({
+      status: 200,
+      body: { kind: "compiled", steps: [{ fn: "look_up", args: { list: units, otherwise: "refuse" } }], examples: [{ input: "Stk", output: "H87" }] },
+    });
+    expect(prompts[0]).toContain(`- "${units}": Units, for example "Stk" becomes "H87"`);
   });
 });
 

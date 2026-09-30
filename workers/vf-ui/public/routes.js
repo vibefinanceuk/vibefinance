@@ -1,6 +1,7 @@
 import { t } from "/strings.js";
 import { el, frame, topbar, setCurrentScreen } from "/tasks.js";
 import { actionLink } from "/viewer.js";
+import { listsPanel, loadLists } from "/lookup-lists.js";
 
 /**
  * **Routes — decision 0557**, slice 3 of the Routes design, as mocked up
@@ -301,6 +302,8 @@ function render() {
           detailPanel(),
           formatsPanel(routes.find((r) => r.id === selectedId) ?? {}),
           mappingsPanel(routes.find((r) => r.id === selectedId) ?? {}),
+          // Decision 0568: the customer's look-up lists, shared by every mapping.
+          listsPanel(render),
         ].filter(Boolean),
       ])
     )
@@ -318,6 +321,7 @@ export async function open({ notice } = {}) {
     selectedId = routes.find((r) => r.direction === "source" && r.live)?.id ?? routes.at(0)?.id ?? null;
   }
   mappings = {};
+  await loadLists();
   render();
   const chosen = routes.find((r) => r.id === selectedId);
   if (chosen?.direction === "source" && chosen.current?.receivingFormat === "detected") {

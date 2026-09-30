@@ -235,6 +235,15 @@ export function drawLines(grid) {
 
 // ---------------------------------------------------------------- the side
 
+/** A step's arguments as a person reads them: a look-up list by its name, and what happens otherwise (0568). */
+function argWords(step) {
+  if (step.fn === "look_up") {
+    const list = data.lists?.find((l) => l.id === step.args?.list)?.name ?? step.args?.list;
+    return [list, t(step.args?.otherwise === "keep" ? "mapping.lookup.keep" : "mapping.lookup.refuse")];
+  }
+  return Object.values(step.args ?? {});
+}
+
 function stepPills(steps) {
   return el(
     "div",
@@ -242,7 +251,7 @@ function stepPills(steps) {
     steps.map((s) =>
       el("span", { class: "mestep" }, [
         t(`mapping.fn.${s.fn}`) === `mapping.fn.${s.fn}` ? s.fn : t(`mapping.fn.${s.fn}`),
-        ...Object.values(s.args ?? {}).map((v) => el("span", { class: "mearg", text: ` ${v}` })),
+        ...argWords(s).map((v) => el("span", { class: "mearg", text: ` ${v}` })),
       ])
     )
   );

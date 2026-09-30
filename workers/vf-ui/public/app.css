@@ -4849,6 +4849,14 @@
 /* Decisions 0563 and 0564: confirming a mapping's retirement, in a pop-out. */
 .popout.meretirepop { width: min(480px, 100%); }
 .rmfmtact { margin-top: 6px; }
+/* Decision 0568: look-up lists on the Routes screen, and one open in a pop-out. */
+.rtlookupnew { display: flex; gap: 8px; align-items: center; margin-top: 10px; }
+.rtlookupnew .meinput { max-width: 280px; }
+.popout.llpop { width: min(640px, 100%); max-height: 85vh; overflow: auto; }
+.lltable td { padding: 2px 4px; }
+.lltable .meinput { width: 100%; box-sizing: border-box; }
+.llpaste { width: 100%; box-sizing: border-box; font: inherit; font-size: var(--text-sm); }
+.llretire { border-top: 1px solid var(--border); margin-top: 12px; padding-top: 8px; }
 /* Decision 0566: reading a captured file again with a newer mapping version. */
 .rmreread { margin-top: 6px; }
 @media (max-width: 1100px) { .meed { grid-template-columns: 1fr; } }

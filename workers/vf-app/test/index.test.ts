@@ -4957,10 +4957,28 @@ describe("the ERP export, through the real router (decision 0552)", () => {
   });
 });
 
+describe("look-up lists, through the real router (decision 0568)", () => {
+  it("are made, saved, read and retired with Admin.Configure", async () => {
+    const admin = await seedUserWithPermissions(["Admin.Configure"]);
+    const headers = { Authorization: `Bearer ${admin}`, "Content-Type": "application/json" };
+    // Decision 0568: look-up lists, through the real router.
+    const made = await SELF.fetch("https://example.com/lookup-lists", { method: "POST", headers, body: JSON.stringify({ name: "Units" }) });
+    expect(made.status).toBe(201);
+    const listId = ((await made.json()) as { id: string }).id;
+    const put = await SELF.fetch(`https://example.com/lookup-lists/${listId}`, { method: "PUT", headers, body: JSON.stringify({ entries: [{ from: "Rolle", to: "RO" }] }) });
+    expect(put.status).toBe(200);
+    expect(((await (await SELF.fetch("https://example.com/lookup-lists", { headers })).json()) as { lists: unknown[] }).lists).toHaveLength(1);
+    expect((await SELF.fetch("https://example.com/lookup-lists/LL-NONE", { headers })).status).toBe(404);
+    expect((await SELF.fetch(`https://example.com/lookup-lists/${listId}`, { method: "DELETE", headers })).status).toBe(405);
+    expect((await SELF.fetch(`https://example.com/lookup-lists/${listId}/retire`, { headers })).status).toBe(405);
+    expect((await SELF.fetch(`https://example.com/lookup-lists/${listId}/retire`, { method: "POST", headers })).status).toBe(200);
+  });
+});
+
 describe("supplier mappings, through the real router (decision 0561)", () => {
   it("need Admin.Configure, and say what is missing", async () => {
     const monitor = await seedUserWithPermissions(["Integration.Monitor"]);
-    for (const [method, path] of [["GET", "/supplier-mappings"], ["GET", "/supplier-mappings/MAP-1"], ["POST", "/supplier-mappings/MAP-1/publish"], ["POST", "/supplier-mappings/MAP-1/retire"]]) {
+    for (const [method, path] of [["GET", "/supplier-mappings"], ["GET", "/supplier-mappings/MAP-1"], ["POST", "/supplier-mappings/MAP-1/publish"], ["POST", "/supplier-mappings/MAP-1/retire"], ["GET", "/lookup-lists"], ["PUT", "/lookup-lists/LL-1"], ["POST", "/lookup-lists/LL-1/retire"]]) {
       expect((await SELF.fetch(`https://example.com${path}`, { method, headers: { Authorization: `Bearer ${monitor}` } })).status).toBe(403);
     }
     const admin = await seedUserWithPermissions(["Admin.Configure"]);

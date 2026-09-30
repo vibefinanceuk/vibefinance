@@ -245,6 +245,10 @@ const PROXIED_TO_INSTANCE: RegExp[] = [
   /^\/route-messages\/[^/]+\/(reprocess|dismiss)$/,
   // Decision 0566: a captured supplier file read again with a newer mapping version.
   /^\/route-messages\/[^/]+\/parts\/\d+\/reread$/,
+  // Decision 0568: look-up lists.
+  /^\/lookup-lists$/,
+  /^\/lookup-lists\/[^/]+$/,
+  /^\/lookup-lists\/[^/]+\/retire$/,
   /^\/route-alerts$/,
   /^\/route-alerts\/[^/]+$/,
   /^\/route-alerts\/[^/]+\/test$/,

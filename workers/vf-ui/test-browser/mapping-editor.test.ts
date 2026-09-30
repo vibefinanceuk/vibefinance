@@ -7,6 +7,7 @@ import missStringsSql from "../../vf-licence/migrations/0214_mapping_miss_string
 import retirePopoutStringsSql from "../../vf-licence/migrations/0215_mapping_retire_popout_strings.sql?raw";
 import csvStringsSql from "../../vf-licence/migrations/0216_supplier_csv_strings.sql?raw";
 import rereadStringsSql from "../../vf-licence/migrations/0217_mapping_reread_strings.sql?raw";
+import lookupStringsSql from "../../vf-licence/migrations/0218_lookup_list_strings.sql?raw";
 
 /**
  * **The mapping editor — decision 0561**, with the real strings: draw a
@@ -18,7 +19,7 @@ import rereadStringsSql from "../../vf-licence/migrations/0217_mapping_reread_st
  */
 
 const strings: Record<string, string> = { "action.close": "Close", "action.save": "Save" };
-for (const sql of [mappingStringsSql, formatStringsSql, monitorStringsSql, routesStringsSql, missStringsSql, retirePopoutStringsSql, csvStringsSql, rereadStringsSql]) {
+for (const sql of [mappingStringsSql, formatStringsSql, monitorStringsSql, routesStringsSql, missStringsSql, retirePopoutStringsSql, csvStringsSql, rereadStringsSql, lookupStringsSql]) {
   for (const m of sql.matchAll(/\('([^']+)', 'en', '((?:[^']|'')*)'\)/g)) strings[m[1]] = m[2].replace(/''/g, "'");
   // Later migrations change some words in place.
   for (const m of sql.matchAll(/UPDATE ui_strings SET value = '((?:[^']|'')*)' WHERE key = '([^']+)' AND locale = 'en'/g)) strings[m[2]] = m[1].replace(/''/g, "'");
@@ -610,12 +611,12 @@ describe("tried, and read again — decision 0566", () => {
 
   it("says what was tried and why on a failed file, and counts one broken rule in the singular", async () => {
     await monitorWithParts([
-      { seq: 1, role: "attachment", filename: "Rechnungen_88252_88253.csv", outcome: "failed", reason: "Lager Nord CSV v2: the file holds 2 invoices (88252, 88253); one invoice per file is read", format: "supplier_csv", xmlRoot: "CSV", mapping: { id: "MAP-1", version: 2, name: "Lager Nord CSV", miss: null }, en16931Failed: null, reread: null },
+      { seq: 1, role: "attachment", filename: "Rechnungen_88252_88253.csv", outcome: "failed", reason: "Lager Nord CSV v2: the file holds 2 invoices (88252, 88253). One invoice per file is read", format: "supplier_csv", xmlRoot: "CSV", mapping: { id: "MAP-1", version: 2, name: "Lager Nord CSV", miss: null }, en16931Failed: null, reread: null },
       { seq: 2, role: "attachment", filename: "Rechnung_88251.csv", outcome: "captured", format: "supplier_csv", xmlRoot: "CSV", mapping: { id: "MAP-1", version: 2, name: "Lager Nord CSV", miss: null }, en16931Failed: [{ rule: "BR-CO-15", detail: "BT-112 605.00, expected 508.40" }], reread: null },
     ]);
     const [failed, captured] = cards();
     expect(failed.querySelector(".muted.sm")?.textContent).toBe(
-      "Tried with Lager Nord CSV, version 2: the file holds 2 invoices (88252, 88253); one invoice per file is read"
+      "Tried with Lager Nord CSV, version 2: The file holds 2 invoices (88252, 88253). One invoice per file is read"
     );
     expect(captured.querySelector(".rmpill")?.textContent).toBe("1 rule broken");
     expect(captured.querySelector(".muted.sm")?.textContent).toBe("Read with Lager Nord CSV, version 2.");
@@ -650,5 +651,22 @@ describe("tried, and read again — decision 0566", () => {
     ]);
     expect(text(".rmreread")).toBe("A newer version of the mapping is live, but somebody has worked on this invoice, so it is not read again.");
     expect(button("Read again with version 2")).toBeUndefined();
+  });
+});
+
+describe("a look-up in a function — decision 0568", () => {
+  it("shows the list by its name, and what happens to a value not in it", async () => {
+    const withLookup = () => {
+      const m = MAPPING();
+      m.editing.definition.lines = [
+        { target: "BT-1", source: "Rechnung/Kopf/Rechnungsnummer", fx: [{ fn: "look_up", args: { list: "LL-1", otherwise: "keep" } } as never] },
+      ];
+      return { ...m, lists: [{ id: "LL-1", name: "Units" }] };
+    };
+    stub([], { "GET /api/supplier-mappings/MAP-1": () => ({ body: withLookup() }) });
+    await openEditor();
+    tgt("BT-1").click();
+    await settle();
+    expect(text(".mestep")).toBe("look up in Units (otherwise keep it)");
   });
 });

@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 30 September 2026 (decision 0567). A living document: what
+Last updated 30 September 2026 (decision 0568). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,13 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Routes phase 2, slice 3: look-up lists (0568)
+- Shared look-up lists (From, To) on the Routes screen: a supplier's unit
+  word to a code, their article number to yours; edited in a pop-out,
+  with paste from a spreadsheet.
+- A mapping function looks a value up in a list, refusing or keeping a
+  value not in it; compiled from plain words, with worked examples.
 
 ### Reading a captured file again with a newer mapping (0566)
 - A supplier file captured with an older mapping version can be read

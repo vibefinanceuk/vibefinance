@@ -195,6 +195,13 @@ import { handleInboundEmail, handleListInboundEmail, type EmailMessage } from ".
 import { handleGetRouteMessage, handleListRouteMessages, routeMessagePart } from "./route-monitor-route.js";
 import { handleListRoutes, handleProcessRoutes, handleSetInstanceStatus } from "./routes-route.js";
 import { handleDismissMessage, handleReprocessMessage } from "./route-reprocess.js";
+import {
+  handleCreateLookupList,
+  handleGetLookupList,
+  handleListLookupLists,
+  handleRetireLookupList,
+  handleSaveLookupList,
+} from "./lookup-lists-route.js";
 import { handleRereadPart } from "./mapping-reread.js";
 import {
   handleCompileFunction,
@@ -1673,6 +1680,48 @@ export default {
      * sample described, save the draft, compile a function from plain
      * words, try the draft on its sample, and publish it.
      */
+    /**
+     * **Look-up lists — decision 0568.** Shared lists a supplier mapping
+     * can look a value up in: list, create, read, save whole, retire.
+     * `Admin.Configure`, as supplier mappings are.
+     */
+    if (pathname === "/lookup-lists" || /^\/lookup-lists\/[^/]+(\/retire)?$/.test(pathname)) {
+      const { db } = resolveTenant(request, env);
+      const auth = await authenticatePerson(db, request, env);
+      if (!auth.user) return json({ error: auth.reason }, 401);
+      if (!(await hasPermission(db, auth.user.id, "Admin.Configure"))) {
+        return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
+      }
+      const body = request.method === "GET" ? {} : ((await request.json().catch(() => ({}))) as Record<string, unknown>);
+      if (pathname === "/lookup-lists") {
+        if (request.method === "GET") {
+          const result = await handleListLookupLists(db);
+          return json(result.body, result.status);
+        }
+        if (request.method === "POST") {
+          const result = await handleCreateLookupList(db, auth.user.id, body);
+          return json(result.body, result.status);
+        }
+        return json({ error: "method not allowed" }, 405);
+      }
+      const [, rawId, retire] = pathname.match(/^\/lookup-lists\/([^/]+)(\/retire)?$/) as RegExpMatchArray;
+      const id = decodeURIComponent(rawId);
+      if (retire) {
+        if (request.method !== "POST") return json({ error: "method not allowed" }, 405);
+        const result = await handleRetireLookupList(db, auth.user.id, id);
+        return json(result.body, result.status);
+      }
+      if (request.method === "GET") {
+        const result = await handleGetLookupList(db, id);
+        return json(result.body, result.status);
+      }
+      if (request.method === "PUT") {
+        const result = await handleSaveLookupList(db, auth.user.id, id, body);
+        return json(result.body, result.status);
+      }
+      return json({ error: "method not allowed" }, 405);
+    }
+
     if (pathname === "/supplier-mappings" || /^\/supplier-mappings\/[^/]+(\/(draft|compile|try|publish|retire))?$/.test(pathname)) {
       const { db, documents } = resolveTenant(request, env);
       const auth = await authenticatePerson(db, request, env);

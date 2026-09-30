@@ -1,6 +1,6 @@
 import { extractJson } from "../compiler/parse.js";
 import type { CompilerModel } from "../compiler/types.js";
-import { applyChain, describeFunctions, validateChain, type FunctionStep } from "./mapping-functions.js";
+import { applyChain, describeFunctions, validateChain, type FnContext, type FunctionStep } from "./mapping-functions.js";
 
 /**
  * A mapping line's function, said in plain words and compiled — decision
@@ -27,6 +27,13 @@ export interface FunctionContext {
   kind: "text" | "number" | "date";
   /** Values the element holds in the kept sample, as written. */
   samples: string[];
+  /**
+   * **The customer's look-up lists — decision 0568**: each list's id and
+   * name, with a few of its entries, so "look it up in Units" can be
+   * compiled; and the lists themselves, for the worked examples.
+   */
+  lists?: Array<{ id: string; name: string; examples: Array<[from: string, to: string]> }>;
+  ctx?: FnContext;
 }
 
 export interface WorkedExample {
@@ -54,6 +61,15 @@ ${describeFunctions()}
 The value will become ${context.target} (${context.targetName}), which must end up as ${WHAT_EACH_KIND_NEEDS[context.kind]}.
 Values this element holds in the document, as written: ${context.samples.slice(0, 5).map((s) => JSON.stringify(s)).join(", ") || "(none)"}.
 
+The customer's look-up lists, for look_up (use the id as the list argument):
+${
+  (context.lists ?? []).length === 0
+    ? "(none: look_up cannot be used, so refuse an instruction that needs a list)"
+    : (context.lists ?? [])
+        .map((l) => `- ${JSON.stringify(l.id)}: ${l.name}${l.examples.length > 0 ? `, for example ${l.examples.slice(0, 3).map(([f, t]) => `${JSON.stringify(f)} becomes ${JSON.stringify(t)}`).join(", ")}` : ""}`)
+        .join("\n")
+}
+
 The person said: ${JSON.stringify(say)}
 
 Answer with JSON only, no prose:
@@ -78,10 +94,10 @@ export function parseFunctionOutput(raw: string): { kind: "compiled"; steps: Fun
 }
 
 /** Runs a chain over sample values: what a person checks before accepting it. */
-export function workedExamples(steps: readonly FunctionStep[], samples: readonly (string | null)[]): WorkedExample[] {
+export function workedExamples(steps: readonly FunctionStep[], samples: readonly (string | null)[], ctx?: FnContext): WorkedExample[] {
   const unique = [...new Set(samples)].slice(0, 5);
   return (unique.length > 0 ? unique : [null]).map((input) => {
-    const r = applyChain(steps, input);
+    const r = applyChain(steps, input, ctx);
     return r.ok ? { input, output: r.value } : { input, reason: r.reason };
   });
 }
@@ -91,5 +107,9 @@ export async function compileFunction(model: CompilerModel, say: string, context
   const raw = await model.compile(buildFunctionPrompt(say, context));
   const parsed = parseFunctionOutput(raw);
   if (parsed.kind === "refused") return parsed;
-  return { kind: "compiled", steps: parsed.steps, examples: workedExamples(parsed.steps, context.samples) };
+  // A list the model named that is not one of the customer's is refused, never guessed.
+  const known = new Set((context.lists ?? []).map((l) => l.id));
+  const unknown = parsed.steps.find((s) => s.fn === "look_up" && !known.has(String(s.args?.list)));
+  if (unknown) return { kind: "refused", reason: `There is no look-up list "${unknown.args?.list}". Make it on the Routes screen first.` };
+  return { kind: "compiled", steps: parsed.steps, examples: workedExamples(parsed.steps, context.samples, context.ctx) };
 }

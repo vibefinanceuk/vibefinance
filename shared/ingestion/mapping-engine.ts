@@ -2,7 +2,7 @@ import { XMLParser, XMLValidator } from "fast-xml-parser";
 import type { InvoiceFacts } from "../interpreter/types.js";
 import { INVOICE_LINE_FIELDS } from "../interpreter/vocabulary.js";
 import { checkEn16931, type En16931Result } from "./en16931-rules.js";
-import { applyChain, validateChain, type FnValue, type FunctionStep } from "./mapping-functions.js";
+import { applyChain, listsInChain, validateChain, type FnContext, type FnValue, type FunctionStep } from "./mapping-functions.js";
 import { CSV_ROOT, validateCsvOptions, type CsvOptions } from "./supplier-csv.js";
 
 /**
@@ -262,12 +262,13 @@ const ISO = /^\d{4}-\d{2}-\d{2}$/;
 function finish(
   line: MappingLine,
   raw: string | null,
-  lineNumber: number | undefined
+  lineNumber: number | undefined,
+  ctx?: FnContext
 ): { value?: string | number; problem?: MappingProblem } {
   const hasDefault = line.fx.some((s) => s.fn === "always" || s.fn === "if_empty");
   if (raw === null && !hasDefault) return {};
   const at = { target: line.target, source: line.source, value: raw, ...(lineNumber !== undefined ? { line: lineNumber } : {}) };
-  const result = applyChain(line.fx, raw as FnValue);
+  const result = applyChain(line.fx, raw as FnValue, ctx);
   if (!result.ok) return { problem: { ...at, reason: result.reason } };
   let value = result.value;
   if (value === null || value === "") return {};
@@ -289,7 +290,7 @@ function finish(
 const decimalsOf = (n: number) => (String(n).split(".")[1] ?? "").length;
 
 /** Every row's value at a path, through the line's functions, added up; each value it could not read is a problem on its row. */
-function sumOverLines(node: unknown, path: string, line: MappingLine): { value?: number; problems: MappingProblem[] } {
+function sumOverLines(node: unknown, path: string, line: MappingLine, ctx?: FnContext): { value?: number; problems: MappingProblem[] } {
   const raws = nodesAt(node, split(path)).map((n) => textOf(n));
   const problems: MappingProblem[] = [];
   let total = 0;
@@ -297,7 +298,7 @@ function sumOverLines(node: unknown, path: string, line: MappingLine): { value?:
   let any = false;
   raws.forEach((raw, idx) => {
     if (raw === null || raw === "") return;
-    const { value, problem } = finish(line, raw, idx + 1);
+    const { value, problem } = finish(line, raw, idx + 1, ctx);
     if (problem) problems.push(problem);
     else if (typeof value === "number") {
       total += value;
@@ -306,14 +307,15 @@ function sumOverLines(node: unknown, path: string, line: MappingLine): { value?:
     }
   });
   if (!any) {
-    const { value, problem } = finish(line, null, undefined);
+    const { value, problem } = finish(line, null, undefined, ctx);
     return { value: typeof value === "number" ? value : undefined, problems: problem ? [...problems, problem] : problems };
   }
   // Rounded to the most decimals any row had, so 91.20 + 4.75 is 95.95.
   return { value: Number(total.toFixed(Math.min(places, 6))), problems };
 }
 
-export function applyMapping(xml: string, def: MappingDefinition): AppliedMapping {
+/** `ctx` carries the look-up lists the mapping names (decision 0568). */
+export function applyMapping(xml: string, def: MappingDefinition, ctx?: FnContext): AppliedMapping {
   const { root, node } = parse(xml);
   if (root !== def.root) {
     throw new MappingXmlError(`this document's root is <${root}>, and the mapping is for <${def.root}>`);
@@ -332,13 +334,13 @@ export function applyMapping(xml: string, def: MappingDefinition): AppliedMappin
      * decimal comma, say), then the rows are added.
      */
     if (line.source !== null && def.linesPath && line.source.startsWith(`${def.linesPath}/`) && MAPPING_TARGETS[line.target] === "number") {
-      const summed = sumOverLines(node, relative(line.source), line);
+      const summed = sumOverLines(node, relative(line.source), line, ctx);
       problems.push(...summed.problems);
       if (summed.problems.length === 0 && summed.value !== undefined) facts[line.target] = summed.value;
       continue;
     }
     const raw = line.source === null ? null : valueAt(node, relative(line.source));
-    const { value, problem } = finish(line, raw, undefined);
+    const { value, problem } = finish(line, raw, undefined, ctx);
     if (problem) problems.push(problem);
     else if (value !== undefined) facts[line.target] = value;
   }
@@ -349,7 +351,7 @@ export function applyMapping(xml: string, def: MappingDefinition): AppliedMappin
     const lineFacts: InvoiceFacts & { lineNumber: number } = { lineNumber: idx + 1 };
     for (const line of lineDefs) {
       const raw = line.source === null ? null : valueAt(group, line.source);
-      const { value, problem } = finish(line, raw, idx + 1);
+      const { value, problem } = finish(line, raw, idx + 1, ctx);
       if (problem) problems.push(problem);
       else if (value !== undefined) lineFacts[line.target] = value;
     }
@@ -367,4 +369,9 @@ export function applyMapping(xml: string, def: MappingDefinition): AppliedMappin
     { xrechnung: false, mapped: true }
   );
   return { facts, lines, problems, en16931 };
+}
+
+/** Every look-up list a mapping names, by id — decision 0568. */
+export function listsInMapping(def: MappingDefinition): string[] {
+  return [...new Set(def.lines.flatMap((l) => listsInChain(l.fx ?? [])))];
 }

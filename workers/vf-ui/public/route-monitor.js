@@ -414,7 +414,9 @@ function supplierXmlCheck(p) {
  */
 function withoutMappingName(reason, name, version) {
   const prefix = `${name} v${version}: `;
-  return (reason ?? "").startsWith(prefix) ? reason.slice(prefix.length) : reason ?? "";
+  const rest = (reason ?? "").startsWith(prefix) ? reason.slice(prefix.length) : reason ?? "";
+  // A sentence after the colon starts with a capital (decision 0568, Dan's choice).
+  return rest.charAt(0).toUpperCase() + rest.slice(1);
 }
 
 /** "1 rule broken", "2 rules broken" — decision 0566. */
