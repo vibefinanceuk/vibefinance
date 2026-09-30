@@ -255,8 +255,9 @@ import {
 } from "./stage-actions-route.js";
 import { handleAddStageReturnTarget, handleRemoveStageReturnTarget } from "./stage-return-targets-route.js";
 import { handlePreflight, withCors } from "@vibefinance/shared";
-import { verifyDocumentToken, mintPageToken, verifyPageToken } from "./document-token.js";
-import { retrieveInvoiceDocument, renderXmlForDisplay } from "./document-storage.js";
+import { verifyDocumentToken, mintPageToken, verifyPageToken, mintPartToken, verifyPartToken } from "./document-token.js";
+import { messagesForInvoice, partForInvoice, partResponse, receivedFiles, viewFor } from "./received-files.js";
+import { retrieveInvoiceDocument, renderXmlForDisplay, extForContentType } from "./document-storage.js";
 import { resolveVocabulary } from "@vibefinance/shared";
 import { getSupplierHistory } from "./invoice-history.js";
 import { handleCreateCustomField, handleListCustomFields, loadCustomFields } from "./custom-field-route.js";
@@ -3597,6 +3598,18 @@ export default {
        * app's own current mood. Every other content type is served
        * exactly as retrieved, unaffected.
        */
+      // Decision 0571: the Attachments tab's Download, the file itself.
+      if (url.searchParams.get("download") === "1") {
+        return new Response(doc.bytes, {
+          status: 200,
+          headers: {
+            "Content-Type": doc.contentType,
+            "Content-Disposition": `attachment; filename="invoice-${verified.invoiceId}-${verified.documentType}.${extForContentType(doc.contentType)}"`,
+            "Cache-Control": "private, no-store",
+            "X-Content-Type-Options": "nosniff",
+          },
+        });
+      }
       if (doc.contentType.includes("xml")) {
         return new Response(renderXmlForDisplay(doc.bytes), {
           status: 200,
@@ -3737,6 +3750,77 @@ export default {
           "Cache-Control": "private, no-store",
         },
       });
+    }
+
+    /**
+     * **Everything received with an invoice — decision 0571**, for the
+     * viewer's Attachments tab: the email, each attachment, and the XML
+     * inside a PDF. Gated exactly as the document itself is
+     * (`/invoices/:id/document-url` above): whoever may see the invoice
+     * may see what it came with.
+     */
+    const attachmentsMatch = pathname.match(/^\/invoices\/([^/]+)\/attachments(?:\/([^/]+)\/(\d+)\/url)?$/);
+    if (
+      attachmentsMatch &&
+      ((attachmentsMatch[2] === undefined && request.method === "GET") ||
+        (attachmentsMatch[2] !== undefined && request.method === "POST"))
+    ) {
+      const { db } = resolveTenant(request, env);
+      const auth = await authenticatePerson(db, request, env);
+      if (!auth.user) {
+        return json({ error: auth.reason }, 401);
+      }
+      const invoiceId = attachmentsMatch[1];
+      if (
+        !(await hasPermission(db, auth.user.id, "AP.Validate")) &&
+        !(await hasPermission(db, auth.user.id, "AP.Code")) &&
+        !(await hasPermission(db, auth.user.id, "AP.Match")) &&
+        !(await canViewInvoiceAsCollaborator(db, auth.user.id, invoiceId))
+      ) {
+        return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
+      }
+      if (attachmentsMatch[2] === undefined) {
+        return json({ messages: await messagesForInvoice(db, invoiceId), files: await receivedFiles(db, invoiceId) }, 200);
+      }
+      if (!env.DOCUMENT_URL_SECRET) {
+        return json({ error: "DOCUMENT_URL_SECRET is not configured" }, 500);
+      }
+      const messageId = decodeURIComponent(attachmentsMatch[2]);
+      const seq = Number(attachmentsMatch[3]);
+      const part = await partForInvoice(db, invoiceId, messageId, seq);
+      if (!part) {
+        return json({ error: `invoice ${invoiceId} received no part ${seq} in message ${messageId}` }, 404);
+      }
+      const minted = await mintPartToken(env.DOCUMENT_URL_SECRET, invoiceId, messageId, seq);
+      return json({
+        url: `${url.origin}/received-files/${minted.token}`,
+        expiresAt: new Date(minted.expiresAt * 1000).toISOString(),
+        contentType: part.contentType,
+        view: viewFor(part.contentType, part.filename),
+      }, 200);
+    }
+
+    /**
+     * A received file by token — decision 0571. Unauthenticated, the
+     * token being the authority, as `/document-pages/:token` above.
+     * `?download=1` asks for the file itself under its own name.
+     */
+    const receivedFetchMatch = pathname.match(/^\/received-files\/([^/]+)$/);
+    if (receivedFetchMatch && request.method === "GET") {
+      const { db, documents } = resolveTenant(request, env);
+      if (!env.DOCUMENT_URL_SECRET || !documents) {
+        return json({ error: "document access is not configured" }, 500);
+      }
+      const verified = await verifyPartToken(env.DOCUMENT_URL_SECRET, receivedFetchMatch[1]);
+      if (!verified.valid) {
+        return json({ error: `document link ${verified.reason}` }, 403);
+      }
+      const part = await partForInvoice(db, verified.invoiceId, verified.messageId, verified.seq);
+      const object = part ? await documents.get(part.r2Key) : null;
+      if (!part || !object) {
+        return json({ error: "this file is no longer retained" }, 404);
+      }
+      return partResponse(new Uint8Array(await object.arrayBuffer()), part, url.searchParams.get("download") === "1");
     }
 
     // Returning a document — decision 0075. Two endpoints because they

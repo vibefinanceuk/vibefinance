@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 30 September 2026 (decision 0570). A living document: what
+Last updated 30 September 2026 (decision 0571). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,13 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### The message in the Timeline, and an Attachments tab (0571)
+- The Timeline names the route message an invoice came in (for example
+  MSG-7A86-7670-F2A5), with the source, the sender and the file read.
+- The viewer's XML tab becomes Attachments: the email as a person reads
+  it, every attachment, and the XML inside a PDF, each shown in place or
+  downloaded; anything that could run is download only.
 
 ### Routes phase 2, slice 4: AI proposals (0570)
 - Propose with AI in the mapping editor: the AI proposes a line for each

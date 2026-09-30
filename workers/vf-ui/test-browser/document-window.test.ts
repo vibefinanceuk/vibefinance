@@ -29,6 +29,8 @@ const STRINGS = {
     "viewer.document": "Document",
     "viewer.nodocument": "No document retained",
     "viewer.xmltab": "XML",
+    "viewer.attachmentstab": "Attachments",
+    "attachments.empty": "Nothing received with this invoice is kept.",
     "viewer.tried": "Tried:",
     "viewer.unreadable": "This document could not be read automatically. Please manually enter the fields in the cells provided.",
     "action.close": "Close",
@@ -105,7 +107,7 @@ describe("initDocumentWindow — the same panel the embedded card shows, mounted
     expect(closeSpy).toHaveBeenCalled();
   });
 
-  it("offers the XML tab for a hybrid PDF here too, not only in the embedded card", async () => {
+  it("offers the Attachments tab here too, not only in the embedded card", async () => {
     stubFetch({
       "/api/ui-strings": STRINGS,
       "/api/invoices/inv-1": {
@@ -125,7 +127,9 @@ describe("initDocumentWindow — the same panel the embedded card shows, mounted
     await initDocumentWindow("inv-1", root);
 
     const labels = [...root.querySelectorAll(".doctab span")].map((n) => n.textContent);
-    expect(labels).toContain("XML");
+    // Decision 0571: the XML tab became Attachments, offered for every invoice.
+    expect(labels).toContain("Attachments");
+    expect(labels).not.toContain("XML");
   });
 
   /**
@@ -163,7 +167,7 @@ describe("initDocumentWindow — the same panel the embedded card shows, mounted
    * Document or XML would re-hide the standing timeline column unless
    * something puts it back. This is that something, checked directly.
    */
-  it("keeps the Timeline / Chat column visible after switching to the XML tab", async () => {
+  it("keeps the Timeline / Chat column visible after switching to the Attachments tab", async () => {
     stubFetch({
       "/api/ui-strings": STRINGS,
       "/api/invoices/inv-1": {
@@ -174,6 +178,7 @@ describe("initDocumentWindow — the same panel the embedded card shows, mounted
         embeddedXmlDocument: { contentType: "application/xml" },
       },
       "/api/documents/inv-1/activity": { items: [] },
+      "/api/invoices/inv-1/attachments": { messages: [], files: [] },
     });
     const { loadStrings } = await import("/strings.js");
     await loadStrings();
@@ -182,8 +187,9 @@ describe("initDocumentWindow — the same panel the embedded card shows, mounted
     const root = document.getElementById("docwindow-root") as HTMLElement;
     await initDocumentWindow("inv-1", root);
 
-    const xmlTabButton = [...root.querySelectorAll(".doctab")].find((b) => b.textContent?.includes("XML")) as HTMLElement;
-    xmlTabButton.click();
+    const attachmentsTabButton = [...root.querySelectorAll(".doctab")].find((b) => b.textContent?.includes("Attachments")) as HTMLElement;
+    attachmentsTabButton.click();
+    await new Promise((r) => setTimeout(r, 0));
 
     const timeline = root.querySelector(".docwindowtimeline") as HTMLElement;
     expect(timeline.hidden).toBe(false);

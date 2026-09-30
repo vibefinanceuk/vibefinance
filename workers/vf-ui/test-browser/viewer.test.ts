@@ -198,6 +198,22 @@ const STRINGS = {
     "viewer.nodocument": "No document retained",
     "viewer.unreadable": "This document could not be read automatically. Please manually enter the fields in the cells provided.",
     "viewer.xmltab": "XML",
+    "viewer.attachmentstab": "Attachments",
+    "attachments.loading": "Loading what was received…",
+    "attachments.failed": "The attachments could not be loaded.",
+    "attachments.empty": "Nothing received with this invoice is kept.",
+    "attachments.message": "{message} · {source} · {when}",
+    "attachments.messagefrom": "{message} from {sender} · {source} · {when}",
+    "attachments.withinvoice": "Kept with the invoice",
+    "attachments.email": "The email",
+    "attachments.embedded": "The XML inside the PDF",
+    "attachments.original": "The original document",
+    "attachments.thisinvoice": "This invoice",
+    "attachments.choose": "Choose a file to see it here.",
+    "attachments.downloadonly": "This file is not shown here, to keep the page safe. Download it to open it.",
+    "activity.receivedroute": "Received by {source}, message {message}",
+    "activity.receivedroutefrom": "Received by {source} from {sender}, message {message}",
+    "activity.receivedfile": "Read from {file}",
     "viewer.tried": "Tried:",
     "viewer.popupblocked": "Your browser blocked the pop-up window. Allow pop-ups for this site and try again.",
     "viewer.openinwindow": "Document open in a separate window",
@@ -1069,92 +1085,11 @@ describe("the icons say what the actions do (decision 0122)", () => {
 });
 
 /**
- * **Four of this block's five tests retired alongside decision 0382,
- * not carried forward.** They drove `#vpreview iframe`'s own `load`
- * event by hand — exactly the frame `pageViewer()` (decision 0382)
- * replaced with a canvas that is never held open against a URL that
- * can go stale. There is no reload to watch, so there is nothing left
- * for those four to assert; the fifth, the XML tab's own frame, is
- * still real (`showXmlPreview()` was not touched) and stays.
+ * **The last of this block's tests retired by decision 0571**, as the
+ * other four were by 0382: the XML tab's frame is gone, and the
+ * Attachments tab's frame, which asks for a fresh link the same way, is
+ * tested with that tab below.
  */
-describe("a frame asks for a fresh link only when it loads again (decision 0380)", () => {
-  /**
-   * The five-minute signed URL (decision 0073). Measured in a real
-   * Chromium, a frame whose link has expired goes on showing the
-   * document through scrolling, zooming, hiding and switching tabs —
-   * and shows `{"error":"document link expired"}` only when it loads a
-   * second time. So the load event is the signal, and every test here
-   * drives that event by hand, the way the browser would.
-   *
-   * **A custom fetch mock, not `stubFetch`**: each mint has to hand out
-   * a different URL, and the query string (`type=original`) has to
-   * survive being recorded.
-   */
-  function stubMinting(options: { xml?: boolean; secondMint?: string | null } = {}) {
-    const minted: string[] = [];
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async (url: string) => {
-        const path = String(url).split("?")[0];
-        if (path === "/api/invoices/inv-1/document-url") {
-          minted.push(String(url));
-          const n = minted.length;
-          const value = n === 2 && "secondMint" in options ? options.secondMint : `https://files.example/signed-${n}`;
-          return { ok: true, json: async () => ({ url: value }) } as Response;
-        }
-        const routes: Record<string, unknown> = {
-          "/api/code-lists": { fields: {} },
-          "/api/ui-strings": STRINGS,
-          "/api/field-visibility": FIELDS,
-          "/api/invoices/inv-1": {
-            facts: {},
-            lines: [],
-            document: { contentType: "application/pdf", documentType: "generated_rendering" },
-            ...(options.xml ? { originalDocument: { contentType: "application/xml" } } : {}),
-            validation: { passed: true, checked: [], failures: [] },
-          },
-          "/api/invoices/inv-1/progress": { visits: [] },
-          "/api/documents/inv-1/activity": { items: [] },
-        };
-        if (!(path in routes)) throw new Error(`no stub for ${path} — add one, or the test proves nothing`);
-        return { ok: true, json: async () => routes[path] } as Response;
-      })
-    );
-    return minted;
-  }
-
-  const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
-
-  async function open(options: Parameters<typeof stubMinting>[0] = {}) {
-    const minted = stubMinting(options);
-    const { loadStrings } = await import("/strings.js");
-    await loadStrings();
-    const { openViewer } = await import("/viewer.js");
-    await openViewer(TASK, () => {});
-    await settle();
-    return minted;
-  }
-
-  /** The browser finishing a load of whatever the frame points at. */
-  const loaded = async (frame: HTMLIFrameElement) => {
-    frame.dispatchEvent(new Event("load"));
-    await settle();
-  };
-
-  it("gives the XML tab's frame the same, asking for the original again", async () => {
-    const minted = await open({ xml: true });
-    const xmlFrame = document.querySelector("#vxml iframe") as HTMLIFrameElement;
-    expect(xmlFrame).not.toBeNull();
-    await loaded(xmlFrame);
-    const before = minted.length;
-
-    await loaded(xmlFrame);
-
-    expect(minted).toHaveLength(before + 1);
-    expect(minted[minted.length - 1]).toContain("type=original");
-    expect(xmlFrame.getAttribute("src")).toBe(`https://files.example/signed-${before + 1}`);
-  });
-});
 
 /**
  * **Two of this block's tests replaced, not carried forward, by
@@ -4930,6 +4865,38 @@ describe("the document/timeline tabs (decision 0269)", () => {
     expect(document.getElementById("vpreview")?.closest("[hidden]")).toBeNull();
   });
 
+  it("names the route message the invoice came in, its source, sender and file — decision 0571", async () => {
+    stubFetch({
+      ...BASE_ROUTES,
+      "/api/documents/inv-1/activity": {
+        items: [
+          {
+            kind: "received",
+            at: "2026-09-29 09:15:00",
+            messageId: "MSG-7A86-7670-F2A5",
+            source: "AP mailbox",
+            sender: "ap@munch.example",
+            filename: "88250.pdf",
+          },
+        ],
+      },
+    });
+
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { openViewer } = await import("/viewer.js");
+    await openViewer(TASK, () => {});
+    await new Promise((r) => setTimeout(r, 0));
+    (timelineTabButton() as HTMLButtonElement).click();
+
+    const line = document.querySelector(".activityreceived") as HTMLElement;
+    expect(line.querySelector(".activitymsg")?.textContent).toBe(
+      "Received by AP mailbox from ap@munch.example, message MSG-7A86-7670-F2A5"
+    );
+    expect(line.querySelector(".activityactioncomment")?.textContent).toBe("Read from 88250.pdf");
+    expect(document.body.textContent).not.toContain("Invoice received");
+  });
+
   it("phrases a fired rule from its own name and its own actions", async () => {
     stubFetch({
       ...BASE_ROUTES,
@@ -5677,131 +5644,41 @@ describe("removing a collaborator (decision 0476)", () => {
   });
 });
 
-describe("the XML tab, offered only when it exists (decision 0273, widened by 0383)", () => {
-  const BASE_ROUTES = {
-    "/api/code-lists": { fields: {} },
-    "/api/ui-strings": STRINGS,
-    "/api/field-visibility": FIELDS,
-    "/api/invoices/inv-1/progress": { visits: [] },
-    "/api/documents/inv-1/activity": { items: [] },
+describe("the Attachments tab, in place of the XML tab (decision 0571)", () => {
+  const MSG = "MSG-7A86-7670-F2A5";
+  const LIST = {
+    messages: [{ id: MSG, source: "AP mailbox", sender: "ap@munch.example", subject: "Invoice 88250", receivedAt: "2026-09-29T09:14:00Z", partSeq: 1, filename: "88250.pdf" }],
+    files: [
+      { kind: "part", messageId: MSG, seq: 0, role: "original", filename: "message.eml", contentType: "message/rfc822", bytes: 2048, thisInvoice: false, view: "inline" },
+      { kind: "part", messageId: MSG, seq: 1, role: "attachment", filename: "88250.pdf", contentType: "application/pdf", bytes: 51200, thisInvoice: true, view: "inline" },
+      { kind: "part", messageId: MSG, seq: 2, role: "attachment", filename: "logo.svg", contentType: "image/svg+xml", bytes: 300, thisInvoice: false, view: "download" },
+      { kind: "document", documentType: "embedded_xml", filename: null, contentType: "application/xml", bytes: null, thisInvoice: false, view: "inline" },
+    ],
   };
 
-  function xmlTabButton() {
-    return [...document.querySelectorAll(".doctab")].find((b) => b.textContent === "XML");
-  }
-  function docTabButton() {
-    return [...document.querySelectorAll(".doctab")].find((b) => b.textContent?.includes("Document"));
-  }
-
-  it("offers no XML tab when the original was never XML", async () => {
-    stubFetch({
-      ...BASE_ROUTES,
-      "/api/invoices/inv-1": {
-        facts: {},
-        lines: [],
-        validation: { passed: true, checked: [], failures: [] },
-        originalDocument: { contentType: "application/pdf" },
-      },
-    });
-
-    const { loadStrings } = await import("/strings.js");
-    await loadStrings();
-    const { openViewer } = await import("/viewer.js");
-    await openViewer(TASK, () => {});
-
-    expect(xmlTabButton()).toBeUndefined();
-  });
-
-  it("offers no XML tab when there is no original at all", async () => {
-    stubFetch({
-      ...BASE_ROUTES,
-      "/api/invoices/inv-1": {
-        facts: {},
-        lines: [],
-        validation: { passed: true, checked: [], failures: [] },
-        originalDocument: null,
-      },
-    });
-
-    const { loadStrings } = await import("/strings.js");
-    await loadStrings();
-    const { openViewer } = await import("/viewer.js");
-    await openViewer(TASK, () => {});
-
-    expect(xmlTabButton()).toBeUndefined();
-  });
-
-  it("offers the XML tab when the original genuinely is XML", async () => {
-    // **A custom mock, not the shared `stubFetch` helper.** That
-    // helper strips the query string before recording what was
-    // called, which hides exactly the thing this test needs to see:
-    // whether `type=original` was actually asked for.
-    const seen: string[] = [];
+  function stubAttachments(list: unknown, { ok = true } = {}) {
+    const calls: string[] = [];
+    let n = 0;
     vi.stubGlobal(
       "fetch",
-      vi.fn(async (url: string) => {
-        seen.push(String(url));
+      vi.fn(async (url: string, init?: RequestInit) => {
+        calls.push(`${init?.method ?? "GET"} ${url}`);
         const path = String(url).split("?")[0];
+        if (path === "/api/invoices/inv-1/attachments") {
+          return { ok, status: ok ? 200 : 500, json: async () => list } as Response;
+        }
+        if (/^\/api\/invoices\/inv-1\/(attachments\/.+\/url|document-url)$/.test(path)) {
+          n += 1;
+          return { ok: true, json: async () => ({ url: `https://files.example/signed-${n}` }) } as Response;
+        }
+        if (/^\/api\/invoices\/[^/]+\/pages$/.test(path)) return { ok: true, json: async () => ({ pages: [] }) } as Response;
+        if (/^\/api\/documents\/[^/]+\/collaborators$/.test(path)) return { ok: true, json: async () => ({ collaborators: [] }) } as Response;
         const routes: Record<string, unknown> = {
-          ...BASE_ROUTES,
-          "/api/invoices/inv-1": {
-            facts: {},
-            lines: [],
-            validation: { passed: true, checked: [], failures: [] },
-            originalDocument: { contentType: "application/xml" },
-          },
-          "/api/invoices/inv-1/document-url": { url: "https://files.example/inv-1.xml" },
-        };
-        if (!(path in routes)) throw new Error(`no stub for ${path}`);
-        return { ok: true, json: async () => routes[path] } as Response;
-      })
-    );
-
-    const { loadStrings } = await import("/strings.js");
-    await loadStrings();
-    const { openViewer } = await import("/viewer.js");
-    await openViewer(TASK, () => {});
-    await new Promise((r) => setTimeout(r, 0));
-
-    expect(xmlTabButton()).not.toBeUndefined();
-
-    // **Asked for the original specifically**, not whatever is
-    // preferred for the main preview — decision 0273's own point.
-    expect(seen.some((u) => u.includes("/document-url") && u.includes("type=original"))).toBe(true);
-  });
-
-  it("offers the XML tab for a hybrid PDF that retained its embedded invoice — decision 0383", async () => {
-    // The original here is the outer PDF, not XML — this is exactly
-    // the case `hasXml`'s content-type check alone would miss, which
-    // is why `embeddedXmlDocument` is checked too.
-    stubFetch({
-      ...BASE_ROUTES,
-      "/api/invoices/inv-1": {
-        facts: {},
-        lines: [],
-        validation: { passed: true, checked: [], failures: [] },
-        originalDocument: { contentType: "application/pdf" },
-        embeddedXmlDocument: { contentType: "application/xml" },
-      },
-    });
-
-    const { loadStrings } = await import("/strings.js");
-    await loadStrings();
-    const { openViewer } = await import("/viewer.js");
-    await openViewer(TASK, () => {});
-
-    expect(xmlTabButton()).not.toBeUndefined();
-  });
-
-  it("asks for the embedded XML specifically, not the outer PDF, for a hybrid invoice", async () => {
-    const seen: string[] = [];
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async (url: string) => {
-        seen.push(String(url));
-        const path = String(url).split("?")[0];
-        const routes: Record<string, unknown> = {
-          ...BASE_ROUTES,
+          "/api/code-lists": { fields: {} },
+          "/api/ui-strings": STRINGS,
+          "/api/field-visibility": FIELDS,
+          "/api/invoices/inv-1/progress": { visits: [] },
+          "/api/documents/inv-1/activity": { items: [] },
           "/api/invoices/inv-1": {
             facts: {},
             lines: [],
@@ -5809,99 +5686,126 @@ describe("the XML tab, offered only when it exists (decision 0273, widened by 03
             originalDocument: { contentType: "application/pdf" },
             embeddedXmlDocument: { contentType: "application/xml" },
           },
-          "/api/invoices/inv-1/document-url": { url: "https://files.example/inv-1-embedded.xml" },
         };
         if (!(path in routes)) throw new Error(`no stub for ${path}`);
         return { ok: true, json: async () => routes[path] } as Response;
       })
     );
+    return calls;
+  }
 
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+  const tab = (label: string) => [...document.querySelectorAll(".doctab")].find((b) => b.textContent?.includes(label)) as HTMLButtonElement;
+  const row = (name: string) =>
+    [...document.querySelectorAll("#vattach .attachrow")].find((r) => r.querySelector(".attachname")?.textContent === name) as HTMLElement;
+
+  async function open(list: unknown = LIST, options = {}) {
+    const calls = stubAttachments(list, options);
     const { loadStrings } = await import("/strings.js");
     await loadStrings();
     const { openViewer } = await import("/viewer.js");
     await openViewer(TASK, () => {});
-    await new Promise((r) => setTimeout(r, 0));
+    await settle();
+    return calls;
+  }
 
-    expect(seen.some((u) => u.includes("/document-url") && u.includes("type=embedded_xml"))).toBe(true);
-    expect(seen.some((u) => u.includes("/document-url") && u.includes("type=original"))).toBe(false);
+  async function openTab() {
+    tab("Attachments").click();
+    await settle();
+    await settle();
+    await settle();
+  }
+
+  it("offers Attachments for every invoice, and the XML tab no longer", async () => {
+    const calls = await open();
+    expect(tab("Attachments")).toBeDefined();
+    expect([...document.querySelectorAll(".doctab")].some((b) => b.textContent === "XML")).toBe(false);
+    // Nothing is fetched until the tab is opened.
+    expect(calls.some((c) => c.includes("/attachments"))).toBe(false);
   });
 
-  it("switches to the XML tab and shows the fetched document, without disturbing the Document tab", async () => {
-    stubFetch({
-      ...BASE_ROUTES,
-      "/api/invoices/inv-1": {
-        facts: {},
-        lines: [],
-        validation: { passed: true, checked: [], failures: [] },
-        originalDocument: { contentType: "application/xml" },
-      },
-      "/api/invoices/inv-1/document-url": { url: "https://files.example/inv-1.xml" },
-    });
+  it("lists what was received by message, marks this invoice's file, and shows the XML inside the PDF first", async () => {
+    const calls = await open();
+    await openTab();
 
-    const { loadStrings } = await import("/strings.js");
-    await loadStrings();
-    const { openViewer } = await import("/viewer.js");
-    await openViewer(TASK, () => {});
-    await new Promise((r) => setTimeout(r, 0));
-
-    (xmlTabButton() as HTMLButtonElement).click();
-
-    expect(xmlTabButton()?.className).toContain("on");
-    expect(document.getElementById("vxml")?.closest("[hidden]")).toBeNull();
-    expect(document.getElementById("vxml")?.querySelector("iframe")?.getAttribute("src")).toBe(
-      "https://files.example/inv-1.xml"
-    );
-    // The Document pane is hidden, not gone — switching back must
-    // still find #vpreview intact.
+    expect(tab("Attachments").className).toContain("on");
     expect(document.getElementById("vpreview")?.closest("[hidden]")).not.toBeNull();
-
-    (docTabButton() as HTMLButtonElement).click();
-    expect(document.getElementById("vpreview")?.closest("[hidden]")).toBeNull();
+    const heads = [...document.querySelectorAll("#vattach .attachhead")].map((h) => h.textContent);
+    expect(heads[0]).toContain(`${MSG} from ap@munch.example · AP mailbox`);
+    expect(heads[1]).toBe("Kept with the invoice");
+    expect([...document.querySelectorAll("#vattach .attachname")].map((n) => n.textContent)).toEqual([
+      "The email",
+      "88250.pdf",
+      "logo.svg",
+      "The XML inside the PDF",
+    ]);
+    expect(row("88250.pdf").querySelector(".attachthis")?.textContent).toBe("This invoice");
+    expect(row("The email").querySelector(".attachdetail")?.textContent).toBe("message.eml · 2 KB");
+    expect(row("The XML inside the PDF").className).toContain("on");
+    expect(calls).toContain("POST /api/invoices/inv-1/document-url?type=embedded_xml");
+    expect(document.querySelector("#vattach .attachview iframe")?.getAttribute("src")).toBe("https://files.example/signed-1");
   });
 
-  it("falls back to the Document tab when a new document has no XML to show", async () => {
-    // **The tab list is rebuilt per document, not carried over.**
-    // `openViewer()` already resets `docPanelTab` to `"doc"`
-    // unconditionally for every document (decision 0269) — this test
-    // checks the other half: that the XML tab itself genuinely
-    // disappears for a document with none, not just that the active
-    // selection moved.
-    stubFetch({
-      ...BASE_ROUTES,
-      "/api/invoices/inv-1": {
-        facts: {},
-        lines: [],
-        validation: { passed: true, checked: [], failures: [] },
-        originalDocument: { contentType: "application/xml" },
-      },
-      "/api/invoices/inv-1/document-url": { url: "https://files.example/inv-1.xml" },
+  it("shows a received file when chosen, and says a file it will not show is for download", async () => {
+    const calls = await open();
+    await openTab();
+
+    (row("The email").querySelector(".attachpick") as HTMLButtonElement).click();
+    await settle();
+    expect(calls).toContain(`POST /api/invoices/inv-1/attachments/${MSG}/0/url`);
+    expect(row("The email").className).toContain("on");
+    expect(document.querySelector("#vattach .attachview iframe")?.getAttribute("src")).toBe("https://files.example/signed-2");
+
+    (row("logo.svg").querySelector(".attachpick") as HTMLButtonElement).click();
+    await settle();
+    expect(document.querySelector("#vattach .attachview")?.textContent).toContain("Download it to open it");
+    expect(calls.some((c) => c.endsWith(`/attachments/${MSG}/2/url`))).toBe(false);
+  });
+
+  it("downloads any file under its own name", async () => {
+    await open();
+    await openTab();
+    const clicked: string[] = [];
+    const spy = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (this: HTMLAnchorElement) {
+      clicked.push(this.getAttribute("href") ?? "");
     });
 
-    const { loadStrings } = await import("/strings.js");
-    await loadStrings();
-    const { openViewer } = await import("/viewer.js");
-    await openViewer(TASK, () => {});
-    await new Promise((r) => setTimeout(r, 0));
-    (xmlTabButton() as HTMLButtonElement).click();
-    expect(xmlTabButton()?.className).toContain("on");
+    (row("logo.svg").querySelector(".actionlink") as HTMLButtonElement).click();
+    await settle();
+    spy.mockRestore();
 
-    const TASK_2 = { ...TASK, subject: { ...TASK.subject, id: "inv-2" } };
-    stubFetch({
-      ...BASE_ROUTES,
-      "/api/invoices/inv-2": {
-        facts: {},
-        lines: [],
-        validation: { passed: true, checked: [], failures: [] },
-        originalDocument: null,
-      },
-      "/api/invoices/inv-2/progress": { visits: [] },
-      "/api/documents/inv-2/activity": { items: [] },
-    });
-    await openViewer(TASK_2, () => {});
+    expect(clicked).toEqual(["https://files.example/signed-2?download=1"]);
+  });
 
-    expect(xmlTabButton()).toBeUndefined();
-    expect(docTabButton()?.className).toContain("on");
+  it("asks for a fresh link when the frame loads again", async () => {
+    const calls = await open();
+    await openTab();
+    const frame = document.querySelector("#vattach iframe") as HTMLIFrameElement;
+    frame.dispatchEvent(new Event("load"));
+    await settle();
+    frame.dispatchEvent(new Event("load"));
+    await settle();
+
+    expect(calls.filter((c) => c.includes("document-url"))).toHaveLength(2);
+    expect(frame.getAttribute("src")).toBe("https://files.example/signed-2");
+  });
+
+  it("says when nothing is kept, and when the list could not be loaded", async () => {
+    await open({ messages: [], files: [] });
+    await openTab();
+    expect(document.getElementById("vattach")?.textContent).toBe("Nothing received with this invoice is kept.");
+
+    await open(LIST, { ok: false });
+    await openTab();
+    expect(document.getElementById("vattach")?.textContent).toBe("The attachments could not be loaded.");
+  });
+
+  it("goes back to the Document tab with the document as it was", async () => {
+    await open();
+    await openTab();
+    tab("Document").click();
     expect(document.getElementById("vpreview")?.closest("[hidden]")).toBeNull();
+    expect(document.getElementById("vattach")?.closest("[hidden]")).not.toBeNull();
   });
 });
 

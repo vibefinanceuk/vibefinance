@@ -196,4 +196,59 @@ export async function verifyPageToken(
   return { valid: true, invoiceId, pageNumber };
 }
 
+/**
+ * A signed URL for one file a route received — decision 0571, for the
+ * viewer's Attachments tab.
+ *
+ * **A third token, for the same reason as the page token above.** A
+ * received file is a row of `route_message_parts`, addressed by its
+ * message and sequence, not a type of `invoice_documents`. The invoice
+ * travels in the token too: the file is served only as one of *this*
+ * invoice's attachments, and the fetch checks the message still belongs
+ * to it. A message id is `MSG-` and hex groups, so it has no `.` to
+ * confuse the split.
+ */
+export async function mintPartToken(
+  secret: string,
+  invoiceId: string,
+  messageId: string,
+  seq: number,
+  nowSeconds: number = Math.floor(Date.now() / 1000)
+): Promise<{ token: string; expiresAt: number }> {
+  const expiresAt = nowSeconds + TOKEN_TTL_SECONDS;
+  const payload = `part.${invoiceId}.${messageId}.${seq}.${expiresAt}`;
+  const sig = await hmac(secret, payload);
+  return { token: `${payload}.${base64UrlEncode(sig)}`, expiresAt };
+}
+
+export type PartTokenVerification =
+  | { valid: true; invoiceId: string; messageId: string; seq: number }
+  | { valid: false; reason: "malformed" | "expired" | "bad signature" };
+
+export async function verifyPartToken(
+  secret: string,
+  token: string,
+  nowSeconds: number = Math.floor(Date.now() / 1000)
+): Promise<PartTokenVerification> {
+  const parts = token.split(".");
+  if (parts.length !== 6 || parts[0] !== "part") return { valid: false, reason: "malformed" };
+  const [, invoiceId, messageId, seqText, expiryText, providedSig] = parts;
+  const seq = Number(seqText);
+  const expiresAt = Number(expiryText);
+  if (!invoiceId || !messageId || !Number.isInteger(seq) || seq < 0 || !Number.isFinite(expiresAt)) {
+    return { valid: false, reason: "malformed" };
+  }
+  // Signature before expiry, as above.
+  const expected = await hmac(secret, `part.${invoiceId}.${messageId}.${seq}.${expiresAt}`);
+  let provided: Uint8Array;
+  try {
+    provided = base64UrlDecode(providedSig);
+  } catch {
+    return { valid: false, reason: "malformed" };
+  }
+  if (!timingSafeEqual(expected, provided)) return { valid: false, reason: "bad signature" };
+  if (nowSeconds >= expiresAt) return { valid: false, reason: "expired" };
+  return { valid: true, invoiceId, messageId, seq };
+}
+
 export { TOKEN_TTL_SECONDS };

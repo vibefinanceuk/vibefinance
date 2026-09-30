@@ -140,6 +140,7 @@ export default defineConfig({
       "/coding-lists.js": resolve(__dirname, "public/coding-lists.js"),
       "/readback.js": resolve(__dirname, "public/readback.js"),
       "/activity.js": resolve(__dirname, "public/activity.js"),
+      "/attachments.js": resolve(__dirname, "public/attachments.js"),
       /**
        * **Missed by decision 0470, caught while building decision
        * 0471** — `collaborators.js` was added and imported by

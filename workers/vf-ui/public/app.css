@@ -4915,3 +4915,18 @@
 .popout .rmcheck input.rmnum { width: 80px; flex: none; padding: 4px 8px; margin-left: 4px; }
 .popout .rmcheck input[type="checkbox"] { width: auto; flex: none; }
 .rmformbuttons { justify-content: flex-start; }
+
+/* Decision 0571 — the Attachments tab: what was received, grouped by message, and the chosen file below. */
+.attachpane { display: flex; flex-direction: column; gap: 8px; padding: 8px; box-sizing: border-box; }
+.attachlist { flex: 0 1 auto; max-height: 45%; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
+.attachhead { font-size: var(--text-sm); color: var(--text-muted); padding: 0 2px 4px; border-bottom: 1px solid var(--border); margin-bottom: 4px; }
+.attachrow { display: flex; align-items: center; gap: 8px; padding: 1px 4px; border-radius: 6px; }
+.attachrow.on { background: var(--surface-0); }
+.attachrow .actionlink { flex-direction: row; min-width: 0; padding: 3px 6px; gap: 4px; }
+.attachrow .actionlink svg { width: 14px; height: 14px; }
+.attachpick { flex: 1 1 auto; min-width: 0; display: flex; align-items: baseline; gap: 8px; background: none; border: none; padding: 2px 0; text-align: left; cursor: pointer; color: var(--text-primary); font: inherit; font-size: var(--text-sm); }
+.attachpick:hover .attachname { text-decoration: underline; }
+.attachname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.attachdetail { color: var(--text-muted); font-size: var(--text-sm); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.attachthis { flex: 0 0 auto; font-size: var(--text-sm); color: var(--text-accent); border: 1px solid var(--border-accent); border-radius: 999px; padding: 0 8px; }
+.attachview { flex: 1 1 auto; min-height: 200px; border-radius: var(--radius); overflow: hidden; background: var(--surface-0); }

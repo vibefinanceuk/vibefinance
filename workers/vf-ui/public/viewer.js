@@ -16,6 +16,7 @@ import { icon } from "/icons.js";
 import { processRow } from "/process-row.js";
 import { buildActivityTab } from "/activity.js";
 import { buildCollaboratorsControl } from "/collaborators.js";
+import { buildAttachmentsTab } from "/attachments.js";
 import { pageViewer } from "/page-renderer.js";
 import { openPoMatchingPanel, matchChip, matchLegend, openLineMatchPopout } from "/po-match.js";
 
@@ -787,7 +788,6 @@ export async function initDocumentWindow(invoiceId, root) {
   // Not awaited, matching `openViewer()`'s own reasoning: the tabs are
   // usable while a slow R2 fetch is still in flight.
   showPreview(invoiceId, stored.document?.contentType);
-  showXmlPreview(invoiceId);
 }
 
 /**
@@ -819,7 +819,7 @@ export async function initDocumentWindow(invoiceId, root) {
  * before today: rendering itself never once succeeded until decision
  * 0405, so this gap was invisible the whole time 0380–0382 were built.
  * Routed to `documentFrame()` instead — the same signed-URL-refresh
- * iframe `showXmlPreview()` already uses below, since an HTML page is
+ * iframe the XML tab used (now the Attachments tab, 0571), since an HTML page is
  * exactly what an iframe is for and nothing about it benefits from a
  * thumbnail rail, zoom or rotation built for a scanned photograph.
  */
@@ -893,38 +893,6 @@ function documentFrame(firstUrl, mint, attributes) {
 
   point(firstUrl);
   return frame;
-}
-
-/**
- * The XML tab's own content — decision 0273, widened by decision 0383.
- *
- * **Always an iframe, never an image.** Unlike `showPreview()`, there
- * is no image case to branch on: the document this asks for is only
- * ever fetched when `documentPanel()` has already checked, before this
- * tab is even offered, that one of the two XML-shaped types below
- * genuinely exists.
- *
- * **Which type, decided once, here — not guessed from content type.**
- * A bare-XML invoice's own `original` is the XML; a hybrid PDF's
- * `original` is the outer PDF, and its XML is the separate
- * `embedded_xml` artifact decision 0383 added. `stored.embeddedXmlDocument`
- * says which invoice this is, the same fact `documentPanel()` already
- * read to decide whether to offer this tab at all.
- */
-async function showXmlPreview(invoiceId) {
-  const holder = document.getElementById("vxml");
-  if (!holder) return;
-
-  const type = stored.embeddedXmlDocument ? "embedded_xml" : "original";
-  const url = await documentUrl(invoiceId, type);
-  if (!url) {
-    holder.replaceChildren(el("div", { class: "vthumb", text: t("viewer.nodocument") }));
-    return;
-  }
-
-  holder.replaceChildren(
-    documentFrame(url, () => documentUrl(invoiceId, type), { class: "vframe", title: t("viewer.xmltab") })
-  );
 }
 
 /**
@@ -3163,27 +3131,15 @@ export function buildDocTabs(invoiceId) {
   ]);
 
   /**
-   * **Offered when the original genuinely is XML, or a hybrid PDF
-   * retained one inside it** — decision 0273's "if it exists," widened
-   * by decision 0383. Most invoices arrive as a PDF or an image; their
-   * own original is not a second, different thing worth a tab of its
-   * own the way a bare-XML original is next to its generated rendering
-   * — or the way a Factur-X/ZUGFeRD PDF's embedded invoice now is.
+   * **Attachments, in place of the XML tab — decision 0571.** Asked for
+   * live: *"call that tab Attachments instead, and provide access to
+   * anything we have received"*. Always offered: every invoice was
+   * received somehow, and the tab says so when nothing is kept. The XML
+   * the old tab showed (a bare-XML original, 0273, or the XML inside a
+   * hybrid PDF, 0383) is one of the files listed, and the first shown.
+   * Loaded when the tab is first opened (`attachments.js`).
    */
-  const hasXml = /xml/i.test(stored.originalDocument?.contentType ?? "") || Boolean(stored.embeddedXmlDocument);
-  const xmlContent = hasXml
-    ? el("div", { class: "vpreview", id: "vxml" }, [el("div", { class: "vthumb", text: t("viewer.document") })])
-    : null;
-  /**
-   * **No fallback needed here** — `openViewer()` already resets
-   * `docPanelTab` to `"doc"` unconditionally for every document it
-   * opens (decision 0269), before `documentPanel()` ever runs. A
-   * check here for "was `xml` selected on a document with none" would
-   * be checking a condition that can never be true by the time this
-   * function sees it — confirmed by removing the reset in
-   * `openViewer()` and watching the tab-switch test fail, not this
-   * one.
-   */
+  const attachments = buildAttachmentsTab(invoiceId);
 
   const { content: timelineContent, countBadge } = buildActivityTab(invoiceId);
   const { content: collaboratorsContent } = buildCollaboratorsControl(invoiceId);
@@ -3242,7 +3198,7 @@ export function buildDocTabs(invoiceId) {
   );
 
   const tabs = [{ key: "doc", label: t("viewer.document"), pane: docPane }];
-  if (hasXml) tabs.push({ key: "xml", label: t("viewer.xmltab"), pane: xmlContent });
+  tabs.push({ key: "attachments", label: t("viewer.attachmentstab"), pane: attachments.content, onSelect: attachments.open });
   tabs.push({ key: "timeline", label: t("activity.timelinetab"), pane: timelinePane, badge: countBadge });
 
   /**
@@ -3257,6 +3213,7 @@ export function buildDocTabs(invoiceId) {
       entry.button.className = entry.key === which ? "doctab on" : "doctab";
       entry.pane.hidden = entry.key !== which;
     }
+    tabs.find((entry) => entry.key === which)?.onSelect?.();
   }
 
   for (const entry of tabs) {
@@ -3267,6 +3224,8 @@ export function buildDocTabs(invoiceId) {
     entry.button.onclick = () => select(entry.key);
     entry.pane.hidden = entry.key !== docPanelTab;
   }
+  // A viewer re-rendered on the Attachments tab loads it again (0571).
+  tabs.find((entry) => entry.key === docPanelTab)?.onSelect?.();
 
   return { tabs };
 }
@@ -4945,10 +4904,6 @@ export async function openViewer(task, onClose) {
   // Not awaited: the form is usable while the document loads, and a
   // slow R2 fetch should not hold up somebody who knows what to type.
   showPreview(task.subject.id, stored.document?.contentType);
-  // **A no-op when the XML tab was not offered** — `#vxml` only exists
-  // when `documentPanel()` built it, and `showXmlPreview()` already
-  // checks for the element before doing anything.
-  showXmlPreview(task.subject.id);
   // The comparison follows the printed total as it is typed, not only
   // when a line changes.
   document.getElementById("f-BT-112")?.addEventListener("input", updateTotals);

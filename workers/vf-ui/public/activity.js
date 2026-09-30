@@ -170,7 +170,14 @@ function emailStatusLine(item) {
 }
 
 function systemMessage(item) {
-  if (item.kind === "received") return t("activity.received");
+  if (item.kind === "received") {
+    // Decision 0571 — the route message it came in, with its source and sender.
+    if (!item.messageId) return t("activity.received");
+    return t(item.sender ? "activity.receivedroutefrom" : "activity.receivedroute")
+      .replace("{source}", item.source ?? "")
+      .replace("{sender}", item.sender ?? "")
+      .replace("{message}", item.messageId);
+  }
   if (item.kind === "stage_completed") {
     return t("activity.stagecompleted").replace("{who}", item.userName).replace("{stage}", item.stageName);
   }
@@ -227,6 +234,22 @@ function itemRow(item) {
           emailStatusLine(item) ? el("div", { class: "activityactioncomment muted sm", text: emailStatusLine(item) }) : null,
         ].filter(Boolean)
       ),
+    ]);
+  }
+
+  if (item.kind === "received" && item.messageId) {
+    // Decision 0571 — the message reference, and the file this invoice was read from.
+    return el("div", { class: "activitysysline activityreceived" }, [
+      el("span", { class: "activitydot" }),
+      el("div", { class: "activityactionbody" }, [
+        el("div", { class: "activitymsgrow" }, [
+          el("span", { class: "activitymsg", text: systemMessage(item) }),
+          el("span", { class: "activitywhen", text: item.at }),
+        ]),
+        item.filename
+          ? el("div", { class: "activityactioncomment muted sm", text: t("activity.receivedfile").replace("{file}", item.filename) })
+          : null,
+      ].filter(Boolean)),
     ]);
   }
 

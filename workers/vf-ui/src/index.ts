@@ -267,6 +267,9 @@ const PROXIED_TO_INSTANCE: RegExp[] = [
   // same commit rather than left to be found live.
   /^\/invoices\/[^/]+\/pages$/,
   /^\/invoices\/[^/]+\/pages\/\d+\/document-url$/,
+  // Everything received with an invoice, for the Attachments tab — decision 0571.
+  /^\/invoices\/[^/]+\/attachments$/,
+  /^\/invoices\/[^/]+\/attachments\/[^/]+\/\d+\/url$/,
   // The standard's own code lists, so a person picks a currency rather
   // than types one (decision 0113).
   /^\/code-lists$/,

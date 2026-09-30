@@ -1,6 +1,7 @@
 import type { RouteResult } from "./examples-route.js";
 import { t } from "./i18n.js";
 import type { Locale } from "./i18n.js";
+import { messagesForInvoice } from "./received-files.js";
 
 /**
  * The document activity feed — decision 0267.
@@ -92,7 +93,27 @@ async function receivedEvent(db: D1Database, invoiceId: string): Promise<Activit
     .prepare("SELECT created_at FROM invoice_headers WHERE id = ?")
     .bind(invoiceId)
     .first<{ created_at: string }>();
-  return row ? [{ kind: "received", at: row.created_at }] : [];
+  if (!row) return [];
+  /**
+   * **Which message it came in — decision 0571.** Asked for live: the
+   * Timeline names the route message, for example `MSG-7A86-7670-F2A5`,
+   * with the source that received it, who sent it, and the file this
+   * invoice was read from. An invoice that came in no message (an
+   * upload, or one captured before routes kept messages) says only
+   * that it was received, as before.
+   */
+  const [message] = await messagesForInvoice(db, invoiceId);
+  if (!message) return [{ kind: "received", at: row.created_at }];
+  return [
+    {
+      kind: "received",
+      at: row.created_at,
+      messageId: message.id,
+      source: message.source,
+      sender: message.sender,
+      filename: message.filename,
+    },
+  ];
 }
 
 async function stageCompletedEvents(db: D1Database, invoiceId: string): Promise<ActivityItem[]> {
