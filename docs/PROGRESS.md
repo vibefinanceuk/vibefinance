@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 30 September 2026 (decision 0571). A living document: what
+Last updated 30 September 2026 (decision 0572). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,10 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### `hidden` always hides (0572)
+- The Attachments pane no longer shows under the Document and Timeline
+  tabs; one stylesheet rule now makes `hidden` hide every element.
 
 ### The message in the Timeline, and an Attachments tab (0571)
 - The Timeline names the route message an invoice came in (for example

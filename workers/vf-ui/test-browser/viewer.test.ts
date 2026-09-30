@@ -5800,6 +5800,19 @@ describe("the Attachments tab, in place of the XML tab (decision 0571)", () => {
     expect(document.getElementById("vattach")?.textContent).toBe("The attachments could not be loaded.");
   });
 
+  it("is really hidden under the other tabs, whatever display a pane's class gives it — decision 0572", async () => {
+    /**
+     * Reported live: the Attachments pane stayed on screen beneath the
+     * document, and the Timeline beneath it, because `.attachpane`'s
+     * own `display: flex` beat the browser's `[hidden]` default. jsdom
+     * applies no CSS, so this reads the stylesheet: one rule for every
+     * element, and this pane's own.
+     */
+    const css = (await import("virtual:stylesheets")).default["app.css"];
+    expect(css).toContain("[hidden] { display: none !important; }");
+    expect(css).toContain(".attachpane[hidden] { display: none; }");
+  });
+
   it("goes back to the Document tab with the document as it was", async () => {
     await open();
     await openTab();

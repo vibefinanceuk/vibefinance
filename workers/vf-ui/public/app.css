@@ -14,6 +14,17 @@
   Nothing here was rewritten in the move; only relocated.
 */
 
+/*
+  **`hidden` always hides — decision 0572.** A class rule giving an
+  element `display: flex` (or grid, or block) ties with the browser's own
+  `[hidden] { display: none }` and wins, so setting `hidden` does
+  nothing. Found four times: 0271, the pop-out backdrop, 0504's timeline,
+  and 0571's Attachments pane, which stayed on screen under the Document
+  and Timeline tabs. Each was fixed with its own `[hidden]` rule. This
+  one rule ends the pattern for every element, present and future.
+*/
+[hidden] { display: none !important; }
+
   /*
     Restraint in service of legibility, not impression — decision 0101.
     This is a tool somebody uses all day, so the quiet has to make the
@@ -4918,6 +4929,7 @@
 
 /* Decision 0571 — the Attachments tab: what was received, grouped by message, and the chosen file below. */
 .attachpane { display: flex; flex-direction: column; gap: 8px; padding: 8px; box-sizing: border-box; }
+.attachpane[hidden] { display: none; }
 .attachlist { flex: 0 1 auto; max-height: 45%; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
 .attachhead { font-size: var(--text-sm); color: var(--text-muted); padding: 0 2px 4px; border-bottom: 1px solid var(--border); margin-bottom: 4px; }
 .attachrow { display: flex; align-items: center; gap: 8px; padding: 1px 4px; border-radius: 6px; }
