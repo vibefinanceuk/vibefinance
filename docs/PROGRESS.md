@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 1 October 2026 (decision 0588). A living document: what
+Last updated 1 October 2026 (decision 0589). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,14 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### The Route library (0589)
+- A library of ready-made Sources and Destinations (connectors), opened
+  from Routes: add one to a process with its defaults, and upgrade a
+  route when its connector has a later version. HTTPS out, an Automation
+  webhook (Zapier, Make, Power Automate) and the ERP CSV file are
+  available; Oracle, SAP, Sage, Business Central and SFTP are listed as
+  planned.
 
 ### More than one ERP: business units and rules (0587, 0588)
 - Each Destination sends for the business units chosen (with the units

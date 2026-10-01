@@ -343,7 +343,15 @@ function destinationPanel(d) {
 function openAddDestination() {
   const problem = el("div", { class: "warn" });
   const nameInput = el("input", { type: "text", id: "dest-name", placeholder: t("httpsout.nameexample") });
+  // Decision 0589: the destination connectors the library has ready, HTTPS out first.
   const connector = el("select", { id: "dest-connector" }, [el("option", { value: "https-out", text: t("httpsout.connector") })]);
+  fetch("/api/connector-library")
+    .then((r) => (r.ok ? r.json() : null))
+    .then((lib) => {
+      const ready = (lib?.connectors ?? []).filter((c) => c.direction === "destination" && c.status === "available" && c.id !== "https-out" && (c.multiple || !c.inUse.some((u) => u.processId === processId)));
+      for (const c of ready) connector.append(el("option", { value: c.id, text: t(`connector.${c.id}.name`) }));
+    })
+    .catch(() => {});
   const close = () => backdrop.remove();
   const create = actionLink("create", {
     primary: true,
@@ -353,11 +361,18 @@ function openAddDestination() {
         const response = await fetch(`/api/processes/${encodeURIComponent(processId)}/destinations`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name: nameInput.value, routeId: connector.value }),
+          body: JSON.stringify({ name: nameInput.value, connectorId: connector.value }),
         });
         const body = await response.json();
         if (!response.ok) {
-          problem.textContent = body.reason === "name_taken" ? t("httpsout.error.name_taken") : body.reason === "no_name" ? t("sources.needname") : body.error || t("sources.failed");
+          problem.textContent =
+            body.reason === "name_taken"
+              ? t("httpsout.error.name_taken")
+              : body.reason === "no_name"
+                ? t("sources.needname")
+                : body.reason === "one_per_process"
+                  ? t("library.error.one_per_process")
+                  : body.error || t("sources.failed");
           return;
         }
         close();
@@ -593,10 +608,12 @@ function render() {
   );
 }
 
-export async function open() {
+export async function open(focus = null) {
   setCurrentScreen("processroutes");
-  // A fresh visit opens on the flow alone, whatever was chosen last time.
-  selected = null;
+  // A fresh visit opens on the flow alone, whatever was chosen last time —
+  // unless it comes from the Route library (decision 0589), on what was added there.
+  selected = focus ? { kind: focus.kind, id: focus.id } : null;
+  if (focus?.processId) processId = focus.processId;
   setSourcesRefresh(async () => {
     await load();
     render();

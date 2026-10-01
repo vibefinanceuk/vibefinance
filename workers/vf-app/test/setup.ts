@@ -125,6 +125,7 @@ import httpsOutSql from "../../../migrations/0118_https_out.sql?raw";
 import erpDeliveriesSql from "../../../migrations/0119_erp_csv_deliveries.sql?raw";
 import destinationUnitsSql from "../../../migrations/0120_destination_units.sql?raw";
 import destinationRequestsSql from "../../../migrations/0121_destination_requests.sql?raw";
+import instanceConnectorsSql from "../../../migrations/0122_instance_connectors.sql?raw";
 
 // Another known divergence from production, on top of the one below:
 // D1's exec() splits its input by newline and executes each non-empty
@@ -446,6 +447,7 @@ export async function applyTestSchema(): Promise<void> {
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(erpDeliveriesSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(destinationUnitsSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(destinationRequestsSql)));
+  await env.DB.exec(toOneStatementPerLine(stripSqlComments(instanceConnectorsSql)));
 }
 
 /**

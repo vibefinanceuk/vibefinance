@@ -1,6 +1,7 @@
 import type { RouteResult } from "./org-route.js";
 import { invoiceExportRows, payableInvoiceIds, toCsv, type ErpExportRow } from "./erp-export-route.js";
 import { coveredInvoices, coveredUnits, unitIdsOf } from "./destination-units.js";
+import { STANDARD_CONNECTORS, connectorById, connectorOfInstance, type ConnectorDefinition } from "@vibefinance/shared";
 import { NoSecretsKeyError, readSecret, secretsSet, setSecret } from "./connector-secrets.js";
 import {
   addRouteEvent,
@@ -88,11 +89,13 @@ interface InstanceRow {
   settings_json: string | null;
   started_at: string | null;
   unit_ids: string | null;
+  connector_id: string | null;
+  connector_version: number | null;
 }
 
 async function instanceOf(db: D1Database, id: string): Promise<InstanceRow | null> {
   return db
-    .prepare("SELECT id, route_id, process_id, name, status, settings_json, started_at, unit_ids FROM route_instances WHERE id = ? AND source_id IS NULL")
+    .prepare("SELECT id, route_id, process_id, name, status, settings_json, started_at, unit_ids, connector_id, connector_version FROM route_instances WHERE id = ? AND source_id IS NULL")
     .bind(id)
     .first<InstanceRow>();
 }
@@ -504,11 +507,43 @@ async function queueNew(db: D1Database, instanceId: string, processId: string, n
 // --- The Destination's own routes -------------------------------------------------------
 
 /** `POST /processes/:id/destinations` `{ name, routeId }` — a new HTTPS out Destination, paused until started. */
-export async function handleCreateDestination(db: D1Database, userId: string, processId: string, body: unknown): Promise<RouteResult> {
+/** A connector's defaults applied to HTTPS out's own — decision 0589. */
+export function settingsFromConnector(connector: ConnectorDefinition | null): HttpsOutSettings {
+  const d = connector?.settings?.defaults ?? {};
+  return {
+    ...DEFAULT_SETTINGS,
+    ...(d.method ? { method: d.method } : {}),
+    ...(d.format ? { format: d.format } : {}),
+    ...(d.referencePath !== undefined ? { referencePath: d.referencePath } : {}),
+    auth: d.auth ? { ...d.auth } : { ...DEFAULT_SETTINGS.auth },
+  };
+}
+
+/**
+ * `POST /processes/:id/destinations` `{ name, connectorId }` — a new
+ * Destination from a connector in the library (decision 0589), paused
+ * until started. HTTPS out by default, as before (0585). A connector on
+ * HTTPS out (the generic one, the automation webhook) fills in its
+ * defaults; the ERP CSV file is one per process.
+ */
+export async function handleCreateDestination(
+  db: D1Database,
+  userId: string,
+  processId: string,
+  body: unknown,
+  library: ConnectorDefinition[] = STANDARD_CONNECTORS
+): Promise<RouteResult> {
   const b = (body ?? {}) as Record<string, unknown>;
   const name = typeof b.name === "string" ? b.name.trim() : "";
   if (name === "" || name.length > 80) return { status: 400, body: { error: "a Destination needs a name, of at most 80 characters", reason: "no_name" } };
-  if ((b.routeId ?? HTTPS_OUT) !== HTTPS_OUT) return { status: 400, body: { error: "only HTTPS out Destinations can be added yet", reason: "unknown_route" } };
+  const connectorId = typeof b.connectorId === "string" ? b.connectorId : typeof b.routeId === "string" ? b.routeId : HTTPS_OUT;
+  const connector = connectorById(library, connectorId);
+  if (!connector || connector.direction !== "destination") {
+    return { status: 400, body: { error: `there is no destination connector ${connectorId}`, reason: "unknown_connector" } };
+  }
+  if (connector.status !== "available" || (connector.routeId !== HTTPS_OUT && connector.routeId !== "erp-csv")) {
+    return { status: 409, body: { error: `${connectorId} is not available yet`, reason: "not_available" } };
+  }
   const process = await db.prepare("SELECT id FROM processes WHERE id = ?").bind(processId).first();
   if (!process) return { status: 404, body: { error: `process ${processId} does not exist` } };
   const taken = await db
@@ -516,12 +551,30 @@ export async function handleCreateDestination(db: D1Database, userId: string, pr
     .bind(processId, name)
     .first();
   if (taken) return { status: 409, body: { error: `this process already has a Destination named "${name}"`, reason: "name_taken" } };
+  if (!connector.multiple) {
+    const existing = await db
+      .prepare("SELECT 1 FROM route_instances WHERE process_id = ? AND source_id IS NULL AND route_id = ? AND (status IS NULL OR status != 'retired')")
+      .bind(processId, connector.routeId)
+      .first();
+    if (existing) return { status: 409, body: { error: `this process already has ${connectorId}, and has one only`, reason: "one_per_process" } };
+  }
+  if (connector.routeId === "erp-csv") {
+    // The file is downloaded from the ERP export screen; sending, and its exports, are as 0552–0558.
+    const id = `erp-${processId}`;
+    await db
+      .prepare("INSERT INTO route_instances (id, route_id, process_id, name, status, created_by, connector_id, connector_version) VALUES (?, 'erp-csv', ?, ?, 'active', ?, ?, ?)")
+      .bind(id, processId, name, userId, connector.id, connector.version)
+      .run();
+    return { status: 201, body: { id, name, routeId: "erp-csv", connectorId: connector.id, status: "active" } };
+  }
   const id = `dest-${crypto.randomUUID().slice(0, 8)}`;
   await db
-    .prepare("INSERT INTO route_instances (id, route_id, process_id, name, status, settings_json, created_by) VALUES (?, ?, ?, ?, 'paused', ?, ?)")
-    .bind(id, HTTPS_OUT, processId, name, JSON.stringify(DEFAULT_SETTINGS), userId)
+    .prepare(
+      "INSERT INTO route_instances (id, route_id, process_id, name, status, settings_json, created_by, connector_id, connector_version) VALUES (?, ?, ?, ?, 'paused', ?, ?, ?, ?)"
+    )
+    .bind(id, HTTPS_OUT, processId, name, JSON.stringify(settingsFromConnector(connector)), userId, connector.id, connector.version)
     .run();
-  return { status: 201, body: { id, name, routeId: HTTPS_OUT, status: "paused" } };
+  return { status: 201, body: { id, name, routeId: HTTPS_OUT, connectorId: connector.id, status: "paused" } };
 }
 
 async function httpsOutInstance(db: D1Database, id: string): Promise<InstanceRow | RouteResult> {
@@ -584,6 +637,21 @@ export async function handleListDeliveries(db: D1Database, id: string): Promise<
 }
 
 /** `GET /route-instances/:id/connector` — settings, which secrets are set, what is waiting, recent deliveries, and invoices to try. */
+/** The connector a Destination runs, its version, the latest, and what it fixes — decision 0589. */
+export function connectorView(instance: { route_id: string; connector_id: string | null; connector_version: number | null }, library: ConnectorDefinition[] = STANDARD_CONNECTORS) {
+  const connector = connectorOfInstance(library, instance);
+  if (!connector) return null;
+  const version = instance.connector_version ?? 1;
+  return {
+    id: connector.id,
+    version,
+    latestVersion: connector.version,
+    upgradeAvailable: connector.version > version,
+    fixed: connector.settings?.fixed ?? [],
+    authTypes: connector.settings?.authTypes ?? null,
+  };
+}
+
 export async function handleGetConnector(db: D1Database, id: string): Promise<RouteResult> {
   const instance = await httpsOutInstance(db, id);
   if (isResult(instance)) return instance;
@@ -612,6 +680,7 @@ export async function handleGetConnector(db: D1Database, id: string): Promise<Ro
     body: {
       instance: { id: instance.id, name: instance.name, status: instance.status, processId: instance.process_id, startedAt: instance.started_at },
       settings: settingsOf(instance),
+      connector: connectorView(instance),
       secrets: await secretsSet(db, id),
       waitingNotTaken: payable.filter((x) => !taken.has(x)).length,
       counts,
@@ -622,13 +691,33 @@ export async function handleGetConnector(db: D1Database, id: string): Promise<Ro
 }
 
 /** `PUT /route-instances/:id/connector` `{ settings, secret? }` — the settings, checked, and the secret for its sign-in, encrypted. */
-export async function handleSaveConnector(db: D1Database, userId: string, id: string, body: unknown, secretsKey: string | undefined): Promise<RouteResult> {
+export async function handleSaveConnector(
+  db: D1Database,
+  userId: string,
+  id: string,
+  body: unknown,
+  secretsKey: string | undefined,
+  library: ConnectorDefinition[] = STANDARD_CONNECTORS
+): Promise<RouteResult> {
   const instance = await httpsOutInstance(db, id);
   if (isResult(instance)) return instance;
   if (instance.status === "retired") return { status: 409, body: { error: "the Destination is retired", reason: "retired" } };
   const b = (body ?? {}) as Record<string, unknown>;
   const checked = checkSettings(b.settings);
   if ("error" in checked) return { status: 400, body: checked };
+  // Decision 0589: what the connector fixes, and the ways of signing in it allows.
+  const connector = connectorOfInstance(library, instance);
+  if (connector?.settings) {
+    for (const key of connector.settings.fixed) {
+      const fixed = connector.settings.defaults[key];
+      if (fixed !== undefined && checked.settings[key] !== fixed) {
+        return { status: 400, body: { error: `${connector.id} keeps ${key} as ${fixed}`, reason: "fixed_setting" } };
+      }
+    }
+    if (!connector.settings.authTypes.includes(checked.settings.auth.type)) {
+      return { status: 400, body: { error: `${connector.id} does not sign in with ${checked.settings.auth.type}`, reason: "auth_not_allowed" } };
+    }
+  }
   const secretName = SECRET_FOR[checked.settings.auth.type];
   const secret = typeof b.secret === "string" ? b.secret : "";
   if (secret !== "") {
@@ -759,4 +848,38 @@ export async function handleSetDestinationUnits(db: D1Database, id: string, body
   await db.prepare("UPDATE route_instances SET unit_ids = ? WHERE id = ?").bind(next ? JSON.stringify(next) : null, id).run();
   const covered = await coveredUnits(db, next);
   return { status: 200, body: { id, unitIds: next, covered: covered ? [...covered] : null, setAside } };
+}
+
+/**
+ * `POST /route-instances/:id/connector/upgrade` — move a Destination to
+ * its connector's latest version (decision 0589): what the connector
+ * fixes is applied; the customer's own settings (address, sign-in,
+ * secret, reference, units) stay. Where the new version no longer allows
+ * its way of signing in, it moves to the new default, and says so.
+ */
+export async function handleUpgradeConnector(db: D1Database, id: string, library: ConnectorDefinition[] = STANDARD_CONNECTORS): Promise<RouteResult> {
+  const instance = await instanceOf(db, id);
+  if (!instance) return { status: 404, body: { error: `there is no Destination ${id}` } };
+  const connector = connectorOfInstance(library, instance);
+  if (!connector) return { status: 404, body: { error: "this Destination was made from no connector in the library", reason: "no_connector" } };
+  const from = instance.connector_version ?? 1;
+  if (connector.version <= from) return { status: 409, body: { error: "it is already on the latest version", reason: "up_to_date" } };
+  let authChanged = false;
+  if (instance.route_id === HTTPS_OUT && connector.settings) {
+    const settings = settingsOf(instance);
+    for (const key of connector.settings.fixed) {
+      const fixed = connector.settings.defaults[key];
+      if (fixed !== undefined) (settings as unknown as Record<string, unknown>)[key] = fixed;
+    }
+    if (!connector.settings.authTypes.includes(settings.auth.type)) {
+      settings.auth = { ...(connector.settings.defaults.auth ?? { type: "none" }) };
+      authChanged = true;
+    }
+    await db.prepare("UPDATE route_instances SET settings_json = ? WHERE id = ?").bind(JSON.stringify(settings), id).run();
+  }
+  await db
+    .prepare("UPDATE route_instances SET connector_id = ?, connector_version = ? WHERE id = ?")
+    .bind(connector.id, connector.version, id)
+    .run();
+  return { status: 200, body: { id, connectorId: connector.id, from, to: connector.version, authChanged } };
 }

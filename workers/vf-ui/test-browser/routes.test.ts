@@ -12,6 +12,7 @@ import renameStringsSql from "../../vf-licence/migrations/0231_rename_source_str
 import httpsOutStringsSql from "../../vf-licence/migrations/0232_https_out_strings.sql?raw";
 import erpDeliveriesStringsSql from "../../vf-licence/migrations/0233_erp_deliveries_strings.sql?raw";
 import destUnitsStringsSql from "../../vf-licence/migrations/0234_destination_units_strings.sql?raw";
+import libraryStringsSql from "../../vf-licence/migrations/0235_route_library_strings.sql?raw";
 
 /**
  * **Routes and Process routes — decision 0557.** The standard routes with
@@ -46,7 +47,7 @@ const strings: Record<string, string> = {
   "mechanism.file_import": "File import",
   "mechanism.edi": "EDI",
 };
-for (const sql of [stringsSql, destinationStringsSql, formatStringsSql, mappingStringsSql, csvStringsSql, httpsStringsSql, httpsStateStringsSql, replaceKeyStringsSql, mailboxStringsSql, renameStringsSql, httpsOutStringsSql, erpDeliveriesStringsSql, destUnitsStringsSql]) {
+for (const sql of [stringsSql, destinationStringsSql, formatStringsSql, mappingStringsSql, csvStringsSql, httpsStringsSql, httpsStateStringsSql, replaceKeyStringsSql, mailboxStringsSql, renameStringsSql, httpsOutStringsSql, erpDeliveriesStringsSql, destUnitsStringsSql, libraryStringsSql]) {
   for (const m of sql.matchAll(/\('([^']+)', 'en', '((?:[^']|'')*)'\)/g)) strings[m[1]] = m[2].replace(/''/g, "'");
 }
 // 0209 updates the ERP note rather than inserting it.
@@ -712,7 +713,7 @@ describe("HTTPS out — decision 0585", () => {
     (document.querySelector("#dest-name") as HTMLInputElement).value = "New push";
     (document.querySelector(".praddpop .statebuttons button") as HTMLElement).click();
     await settle();
-    expect(JSON.parse(calls.find((c) => c.path === "/api/processes/ap/destinations")!.body!)).toEqual({ name: "New push", routeId: "https-out" });
+    expect(JSON.parse(calls.find((c) => c.path === "/api/processes/ap/destinations")!.body!)).toEqual({ name: "New push", connectorId: "https-out" });
   });
 
   it("shows its settings, signs in by bearer with the token set, and saves what is typed", async () => {
@@ -885,5 +886,104 @@ describe("a Destination's business units — decision 0587", () => {
     const puts = calls.filter((c) => c.path === "/api/route-instances/erp-ap/units").map((c) => JSON.parse(c.body!));
     expect(puts).toEqual([{ unitIds: ["uk"] }, { unitIds: ["uk"], includeWaiting: true }]);
     expect(document.querySelector(".dounitspop")).toBeNull();
+  });
+});
+
+describe("the Route library — decision 0589", () => {
+  const C = (id: string, direction: string, status: string, categories: string[], extra: Record<string, unknown> = {}) => ({
+    id, version: 1, direction, publisher: "standard", status, categories, transport: "https", formats: ["vf_json"], multiple: true, mechanism: null, vendorDocs: null, inUse: [], ...extra,
+  });
+  const LIB = {
+    connectors: [
+      C("https-out", "destination", "available", ["generic"], { inUse: [{ instanceId: "dest-1", processId: "ap", processName: "Standard AP Process", name: "ERP push", version: 1, upgradeAvailable: true }] }),
+      C("automation-webhook", "destination", "available", ["automation"]),
+      C("oracle-fusion-payables", "destination", "planned", ["erp"], { formats: ["oracle_invoice_json"] }),
+      C("email-in", "source", "available", ["generic"], { transport: "email", formats: ["detected"], mechanism: "email" }),
+    ],
+    processes: [{ id: "ap", name: "Standard AP Process" }, { id: "exp", name: "Expenses" }],
+  };
+
+  it("lists connectors as cards, filtered, with what is in use, planned, and to upgrade", async () => {
+    stub([], { "/api/connector-library": LIB });
+    await openScreen("/route-library.js");
+    expect(text(".topbar h2")).toBe("Route library");
+    const names = () => [...document.querySelectorAll(".libcard h3")].map((h) => h.textContent);
+    expect(names()).toEqual(["HTTPS out", "Automation webhook", "Oracle Fusion Payables", "Email in"]);
+    const card = (id: string) => document.querySelector(`.libcard[data-connector="${id}"]`) as HTMLElement;
+    expect(card("https-out").textContent).toContain("In use: 1");
+    expect(card("https-out").textContent).toContain("Standard AP Process · ERP push");
+    expect(card("https-out").textContent).toContain("Version 1 available");
+    expect(card("oracle-fusion-payables").textContent).toContain("Planned");
+    expect(card("oracle-fusion-payables").textContent).toContain("Oracle invoices");
+    expect(card("oracle-fusion-payables").querySelector(".libfoot button")).toBeNull();
+    expect(card("automation-webhook").textContent).toContain("Zapier, Make or Power Automate");
+    ([...document.querySelectorAll("#lib-filters button")].find((b) => b.textContent === "Sources") as HTMLElement).click();
+    expect(names()).toEqual(["Email in"]);
+    ([...document.querySelectorAll("#lib-filters button")].find((b) => b.textContent === "Automation") as HTMLElement).click();
+    expect(names()).toEqual(["Automation webhook"]);
+  });
+
+  it("adds a destination connector to a process, then opens it there", async () => {
+    const calls: Call[] = [];
+    stub(calls, { "/api/connector-library": LIB });
+    const inner = globalThis.fetch as unknown as (url: string, init?: RequestInit) => Promise<Response>;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        if (String(url) === "/api/processes/exp/destinations") {
+          calls.push({ method: "POST", path: String(url), query: "", body: init?.body as string });
+          return { ok: true, status: 201, json: async () => ({ id: "dest-9", routeId: "https-out", connectorId: "automation-webhook" }) } as Response;
+        }
+        return inner(url, init);
+      })
+    );
+    await openScreen("/route-library.js");
+    (document.querySelector('.libcard[data-connector="automation-webhook"] .libfoot button') as HTMLElement).click();
+    await settle();
+    expect(text(".libaddpop h3")).toBe("Add Automation webhook");
+    expect((document.querySelector("#lib-name") as HTMLInputElement).value).toBe("Automation webhook");
+    (document.querySelector("#lib-process") as HTMLSelectElement).value = "exp";
+    (document.querySelector(".libaddpop .statebuttons button") as HTMLElement).click();
+    await settle();
+    expect(JSON.parse(calls.find((c) => c.path === "/api/processes/exp/destinations")!.body!)).toEqual({ name: "Automation webhook", connectorId: "automation-webhook" });
+    expect(calls.some((c) => c.path === "/api/process-routes" && c.query === "process=exp")).toBe(true);
+  });
+
+  it("adds a source connector as a source of its mechanism", async () => {
+    const calls: Call[] = [];
+    stub(calls, { "/api/connector-library": LIB });
+    await openScreen("/route-library.js");
+    (document.querySelector('.libcard[data-connector="email-in"] .libfoot button') as HTMLElement).click();
+    await settle();
+    (document.querySelector("#lib-name") as HTMLInputElement).value = "UK invoices";
+    (document.querySelector(".libaddpop .statebuttons button") as HTMLElement).click();
+    await settle();
+    expect(JSON.parse(calls.find((c) => c.method === "POST" && c.path === "/api/processes/ap/sources")!.body!)).toEqual({ id: "uk-invoices", name: "UK invoices", mechanism: "email" });
+  });
+
+  it("shows a Destination's connector and version, offers Upgrade, and keeps fixed settings unchangeable", async () => {
+    const calls: Call[] = [];
+    const PUSH = { id: "dest-1", name: "Zapier", status: "paused", routeId: "https-out", routeName: "HTTPS out", route: { live: true, ...V("process", "en16931", "vf_invoice_json_v1", "en16931", "https") }, waiting: 0, started: false, failedOpen: 0 };
+    stub(calls, {
+      "/api/process-routes": { ...FLOW, destinations: [...FLOW.destinations, PUSH] },
+      "/api/route-instances/dest-1/connector": {
+        instance: { id: "dest-1", name: "Zapier", status: "paused", processId: "ap", startedAt: null },
+        settings: { url: "https://hooks.zapier.com/x", method: "POST", format: "vf_json", auth: { type: "none" }, referencePath: null },
+        connector: { id: "automation-webhook", version: 1, latestVersion: 2, upgradeAvailable: true, fixed: ["method", "format"], authTypes: ["none", "api_key_header"] },
+        secrets: {}, waitingNotTaken: 0, counts: {}, deliveries: [], candidates: [],
+      },
+      "/api/route-instances/dest-1/connector/upgrade": { from: 1, to: 2, authChanged: false },
+    });
+    await openScreen("/process-routes.js");
+    ([...document.querySelectorAll(".prcard")].find((c) => c.textContent?.includes("Zapier")) as HTMLElement).click();
+    await settle();
+    expect(text("#do-connector")).toContain("Connector: Automation webhook · version 1");
+    expect(text("#do-connector")).toContain("Version 2 available");
+    expect((document.querySelector("#do-method") as HTMLSelectElement).disabled).toBe(true);
+    expect((document.querySelector("#do-format") as HTMLSelectElement).disabled).toBe(true);
+    expect([...(document.querySelector("#do-auth") as HTMLSelectElement).options].map((o) => o.value)).toEqual(["none", "api_key_header"]);
+    ([...document.querySelectorAll("#do-connector button")].find((b) => b.textContent === "Upgrade") as HTMLElement).click();
+    await settle();
+    expect(calls.some((c) => c.method === "POST" && c.path === "/api/route-instances/dest-1/connector/upgrade")).toBe(true);
   });
 });

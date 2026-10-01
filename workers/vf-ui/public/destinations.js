@@ -53,11 +53,16 @@ function select(id, options, value) {
 function settingsCard(state, reload) {
   const s = state.settings;
   const url = el("input", { type: "url", id: "do-url", value: s.url, placeholder: "https://erp.example.com/api/ap/invoices" });
+  // Decision 0589: what its connector keeps fixed, and the ways of signing in it allows.
+  const fixed = state.connector?.fixed ?? [];
+  const authTypes = state.connector?.authTypes ?? ["none", "api_key_header", "bearer", "basic", "oauth2_client_credentials"];
   const method = select("do-method", [["POST", "POST"], ["PUT", "PUT"]], s.method);
   const format = select("do-format", [["vf_json", t("httpsout.format.vf_json")], ["csv", t("httpsout.format.csv")]], s.format);
+  if (fixed.includes("method")) method.disabled = true;
+  if (fixed.includes("format")) format.disabled = true;
   const auth = select(
     "do-auth",
-    ["none", "api_key_header", "bearer", "basic", "oauth2_client_credentials"].map((a) => [a, t(`httpsout.auth.${a}`)]),
+    authTypes.map((a) => [a, t(`httpsout.auth.${a}`)]),
     s.auth.type
   );
   const header = el("input", { type: "text", id: "do-header", value: s.auth.header ?? "X-API-Key" });
@@ -287,6 +292,38 @@ function openStart(state, onStarted) {
   document.body.append(backdrop);
 }
 
+/**
+ * **Which connector it runs, and its version — decision 0589**, with
+ * Upgrade where the library has a later one: what the connector fixes is
+ * applied, and the Destination's own settings stay.
+ */
+function connectorLine(destination, connector, reload) {
+  const name = t(`connector.${connector.id}.name`);
+  const result = el("span", { class: "muted sm", id: "do-upgraded" });
+  return el("div", { class: "doconnector", id: "do-connector" }, [
+    el("span", { text: t("library.connectorline").replace("{name}", name).replace("{v}", String(connector.version)) }),
+    ...(connector.upgradeAvailable
+      ? [
+          el("span", { class: "rmpill warn", text: t("library.upgradeto").replace("{n}", String(connector.latestVersion)) }),
+          actionLink("release", {
+            label: t("library.upgrade"),
+            onclick: async () => {
+              const r = await call(`/api/route-instances/${encodeURIComponent(destination.id)}/connector/upgrade`, { method: "POST" });
+              if (!r.ok) {
+                result.textContent = why(r.body);
+                return;
+              }
+              await reload();
+              const again = document.getElementById("do-upgraded");
+              if (again && r.body.authChanged) again.textContent = t("library.authchanged");
+            },
+          }),
+        ]
+      : []),
+    result,
+  ]);
+}
+
 /** The HTTPS out section of a Destination panel. `onChanged` reloads the flow (its cards' counts). */
 export function httpsOutSection(destination, onChanged) {
   const holder = el("div", { class: "httpsin", id: "httpsout" }, [el("div", { class: "muted", text: t("httpsout.loading") })]);
@@ -307,6 +344,7 @@ export function httpsOutSection(destination, onChanged) {
         ];
     holder.replaceChildren(
       el("div", { class: "cardhead httpshead" }, [el("h4", { text: t("httpsout.heading") })]),
+      ...(state.connector ? [connectorLine(destination, state.connector, reload)] : []),
       ...startBlock,
       settingsCard(state, reload),
       tryCard(state, reload),

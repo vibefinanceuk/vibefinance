@@ -144,6 +144,7 @@ export default defineConfig({
       "/create.js": resolve(__dirname, "public/create.js"),
       "/https-keys.js": resolve(__dirname, "public/https-keys.js"),
       "/destinations.js": resolve(__dirname, "public/destinations.js"),
+      "/route-library.js": resolve(__dirname, "public/route-library.js"),
       /**
        * **Missed by decision 0470, caught while building decision
        * 0471** — `collaborators.js` was added and imported by

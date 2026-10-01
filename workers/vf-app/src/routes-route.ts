@@ -1,4 +1,5 @@
 import { unitIdsOf } from "./destination-units.js";
+import { STANDARD_CONNECTORS, connectorOfInstance } from "@vibefinance/shared";
 import type { RouteResult } from "./org-route.js";
 import { eligibleInvoiceIds } from "./erp-export-route.js";
 import { processEnds } from "./process-ends.js";
@@ -197,7 +198,7 @@ export async function handleProcessRoutes(
 
   const destinations = await db
     .prepare(
-      `SELECT i.id, i.name, i.status, i.route_id, i.started_at, i.unit_ids, r.name AS route_name,
+      `SELECT i.id, i.name, i.status, i.route_id, i.started_at, i.unit_ids, i.connector_id, i.connector_version, r.name AS route_name,
               -- Decision 0585: what an HTTPS out Destination has waiting, and what failed.
               (SELECT count(*) FROM destination_deliveries d WHERE d.instance_id = i.id AND d.status IN ('pending', 'retrying')) AS sending,
               (SELECT count(*) FROM destination_deliveries d WHERE d.instance_id = i.id AND d.status = 'failed') AS failed
@@ -206,7 +207,7 @@ export async function handleProcessRoutes(
        ORDER BY i.route_id != 'erp-csv', i.name`
     )
     .bind(chosen.id)
-    .all<{ id: string; name: string; status: string; route_id: string; route_name: string; started_at: string | null; unit_ids: string | null; sending: number; failed: number }>();
+    .all<{ id: string; name: string; status: string; route_id: string; route_name: string; started_at: string | null; unit_ids: string | null; connector_id: string | null; connector_version: number | null; sending: number; failed: number }>();
 
   /**
    * **What is waiting for the ERP**, for the ERP Destination's card: this
@@ -260,6 +261,9 @@ export async function handleProcessRoutes(
         failedOpen: d.failed,
         // Decision 0587: the business units it sends for; null is all.
         unitIds: unitIdsOf(d),
+        // Decision 0589: the connector it was made from, and whether a later version waits.
+        connectorId: d.connector_id ?? d.route_id,
+        connectorUpgrade: (connectorOfInstance(STANDARD_CONNECTORS, d)?.version ?? 1) > (d.connector_version ?? 1),
       })),
     },
   };

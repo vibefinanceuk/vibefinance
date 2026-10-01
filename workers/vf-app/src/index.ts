@@ -142,6 +142,7 @@ import {
 import { createWorkersAiExtractionModel } from "./extraction-model.js";
 import { handleGetExtractionSettings, handleUpdateExtractionSettings } from "./extraction-settings-route.js";
 import { handleToMarkdownDiagnostic } from "./tomarkdown-diagnostic.js";
+import { handleConnectorLibrary } from "./connector-library-route.js";
 /** Decision 0585: the cron HTTPS out deliveries run on (wrangler.jsonc's triggers). */
 const DELIVERY_CRON = "*/5 * * * *";
 import {
@@ -152,6 +153,7 @@ import {
   handleSaveConnector,
   handleSendNow,
   handleSetDestinationUnits,
+  handleUpgradeConnector,
   handleStartDestination,
   runDeliveries,
 } from "./destination-delivery.js";
@@ -4631,6 +4633,15 @@ export default {
       const result = await handleCreateDestination(db, auth.user.id, decodeURIComponent(destinationsMatch[1]), body);
       return json(result.body, result.status);
     }
+    // Decision 0589: the Route library.
+    if (pathname === "/connector-library" && request.method === "GET") {
+      const { db } = resolveTenant(request, env);
+      const auth = await authenticatePerson(db, request, env);
+      if (!auth.user) return json({ error: auth.reason }, 401);
+      if (!(await hasPermission(db, auth.user.id, "Admin.Configure"))) return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
+      const result = await handleConnectorLibrary(db);
+      return json(result.body, result.status);
+    }
     // Decision 0587: the business units a Destination sends for.
     const unitsMatch = pathname.match(/^\/route-instances\/([^/]+)\/units$/);
     if (unitsMatch && request.method === "PUT") {
@@ -4653,7 +4664,7 @@ export default {
       const result = await handleListDeliveries(db, decodeURIComponent(deliveriesMatch[1]));
       return json(result.body, result.status);
     }
-    const connectorMatch = pathname.match(/^\/route-instances\/([^/]+)\/connector(?:\/(preview|send|start))?$/);
+    const connectorMatch = pathname.match(/^\/route-instances\/([^/]+)\/connector(?:\/(preview|send|start|upgrade))?$/);
     if (connectorMatch) {
       const { db } = resolveTenant(request, env);
       const auth = await authenticatePerson(db, request, env);
@@ -4678,6 +4689,8 @@ export default {
       else if (action === "preview" && request.method === "POST") result = await handlePreviewDelivery(db, instanceId, body);
       else if (action === "send" && request.method === "POST") result = await handleSendNow(db, auth.user.id, instanceId, body, deps);
       else if (action === "start" && request.method === "POST") result = await handleStartDestination(db, instanceId, body);
+      // Decision 0589.
+      else if (action === "upgrade" && request.method === "POST") result = await handleUpgradeConnector(db, instanceId);
       else return json({ error: "method not allowed" }, 405);
       return json(result.body, result.status);
     }

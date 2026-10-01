@@ -300,7 +300,18 @@ function render() {
   shell.replaceChildren(
     frame(
       el("div", {}, [
-        topbar(t("routes.heading"), t("routes.subtitle")),
+        topbar(t("routes.heading"), t("routes.subtitle"), [], [
+          // Decision 0589: the library of ready-made Sources and Destinations.
+          el("div", { class: "rtlibrarylink" }, [
+            actionLink("addcard", {
+              label: t("library.open"),
+              onclick: async () => {
+                const { open: openLibrary } = await import("/route-library.js");
+                await openLibrary();
+              },
+            }),
+          ]),
+        ]),
         el("div", { id: "routes-note", class: "warn" }),
         el("div", { class: "rtgrid" }, [panel("source"), panel("destination")]),
         ...[

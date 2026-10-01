@@ -5042,3 +5042,28 @@
 .duline .actionlink svg { width: 14px; height: 14px; }
 .dounitspop { max-width: 520px; }
 .dounits { max-height: 320px; overflow: auto; margin-top: 6px; }
+
+/* Decision 0589 — the Route library. */
+.rtlibrarylink { margin-top: 6px; }
+.rtlibrarylink .actionlink { flex-direction: row; padding: 4px 8px; gap: 4px; }
+.rtlibrarylink .actionlink svg { width: 16px; height: 16px; }
+.libgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; margin-top: 16px; }
+.libcard { display: flex; flex-direction: column; gap: 10px; margin: 0; }
+.libhead { display: flex; gap: 12px; align-items: flex-start; }
+.libhead h3 { margin: 0; }
+.liblogo { width: 40px; height: 40px; border-radius: 8px; background: var(--surface-1); border: 1px solid var(--border); display: flex; align-items: center; justify-content: center; font-weight: 600; color: var(--text-accent); flex: none; }
+.libkind { font-size: var(--text-sm); color: var(--text-accent); text-transform: uppercase; letter-spacing: .04em; }
+.libdesc { line-height: 1.5; min-height: 40px; }
+.libchips { display: flex; gap: 6px; flex-wrap: wrap; }
+.libused { margin: 0; padding-left: 18px; font-size: var(--text-sm); }
+.libused li { margin: 2px 0; display: flex; gap: 6px; align-items: center; }
+.libused .linkish { background: none; border: 0; padding: 0; color: var(--text-accent); cursor: pointer; font: inherit; text-decoration: underline; }
+.libfoot { display: flex; gap: 8px; align-items: center; margin-top: auto; flex-wrap: wrap; }
+.libfoot .actionlink { flex-direction: row; padding: 4px 8px; gap: 4px; margin-left: auto; }
+.libfoot .actionlink svg { width: 16px; height: 16px; }
+.doconnector { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 6px; font-size: var(--text-sm); }
+.doconnector .actionlink { flex-direction: row; padding: 2px 6px; gap: 4px; }
+.doconnector .actionlink svg { width: 14px; height: 14px; }
+.libcard > * { flex-shrink: 0; }
+.libchips, .libfoot { align-items: center; }
+.libchips .rmpill, .libfoot .rmpill { align-self: center; }

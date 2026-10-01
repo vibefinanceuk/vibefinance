@@ -742,6 +742,10 @@ async function go(screen) {
     // Routes — decision 0557.
     const { open } = await import("/routes.js");
     await open();
+  } else if (screen === "routelibrary") {
+    // The Route library — decision 0589. Reached from Routes; lights its nav item.
+    const { open } = await import("/route-library.js");
+    await open();
   } else if (screen === "processroutes") {
     // Process routes — decision 0557, in place of Sources.
     const { open } = await import("/process-routes.js");
@@ -870,6 +874,7 @@ const NAV_PERMISSIONS = {
   erpexport: "AP.Export",
   // Routes and Process routes — decision 0557: gated as Sources was.
   routes: "Admin.Configure",
+  routelibrary: "Admin.Configure",
   processroutes: "Admin.Configure",
   // The Route monitor — decision 0556: for a customer's own IT team.
   routemonitor: "Integration.Monitor",
@@ -917,7 +922,7 @@ const NAV_PERMISSIONS = {
  * the item they are reached from, while Help still knows which screen it
  * is: the mapping editor is part of Routes.
  */
-const NAV_PARENT = { mapping: "routes" };
+const NAV_PARENT = { mapping: "routes", routelibrary: "routes" };
 
 function navLink(screen, iconName, hue) {
   return el(
