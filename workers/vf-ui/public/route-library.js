@@ -63,11 +63,13 @@ function card(c) {
   return el("div", { class: "panel libcard", "data-connector": c.id }, [
     el("div", { class: "libhead" }, [
       el("div", { class: "liblogo", text: initials(name) }),
-      el("div", {}, [
+      el("div", { class: "libtitle" }, [
         el("div", { class: "libkind", text: t(`processroutes.${c.direction}`) }),
         el("h3", { text: name }),
         el("div", { class: "muted sm", text: t(`library.publisher.${c.publisher}`) }),
       ]),
+      // Decision 0590: top right, as on every other card.
+      el("div", { class: "statebuttons libadd" }, canAdd ? [actionLink("addcard", { label: t("library.add"), onclick: () => openAdd(c) })] : []),
     ]),
     el("div", { class: "muted sm libdesc", text: words(`connector.${c.id}.description`, "") }),
     el("div", { class: "libchips" }, [
@@ -97,7 +99,6 @@ function card(c) {
     el("div", { class: "libfoot" }, [
       state,
       ...(upgrades > 0 ? [pill("warn", t("library.upgrades").replace("{n}", String(upgrades)))] : []),
-      ...(canAdd ? [actionLink("addcard", { label: t("library.add"), onclick: () => openAdd(c) })] : []),
     ]),
   ]);
 }

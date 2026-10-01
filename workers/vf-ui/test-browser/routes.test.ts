@@ -915,7 +915,10 @@ describe("the Route library — decision 0589", () => {
     expect(card("https-out").textContent).toContain("Version 1 available");
     expect(card("oracle-fusion-payables").textContent).toContain("Planned");
     expect(card("oracle-fusion-payables").textContent).toContain("Oracle invoices");
-    expect(card("oracle-fusion-payables").querySelector(".libfoot button")).toBeNull();
+    expect(card("oracle-fusion-payables").querySelector("button")).toBeNull();
+    // Decision 0590: Add to my routes top right, in the card's head.
+    expect(card("automation-webhook").querySelector(".libhead .libadd button")?.textContent).toBe("Add to my routes");
+    expect(card("automation-webhook").querySelector(".libfoot button")).toBeNull();
     expect(card("automation-webhook").textContent).toContain("Zapier, Make or Power Automate");
     ([...document.querySelectorAll("#lib-filters button")].find((b) => b.textContent === "Sources") as HTMLElement).click();
     expect(names()).toEqual(["Email in"]);
@@ -938,7 +941,7 @@ describe("the Route library — decision 0589", () => {
       })
     );
     await openScreen("/route-library.js");
-    (document.querySelector('.libcard[data-connector="automation-webhook"] .libfoot button') as HTMLElement).click();
+    (document.querySelector('.libcard[data-connector="automation-webhook"] .libadd button') as HTMLElement).click();
     await settle();
     expect(text(".libaddpop h3")).toBe("Add Automation webhook");
     expect((document.querySelector("#lib-name") as HTMLInputElement).value).toBe("Automation webhook");
@@ -953,7 +956,7 @@ describe("the Route library — decision 0589", () => {
     const calls: Call[] = [];
     stub(calls, { "/api/connector-library": LIB });
     await openScreen("/route-library.js");
-    (document.querySelector('.libcard[data-connector="email-in"] .libfoot button') as HTMLElement).click();
+    (document.querySelector('.libcard[data-connector="email-in"] .libadd button') as HTMLElement).click();
     await settle();
     (document.querySelector("#lib-name") as HTMLInputElement).value = "UK invoices";
     (document.querySelector(".libaddpop .statebuttons button") as HTMLElement).click();
@@ -985,5 +988,20 @@ describe("the Route library — decision 0589", () => {
     ([...document.querySelectorAll("#do-connector button")].find((b) => b.textContent === "Upgrade") as HTMLElement).click();
     await settle();
     expect(calls.some((c) => c.method === "POST" && c.path === "/api/route-instances/dest-1/connector/upgrade")).toBe(true);
+  });
+});
+
+describe("the Route library button — decision 0590", () => {
+  it("is in the Routes screen's top-right buttons, after a divider, and opens the library", async () => {
+    const calls: Call[] = [];
+    stub(calls, { "/api/connector-library": { connectors: [], processes: [] } });
+    await openScreen("/routes.js");
+    const right = document.querySelector(".topbar .right") as HTMLElement;
+    const first = right.firstElementChild as HTMLElement;
+    expect(first.textContent).toBe("Route library");
+    expect(first.nextElementSibling?.classList.contains("topbardivider")).toBe(true);
+    first.click();
+    await settle();
+    expect(text(".topbar h2")).toBe("Route library");
   });
 });

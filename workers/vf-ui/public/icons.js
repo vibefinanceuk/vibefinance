@@ -504,6 +504,8 @@ Object.assign(ICONS, {
 
   // Decision 0557 — sources fanning into a first box and a line of
   // stages: where routes are placed in a process.
+  // Decision 0590: the Route library — books on a shelf.
+  library: '<path d="M4 4h3.5v16H4zM9.5 4H13v16H9.5z"/><path d="M15 5.2l3.4-.9 3.1 15.4-3.4.9z"/><path d="M3 20.5h18"/>',
   processroutes: '<path d="M2 6h3l3 6M2 18h3l3-6M2 12h6"/><rect x="8" y="9.5" width="5" height="5" rx="1"/><path d="M13 12h3"/><rect x="16" y="9.5" width="5" height="5" rx="1"/>',
 
   // A package outline — the silhouette, the seam where a lid meets a

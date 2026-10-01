@@ -5047,9 +5047,15 @@
 .rtlibrarylink { margin-top: 6px; }
 .rtlibrarylink .actionlink { flex-direction: row; padding: 4px 8px; gap: 4px; }
 .rtlibrarylink .actionlink svg { width: 16px; height: 16px; }
-.libgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; margin-top: 16px; }
+.libgrid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; margin-top: 16px; }
+/* Decision 0590: four across on a wide screen, three, then two, then one. */
+@media (max-width: 1600px) { .libgrid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 1150px) { .libgrid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 720px) { .libgrid { grid-template-columns: 1fr; } }
 .libcard { display: flex; flex-direction: column; gap: 10px; margin: 0; }
 .libhead { display: flex; gap: 12px; align-items: flex-start; }
+.libtitle { flex: 1 1 auto; min-width: 0; }
+.libadd { flex: none; margin-left: auto; }
 .libhead h3 { margin: 0; }
 .liblogo { width: 40px; height: 40px; border-radius: 8px; background: var(--surface-1); border: 1px solid var(--border); display: flex; align-items: center; justify-content: center; font-weight: 600; color: var(--text-accent); flex: none; }
 .libkind { font-size: var(--text-sm); color: var(--text-accent); text-transform: uppercase; letter-spacing: .04em; }
