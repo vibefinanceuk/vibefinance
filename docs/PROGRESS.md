@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 1 October 2026 (decision 0580). A living document: what
+Last updated 1 October 2026 (decision 0582). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,18 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### An email source's mailbox name, chosen (0582)
+- Create address asks for a mailbox name, prefilled from the source's
+  name and previewed as typed: `invoices` gives
+  `invoices.acme@vibefinance-ai.com`. The source's name is only what
+  people read, and a source with an address can be renamed, until
+  invoices arrive through it.
+
+### Replace an HTTPS key (0581)
+- A lost or leaked key is replaced with a new one of the same name, so
+  mappings that name it keep working. The old key stops 24 hours later,
+  or at once.
 
 ### An HTTPS source says whether it receives (0580)
 - Its card on Process routes shows Receiving once it has a live key, and

@@ -8,6 +8,8 @@ import { applyTestSchema } from "./setup.js";
 const ENV = { INGESTION_DOMAIN: "vibefinance.example" };
 
 import {
+  handlePreviewSourceEmail,
+  mailboxName,
   handleSetSourceEmail,
   ingestionAddress,
   handleRetireSource,
@@ -278,15 +280,16 @@ describe("renaming a source (decision 0130)", () => {
     expect(row?.name).toBe("AP Mailbox");
   });
 
-  it("refuses once an address exists", async () => {
-    // The address is derived from the name and never reissued, so a
-    // rename would make the two disagree permanently.
+  it("renames one with an address, and the address stays — decision 0582", async () => {
+    // It was refused while the address was derived from the name; the
+    // mailbox name is now chosen on its own, so the name is only read.
     await seedSource("s-addr2", "AP Mailbox");
-    await handleSetSourceEmail(env.DB, "s-addr2", "acme", ENV);
+    await handleSetSourceEmail(env.DB, "s-addr2", "acme", ENV, "invoices");
 
-    const result = await handleRenameSource(env.DB, "s-addr2", "Something else");
-    expect(result.status).toBe(409);
-    expect((result.body as { reason: string }).reason).toBe("address_issued");
+    const result = await handleRenameSource(env.DB, "s-addr2", "UK supplier invoices");
+    expect(result.status).toBe(200);
+    const row = await env.DB.prepare("SELECT name, email_address FROM sources WHERE id = 's-addr2'").first();
+    expect(row).toEqual({ name: "UK supplier invoices", email_address: "invoices.acme@vibefinance.example" });
   });
 
   it("refuses once a document has arrived", async () => {
@@ -326,7 +329,7 @@ describe("the API returns codes, not sentences (decision 0132)", () => {
     const bodies = [
       (await handleSetSourceEmail(env.DB, "s-prose", "acme", ENV)).body,
       (await handleSetSourceEmail(env.DB, "s-prose", "acme", ENV)).body,
-      (await handleRenameSource(env.DB, "s-prose", "Something")).body,
+      // Renaming one with an address now succeeds (decision 0582), with nothing to explain.
       (await handleRetireSource(env.DB, "s-prose", "u-dan")).body,
     ] as Record<string, unknown>[];
 
@@ -474,5 +477,59 @@ describe("no domain, no address (decision 0141)", () => {
     expect((result.body as { emailAddress: string }).emailAddress).toBe(
       "ap-mailbox.acme@invoices.example.net"
     );
+  });
+});
+
+/**
+ * **The mailbox name, chosen — decision 0582.** Dan, 1 October: the
+ * source's name became the address, which made the name read like an
+ * address. Now the name is for people, and the part before
+ * `.<customer>` is chosen, previewed, then issued.
+ */
+describe("choosing the mailbox name — decision 0582", () => {
+  it("issues the chosen mailbox name with the customer's own suffix", async () => {
+    await seedSource("s-uk", "UK supplier invoices");
+    const result = await handleSetSourceEmail(env.DB, "s-uk", "acme", ENV, "Invoices");
+    expect((result.body as { emailAddress: string }).emailAddress).toBe("invoices.acme@vibefinance.example");
+  });
+
+  it("keeps single dots between words, and reduces the rest as a name is", () => {
+    expect(mailboxName("Accounts.Payable")).toBe("accounts.payable");
+    expect(mailboxName("AP  Invoices")).toBe("ap-invoices");
+    expect(mailboxName(" .Rechnungen für Köln.. ")).toBe("rechnungen-fur-koln");
+    expect(mailboxName("ap - . invoices")).toBe("ap.invoices");
+    expect(mailboxName("Straße")).toBe("strasse");
+    // With no dots, exactly as the source's name always gave.
+    expect(mailboxName("AP Mailbox")).toBe("ap-mailbox");
+  });
+
+  it("without one, uses the source's name as before", async () => {
+    await seedSource("s-ap", "AP Mailbox");
+    const result = await handleSetSourceEmail(env.DB, "s-ap", "acme", ENV, "  ");
+    expect((result.body as { emailAddress: string }).emailAddress).toBe("ap-mailbox.acme@vibefinance.example");
+  });
+
+  it("previews the address, or why not, before anything is issued", async () => {
+    await seedSource("s-1", "AP Mailbox");
+    await seedSource("s-2", "Second");
+    await handleSetSourceEmail(env.DB, "s-1", "acme", ENV, "invoices");
+
+    expect((await handlePreviewSourceEmail(env.DB, "s-2", "acme", ENV, "UK Invoices")).body).toEqual({
+      ok: true,
+      address: "uk-invoices.acme@vibefinance.example",
+      mailbox: "uk-invoices",
+    });
+    const taken = (await handlePreviewSourceEmail(env.DB, "s-2", "acme", ENV, "invoices")).body as Record<string, unknown>;
+    expect(taken).toMatchObject({ ok: false, address: null, reason: "address_taken" });
+    const empty = (await handlePreviewSourceEmail(env.DB, "s-2", "acme", ENV, "!!!")).body as Record<string, unknown>;
+    expect(empty).toMatchObject({ ok: false, address: null, reason: "name_unusable" });
+    const long = (await handlePreviewSourceEmail(env.DB, "s-2", "acme", ENV, "x".repeat(70))).body as Record<string, unknown>;
+    expect(long).toMatchObject({ ok: false, reason: "name_unusable" });
+    // Nothing was issued by previewing.
+    const row = await env.DB.prepare("SELECT email_address FROM sources WHERE id = 's-2'").first<{ email_address: string | null }>();
+    expect(row?.email_address).toBeNull();
+    // Already issued: says so.
+    expect((await handlePreviewSourceEmail(env.DB, "s-1", "acme", ENV, "other")).body).toMatchObject({ ok: false, reason: "address_issued" });
+    expect((await handlePreviewSourceEmail(env.DB, "nope", "acme", ENV, "x")).status).toBe(404);
   });
 });

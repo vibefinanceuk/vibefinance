@@ -7,7 +7,6 @@ import {
   loadUnits,
   retireSource,
   openRenameSourceForm,
-  claimAddress,
   orgPicker,
   slug,
   outcome,
@@ -207,7 +206,7 @@ function sourcePanel(s) {
       ? []
       : [
           ...(s.mechanism === "email" && !s.emailAddress
-            ? [actionLink("addcard", { primary: true, label: t("sources.claim"), onclick: () => claimAddress(s.id) })]
+            ? [actionLink("addcard", { primary: true, label: t("sources.claim"), onclick: () => openCreateAddress(s) })]
             : []),
           actionLink("rename", { onclick: () => openRenameSourceForm(s) }),
           actionLink("retire", { onclick: () => retireSource(s) }),
@@ -298,6 +297,91 @@ function destinationPanel(d) {
     ]),
     el("p", { class: "muted sm", text: t(d.status === "paused" ? "processroutes.pausednote" : "processroutes.erpnote") }),
   ]);
+}
+
+/**
+ * **Create the address, with its mailbox name — decision 0582.** The
+ * source's name is what people read; the mailbox name is the part before
+ * the customer's own `.<customer>@…`, prefilled from the name, previewed
+ * as it is typed, then issued. Never changed once suppliers have it.
+ */
+function openCreateAddress(s) {
+  const problem = el("div", { class: "warn", id: "mailbox-problem" });
+  const input = el("input", { type: "text", id: "mailbox-name", value: slug(s.name), autocomplete: "off" });
+  const preview = el("code", { id: "mailbox-address" });
+  const why = (body) =>
+    body?.reason === "address_taken"
+      ? t("processroutes.mailboxtaken")
+      : body?.reason === "name_unusable"
+        ? t("processroutes.mailboxunusable")
+        : outcome(body?.reason) || body?.error || t("sources.failed");
+  let asked = 0;
+  const check = async () => {
+    const ask = ++asked;
+    try {
+      const response = await fetch(`/api/sources/${encodeURIComponent(s.id)}/email?mailbox=${encodeURIComponent(input.value)}`);
+      const body = await response.json();
+      if (ask !== asked) return; // A later keystroke has asked since.
+      preview.textContent = body.ok ? body.address : "—";
+      problem.textContent = body.ok ? "" : why(body);
+    } catch {
+      if (ask === asked) problem.textContent = t("sources.failed");
+    }
+  };
+  let timer = null;
+  input.oninput = () => {
+    clearTimeout(timer);
+    timer = setTimeout(check, 250);
+  };
+  const close = () => backdrop.remove();
+  const create = actionLink("addcard", {
+    primary: true,
+    label: t("sources.claim"),
+    onclick: async () => {
+      problem.textContent = "";
+      try {
+        const response = await fetch(`/api/sources/${encodeURIComponent(s.id)}/email`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ mailbox: input.value }),
+        });
+        const body = await response.json();
+        if (!response.ok) {
+          problem.textContent = why(body);
+          return;
+        }
+        close();
+        await load();
+        render();
+      } catch {
+        problem.textContent = t("sources.failed");
+      }
+    },
+  });
+  const backdrop = el("div", { class: "backdrop" }, [
+    el("div", { class: "popout praddpop", role: "dialog", "aria-label": t("processroutes.createaddress") }, [
+      el("div", { class: "cardhead" }, [
+        el("h3", { text: t("processroutes.createaddress") }),
+        el("div", { class: "statebuttons" }, [create, actionLink("close", { onclick: close })]),
+      ]),
+      el("p", { class: "muted sm", text: t("processroutes.createaddresssub").replace("{name}", s.name) }),
+      el("div", { class: "newsource stacked" }, [
+        el("div", { class: "kf" }, [
+          el("label", { for: "mailbox-name", text: t("processroutes.mailbox") }),
+          input,
+          el("div", { class: "muted sm", text: t("processroutes.mailboxhint") }),
+        ]),
+        el("div", { class: "kf" }, [el("label", { text: t("processroutes.willbe") }), el("div", { class: "httpscopy" }, [preview])]),
+      ]),
+      problem,
+    ]),
+  ]);
+  backdrop.onclick = (e) => {
+    if (e.target === backdrop) close();
+  };
+  document.body.append(backdrop);
+  input.focus();
+  check();
 }
 
 /** Add a source to this process: its name and how it arrives. */

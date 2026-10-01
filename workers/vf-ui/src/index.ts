@@ -241,6 +241,8 @@ const PROXIED_TO_INSTANCE: RegExp[] = [
   // An HTTPS source's keys — decision 0578.
   /^\/sources\/[^/]+\/keys$/,
   /^\/sources\/[^/]+\/keys\/[^/]+\/revoke$/,
+  // Replace a key — decision 0581.
+  /^\/sources\/[^/]+\/keys\/[^/]+\/replace$/,
   // Create → Upload documents — decision 0573.
   /^\/uploads\/targets$/,
   /^\/uploads$/,

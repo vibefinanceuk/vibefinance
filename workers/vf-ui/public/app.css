@@ -5016,3 +5016,8 @@
 .httpspop { max-width: 560px; }
 .httpshead { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .httpsbuttons { display: flex; gap: 6px; }
+/* Decision 0581 — Replace a key. */
+.httpskeys td.httpsactions { white-space: nowrap; text-align: right; }
+.httpskeys td.httpsactions .actionlink { display: inline-flex; }
+.httpskeys tr.httpsreplaced td:nth-child(4) { color: var(--text-secondary); font-style: italic; }
+.httpscheck { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: var(--text-sm); }

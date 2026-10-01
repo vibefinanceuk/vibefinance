@@ -82,7 +82,7 @@ describe("an HTTPS source's keys", () => {
     const body = (await list.json()) as { address: string; keys: Array<Record<string, unknown>> };
     expect(body.address).toBe("https://vf.example/v1/sources/src-portal/invoices");
     expect(body.keys).toEqual([
-      { id: made.id, name: "Coupa portal", prefix: made.prefix, createdAt: expect.any(String), createdBy: "Dan Young", lastUsedAt: null, revokedAt: null },
+      { id: made.id, name: "Coupa portal", prefix: made.prefix, createdAt: expect.any(String), createdBy: "Dan Young", lastUsedAt: null, revokedAt: null, replacedBy: null, expiresAt: null },
     ]);
     expect(JSON.stringify(body)).not.toContain(made.key);
 
@@ -302,5 +302,90 @@ describe("an HTTPS source on Process routes — decision 0580", () => {
     expect(await liveKeys()).toBe(2);
     await call(`/sources/src-portal/keys/${id}/revoke`, { method: "POST", headers: { Authorization: `Bearer ${admin}` } });
     expect(await liveKeys()).toBe(1);
+  });
+});
+
+/**
+ * **Replace a key — decision 0581.** A key is never shown again, so a
+ * lost or leaked one is replaced: a new key with the same name, the old
+ * one working for 24 hours, or stopped at once.
+ */
+describe("replacing a key — decision 0581", () => {
+  const send = (key: string) =>
+    call("/v1/sources/src-portal/invoices", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/xml", "X-Filename": "a.xml" },
+      body: UBL,
+    }).then((r) => r.status);
+  const replace = (keyId: string, body: Record<string, unknown> = {}) =>
+    call(`/sources/src-portal/keys/${keyId}/replace`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${admin}`, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  const list = async () =>
+    ((await (await call("/sources/src-portal/keys", { headers: { Authorization: `Bearer ${admin}` } })).json()) as { keys: Array<Record<string, unknown>> }).keys;
+
+  it("makes a new key with the same name, and the old one works for 24 hours, then stops", async () => {
+    const old = await makeKey("src-portal", "Lager Nord ERP");
+    const res = await replace(old.id);
+    expect(res.status).toBe(201);
+    const made = (await res.json()) as { id: string; name: string; key: string; replaced: string; oldStopsAt: string };
+    expect(made).toMatchObject({ name: "Lager Nord ERP", replaced: old.id });
+    expect(made.key).toMatch(/^vf_in_/);
+    expect(made.key).not.toBe(old.key);
+    const hours = (Date.parse(made.oldStopsAt) - Date.now()) / 3600_000;
+    expect(hours).toBeGreaterThan(23.9);
+    expect(hours).toBeLessThanOrEqual(24);
+
+    expect(await send(made.key)).toBe(202);
+    expect(await send(old.key)).toBe(202);
+    const keys = await list();
+    expect(keys.find((k) => k.id === old.id)).toMatchObject({ replacedBy: made.id, expiresAt: made.oldStopsAt, revokedAt: null });
+    expect(keys.find((k) => k.id === made.id)).toMatchObject({ name: "Lager Nord ERP", replacedBy: null, expiresAt: null });
+
+    // Replaced once only; and the new key holds the name.
+    expect((await replace(old.id)).status).toBe(409);
+    const again = await call("/sources/src-portal/keys", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${admin}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "Lager Nord ERP" }),
+    });
+    expect(again.status).toBe(409);
+
+    // Its 24 hours are up.
+    await env.DB.prepare("UPDATE source_keys SET expires_at = '2026-01-01T00:00:00.000Z' WHERE id = ?").bind(old.id).run();
+    expect(await send(old.key)).toBe(401);
+    expect(await send(made.key)).toBe(202);
+    const flow = (await handleProcessRoutes(env.DB, new URLSearchParams("process=ap"))).body as { sources: Array<{ id: string; liveKeys: number }> };
+    expect(flow.sources.find((s) => s.id === "src-portal")?.liveKeys).toBe(1);
+    expect((await call(`/sources/src-portal/keys/${old.id}/revoke`, { method: "POST", headers: { Authorization: `Bearer ${admin}` } })).status).toBe(409);
+  });
+
+  it("stops the old key at once when asked, as a revoke", async () => {
+    const old = await makeKey("src-portal", "Portal");
+    const res = await replace(old.id, { stopNow: true });
+    const made = (await res.json()) as { key: string };
+    expect(await send(old.key)).toBe(401);
+    expect(await send(made.key)).toBe(202);
+    expect((await list()).find((k) => k.id === old.id)).toMatchObject({ revokedAt: expect.any(String), replacedBy: expect.any(String) });
+    expect((await replace(old.id)).status).toBe(409);
+  });
+
+  it("a replaced key can still be stopped before its 24 hours are up", async () => {
+    const old = await makeKey("src-portal", "Portal");
+    await replace(old.id);
+    expect((await call(`/sources/src-portal/keys/${old.id}/revoke`, { method: "POST", headers: { Authorization: `Bearer ${admin}` } })).status).toBe(200);
+    expect(await send(old.key)).toBe(401);
+  });
+
+  it("is refused for a revoked key, another source's key, and without Admin.Configure", async () => {
+    const old = await makeKey("src-portal", "Portal");
+    const other = await makeKey("src-other", "Other");
+    expect((await replace(other.id)).status).toBe(404);
+    const denied = await call(`/sources/src-portal/keys/${old.id}/replace`, { method: "POST", headers: { Authorization: `Bearer ${validator}` } });
+    expect(denied.status).toBe(403);
+    await call(`/sources/src-portal/keys/${old.id}/revoke`, { method: "POST", headers: { Authorization: `Bearer ${admin}` } });
+    expect((await replace(old.id)).status).toBe(409);
   });
 });

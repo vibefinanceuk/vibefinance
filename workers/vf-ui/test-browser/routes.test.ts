@@ -6,6 +6,8 @@ import mappingStringsSql from "../../vf-licence/migrations/0212_supplier_mapping
 import csvStringsSql from "../../vf-licence/migrations/0216_supplier_csv_strings.sql?raw";
 import httpsStringsSql from "../../vf-licence/migrations/0226_https_in_strings.sql?raw";
 import httpsStateStringsSql from "../../vf-licence/migrations/0228_https_source_state_strings.sql?raw";
+import replaceKeyStringsSql from "../../vf-licence/migrations/0229_replace_key_strings.sql?raw";
+import mailboxStringsSql from "../../vf-licence/migrations/0230_mailbox_name_strings.sql?raw";
 
 /**
  * **Routes and Process routes — decision 0557.** The standard routes with
@@ -39,7 +41,7 @@ const strings: Record<string, string> = {
   "mechanism.file_import": "File import",
   "mechanism.edi": "EDI",
 };
-for (const sql of [stringsSql, destinationStringsSql, formatStringsSql, mappingStringsSql, csvStringsSql, httpsStringsSql, httpsStateStringsSql]) {
+for (const sql of [stringsSql, destinationStringsSql, formatStringsSql, mappingStringsSql, csvStringsSql, httpsStringsSql, httpsStateStringsSql, replaceKeyStringsSql, mailboxStringsSql]) {
   for (const m of sql.matchAll(/\('([^']+)', 'en', '((?:[^']|'')*)'\)/g)) strings[m[1]] = m[2].replace(/''/g, "'");
 }
 // 0209 updates the ERP note rather than inserting it.
@@ -103,6 +105,12 @@ function stub(calls: Call[], extra: Record<string, unknown> = {}) {
       if (path === "/api/process-routes") return { ok: true, json: async () => FLOW } as Response;
       if (path === "/api/org/units") return { ok: true, json: async () => ({ units: [] }) } as Response;
       if (path === "/api/processes/ap/sources" && method === "POST") return { ok: true, status: 201, json: async () => ({}) } as Response;
+      if (/^\/api\/sources\/[^/]+\/email$/.test(path) && method === "GET") {
+        // Decision 0582: the preview, as vf-app reduces a mailbox name.
+        const mailbox = (new URLSearchParams(query).get("mailbox") ?? "").toLowerCase().replace(/[^a-z0-9.]+/g, "-").replace(/^[-.]+|[-.]+$/g, "");
+        if (mailbox === "invoices") return { ok: true, json: async () => ({ ok: false, address: null, mailbox, reason: "address_taken", error: "taken" }) } as Response;
+        return { ok: true, json: async () => ({ ok: true, address: `${mailbox}.acme@vibefinance-ai.com`, mailbox }) } as Response;
+      }
       if (/^\/api\/sources\/[^/]+\/email$/.test(path)) return { ok: true, json: async () => ({}) } as Response;
       if (path === "/api/route-instances/erp-ap" && method === "PATCH") return { ok: true, json: async () => ({ id: "erp-ap", status: "paused" }) } as Response;
       throw new Error(`no stub for ${method} ${path}`);
@@ -309,6 +317,10 @@ describe("Process routes — decision 0557", () => {
     expect(buttons()).toEqual(["Create address", "Rename", "Retire", "Close"]);
     ([...document.querySelectorAll(".prdetail .statebuttons button")][0] as HTMLButtonElement).click();
     await settle();
+    // Decision 0582: a pop-out with the mailbox name first, previewed; nothing issued yet.
+    expect(calls.some((c) => c.method === "POST" && c.path === "/api/sources/new-box/email")).toBe(false);
+    ([...document.querySelectorAll(".praddpop button")][0] as HTMLButtonElement).click();
+    await settle();
     expect(calls.some((c) => c.method === "POST" && c.path === "/api/sources/new-box/email")).toBe(true);
     // And the flow is fetched again, not the Sources screen.
     expect(calls.filter((c) => c.path === "/api/process-routes").length).toBeGreaterThan(1);
@@ -405,6 +417,10 @@ describe("HTTPS in — decision 0578", () => {
           calls.push({ method, path, query: "", body: init?.body as string });
           return { ok: true, status: 201, json: async () => ({ id: "k2", name: "Coupa", prefix: "vf_in_Qr7t", key: "vf_in_Qr7tSECRETSECRETSECRETSECRET01" }) } as Response;
         }
+        if (/^\/api\/sources\/portal\/keys\/[^/]+\/replace$/.test(path)) {
+          calls.push({ method, path, query: "", body: init?.body as string });
+          return { ok: true, status: 201, json: async () => ({ id: "k3", name: "Lager Nord ERP", prefix: "vf_in_Nw5e", key: "vf_in_Nw5eREPLACEDREPLACEDREPLACED01", replaced: "k1" }) } as Response;
+        }
         if (/^\/api\/sources\/portal\/keys\/[^/]+\/revoke$/.test(path)) {
           calls.push({ method, path, query: "" });
           return { ok: true, status: 200, json: async () => ({}) } as Response;
@@ -432,13 +448,14 @@ describe("HTTPS in — decision 0578", () => {
     expect(rows.map((r) => r.querySelector("td")?.textContent)).toEqual(["Lager Nord ERP", "Old portal"]);
     expect(rows[0].textContent).toContain("vf_in_Ab3x…");
     expect(rows[0].textContent).toContain("Dan Young");
-    expect(rows[0].querySelector("button")?.textContent).toBe("Revoke");
+    expect([...rows[0].querySelectorAll("button")].map((b) => b.textContent)).toEqual(["Replace", "Revoke"]);
     // A revoked key is shown, struck through, with no Revoke.
     expect(rows[1].classList.contains("httpsrevoked")).toBe(true);
     expect(rows[1].textContent).toContain("Revoked");
     expect(rows[1].querySelector("button")).toBeNull();
     expect(text(".httpspre")).toContain('curl -X POST "https://acme.vibefinance.example/v1/sources/portal/invoices"');
-    expect(text(".httpspre")).toContain("Bearer vf_in_Ab3x…");
+    // Decision 0581: no key's start, which looked like a key to paste.
+    expect(text(".httpspre")).toContain("Bearer <your key>");
     expect(text("#httpsin")).toContain("Each key is shown once");
   });
 
@@ -482,11 +499,57 @@ describe("HTTPS in — decision 0578", () => {
     expect(calls.filter((c) => c.path === "/api/sources/portal/keys" && c.method === "GET").length).toBe(before + 1);
   });
 
+  it("replaces a key with one of the same name, shown once, the old one stopping in 24 hours unless ticked — decision 0581", async () => {
+    for (const stopNow of [false, true]) {
+      document.body.innerHTML = `<main id="shell"></main><main id="viewer" hidden></main>`;
+      const calls: Call[] = [];
+      stubHttps(calls);
+      await openPortal();
+      ([...document.querySelectorAll(".httpskeys tbody tr")][0].querySelector("button") as HTMLElement).click();
+      await settle();
+      expect(text(".httpspop h3")).toBe("Replace this key?");
+      expect(text(".httpspop")).toContain("Lager Nord ERP gets a new key with the same name");
+      expect(text(".httpspop")).toContain("mappings that name Lager Nord ERP keep reading");
+      expect(text(".httpspop")).toContain("keeps working for 24 hours");
+      (document.querySelector("#httpsin-stopnow") as HTMLInputElement).checked = stopNow;
+      ([...document.querySelectorAll(".httpspop button")].find((b) => b.textContent === "Replace") as HTMLElement).click();
+      await settle();
+      const call = calls.find((c) => c.path.endsWith("/replace"))!;
+      expect(call).toMatchObject({ method: "POST", path: "/api/sources/portal/keys/k1/replace" });
+      expect(JSON.parse(call.body!)).toEqual({ stopNow });
+      expect(text("#httpsin-newkey")).toBe("vf_in_Nw5eREPLACEDREPLACEDREPLACED01");
+      expect(text(".httpspop")).toContain("It is not shown again");
+    }
+  });
+
+  it("shows a replaced key with when it stops, and one past that as stopped — decision 0581", async () => {
+    const soon = new Date(Date.now() + 20 * 3600_000).toISOString();
+    stubHttps([], {
+      ...KEYS,
+      keys: [
+        { ...KEYS.keys[0], id: "k3", prefix: "vf_in_Nw5e" },
+        { ...KEYS.keys[0], replacedBy: "k3", expiresAt: soon },
+        { ...KEYS.keys[0], id: "k2", prefix: "vf_in_Qq1a", replacedBy: "k1", expiresAt: "2026-09-25T10:00:00Z" },
+      ],
+    });
+    await openPortal();
+    const rows = [...document.querySelectorAll(".httpskeys tbody tr")];
+    expect([...rows[0].querySelectorAll("button")].map((b) => b.textContent)).toEqual(["Replace", "Revoke"]);
+    // Replaced, still working: says when it stops, and can be stopped now.
+    expect(rows[1].classList.contains("httpsreplaced")).toBe(true);
+    expect(rows[1].textContent).toContain("Replaced · stops");
+    expect([...rows[1].querySelectorAll("button")].map((b) => b.textContent)).toEqual(["Revoke"]);
+    // Past its 24 hours: stopped, struck through, nothing to do.
+    expect(rows[2].classList.contains("httpsrevoked")).toBe(true);
+    expect(rows[2].textContent).toContain("Stopped");
+    expect(rows[2].querySelector("button")).toBeNull();
+  });
+
   it("revokes a key only once confirmed", async () => {
     const calls: Call[] = [];
     stubHttps(calls);
     await openPortal();
-    (document.querySelector(".httpskeys tbody tr button") as HTMLElement).click();
+    ([...document.querySelectorAll(".httpskeys tbody tr button")].find((b) => b.textContent === "Revoke") as HTMLElement).click();
     await settle();
     expect(text(".httpspop h3")).toBe("Revoke this key?");
     expect(text(".httpspop")).toContain("Lager Nord ERP can no longer send with it");
@@ -495,5 +558,43 @@ describe("HTTPS in — decision 0578", () => {
     await settle();
     expect(calls.find((c) => c.path.endsWith("/revoke"))).toMatchObject({ method: "POST", path: "/api/sources/portal/keys/k1/revoke" });
     expect(document.querySelector(".httpspop")).toBeNull();
+  });
+});
+
+describe("Create the address, with a mailbox name — decision 0582", () => {
+  it("prefills the mailbox name from the source's name, previews the address as typed, and issues what was chosen", async () => {
+    const calls: Call[] = [];
+    stub(calls);
+    await openScreen("/process-routes.js");
+    (document.querySelectorAll(".prcard")[1] as HTMLElement).click();
+    await settle();
+    ([...document.querySelectorAll(".prdetail .statebuttons button")][0] as HTMLButtonElement).click();
+    await settle();
+    expect(text(".praddpop h3")).toBe("Create the address");
+    expect(text(".praddpop")).toContain("Suppliers send invoices for New box to this address. It cannot be changed once created");
+    const input = document.querySelector("#mailbox-name") as HTMLInputElement;
+    expect(input.value).toBe("new-box");
+    expect(text("#mailbox-address")).toBe("new-box.acme@vibefinance-ai.com");
+
+    input.value = "Invoices";
+    input.dispatchEvent(new Event("input"));
+    await new Promise((r) => setTimeout(r, 300));
+    await settle();
+    expect(calls.some((c) => c.method === "GET" && c.path === "/api/sources/new-box/email" && c.query === "mailbox=Invoices")).toBe(true);
+    expect(text("#mailbox-address")).toBe("—");
+    expect(text("#mailbox-problem")).toBe("Another of your sources already has that address. Choose a different mailbox name.");
+
+    input.value = "UK.Invoices";
+    input.dispatchEvent(new Event("input"));
+    await new Promise((r) => setTimeout(r, 300));
+    await settle();
+    expect(text("#mailbox-address")).toBe("uk.invoices.acme@vibefinance-ai.com");
+    expect(text("#mailbox-problem")).toBe("");
+
+    ([...document.querySelectorAll(".praddpop button")].find((b) => b.textContent === "Create address") as HTMLElement).click();
+    await settle();
+    const post = calls.find((c) => c.method === "POST" && c.path === "/api/sources/new-box/email")!;
+    expect(JSON.parse(post.body!)).toEqual({ mailbox: "UK.Invoices" });
+    expect(document.querySelector(".praddpop")).toBeNull();
   });
 });

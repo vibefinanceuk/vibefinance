@@ -219,6 +219,24 @@ function slug(value: string): string {
 }
 
 /**
+ * **The mailbox name, chosen — decision 0582.** The part before
+ * `.<customer>`, free-form but reduced as `slug` is, keeping single dots
+ * between words: `Accounts.Payable` becomes `accounts.payable`. A name
+ * with no dots reduces exactly as `slug` does, so a mailbox taken from
+ * the source's name gives the address it always did.
+ */
+export function mailboxName(value: string): string {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/ß/g, "ss")
+    .toLowerCase()
+    .replace(/[^a-z0-9.]+/g, "-")
+    .replace(/-*\.[-.]*/g, ".")
+    .replace(/^[-.]+|[-.]+$/g, "");
+}
+
+/**
  * Whether a name can become an address at all — decision 0129.
  *
  * **Checked before anything is created**, so a person is told while
@@ -229,7 +247,7 @@ export function addressableName(
   sourceName: string,
   customerId: string
 ): { ok: true } | { ok: false; reason: string } {
-  const name = slug(sourceName);
+  const name = mailboxName(sourceName);
   if (name === "") {
     // `!!!` slugs to nothing, and `.acme@vibefinance.com` has a leading
     // dot and is not an address.
@@ -261,7 +279,7 @@ export function addressableName(
  * one.
  */
 export function ingestionAddress(sourceName: string, customerId: string, domain: string): string {
-  return `${slug(sourceName)}.${slug(customerId)}@${domain}`;
+  return `${mailboxName(sourceName)}.${slug(customerId)}@${domain}`;
 }
 
 /**
@@ -278,13 +296,68 @@ export function ingestionAddress(sourceName: string, customerId: string, domain:
  * so is the same discipline as `infrastructureProvisioned: false`: a
  * screen implying mail was arriving would be worse than one admitting
  * it is not.
+ *
+ * **The mailbox name may be chosen — decision 0582**, as long as the
+ * customer's own `.<customer>` stays: that suffix is what makes it
+ * impossible to collide with another customer, so the part before it is
+ * the customer's to choose. Given as `mailbox`; without it, the source's
+ * name, as before. The source's name is then only what people read.
  */
 export async function handleSetSourceEmail(
   db: D1Database,
   sourceId: string,
   customerId: string | undefined,
-  env: { INGESTION_DOMAIN?: string } = {}
+  env: { INGESTION_DOMAIN?: string } = {},
+  mailbox?: string
 ): Promise<RouteResult> {
+  const planned = await plannedAddress(db, sourceId, customerId, env, mailbox);
+  if ("status" in planned) return planned;
+  const address = planned.address;
+  await db
+    .prepare("UPDATE sources SET email_address = ? WHERE id = ?")
+    .bind(address, sourceId)
+    .run();
+
+  return {
+    status: 200,
+    body: {
+      sourceId,
+      emailAddress: address,
+      routing: "not_configured",
+      reason: "not_routed_yet",
+    },
+  };
+}
+
+/**
+ * `GET /sources/:id/email?mailbox=` — the address that mailbox name would
+ * give, or why it cannot, before anything is issued: an address is never
+ * changed once suppliers have it — decision 0582.
+ */
+export async function handlePreviewSourceEmail(
+  db: D1Database,
+  sourceId: string,
+  customerId: string | undefined,
+  env: { INGESTION_DOMAIN?: string } = {},
+  mailbox?: string
+): Promise<RouteResult> {
+  const planned = await plannedAddress(db, sourceId, customerId, env, mailbox);
+  if ("status" in planned) {
+    const body = planned.body as { error: string; reason?: string };
+    // Not this source, or not email: an error. Anything about the name: an answer.
+    if (planned.status === 404 || (planned.status === 422 && body.reason !== "name_unusable")) return planned;
+    return { status: 200, body: { ok: false, address: null, mailbox: mailboxName(mailbox ?? ""), error: body.error, reason: body.reason ?? null } };
+  }
+  return { status: 200, body: { ok: true, address: planned.address, mailbox: planned.mailbox } };
+}
+
+async function plannedAddress(
+  db: D1Database,
+  sourceId: string,
+  customerId: string | undefined,
+  env: { INGESTION_DOMAIN?: string },
+  mailbox: string | undefined
+): Promise<RouteResult | { address: string; mailbox: string }> {
   /**
    * **No domain, no address** — decision 0141.
    *
@@ -342,7 +415,8 @@ export async function handleSetSourceEmail(
     };
   }
 
-  const addressable = addressableName(source.name, customerId);
+  const chosen = mailbox !== undefined && mailbox.trim() !== "" ? mailbox : source.name;
+  const addressable = addressableName(chosen, customerId);
   if (!addressable.ok) {
     return {
       status: 422,
@@ -353,7 +427,7 @@ export async function handleSetSourceEmail(
     };
   }
 
-  const address = ingestionAddress(source.name, customerId, domain);
+  const address = ingestionAddress(chosen, customerId, domain);
 
   const taken = await db
     .prepare("SELECT id FROM sources WHERE email_address = ?")
@@ -371,20 +445,7 @@ export async function handleSetSourceEmail(
     };
   }
 
-  await db
-    .prepare("UPDATE sources SET email_address = ? WHERE id = ?")
-    .bind(address, sourceId)
-    .run();
-
-  return {
-    status: 200,
-    body: {
-      sourceId,
-      emailAddress: address,
-      routing: "not_configured",
-      reason: "not_routed_yet",
-    },
-  };
+  return { address, mailbox: mailboxName(chosen) };
 }
 
 /**
@@ -597,9 +658,11 @@ export async function handleRetireSource(
  * and a rule written against either would be right about half the
  * documents.
  *
- * Refused once an address exists, too: the address is derived from the
- * name and **never reissued** (decision 0126), so a rename would make
- * the two disagree permanently.
+ * **No longer refused because an address exists — decision 0582.** It
+ * was, while the address was derived from the name and never reissued
+ * (0126), so a rename made the two disagree. The mailbox name is now
+ * chosen on its own, so the name is only what people read, and the
+ * address stays as it was.
  */
 export async function handleRenameSource(
   db: D1Database,
@@ -617,16 +680,6 @@ export async function handleRenameSource(
 
   if (!source) {
     return { status: 404, body: { error: `source ${sourceId} does not exist` } };
-  }
-
-  if (source.email_address) {
-    return {
-      status: 409,
-      body: {
-        error: `source ${sourceId} receives at ${source.email_address}`,
-        reason: "address_issued",
-      },
-    };
   }
 
   if (await hasReceivedDocuments(db, source.name, source.id)) {

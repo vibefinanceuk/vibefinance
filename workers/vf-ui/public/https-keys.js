@@ -75,25 +75,66 @@ function openMakeKey(source, reload) {
           problem.textContent = result.body?.error ?? t("httpsin.failed");
           return;
         }
-        body.replaceChildren(
-          el("p", { class: "warn", text: t("httpsin.onlyonce") }),
-          el("div", { class: "httpscopy" }, [el("code", { id: "httpsin-newkey", text: result.body.key }), copyButton(result.body.key)])
-        );
-        backdrop.querySelector(".statebuttons").replaceChildren(
-          actionLink("done", {
-            primary: true,
-            label: t("httpsin.done"),
-            onclick: () => {
-              close();
-              reload();
-            },
-          })
-        );
+        showKeyOnce(backdrop, body, result.body.key, close, reload);
       },
     }),
     actionLink("close", { onclick: close }),
   ]);
   name.focus();
+}
+
+/** The new key, shown this once: the key and its Copy, and Done. — decisions 0578, 0581 */
+function showKeyOnce(backdrop, body, key, close, reload) {
+  body.replaceChildren(
+    el("p", { class: "warn", text: t("httpsin.onlyonce") }),
+    el("div", { class: "httpscopy" }, [el("code", { id: "httpsin-newkey", text: key }), copyButton(key)])
+  );
+  backdrop.querySelector(".statebuttons").replaceChildren(
+    actionLink("done", {
+      primary: true,
+      label: t("httpsin.done"),
+      onclick: () => {
+        close();
+        reload();
+      },
+    })
+  );
+}
+
+/**
+ * **Replace a key — decision 0581.** A new key with the same name, so a
+ * mapping's Who it is for still names the sender. The old key works for
+ * 24 hours unless Stop the old key now is ticked.
+ */
+function openReplace(source, key, reload) {
+  const stopNow = el("input", { type: "checkbox", id: "httpsin-stopnow" });
+  const problem = el("div", { class: "warn" });
+  const body = el("div", {}, [
+    el("p", { class: "muted sm", text: t("httpsin.replacesub").replaceAll("{name}", key.name) }),
+    el("label", { class: "httpscheck", for: "httpsin-stopnow" }, [stopNow, el("span", { text: t("httpsin.stopnow") })]),
+    el("p", { class: "muted sm", text: t("httpsin.stopnowhint") }),
+    problem,
+  ]);
+  const backdrop = popout(t("httpsin.replacetitle"), [body], (close) => [
+    actionLink("rotate", {
+      primary: true,
+      label: t("httpsin.replace"),
+      onclick: async () => {
+        problem.textContent = "";
+        const result = await getJson(`/api/sources/${encodeURIComponent(source.id)}/keys/${encodeURIComponent(key.id)}/replace`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ stopNow: stopNow.checked }),
+        });
+        if (!result.ok) {
+          problem.textContent = result.body?.error ?? t("httpsin.failed");
+          return;
+        }
+        showKeyOnce(backdrop, body, result.body.key, close, reload);
+      },
+    }),
+    actionLink("close", { label: t("httpsin.cancel"), onclick: close }),
+  ]);
 }
 
 function confirmRevoke(source, key, reload) {
@@ -121,17 +162,35 @@ function render(holder, source, data, reload) {
     holder.replaceChildren(el("div", { class: "muted", text: t("httpsin.failed") }));
     return;
   }
-  const live = data.keys.filter((k) => !k.revokedAt);
-  const rows = data.keys.map((k) =>
-    el("tr", { class: k.revokedAt ? "httpsrevoked" : "" }, [
+  const nowIso = new Date().toISOString();
+  const rows = data.keys.map((k) => {
+    // Decision 0581: a replaced key works until its expiry, then has stopped.
+    const stopped = Boolean(k.revokedAt) || (k.expiresAt != null && k.expiresAt <= nowIso);
+    const replacing = !stopped && k.replacedBy != null;
+    const state = k.revokedAt
+      ? t("httpsin.revokedon").replace("{when}", when(k.revokedAt))
+      : stopped
+        ? t("httpsin.stoppedon").replace("{when}", when(k.expiresAt))
+        : replacing
+          ? t("httpsin.replacedstops").replace("{when}", when(k.expiresAt))
+          : when(k.lastUsedAt);
+    const actions =
+      stopped || source.status === "retired"
+        ? []
+        : [
+            ...(replacing ? [] : [actionLink("rotate", { label: t("httpsin.replace"), onclick: () => openReplace(source, k, reload) })]),
+            actionLink("retire", { label: t("httpsin.revoke"), onclick: () => confirmRevoke(source, k, reload) }),
+          ];
+    return el("tr", { class: stopped ? "httpsrevoked" : replacing ? "httpsreplaced" : "" }, [
       el("td", { text: k.name }),
       el("td", {}, [el("code", { text: `${k.prefix}…` })]),
       el("td", { text: `${when(k.createdAt)}${k.createdBy ? ` · ${k.createdBy}` : ""}` }),
-      el("td", { text: k.revokedAt ? t("httpsin.revokedon").replace("{when}", when(k.revokedAt)) : when(k.lastUsedAt) }),
-      el("td", {}, k.revokedAt || source.status === "retired" ? [] : [actionLink("retire", { label: t("httpsin.revoke"), onclick: () => confirmRevoke(source, k, reload) })]),
-    ])
-  );
-  const example = `curl -X POST "${data.address}" \\\n  -H "Authorization: Bearer ${live[0] ? `${live[0].prefix}…` : "vf_in_…"}" \\\n  -H "Content-Type: application/xml" \\\n  -H "X-Filename: Rechnung_88240.xml" \\\n  --data-binary @Rechnung_88240.xml`;
+      el("td", { text: state }),
+      el("td", { class: "httpsactions" }, actions),
+    ]);
+  });
+  // Decision 0581: the example names no key's start, which looked like a key to paste.
+  const example = `curl -X POST "${data.address}" \\\n  -H "Authorization: Bearer <your key>" \\\n  -H "Content-Type: application/xml" \\\n  -H "X-Filename: Rechnung_88240.xml" \\\n  --data-binary @Rechnung_88240.xml`;
   holder.replaceChildren(
     el("div", { class: "cardhead httpshead" }, [
       el("h4", { text: t("httpsin.heading") }),

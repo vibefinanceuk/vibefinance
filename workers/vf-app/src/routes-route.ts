@@ -184,14 +184,14 @@ export async function handleProcessRoutes(
               (SELECT count(*) FROM route_messages m WHERE m.instance_id = s.id AND m.received_at >= ?) AS received_week,
               (SELECT count(*) FROM route_messages m WHERE m.instance_id = s.id AND m.status IN ('failed', 'partial')) AS failed_open,
               -- Decision 0580: an HTTPS source receives once it has a live key.
-              (SELECT count(*) FROM source_keys k WHERE k.source_id = s.id AND k.revoked_at IS NULL) AS live_keys
+              (SELECT count(*) FROM source_keys k WHERE k.source_id = s.id AND k.revoked_at IS NULL AND (k.expires_at IS NULL OR k.expires_at > ?)) AS live_keys
        FROM sources s
        JOIN route_instances i ON i.source_id = s.id
        JOIN routes r ON r.id = i.route_id
        WHERE s.process_id = ?
        ORDER BY CASE s.status WHEN 'retired' THEN 1 ELSE 0 END, s.name`
     )
-    .bind(weekAgo, chosen.id)
+    .bind(weekAgo, now.toISOString(), chosen.id)
     .all<Record<string, unknown>>();
 
   const destinations = await db

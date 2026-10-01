@@ -75,12 +75,23 @@ export async function handleListSourceKeys(db: D1Database, sourceId: string, ori
   if (!source) return { status: 404, body: { error: `there is no HTTPS source ${sourceId}` } };
   const keys = await db
     .prepare(
-      `SELECT k.id, k.name, k.key_prefix, k.created_at, k.last_used_at, k.revoked_at, u.name AS created_by_name
+      `SELECT k.id, k.name, k.key_prefix, k.created_at, k.last_used_at, k.revoked_at, k.replaced_by, k.expires_at, u.name AS created_by_name
        FROM source_keys k LEFT JOIN org_users u ON u.id = k.created_by
-       WHERE k.source_id = ? ORDER BY k.revoked_at IS NOT NULL, k.created_at`
+       WHERE k.source_id = ?
+       ORDER BY (k.revoked_at IS NOT NULL OR (k.expires_at IS NOT NULL AND k.expires_at <= ?)), lower(k.name), k.created_at DESC`
     )
-    .bind(sourceId)
-    .all<{ id: string; name: string; key_prefix: string; created_at: string; last_used_at: string | null; revoked_at: string | null; created_by_name: string | null }>();
+    .bind(sourceId, new Date().toISOString())
+    .all<{
+      id: string;
+      name: string;
+      key_prefix: string;
+      created_at: string;
+      last_used_at: string | null;
+      revoked_at: string | null;
+      replaced_by: string | null;
+      expires_at: string | null;
+      created_by_name: string | null;
+    }>();
   return {
     status: 200,
     body: {
@@ -93,6 +104,9 @@ export async function handleListSourceKeys(db: D1Database, sourceId: string, ori
         createdBy: k.created_by_name,
         lastUsedAt: k.last_used_at,
         revokedAt: k.revoked_at,
+        // Decision 0581: replaced by another key of the same name, and when it stops (or stopped).
+        replacedBy: k.replaced_by,
+        expiresAt: k.expires_at,
       })),
     },
   };
@@ -106,28 +120,81 @@ export async function handleCreateSourceKey(db: D1Database, userId: string, sour
   const name = String((body as { name?: unknown } | null)?.name ?? "").trim();
   if (name === "" || name.length > 80) return { status: 400, body: { error: "a key needs a name, of at most 80 characters: who will send with it" } };
   const taken = await db
-    .prepare("SELECT 1 FROM source_keys WHERE source_id = ? AND lower(name) = lower(?) AND revoked_at IS NULL")
+    .prepare("SELECT 1 FROM source_keys WHERE source_id = ? AND lower(name) = lower(?) AND revoked_at IS NULL AND replaced_by IS NULL")
     .bind(sourceId, name)
     .first();
   if (taken) return { status: 409, body: { error: `a key named "${name}" already sends to ${source.name}` } };
+  const made = await newKey(sourceId, name, userId);
+  await made.insert(db).run();
+  return { status: 201, body: made.reply };
+}
+
+async function newKey(sourceId: string, name: string, userId: string) {
   const key = `${SOURCE_KEY_PREFIX}${generateApiKey()}`;
   const id = crypto.randomUUID();
   const prefix = key.slice(0, SOURCE_KEY_PREFIX.length + 4);
-  await db
-    .prepare("INSERT INTO source_keys (id, source_id, name, key_hash, key_prefix, created_at, created_by) VALUES (?, ?, ?, ?, ?, ?, ?)")
-    .bind(id, sourceId, name, await hashApiKey(key), prefix, new Date().toISOString(), userId)
-    .run();
-  return { status: 201, body: { id, name, prefix, key } };
+  const hash = await hashApiKey(key);
+  return {
+    reply: { id, name, prefix, key },
+    insert: (db: D1Database) =>
+      db
+        .prepare("INSERT INTO source_keys (id, source_id, name, key_hash, key_prefix, created_at, created_by) VALUES (?, ?, ?, ?, ?, ?, ?)")
+        .bind(id, sourceId, name, hash, prefix, new Date().toISOString(), userId),
+  };
+}
+
+/** How long a replaced key keeps working, unless stopped at once — decision 0581. */
+export const REPLACED_KEY_GRACE_HOURS = 24;
+
+/**
+ * `POST /sources/:id/keys/:keyId/replace` `{ stopNow? }` — decision 0581.
+ * A new key with the same name, shown this once, so a mapping's Who it is
+ * for still names its sender. The old key keeps working for 24 hours, so
+ * the sender can switch without a gap, or stops at once when `stopNow`
+ * (a key that may have leaked).
+ */
+export async function handleReplaceSourceKey(
+  db: D1Database,
+  userId: string,
+  sourceId: string,
+  keyId: string,
+  body: unknown
+): Promise<RouteResult> {
+  const source = await httpsSource(db, sourceId);
+  if (!source) return { status: 404, body: { error: `there is no HTTPS source ${sourceId}` } };
+  if (source.status !== "active") return { status: 409, body: { error: `${source.name} is retired` } };
+  const old = await db
+    .prepare("SELECT id, name, revoked_at, replaced_by FROM source_keys WHERE id = ? AND source_id = ?")
+    .bind(keyId, sourceId)
+    .first<{ id: string; name: string; revoked_at: string | null; replaced_by: string | null }>();
+  if (!old) return { status: 404, body: { error: `there is no key ${keyId} on ${sourceId}` } };
+  if (old.revoked_at) return { status: 409, body: { error: "the key is revoked: make a new one instead" } };
+  if (old.replaced_by) return { status: 409, body: { error: "the key has already been replaced" } };
+  const stopNow = (body as { stopNow?: unknown } | null)?.stopNow === true;
+  const at = new Date();
+  const expires = stopNow ? at : new Date(at.getTime() + REPLACED_KEY_GRACE_HOURS * 3600_000);
+  const made = await newKey(sourceId, old.name, userId);
+  await db.batch([
+    made.insert(db),
+    stopNow
+      ? db
+          .prepare("UPDATE source_keys SET replaced_by = ?, expires_at = ?, revoked_at = ?, revoked_by = ? WHERE id = ?")
+          .bind(made.reply.id, expires.toISOString(), at.toISOString(), userId, keyId)
+      : db.prepare("UPDATE source_keys SET replaced_by = ?, expires_at = ? WHERE id = ?").bind(made.reply.id, expires.toISOString(), keyId),
+  ]);
+  return { status: 201, body: { ...made.reply, replaced: keyId, oldStopsAt: expires.toISOString() } };
 }
 
 /** `POST /sources/:id/keys/:keyId/revoke`: nothing sends with it again. */
 export async function handleRevokeSourceKey(db: D1Database, userId: string, sourceId: string, keyId: string): Promise<RouteResult> {
   const row = await db
-    .prepare("SELECT revoked_at FROM source_keys WHERE id = ? AND source_id = ?")
+    .prepare("SELECT revoked_at, expires_at FROM source_keys WHERE id = ? AND source_id = ?")
     .bind(keyId, sourceId)
-    .first<{ revoked_at: string | null }>();
+    .first<{ revoked_at: string | null; expires_at: string | null }>();
   if (!row) return { status: 404, body: { error: `there is no key ${keyId} on ${sourceId}` } };
   if (row.revoked_at) return { status: 409, body: { error: "the key is already revoked" } };
+  // A replaced key may be stopped before its 24 hours are up — decision 0581 — but not once they are.
+  if (row.expires_at && row.expires_at <= new Date().toISOString()) return { status: 409, body: { error: "the key has already stopped" } };
   await db
     .prepare("UPDATE source_keys SET revoked_at = ?, revoked_by = ? WHERE id = ?")
     .bind(new Date().toISOString(), userId, keyId)
@@ -141,8 +208,11 @@ export async function authenticateSourceKey(db: D1Database, sourceId: string, au
   if (!key || !key.startsWith(SOURCE_KEY_PREFIX)) return null;
   const hash = await hashApiKey(key);
   const row = await db
-    .prepare("SELECT id, source_id, name, key_prefix, key_hash FROM source_keys WHERE key_hash = ? AND revoked_at IS NULL")
-    .bind(hash)
+    .prepare(
+      // Decision 0581: a replaced key works until it expires.
+      "SELECT id, source_id, name, key_prefix, key_hash FROM source_keys WHERE key_hash = ? AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at > ?)"
+    )
+    .bind(hash, new Date().toISOString())
     .first<SourceKey & { key_hash: string }>();
   if (!row || row.source_id !== sourceId || !timingSafeEqual(row.key_hash, hash)) return null;
   await db.prepare("UPDATE source_keys SET last_used_at = ? WHERE id = ?").bind(new Date().toISOString(), row.id).run();

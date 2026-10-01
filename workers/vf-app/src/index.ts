@@ -142,7 +142,7 @@ import {
 import { createWorkersAiExtractionModel } from "./extraction-model.js";
 import { handleGetExtractionSettings, handleUpdateExtractionSettings } from "./extraction-settings-route.js";
 import { handleToMarkdownDiagnostic } from "./tomarkdown-diagnostic.js";
-import { handleCreateSource, handleListSources , handleSetSourceEmail , handleListAllSources , handleListProcesses , handleRetireSource, handleRenameSource } from "./source-route.js";
+import { handleCreateSource, handleListSources , handleSetSourceEmail , handlePreviewSourceEmail , handleListAllSources , handleListProcesses , handleRetireSource, handleRenameSource } from "./source-route.js";
 import {
   handleListRules,
   handleRuleStages,
@@ -273,6 +273,7 @@ import {
   handleHttpsMessageStatus,
   handleListSourceKeys,
   handleRevokeSourceKey,
+  handleReplaceSourceKey,
 } from "./https-in-route.js";
 import { messagesForInvoice, partForInvoice, partResponse, receivedFiles, viewFor } from "./received-files.js";
 import { retrieveInvoiceDocument, renderXmlForDisplay, extForContentType } from "./document-storage.js";
@@ -4600,7 +4601,7 @@ export default {
 
 
     const sourceEmailMatch = pathname.match(/^\/sources\/([^/]+)\/email$/);
-    if (sourceEmailMatch && request.method === "POST") {
+    if (sourceEmailMatch && (request.method === "POST" || request.method === "GET")) {
       const { db } = resolveTenant(request, env);
       const auth = await authenticatePerson(db, request, env);
       if (!auth.user) return json({ error: auth.reason }, 401);
@@ -4608,7 +4609,14 @@ export default {
         return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
       }
 
-      const result = await handleSetSourceEmail(db, sourceEmailMatch[1], env.CUSTOMER_ID, env);
+      // Decision 0582: the mailbox name may be chosen, and previewed first.
+      if (request.method === "GET") {
+        const result = await handlePreviewSourceEmail(db, sourceEmailMatch[1], env.CUSTOMER_ID, env, url.searchParams.get("mailbox") ?? undefined);
+        return json(result.body, result.status);
+      }
+      const body = (await request.json().catch(() => ({}))) as { mailbox?: unknown };
+      const mailbox = typeof body?.mailbox === "string" ? body.mailbox : undefined;
+      const result = await handleSetSourceEmail(db, sourceEmailMatch[1], env.CUSTOMER_ID, env, mailbox);
       return json(result.body, result.status);
     }
 
@@ -5141,7 +5149,7 @@ export default {
      * An HTTPS source's address and keys — decision 0578. Under
      * `Admin.Configure`, as every other change to a source is.
      */
-    const sourceKeysMatch = pathname.match(/^\/sources\/([^/]+)\/keys(?:\/([^/]+)\/revoke)?$/);
+    const sourceKeysMatch = pathname.match(/^\/sources\/([^/]+)\/keys(?:\/([^/]+)\/(revoke|replace))?$/);
     if (sourceKeysMatch) {
       const { db } = resolveTenant(request, env);
       const auth = await authenticatePerson(db, request, env);
@@ -5150,8 +5158,14 @@ export default {
         return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
       }
       const sourceId = decodeURIComponent(sourceKeysMatch[1]);
-      if (sourceKeysMatch[2] && request.method === "POST") {
+      if (sourceKeysMatch[3] === "revoke" && request.method === "POST") {
         const result = await handleRevokeSourceKey(db, auth.user.id, sourceId, decodeURIComponent(sourceKeysMatch[2]));
+        return json(result.body, result.status);
+      }
+      // Decision 0581: a new key with the same name; the old one stops in 24 hours, or at once.
+      if (sourceKeysMatch[3] === "replace" && request.method === "POST") {
+        const body = await request.json().catch(() => ({}));
+        const result = await handleReplaceSourceKey(db, auth.user.id, sourceId, decodeURIComponent(sourceKeysMatch[2]), body);
         return json(result.body, result.status);
       }
       if (!sourceKeysMatch[2] && request.method === "GET") {
