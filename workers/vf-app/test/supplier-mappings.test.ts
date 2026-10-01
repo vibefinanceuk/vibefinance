@@ -157,7 +157,7 @@ describe("a supplier's own XML, before any mapping", () => {
       xml_root: "Rechnung",
       mapping_id: null,
     });
-    expect((await part(m.id)).reason).toBe("this is <Rechnung>, a supplier's own XML, and no mapping on this route reads it yet");
+    expect((await part(m.id)).reason).toBe("this is <Rechnung>, a supplier's own XML, and no mapping reads it yet");
     const detail = await handleGetRouteMessage(env.DB, m.id);
     expect((detail.body as { parts: Array<Record<string, unknown>> }).parts.find((p) => p.role === "attachment")).toMatchObject({
       xmlRoot: "Rechnung",
@@ -337,7 +337,7 @@ describe("when a mapping came close", () => {
     const p = await part(stranger.id);
     expect(p).toMatchObject({ outcome: "failed", mapping_id: id, mapping_version: null, mapping_miss: "not_for_sender" });
     expect(p.reason).toBe(
-      `this is <Rechnung>, a supplier's own XML; the mapping "munch.de <Rechnung>" reads <Rechnung> on this route, but is not for billing@other.example`
+      `this is <Rechnung>, a supplier's own XML; the mapping "munch.de <Rechnung>" reads <Rechnung>, but is not for billing@other.example`
     );
     const detail = await handleGetRouteMessage(env.DB, stranger.id);
     const parts = (detail.body as { parts: Array<{ role: string; mapping: unknown }> }).parts;
@@ -500,7 +500,7 @@ describe("a supplier's own CSV", () => {
       format: "supplier_csv",
       xml_root: "CSV",
       mapping_id: null,
-      reason: "this is a CSV file, and no mapping on this route reads it yet",
+      reason: "this is a CSV file, and no mapping reads it yet",
     });
   });
 
@@ -623,7 +623,7 @@ describe("a supplier's own CSV", () => {
     expect(await part(m.id)).toMatchObject({
       mapping_id: id,
       mapping_miss: "not_for_sender",
-      reason: 'this is a CSV file; the mapping "lagernord.de CSV" reads CSV files on this route, but is not for billing@other.example',
+      reason: 'this is a CSV file; the mapping "lagernord.de CSV" reads CSV files, but is not for billing@other.example',
     });
   });
 

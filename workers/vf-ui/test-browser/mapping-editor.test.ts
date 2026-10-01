@@ -10,6 +10,7 @@ import rereadStringsSql from "../../vf-licence/migrations/0217_mapping_reread_st
 import lookupStringsSql from "../../vf-licence/migrations/0218_lookup_list_strings.sql?raw";
 import ruleStringsSql from "../../vf-licence/migrations/0219_document_rule_strings.sql?raw";
 import aiStringsSql from "../../vf-licence/migrations/0220_ai_proposal_strings.sql?raw";
+import sharedStringsSql from "../../vf-licence/migrations/0227_shared_mappings_strings.sql?raw";
 
 /**
  * **The mapping editor — decision 0561**, with the real strings: draw a
@@ -21,7 +22,7 @@ import aiStringsSql from "../../vf-licence/migrations/0220_ai_proposal_strings.s
  */
 
 const strings: Record<string, string> = { "action.close": "Close", "action.save": "Save" };
-for (const sql of [mappingStringsSql, formatStringsSql, monitorStringsSql, routesStringsSql, missStringsSql, retirePopoutStringsSql, csvStringsSql, rereadStringsSql, lookupStringsSql, ruleStringsSql, aiStringsSql]) {
+for (const sql of [mappingStringsSql, formatStringsSql, monitorStringsSql, routesStringsSql, missStringsSql, retirePopoutStringsSql, csvStringsSql, rereadStringsSql, lookupStringsSql, ruleStringsSql, aiStringsSql, sharedStringsSql]) {
   for (const m of sql.matchAll(/\('([^']+)', 'en', '((?:[^']|'')*)'\)/g)) strings[m[1]] = m[2].replace(/''/g, "'");
   // Later migrations change some words in place.
   for (const m of sql.matchAll(/UPDATE ui_strings SET value = '((?:[^']|'')*)' WHERE key = '([^']+)' AND locale = 'en'/g)) strings[m[2]] = m[1].replace(/''/g, "'");
@@ -261,7 +262,7 @@ describe("the mapping editor — decision 0561", () => {
     button("Publish").click();
     await settle();
     expect(document.body.textContent).toContain("Version 1 is live");
-    expect(document.body.textContent).toContain("2 failed messages on this route may now be read.");
+    expect(document.body.textContent).toContain("2 failed messages may now be read.");
     button("Reprocess 2 messages").click();
     await settle();
     expect(calls.find((c) => c.path === "/api/route-messages/reprocess")?.body).toEqual({ ids: ["MSG-1", "MSG-2"] });
@@ -362,7 +363,7 @@ describe("near misses and retiring — decision 0563", () => {
   it("says a live mapping is not for this sender, names it, and opens it", async () => {
     await monitorWith({ id: "MAP-1", version: null, name: "Lager Nord", miss: "not_for_sender" });
     expect(text(".rmfmt .rmpill")).toBe("Not for this sender");
-    expect(text(".rmfmt .muted.sm")).toBe("Lager Nord reads this format on this route, but is not for vibefinanceuk@gmail.com.");
+    expect(text(".rmfmt .muted.sm")).toBe("Lager Nord reads this format, but is not for vibefinanceuk@gmail.com.");
     expect(text(".rmexplain .h")).toBe("A mapping reads this format, but not from this sender");
     expect(text(".rmexplain")).toContain("Who it is for applies at once, without publishing again.");
     expect(button("Open the mapping")).toBeTruthy();

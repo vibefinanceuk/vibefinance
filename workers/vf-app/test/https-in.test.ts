@@ -4,6 +4,7 @@ import { applyTestSchema } from "./setup.js";
 import worker from "../src/index.js";
 import type { Env } from "../src/index.js";
 import { generateApiKey, hashApiKey } from "../src/user-auth.js";
+import { handleCreateMapping, handlePublishMapping, handleSaveDraft, senderMatches, senderName } from "../src/supplier-mapping-route.js";
 
 /**
  * **HTTPS in — decision 0578.** A source's own address and keys; each
@@ -65,6 +66,7 @@ beforeEach(async () => {
   await env.DB.prepare(
     "INSERT INTO route_instances (id, route_id, process_id, source_id) VALUES ('src-portal', 'https-in', 'ap', 'src-portal'), ('src-other', 'https-in', 'ap', 'src-other'), ('src-mail', 'email-in', 'ap', 'src-mail')"
   ).run();
+  await env.DB.prepare("INSERT INTO org_users (id, name, email) VALUES ('u-x', 'Dan Young', 'dan@acme.co.uk')").run();
   admin = await person(["Admin.Configure"]);
   validator = await person(["AP.Validate"]);
 });
@@ -162,5 +164,129 @@ describe("sending an invoice", () => {
 
     await call(`/sources/src-portal/keys/${id}/revoke`, { method: "POST", headers: { Authorization: `Bearer ${admin}` } });
     expect((await post(key)).status).toBe(401);
+  });
+});
+
+// The Munch fixtures of supplier-mappings.test.ts.
+const munch = (opts: { date?: string; number?: string } = {}) => `<?xml version="1.0" encoding="UTF-8"?>
+<Rechnung xmlns="urn:munch:rechnung">
+  <Kopf><Rechnungsnummer>${opts.number ?? "88240"}</Rechnungsnummer><Datum>${opts.date ?? "29.09.2026"}</Datum><Faelligkeit>29.10.2026</Faelligkeit><Waehrung>EUR</Waehrung></Kopf>
+  <Lieferant><Name>Munch GmbH</Name><UStIdNr>DE812345678</UStIdNr></Lieferant>
+  <Kunde><Name>Acme UK Ltd</Name><Land>GB</Land></Kunde>
+  <Position nr="1"><Beschreibung>Hydraulic seal kit</Beschreibung><Menge>12</Menge><Einheit>Stk</Einheit><Einzelpreis>45,50</Einzelpreis><Netto>546,00</Netto></Position>
+  <Summen><Netto>546,00</Netto><MwSt>103,74</MwSt><Brutto>649,74</Brutto></Summen>
+</Rechnung>`;
+
+const dc = [{ fn: "decimal_comma" }];
+const DEFINITION = {
+  linesPath: "Rechnung/Position",
+  lines: [
+    { target: "BT-1", source: "Rechnung/Kopf/Rechnungsnummer", fx: [] },
+    { target: "BT-2", source: "Rechnung/Kopf/Datum", fx: [{ fn: "read_date", args: { pattern: "dd.MM.yyyy" } }], say: "day.month.year" },
+    { target: "BT-3", source: null, fx: [{ fn: "always", args: { value: "380" } }] },
+    { target: "BT-5", source: "Rechnung/Kopf/Waehrung", fx: [] },
+    { target: "BT-9", source: "Rechnung/Kopf/Faelligkeit", fx: [{ fn: "read_date", args: { pattern: "dd.MM.yyyy" } }] },
+    { target: "BT-27", source: "Rechnung/Lieferant/Name", fx: [] },
+    { target: "BT-31", source: "Rechnung/Lieferant/UStIdNr", fx: [] },
+    { target: "BT-40", source: "Rechnung/Lieferant/UStIdNr", fx: [{ fn: "first_letters", args: { n: 2 } }] },
+    { target: "BT-44", source: "Rechnung/Kunde/Name", fx: [] },
+    { target: "BT-55", source: "Rechnung/Kunde/Land", fx: [] },
+    { target: "BT-106", source: "Rechnung/Summen/Netto", fx: dc },
+    { target: "BT-109", source: "Rechnung/Summen/Netto", fx: dc },
+    { target: "BT-110", source: "Rechnung/Summen/MwSt", fx: dc },
+    { target: "BT-112", source: "Rechnung/Summen/Brutto", fx: dc },
+    { target: "BT-115", source: "Rechnung/Summen/Brutto", fx: dc },
+    { target: "BT-126", source: "@nr", fx: [] },
+    { target: "BT-129", source: "Menge", fx: [] },
+    { target: "BT-130", source: "Einheit", fx: [{ fn: "unit_code" }] },
+    { target: "BT-131", source: "Netto", fx: dc },
+    { target: "BT-146", source: "Einzelpreis", fx: dc },
+    { target: "BT-153", source: "Beschreibung", fx: [] },
+  ],
+};
+
+
+/**
+ * **Mappings shared by every Source route — decision 0579.** Dan sent a
+ * <Rechnung> over HTTPS on 1 October and it failed: its mapping was on
+ * Email in, and for an email domain. A mapping now reads the format
+ * whichever way it arrives, and Who it is for can name an HTTPS key.
+ */
+describe("supplier mappings over HTTPS — decision 0579", () => {
+  const send = (key: string, xml: string) =>
+    call("/v1/sources/src-portal/invoices", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/xml", "X-Filename": "Rechnung_88240.xml" },
+      body: xml,
+    }).then((r) => r.json() as Promise<{ message: string; status: string; error?: string; invoices: string[] }>);
+
+  async function emailMapping(senders: string[] | null) {
+    await env.DB.prepare("INSERT INTO supplier_mappings (id, route_id, name, root, senders, created_at) VALUES ('MAP-MUNCH', 'email-in', 'Munch GmbH XML', 'Rechnung', ?, '2026-09-30T10:00:00Z')")
+      .bind(senders ? JSON.stringify(senders) : null)
+      .run();
+    await env.DB.prepare(
+      "INSERT INTO supplier_mapping_versions (mapping_id, version, status, definition_json, created_at, published_at) VALUES ('MAP-MUNCH', 1, 'live', ?, '2026-09-30T10:00:00Z', '2026-09-30T10:00:00Z')"
+    )
+      .bind(JSON.stringify({ root: "Rechnung", ...DEFINITION }))
+      .run();
+  }
+
+  it("reads a file over HTTPS with a mapping drawn on Email in, once Who it is for names the key", async () => {
+    await emailMapping(["@munch.de"]);
+    const { key } = await makeKey("src-portal", "Lager Nord ERP");
+    const refused = await send(key, munch());
+    expect(refused.status).toBe("failed");
+    expect(refused.error).toBe(`this is <Rechnung>, a supplier's own XML; the mapping "Munch GmbH XML" reads <Rechnung>, but is not for lager nord erp`);
+
+    const saved = await handleSaveDraft(env.DB, "u-x", "MAP-MUNCH", { definition: DEFINITION, senders: ["@munch.de", "Lager Nord ERP"] });
+    expect(saved.status).toBe(200);
+    const row = await env.DB.prepare("SELECT senders FROM supplier_mappings WHERE id = 'MAP-MUNCH'").first<{ senders: string }>();
+    expect(JSON.parse(row!.senders)).toEqual(["@munch.de", "lager nord erp"]);
+
+    const read = await send(key, munch({ number: "88241" }));
+    expect(read).toMatchObject({ status: "delivered", invoices: ["88241"] });
+    // Another key on the same source is not who it is for.
+    const other = await makeKey("src-portal", "Someone else");
+    expect((await send(other.key, munch({ number: "88242" }))).status).toBe("failed");
+  });
+
+  it("a mapping for anyone reads it from any route, and the list is the same from every route", async () => {
+    await emailMapping(null);
+    const { key } = await makeKey("src-portal", "Portal");
+    expect(await send(key, munch())).toMatchObject({ status: "delivered", invoices: ["88240"] });
+    for (const route of ["email-in", "https-in"]) {
+      const listed = await call(`/supplier-mappings?route=${route}`, { headers: { Authorization: `Bearer ${admin}` } });
+      expect(((await listed.json()) as { mappings: Array<{ id: string; routeId: string }> }).mappings.map((m) => [m.id, m.routeId])).toEqual([["MAP-MUNCH", "email-in"]]);
+    }
+  });
+
+  it("drawn from a file sent over HTTPS, a mapping is for the key that sent it", async () => {
+    const { key } = await makeKey("src-portal", "Lager Nord ERP");
+    const failed = await send(key, munch());
+    expect(failed.error).toBe("this is <Rechnung>, a supplier's own XML, and no mapping reads it yet");
+    const created = await handleCreateMapping(env.DB, env.DOCUMENTS, "u-x", { messageId: failed.message, partSeq: 1 });
+    expect(created.status).toBe(201);
+    const id = (created.body as { id: string; name: string }).id;
+    expect((created.body as { name: string }).name).toBe("Lager Nord ERP <Rechnung>");
+    const row = await env.DB.prepare("SELECT route_id, senders FROM supplier_mappings WHERE id = ?").bind(id).first<{ route_id: string; senders: string }>();
+    expect(row).toEqual({ route_id: "https-in", senders: JSON.stringify(["lager nord erp"]) });
+    await handleSaveDraft(env.DB, "u-x", id, { definition: DEFINITION });
+    expect((await handlePublishMapping(env.DB, env.DOCUMENTS, "u-x", id)).status).toBe(200);
+    expect(await send(key, munch({ number: "88243" }))).toMatchObject({ status: "delivered", invoices: ["88243"] });
+  });
+});
+
+describe("Who it is for — decision 0579", () => {
+  it("keeps a domain, an address or a name, and matches a name exactly", () => {
+    expect(senderName(" @Munch.de ")).toBe("@munch.de");
+    expect(senderName("Anna@Munch.de")).toBe("anna@munch.de");
+    expect(senderName("  Lager   Nord ERP ")).toBe("lager nord erp");
+    expect(senderName("a, b")).toBeNull();
+    expect(senderName("a@b@c")).toBeNull();
+    expect(senderName("")).toBeNull();
+    expect(senderMatches(["lager nord erp"], "Lager Nord  ERP")).toBe(true);
+    expect(senderMatches(["lager nord erp"], "Lager Nord ERP Ltd")).toBe(false);
+    expect(senderMatches(["lager nord erp"], "Lager Nord ERP <ap@lagernord.de>")).toBe(false);
+    expect(senderMatches(["@munch.de"], "Lager Nord ERP")).toBe(false);
   });
 });

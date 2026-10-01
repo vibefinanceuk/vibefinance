@@ -35,9 +35,11 @@ import { handleCaptureIntake, type CaptureIntakeBody } from "./intake-capture-ro
  * element becomes which Business Term, and what function changes the
  * value on the way (`shared/ingestion/mapping-engine.ts`). Here:
  *
- * - **At intake**, `mappingFor` finds the live mapping on the receiving
- *   route for the document's root element (and sender, where the mapping
- *   names them), and `captureThroughMapping` reads the document through
+ * - **At intake**, `mappingFor` finds the live mapping for the document's
+ *   root element (and sender, where the mapping names them). **Shared by
+ *   every Source route — decision 0579**: a mapping describes a supplier's
+ *   format, not the way it arrived, so one drawn from an email reads the
+ *   same file sent over HTTPS or uploaded, and `captureThroughMapping` reads the document through
  *   it. No mapping, or a value it cannot read, fails the attachment at
  *   translation with the reason in words; the message part keeps the root
  *   element, so the monitor can offer to map it.
@@ -104,12 +106,30 @@ function csvFits(text: string, definitionJson: string): boolean {
   }
 }
 
-/** An address matches `anna@munch.de` exactly, or `@munch.de` by its domain. */
+/**
+ * An address matches `anna@munch.de` exactly, or `@munch.de` by its domain.
+ * **A name with no `@` matches a sender of that name — decision 0579**:
+ * an HTTPS key's name ("Lager Nord ERP"), which is the sender of what is
+ * sent with it.
+ */
 export function senderMatches(senders: string[] | null, sender: string | undefined): boolean {
   if (senders === null) return true;
   if (!sender) return false;
-  const address = sender.toLowerCase().replace(/^.*<([^>]+)>.*$/, "$1").trim();
+  const address = sender.toLowerCase().replace(/^.*<([^>]+)>.*$/, "$1").trim().replace(/\s+/g, " ");
   return senders.some((s) => (s.startsWith("@") ? address.endsWith(s) : address === s));
+}
+
+/**
+ * One entry of Who it is for, as kept: lower case, trimmed, spaces run
+ * together. A domain (`@munch.de`), an address, or — decision 0579 — a
+ * name with no `@`, as an HTTPS key is named. Null when it is none of
+ * these.
+ */
+export function senderName(value: string): string | null {
+  const s = value.trim().toLowerCase().replace(/\s+/g, " ");
+  if (s === "" || s.length > 80 || s.includes(",")) return null;
+  if (!s.includes("@")) return s;
+  return /^@?[^@\s]+(@[^@\s]+)?$/.test(s) ? s : null;
 }
 
 /** The domain of an address, as a sender a new mapping is for: `@munch.de`. */
@@ -136,12 +156,11 @@ export async function mappingFor(
     .prepare(
       `SELECT m.*, v.version, v.status AS v_status, v.definition_json, v.published_at
        FROM supplier_mappings m
-       JOIN route_instances i ON i.route_id = m.route_id AND i.source_id = ?
        JOIN supplier_mapping_versions v ON v.mapping_id = m.id AND v.status = 'live'
        WHERE m.root = ? AND m.status = 'active'
        ORDER BY v.published_at DESC`
     )
-    .bind(sourceId, root)
+    .bind(root)
     .all<MappingRow & { version: number; v_status: string; definition_json: string; published_at: string }>();
   const candidates = rows.results.filter((r) => senderMatches(sendersOf(r), sender));
   /**
@@ -195,11 +214,10 @@ export async function nearMiss(
         `SELECT m.*,
                 (SELECT version FROM supplier_mapping_versions v WHERE v.mapping_id = m.id AND v.status = 'live') AS live_version
          FROM supplier_mappings m
-         JOIN route_instances i ON i.route_id = m.route_id AND i.source_id = ?
          WHERE m.root = ? AND m.status = 'active'
          ORDER BY m.created_at DESC`
       )
-      .bind(sourceId, root)
+      .bind(root)
       .all<MappingRow & { live_version: number | null }>()
   ).results;
   const unpublished = rows.filter((r) => r.live_version === null && senderMatches(sendersOf(r), sender));
@@ -278,8 +296,8 @@ export async function captureThroughMapping(
       near?.miss === "not_published"
         ? `${what}; the mapping "${near.name}" would read it, but has not been published`
         : near?.miss === "not_for_sender"
-          ? `${what}; the mapping "${near.name}" reads ${kind} on this route, but is not for ${from}`
-          : `${what}, and no mapping on this route reads it yet`;
+          ? `${what}; the mapping "${near.name}" reads ${kind}, but is not for ${from}`
+          : `${what}, and no mapping reads it yet`;
     return {
       status: 422,
       body: { ...base, mappingId: near?.id ?? null, mappingMiss: near?.miss ?? null, error },
@@ -405,8 +423,8 @@ async function versionsOf(db: D1Database, id: string): Promise<VersionRow[]> {
 }
 
 /**
- * Messages on this route whose supplier XML with this root no mapping
- * read, or one failed to: what publishing may fix. **Only those from a
+ * Messages on any Source route (decision 0579) whose supplier XML with
+ * this root no mapping read, or one failed to: what publishing may fix. **Only those from a
  * sender this mapping is for — decision 0563**: a message it would never
  * read is not waiting for it, and offering to reprocess it only fails
  * again.
@@ -418,11 +436,10 @@ async function waitingFor(db: D1Database, mapping: MappingRow): Promise<string[]
       .prepare(
         `SELECT DISTINCT m.id, m.counterparty, m.received_at FROM route_message_parts p
          JOIN route_messages m ON m.id = p.message_id
-         JOIN route_instances i ON i.source_id = m.instance_id AND i.route_id = ?
-         WHERE p.xml_root = ? AND p.outcome = 'failed' AND m.status IN ('failed', 'partial')
+         WHERE m.direction = 'in' AND p.xml_root = ? AND p.outcome = 'failed' AND m.status IN ('failed', 'partial')
          ORDER BY m.received_at DESC LIMIT 200`
       )
-      .bind(mapping.route_id, mapping.root)
+      .bind(mapping.root)
       .all<{ id: string; counterparty: string | null }>()
   ).results
     .filter((r) => senderMatches(senders, r.counterparty ?? undefined))
@@ -430,8 +447,12 @@ async function waitingFor(db: D1Database, mapping: MappingRow): Promise<string[]
     .map((r) => r.id);
 }
 
-export async function handleListMappings(db: D1Database, params: URLSearchParams): Promise<RouteResult> {
-  const route = params.get("route");
+/**
+ * `GET /supplier-mappings` — every mapping. `?route=` is still accepted
+ * and no longer narrows the list: since decision 0579 every Source route
+ * reads with all of them. `routeId` says which route it was first drawn on.
+ */
+export async function handleListMappings(db: D1Database, _params: URLSearchParams): Promise<RouteResult> {
   const rows = await db
     .prepare(
       `SELECT m.*,
@@ -441,10 +462,9 @@ export async function handleListMappings(db: D1Database, params: URLSearchParams
                  WHERE p.mapping_id = m.id AND p.outcome = 'captured'
                    AND rm.received_at >= strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-30 days')) AS read_30d
        FROM supplier_mappings m
-       WHERE m.status = 'active' ${route ? "AND m.route_id = ?" : ""}
+       WHERE m.status = 'active'
        ORDER BY m.name`
     )
-    .bind(...(route ? [route] : []))
     .all<MappingRow & { live_version: number | null; draft_version: number | null; read_30d: number }>();
   const mappings = [];
   for (const r of rows.results) {
@@ -503,15 +523,18 @@ export async function handleCreateMapping(
 
   const id = newMappingId();
   const domain = domainOf(message.counterparty);
+  // Decision 0579: drawn from a file sent over HTTPS, it is for the key that sent it.
+  const keyName = message.route_id === "https-in" && message.counterparty ? senderName(message.counterparty) : null;
+  const forWhom = domain ? [domain] : keyName ? [keyName] : null;
   const name =
     typeof body.name === "string" && body.name.trim() !== ""
       ? body.name.trim().slice(0, 80)
-      : `${domain ? domain.slice(1) : "Supplier"} ${csv ? "CSV" : `<${described.root}>`}`;
+      : `${domain ? domain.slice(1) : (message.counterparty ?? "Supplier")} ${csv ? "CSV" : `<${described.root}>`}`.slice(0, 80);
   const definition: MappingDefinition = { root: described.root, linesPath: described.repeating[0] ?? null, lines: [], ...(csv ? { csv } : {}) };
   await db.batch([
     db
       .prepare("INSERT INTO supplier_mappings (id, route_id, name, root, senders, created_at, created_by) VALUES (?, ?, ?, ?, ?, ?, ?)")
-      .bind(id, message.route_id, name, described.root, domain ? JSON.stringify([domain]) : null, now(), userId),
+      .bind(id, message.route_id, name, described.root, forWhom ? JSON.stringify(forWhom) : null, now(), userId),
     db
       .prepare(
         `INSERT INTO supplier_mapping_versions (mapping_id, version, status, definition_json, sample_message_id, sample_part_seq, created_at, created_by)
@@ -619,7 +642,7 @@ export async function handleSaveDraft(db: D1Database, userId: string, id: string
     .run();
   if (Array.isArray(body.senders) || body.senders === null || typeof body.name === "string") {
     const senders = Array.isArray(body.senders)
-      ? (body.senders as unknown[]).map((s) => String(s).trim().toLowerCase()).filter((s) => /^@?[^@\s]+(@[^@\s]+)?$/.test(s))
+      ? (body.senders as unknown[]).map((s) => senderName(String(s))).filter((s): s is string => s !== null)
       : body.senders === null
         ? null
         : sendersOf(mapping);
