@@ -66,6 +66,9 @@ const FORWARDED: readonly RegExp[] = [
   /^\/credentials$/,
   /^\/access$/,
   /^\/admin-actions$/,
+  // Partners — decision 0592.
+  /^\/partners$/,
+  /^\/partners\/[^/]+\/(people|customers|suspend|reinstate)$/,
 ];
 
 export default {

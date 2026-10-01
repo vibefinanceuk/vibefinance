@@ -39,7 +39,15 @@ import {
   handleRecordProvisioning,
 } from "./signup-route.js";
 import { handleProvisionTrial, expireOverdueLicences, warnExpiringLicences , handleEnvironmentConfig } from "./provision-route.js";
-import { recordAdminAction, handleListAdminActions } from "./admin-audit.js";
+import { recordAdminAction, handleListAdminActions, actorFrom } from "./admin-audit.js";
+import {
+  handleCreatePartner,
+  handleListCustomers,
+  handleListPartners,
+  handlePartnerCustomer,
+  handlePartnerPerson,
+  handleSuspendPartner,
+} from "./partners-route.js";
 import { extractBearerToken, isValidAdminKey, isValidEnvironmentKey } from "./auth.js";
 import { handlePreflight, withCors } from "@vibefinance/shared";
 
@@ -132,7 +140,12 @@ export function isPrivileged(method: string, pathname: string): boolean {
     (matches(/^\/environments\/[^/]+$/) && method === "DELETE") ||
     (matches(/^\/environments\/[^/]+\/fleet-metadata$/) && method === "PATCH") ||
     // The log itself. Reading who did what is a privileged act.
-    (pathname === "/admin-actions" && method === "GET")
+    (pathname === "/admin-actions" && method === "GET") ||
+    // Partners — decision 0592 — and the customers they may be linked to.
+    (pathname === "/customers" && method === "GET") ||
+    (pathname === "/partners" && (method === "GET" || method === "POST")) ||
+    (matches(/^\/partners\/[^/]+\/(people|customers)$/) && (method === "POST" || method === "DELETE")) ||
+    (matches(/^\/partners\/[^/]+\/(suspend|reinstate)$/) && method === "POST")
   );
 }
 
@@ -492,6 +505,38 @@ export default {
           ? await grantAccess(env.CONTROL_DB, email, environmentId, typeof grantedBy === "string" ? grantedBy : null)
           : await revokeAccess(env.CONTROL_DB, email, environmentId);
       return json(result.body, result.status);
+    }
+
+    // Partners — decision 0592.
+    if (url.pathname === "/customers" && request.method === "GET") {
+      const result = await handleListCustomers(env.CONTROL_DB);
+      return json(result.body, result.status);
+    }
+    if (url.pathname === "/partners" || url.pathname.startsWith("/partners/")) {
+      const { actor } = actorFrom(request);
+      const body = request.method === "GET" ? {} : (((await request.json().catch(() => ({}))) ?? {}) as Record<string, unknown>);
+      if (url.pathname === "/partners" && request.method === "GET") {
+        const result = await handleListPartners(env.CONTROL_DB);
+        return json(result.body, result.status);
+      }
+      if (url.pathname === "/partners" && request.method === "POST") {
+        const result = await handleCreatePartner(env.CONTROL_DB, actor, body);
+        return json(result.body, result.status);
+      }
+      const m = url.pathname.match(/^\/partners\/([^/]+)\/(people|customers|suspend|reinstate)$/);
+      if (m && (request.method === "POST" || request.method === "DELETE")) {
+        const id = decodeURIComponent(m[1]);
+        const method = request.method as "POST" | "DELETE";
+        const result =
+          m[2] === "people"
+            ? await handlePartnerPerson(env.CONTROL_DB, actor, id, method, body)
+            : m[2] === "customers"
+              ? await handlePartnerCustomer(env.CONTROL_DB, actor, id, method, body)
+              : method === "POST"
+                ? await handleSuspendPartner(env.CONTROL_DB, actor, id, m[2] === "suspend", body)
+                : { status: 405, body: { error: "method not allowed" } };
+        return json(result.body, result.status);
+      }
     }
 
     if (url.pathname === "/customers" && request.method === "POST") {

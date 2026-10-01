@@ -74,6 +74,15 @@ describe("which routes it will forward", () => {
     expect(response.status).toBe(404);
   });
 
+  it("forwards the partner routes — decision 0592", async () => {
+    for (const path of ["/api/partners", "/api/partners/northwind/people", "/api/partners/northwind/customers", "/api/partners/northwind/suspend", "/api/partners/northwind/reinstate", "/api/customers"]) {
+      const response = await SELF.fetch(asOperator(path));
+      // Past the allow-list: refused only for the missing admin key, never as "not an operator route".
+      expect(response.status, path).not.toBe(404);
+    }
+    expect((await SELF.fetch(asOperator("/api/partners/northwind/delete"))).status).toBe(404);
+  });
+
   it("refuses a path that only looks like one", async () => {
     const response = await SELF.fetch(asOperator("/api/signup-requests/../rules"));
     expect([404, 403]).toContain(response.status);

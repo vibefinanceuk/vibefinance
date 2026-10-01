@@ -80,6 +80,19 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .outcome-failed { color: var(--text-danger); }
 
 .problem { color: var(--text-warning); min-height: 22px; margin-top: 10px; }
+
+/* Partners — decision 0592. */
+.partner { border-top: 0.5px solid var(--border); padding: 14px 0 6px; }
+.partner:first-of-type { border-top: none; }
+.partner h3 { font-size: var(--text-base); margin: 0; font-weight: 600; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.pill { font-size: var(--text-sm); padding: 1px 8px; border-radius: 999px; border: 0.5px solid var(--border-strong); }
+.pill.ok { color: var(--text-success); border-color: var(--text-success); }
+.pill.warn { color: var(--text-warning); border-color: var(--text-warning); }
+.cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 18px; margin-top: 10px; }
+.cols h4 { font-size: var(--text-sm); color: var(--text-muted); margin: 0 0 6px; font-weight: 600; }
+.line { display: flex; gap: 8px; align-items: center; justify-content: space-between; padding: 4px 0; }
+.addrow { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+input, select { background: var(--surface-1); color: var(--text-primary); border: 0.5px solid var(--border-strong); border-radius: var(--radius); padding: 4px 8px; min-height: 30px; }
 .empty { padding: 24px 10px; text-align: center; color: var(--text-muted); }
 </style>
 </head>
@@ -95,6 +108,22 @@ button:disabled { opacity: .45; cursor: not-allowed; }
     Everything a decision should rest on, in front of the decision.
   </p>
   <div id="requests"><div class="empty">Loading…</div></div>
+</div>
+
+<div class="panel" id="partners-panel">
+  <h2>Partners</h2>
+  <p class="sm muted" style="margin:-6px 0 12px">
+    System integrators who build connectors in a sandbox of their own, for
+    the customers linked to them here. Their sandbox is an ordinary customer:
+    provision its environment, and set its people's passwords and access, as
+    for any customer.
+  </p>
+  <div class="addrow" id="partner-new">
+    <input id="partner-id" placeholder="id, e.g. northwind" size="18">
+    <input id="partner-name" placeholder="Name, e.g. Northwind Integration" size="32">
+    <button id="partner-create" class="approve">Add partner</button>
+  </div>
+  <div id="partners"><div class="empty">Loading…</div></div>
 </div>
 
 <div class="panel">
@@ -207,8 +236,163 @@ function escapeHtml(value) {
   );
 }
 
+/**
+ * **Partners — decision 0592.** Each with its sandbox, its people (and
+ * whether each can sign in to the sandbox yet), and the customers it
+ * serves; suspend with a reason, and reinstate.
+ */
+async function act(path, method, body) {
+  note("");
+  try {
+    await api(path, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body ?? {}) });
+    await loadPartners();
+    return true;
+  } catch (err) {
+    note(err.message);
+    return false;
+  }
+}
+
+function button(label, onclick, className = "") {
+  const b = document.createElement("button");
+  b.textContent = label;
+  if (className) b.className = className;
+  b.onclick = onclick;
+  return b;
+}
+
+function partnerBlock(p, customers) {
+  const block = document.createElement("div");
+  block.className = "partner";
+  block.dataset.partner = p.id;
+  const base = `/partners/${encodeURIComponent(p.id)}`;
+
+  const h3 = document.createElement("h3");
+  h3.innerHTML = `<span>${escapeHtml(p.name)}</span><span class="sm muted">${escapeHtml(p.id)}</span>
+    <span class="pill ${p.status === "active" ? "ok" : "warn"}">${p.status === "active" ? "Active" : "Suspended"}</span>`;
+  block.append(h3);
+  if (p.suspended) {
+    const why = document.createElement("div");
+    why.className = "sm muted";
+    why.textContent = `Suspended ${String(p.suspended.at ?? "").slice(0, 16)} by ${p.suspended.by ?? "?"}: ${p.suspended.reason ?? ""}`;
+    block.append(why);
+  }
+
+  const cols = document.createElement("div");
+  cols.className = "cols";
+
+  // The sandbox.
+  const sandbox = document.createElement("div");
+  sandbox.innerHTML = `<h4>Sandbox</h4><div class="sm">Customer <code>${escapeHtml(p.sandbox.customerId)}</code></div>`;
+  if (p.sandbox.environments.length === 0) {
+    const none = document.createElement("div");
+    none.className = "sm muted";
+    none.textContent = "No environment yet: provision one for this customer, as for any customer.";
+    sandbox.append(none);
+  }
+  for (const e of p.sandbox.environments) {
+    const line = document.createElement("div");
+    line.className = "sm";
+    line.textContent = `${e.kind} · ${e.region} · ${e.instanceUrl}`;
+    sandbox.append(line);
+  }
+
+  // Its people.
+  const people = document.createElement("div");
+  people.innerHTML = "<h4>People</h4>";
+  if (p.people.length === 0) people.insertAdjacentHTML("beforeend", '<div class="sm muted">Nobody yet.</div>');
+  for (const person of p.people) {
+    const line = document.createElement("div");
+    line.className = "line sm";
+    const state = person.canSignIn ? "can sign in to the sandbox" : !person.hasCredential ? "no sandbox password yet" : "no sandbox access yet";
+    line.innerHTML = `<span>${escapeHtml(person.email)} <span class="${person.canSignIn ? "outcome-recorded" : "outcome-refused"}">· ${state}</span></span>`;
+    line.append(button("Remove", () => act(`${base}/people`, "DELETE", { email: person.email })));
+    people.append(line);
+  }
+  const addPerson = document.createElement("div");
+  addPerson.className = "addrow";
+  const email = document.createElement("input");
+  email.placeholder = "email";
+  email.className = "person-email";
+  addPerson.append(email, button("Add person", () => act(`${base}/people`, "POST", { email: email.value })));
+  people.append(addPerson);
+
+  // The customers it serves.
+  const served = document.createElement("div");
+  served.innerHTML = "<h4>Customers it serves</h4>";
+  if (p.customers.length === 0) served.insertAdjacentHTML("beforeend", '<div class="sm muted">None linked yet.</div>');
+  for (const c of p.customers) {
+    const line = document.createElement("div");
+    line.className = "line sm";
+    line.innerHTML = `<span>${escapeHtml(c.name)} <span class="muted">${escapeHtml(c.id)}</span></span>`;
+    line.append(button("Unlink", () => act(`${base}/customers`, "DELETE", { customerId: c.id })));
+    served.append(line);
+  }
+  const linked = new Set(p.customers.map((c) => c.id));
+  const choices = customers.filter((c) => !c.sandboxOf && !linked.has(c.id));
+  if (choices.length > 0) {
+    const link = document.createElement("div");
+    link.className = "addrow";
+    const pick = document.createElement("select");
+    pick.className = "customer-pick";
+    for (const c of choices) {
+      const o = document.createElement("option");
+      o.value = c.id;
+      o.textContent = `${c.name} (${c.id})`;
+      pick.append(o);
+    }
+    link.append(pick, button("Link", () => act(`${base}/customers`, "POST", { customerId: pick.value })));
+    served.append(link);
+  }
+
+  cols.append(sandbox, people, served);
+  block.append(cols);
+
+  // Suspend, with a reason; or reinstate.
+  const status = document.createElement("div");
+  status.className = "addrow";
+  if (p.status === "active") {
+    const reason = document.createElement("input");
+    reason.placeholder = "why it is suspended";
+    reason.className = "suspend-reason";
+    reason.size = 32;
+    status.append(reason, button("Suspend", () => act(`${base}/suspend`, "POST", { reason: reason.value }), "reject"));
+  } else {
+    status.append(button("Reinstate", () => act(`${base}/reinstate`, "POST", {}), "approve"));
+  }
+  block.append(status);
+  return block;
+}
+
+async function loadPartners() {
+  try {
+    const [{ partners = [] }, { customers = [] }] = await Promise.all([api("/partners"), api("/customers")]);
+    const holder = document.getElementById("partners");
+    if (partners.length === 0) {
+      const empty = document.createElement("div");
+      empty.className = "empty";
+      empty.textContent = "No partners yet.";
+      holder.replaceChildren(empty);
+    } else {
+      holder.replaceChildren(...partners.map((p) => partnerBlock(p, customers)));
+    }
+  } catch (err) {
+    note(err.message);
+  }
+}
+
+document.getElementById("partner-create").onclick = async () => {
+  const id = document.getElementById("partner-id");
+  const name = document.getElementById("partner-name");
+  if (await act("/partners", "POST", { id: id.value, name: name.value })) {
+    id.value = "";
+    name.value = "";
+  }
+};
+
 async function load() {
   note("");
+  loadPartners();
 
   try {
     const { requests = [] } = await api("/signup-requests?status=pending");

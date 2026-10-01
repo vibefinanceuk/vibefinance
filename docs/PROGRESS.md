@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 1 October 2026 (decision 0591). A living document: what
+Last updated 1 October 2026 (decision 0592). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,16 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Partners (0592)
+
+Slice 4 of the connector framework, step 1. A partner (system integrator)
+is its own record in the control plane, created in the operator console:
+its people by email, the customers VibeFinance links it to, and a
+sandbox that is an ordinary customer, provisioned and signed in to as any
+other. It can be suspended with a reason. Next: submitting connectors
+from the sandbox, VibeFinance's review, and partner connectors in linked
+customers' Route libraries.
 
 ### Outbound mapping (0591)
 
