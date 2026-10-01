@@ -781,6 +781,11 @@ describe("paths the app is allowed to reach (decision 0212)", () => {
     "/route-instances/erp-ap/units",
     "/connector-library",
     "/route-instances/dest-1/connector/upgrade",
+    "/route-instances/dest-1/mapping",
+    "/route-instances/dest-1/mapping/copy",
+    "/route-instances/dest-1/mapping/try",
+    "/route-instances/dest-1/mapping/publish",
+    "/route-instances/dest-1/mapping/compile",
   ];
 
   for (const path of reachable) {

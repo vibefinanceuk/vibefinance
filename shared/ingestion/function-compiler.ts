@@ -24,7 +24,8 @@ export interface FunctionContext {
   /** What the value becomes: its Business Term and name. */
   target: string;
   targetName: string;
-  kind: "text" | "number" | "date";
+  /** `any` is a field of a target system, laid out by an outbound mapping (decision 0591). */
+  kind: "text" | "number" | "date" | "any";
   /** Values the element holds in the kept sample, as written. */
   samples: string[];
   /**
@@ -50,6 +51,7 @@ const WHAT_EACH_KIND_NEEDS = {
   text: "text",
   number: "a number (a JavaScript number, with a decimal point)",
   date: "an ISO date, yyyy-MM-dd",
+  any: "what the receiving system expects: text, or a number where the instruction makes one",
 };
 
 export function buildFunctionPrompt(say: string, context: FunctionContext): string {

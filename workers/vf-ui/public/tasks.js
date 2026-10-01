@@ -755,6 +755,11 @@ async function go(screen) {
     // Route monitor, never the nav; this is the org switcher's relaunch.
     const { reopen } = await import("/mapping-editor.js");
     await reopen();
+  } else if (screen === "outboundmapping") {
+    // A Destination's own outbound mapping — decision 0591. Reached from
+    // its panel on Process routes; this is the org switcher's relaunch.
+    const { reopen } = await import("/outbound-editor.js");
+    await reopen();
   } else if (screen === "create") {
     // Create → Upload documents — decision 0573.
     const { open } = await import("/create.js");
@@ -875,6 +880,7 @@ const NAV_PERMISSIONS = {
   // Routes and Process routes — decision 0557: gated as Sources was.
   routes: "Admin.Configure",
   routelibrary: "Admin.Configure",
+  outboundmapping: "Admin.Configure",
   processroutes: "Admin.Configure",
   // The Route monitor — decision 0556: for a customer's own IT team.
   routemonitor: "Integration.Monitor",
@@ -922,7 +928,7 @@ const NAV_PERMISSIONS = {
  * the item they are reached from, while Help still knows which screen it
  * is: the mapping editor is part of Routes.
  */
-const NAV_PARENT = { mapping: "routes", routelibrary: "routes" };
+const NAV_PARENT = { mapping: "routes", routelibrary: "routes", outboundmapping: "processroutes" };
 
 function navLink(screen, iconName, hue) {
   return el(

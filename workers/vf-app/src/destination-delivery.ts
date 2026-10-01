@@ -2,6 +2,8 @@ import type { RouteResult } from "./org-route.js";
 import { invoiceExportRows, payableInvoiceIds, toCsv, type ErpExportRow } from "./erp-export-route.js";
 import { coveredInvoices, coveredUnits, unitIdsOf } from "./destination-units.js";
 import { STANDARD_CONNECTORS, connectorById, connectorOfInstance, type ConnectorDefinition } from "@vibefinance/shared";
+import { loadLookups } from "./lookup-lists-route.js";
+import { applyOutboundMapping, listsInOutbound, type OutboundMapping, type OutboundProblem, type VfInvoice } from "@vibefinance/shared";
 import { NoSecretsKeyError, readSecret, secretsSet, setSecret } from "./connector-secrets.js";
 import {
   addRouteEvent,
@@ -41,7 +43,8 @@ export const HTTPS_OUT = "https-out";
 
 export type AuthType = "none" | "api_key_header" | "bearer" | "basic" | "oauth2_client_credentials";
 export const AUTH_TYPES: AuthType[] = ["none", "api_key_header", "bearer", "basic", "oauth2_client_credentials"];
-export type PayloadFormat = "vf_json" | "csv";
+/** `mapped` is the Destination's own published outbound mapping (decision 0591). */
+export type PayloadFormat = "vf_json" | "csv" | "mapped";
 
 export interface HttpsOutSettings {
   url: string;
@@ -124,8 +127,8 @@ export function checkSettings(input: unknown): { settings: HttpsOutSettings } | 
   if (!parsed || parsed.protocol !== "https:") return { error: "the address must be a full https:// address", reason: "bad_url" };
   const method = b.method === "PUT" ? "PUT" : b.method === "POST" || b.method === undefined ? "POST" : null;
   if (!method) return { error: "the method must be POST or PUT", reason: "bad_method" };
-  const format = b.format === "csv" ? "csv" : b.format === "vf_json" || b.format === undefined ? "vf_json" : null;
-  if (!format) return { error: "the format must be vf_json or csv", reason: "bad_format" };
+  const format = b.format === "csv" ? "csv" : b.format === "mapped" ? "mapped" : b.format === "vf_json" || b.format === undefined ? "vf_json" : null;
+  if (!format) return { error: "the format must be vf_json, csv or mapped", reason: "bad_format" };
   const type = (AUTH_TYPES as string[]).includes(str(auth.type) || "none") ? ((str(auth.type) || "none") as AuthType) : null;
   if (!type) return { error: `sign-in must be one of ${AUTH_TYPES.join(", ")}`, reason: "bad_auth" };
   const out: HttpsOutSettings["auth"] = { type };
@@ -230,6 +233,23 @@ interface BuiltRequest {
   contentType: string;
   invoiceNumber: string;
   checks: string[];
+  /** Decision 0591: what the outbound mapping could not lay out. Nothing is sent while there are any. */
+  problems: OutboundProblem[];
+}
+
+/** One invoice as the VibeFinance invoice JSON (0585), or null where it cannot be read. */
+export async function vfInvoiceOf(db: D1Database, invoiceId: string): Promise<VfInvoice | null> {
+  const rows = await invoiceExportRows(db, invoiceId, "");
+  return rows.length === 0 ? null : (invoiceJson(rows) as VfInvoice);
+}
+
+/** A Destination's live outbound mapping (decision 0591), or null. */
+export async function liveOutboundMapping(db: D1Database, instanceId: string): Promise<{ version: number; definition: OutboundMapping } | null> {
+  const row = await db
+    .prepare("SELECT version, definition_json FROM outbound_mapping_versions WHERE instance_id = ? AND status = 'live'")
+    .bind(instanceId)
+    .first<{ version: number; definition_json: string }>();
+  return row ? { version: row.version, definition: JSON.parse(row.definition_json) as OutboundMapping } : null;
 }
 
 /** What would be sent for this invoice, before sign-in is added. */
@@ -240,10 +260,24 @@ export async function buildRequest(db: D1Database, instanceId: string, settings:
   if (!rows[0].supplier_erp_id) checks.push("no_supplier_erp_id");
   if (rows.some((r) => !r.gl_code)) checks.push("line_without_gl_code");
   const contentType = settings.format === "csv" ? "text/csv; charset=utf-8" : "application/json";
-  const body =
-    settings.format === "csv"
-      ? toCsv(rows.map((r) => ({ ...r, export_id: "" })))
-      : JSON.stringify(invoiceJson(rows), null, 2);
+  let problems: OutboundProblem[] = [];
+  let body: string;
+  if (settings.format === "csv") {
+    body = toCsv(rows.map((r) => ({ ...r, export_id: "" })));
+  } else if (settings.format === "mapped") {
+    // Decision 0591: the Destination's own published layout.
+    const live = await liveOutboundMapping(db, instanceId);
+    if (!live) {
+      problems = [{ at: "", source: null, value: null, reason: "the Destination's own mapping has no live version" }];
+      body = "";
+    } else {
+      const applied = applyOutboundMapping(live.definition, invoiceJson(rows) as VfInvoice, await loadLookups(db, listsInOutbound(live.definition)));
+      problems = applied.problems;
+      body = JSON.stringify(applied.body, null, 2);
+    }
+  } else {
+    body = JSON.stringify(invoiceJson(rows), null, 2);
+  }
   return {
     url: settings.url,
     method: settings.method,
@@ -257,8 +291,15 @@ export async function buildRequest(db: D1Database, instanceId: string, settings:
     contentType,
     invoiceNumber: rows[0].invoice_number || invoiceId,
     checks,
+    problems,
   };
 }
+
+/** A mapping problem as one line of words. */
+export const problemWords = (p: OutboundProblem) => {
+  const shown = p.value !== null && p.value !== "" && !p.reason.includes(`"${p.value}"`) ? `"${p.value}" ` : "";
+  return `${p.at ? `${p.at}${p.source ? ` (from ${p.source})` : ""}: ` : ""}${shown}${p.reason}`;
+};
 
 class SignInError extends Error {}
 
@@ -347,7 +388,7 @@ export async function deliverOne(db: D1Database, instanceId: string, invoiceId: 
     if (messageId) await linkRouteItem(db, messageId, invoiceId, null);
   }
 
-  const record = async (status: DeliveryOutcome["status"], httpStatus: number | null, error: string | null, reference: string | null) => {
+  const record = async (status: DeliveryOutcome["status"], httpStatus: number | null, error: string | null, reference: string | null, code?: string) => {
     const next = status === "retrying" ? new Date(now.getTime() + RETRY_MINUTES[Math.min(attempt - 1, RETRY_MINUTES.length - 1)] * 60_000).toISOString() : null;
     await db
       .prepare(
@@ -369,7 +410,7 @@ export async function deliverOne(db: D1Database, instanceId: string, invoiceId: 
         await finishRouteMessage(db, messageId, {
           status: "failed",
           failedPart: "delivery",
-          errorCode: httpStatus ? `http_${httpStatus}` : "unreachable",
+          errorCode: code ?? (httpStatus ? `http_${httpStatus}` : "unreachable"),
           errorText: error ?? "it could not be delivered",
         });
       }
@@ -379,6 +420,10 @@ export async function deliverOne(db: D1Database, instanceId: string, invoiceId: 
   };
 
   if (!built) return record("failed", null, "the invoice could not be read to send", null);
+  // Decision 0591: what the mapping cannot lay out is a fixable failure, never retried and never sent.
+  if (built.problems.length > 0) {
+    return record("failed", null, `the outbound mapping could not lay out this invoice: ${built.problems.map(problemWords).join("; ")}`, null, "outbound_mapping");
+  }
 
   let auth: Record<string, string>;
   try {
@@ -652,15 +697,9 @@ export function connectorView(instance: { route_id: string; connector_id: string
   };
 }
 
-export async function handleGetConnector(db: D1Database, id: string): Promise<RouteResult> {
-  const instance = await httpsOutInstance(db, id);
-  if (isResult(instance)) return instance;
-  const { deliveries: recent, counts } = await deliveriesOf(db, id);
-  const payable = await destinationPayable(db, instance.id, instance.process_id);
-  const taken = new Set(
-    (await db.prepare("SELECT invoice_id FROM destination_deliveries WHERE instance_id = ?").bind(id).all<{ invoice_id: string }>()).results.map((r) => r.invoice_id)
-  );
-  const candidates = (
+/** The latest payment-eligible invoices, to try a Destination or its mapping with. */
+export async function candidatesOf(db: D1Database, payable: string[]) {
+  return (
     await Promise.all(
       payable.slice(-20).reverse().map(async (invoiceId) => {
         const h = await db
@@ -675,6 +714,26 @@ export async function handleGetConnector(db: D1Database, id: string): Promise<Ro
       })
     )
   );
+}
+
+/** Decision 0591: a Destination's own mapping in brief — its live and draft versions. */
+export async function mappingSummary(db: D1Database, instanceId: string): Promise<{ live: number | null; draft: number | null }> {
+  const rows = (
+    await db.prepare("SELECT version, status FROM outbound_mapping_versions WHERE instance_id = ? AND status IN ('live', 'draft')").bind(instanceId).all<{ version: number; status: string }>()
+  ).results;
+  return { live: rows.find((r) => r.status === "live")?.version ?? null, draft: rows.find((r) => r.status === "draft")?.version ?? null };
+}
+
+export async function handleGetConnector(db: D1Database, id: string): Promise<RouteResult> {
+  const instance = await httpsOutInstance(db, id);
+  if (isResult(instance)) return instance;
+  const { deliveries: recent, counts } = await deliveriesOf(db, id);
+  const payable = await destinationPayable(db, instance.id, instance.process_id);
+  const taken = new Set(
+    (await db.prepare("SELECT invoice_id FROM destination_deliveries WHERE instance_id = ?").bind(id).all<{ invoice_id: string }>()).results.map((r) => r.invoice_id)
+  );
+  const candidates = await candidatesOf(db, payable);
+  const mapping = await mappingSummary(db, id);
   return {
     status: 200,
     body: {
@@ -686,6 +745,8 @@ export async function handleGetConnector(db: D1Database, id: string): Promise<Ro
       counts,
       deliveries: recent,
       candidates,
+      // Decision 0591: its own outbound mapping, if it has one.
+      mapping,
     },
   };
 }
@@ -718,6 +779,10 @@ export async function handleSaveConnector(
       return { status: 400, body: { error: `${connector.id} does not sign in with ${checked.settings.auth.type}`, reason: "auth_not_allowed" } };
     }
   }
+  // Decision 0591: its own layout only once one is published.
+  if (checked.settings.format === "mapped" && !(await liveOutboundMapping(db, id))) {
+    return { status: 409, body: { error: "publish the Destination's own mapping first", reason: "no_live_mapping" } };
+  }
   const secretName = SECRET_FOR[checked.settings.auth.type];
   const secret = typeof b.secret === "string" ? b.secret : "";
   if (secret !== "") {
@@ -749,7 +814,7 @@ export async function handlePreviewDelivery(db: D1Database, id: string, body: un
   if (a.type === "api_key_header") shown[a.header as string] = "•••";
   if (a.type === "bearer" || a.type === "oauth2_client_credentials") shown.Authorization = "Bearer •••";
   if (a.type === "basic") shown.Authorization = `Basic (${a.username}:•••)`;
-  return { status: 200, body: { method: built.method, url: built.url, headers: shown, body: built.body, checks: built.checks } };
+  return { status: 200, body: { method: built.method, url: built.url, headers: shown, body: built.body, checks: built.checks, problems: built.problems.map(problemWords) } };
 }
 
 /** `POST /route-instances/:id/connector/send` `{ invoiceId }` — send this invoice now: a test, or Send again. */

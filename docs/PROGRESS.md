@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 1 October 2026 (decision 0590). A living document: what
+Last updated 1 October 2026 (decision 0591). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,18 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Outbound mapping (0591)
+
+Slice 3 of the connector framework. A Destination sends the standard
+VibeFinance invoice JSON until it has its own mapping: Make my own copy,
+then the outbound mapping editor (the mapping editor pointed outward)
+names each field as the target expects, once per invoice, per line or
+per distribution (inside each line or all on the invoice), from a source
+or a fixed value, through the mapping functions and look-up lists, and
+required or not. Try lays out a real invoice; Publish makes it what the
+Destination sends. An invoice it cannot lay out fails at once, unsent,
+and the Route monitor says why. JSON only for now.
 
 ### The Route library's layout (0590)
 

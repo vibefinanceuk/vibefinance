@@ -57,7 +57,10 @@ function settingsCard(state, reload) {
   const fixed = state.connector?.fixed ?? [];
   const authTypes = state.connector?.authTypes ?? ["none", "api_key_header", "bearer", "basic", "oauth2_client_credentials"];
   const method = select("do-method", [["POST", "POST"], ["PUT", "PUT"]], s.method);
-  const format = select("do-format", [["vf_json", t("httpsout.format.vf_json")], ["csv", t("httpsout.format.csv")]], s.format);
+  // Decision 0591: its own layout, once one is published.
+  const formats = [["vf_json", t("httpsout.format.vf_json")], ["csv", t("httpsout.format.csv")]];
+  if (state.mapping?.live || s.format === "mapped") formats.push(["mapped", t("httpsout.format.mapped")]);
+  const format = select("do-format", formats, s.format);
   if (fixed.includes("method")) method.disabled = true;
   if (fixed.includes("format")) format.disabled = true;
   const auth = select(
@@ -155,6 +158,8 @@ function tryCard(state, reload) {
       const headers = Object.entries(r.body.headers).map(([k, v]) => `${k}: ${v}`).join("\n");
       result.replaceChildren(
         ...r.body.checks.map((c) => el("div", { class: "warn sm", text: t(`httpsout.check.${c}`) })),
+        // Decision 0591: what its own mapping cannot lay out. It will not be sent.
+        ...(r.body.problems ?? []).map((p) => el("div", { class: "warn sm doproblem", text: `${t("outmap.notsent")} ${p}` })),
         el("pre", { class: "httpspre", id: "do-preview", text: `${r.body.method} ${r.body.url}\n${headers}\n\n${r.body.body}` }),
         el("p", { class: "muted sm", text: t("httpsout.previewhint") })
       );
@@ -324,6 +329,54 @@ function connectorLine(destination, connector, reload) {
   ]);
 }
 
+/**
+ * **How each invoice is laid out — decision 0591.** The standard
+ * VibeFinance invoice JSON, until the Destination has its own mapping:
+ * Make my own copy starts one, and Open the mapping edits it.
+ */
+function mappingCard(state, destination) {
+  const m = state.mapping ?? { live: null, draft: null };
+  const fixed = (state.connector?.fixed ?? []).includes("format");
+  const result = el("div", { class: "warn", id: "do-mappingproblem" });
+  const openEditor = async () => {
+    const { open } = await import("/outbound-editor.js");
+    await open(destination.id);
+  };
+  const has = m.live !== null || m.draft !== null;
+  const status = !has
+    ? t("outmap.card.standard")
+    : [
+        m.live !== null ? t("outmap.card.live").replace("{n}", String(m.live)) : "",
+        m.draft !== null ? t("outmap.card.draft").replace("{n}", String(m.draft)) : "",
+        m.live !== null ? t(state.settings.format === "mapped" ? "outmap.card.sending" : "outmap.card.notsending") : "",
+      ]
+        .filter(Boolean)
+        .join(" · ");
+  const button = fixed
+    ? []
+    : has
+      ? [actionLink("coding", { label: t("outmap.card.open"), onclick: openEditor })]
+      : [
+          actionLink("startdraft", {
+            label: t("outmap.card.copy"),
+            onclick: async () => {
+              const r = await call(`/api/route-instances/${encodeURIComponent(destination.id)}/mapping/copy`, { method: "POST" });
+              if (!r.ok) {
+                result.textContent = why(r.body);
+                return;
+              }
+              await openEditor();
+            },
+          }),
+        ];
+  return el("div", { class: "docard", id: "do-mapping" }, [
+    el("div", { class: "cardhead" }, [el("h4", { text: t("outmap.card.heading") }), el("div", { class: "dobuttons" }, button)]),
+    el("p", { class: "sm", id: "do-mappingstatus", text: status }),
+    el("p", { class: "muted sm", text: t(fixed ? "outmap.card.fixed" : "outmap.card.hint") }),
+    result,
+  ]);
+}
+
 /** The HTTPS out section of a Destination panel. `onChanged` reloads the flow (its cards' counts). */
 export function httpsOutSection(destination, onChanged) {
   const holder = el("div", { class: "httpsin", id: "httpsout" }, [el("div", { class: "muted", text: t("httpsout.loading") })]);
@@ -347,6 +400,7 @@ export function httpsOutSection(destination, onChanged) {
       ...(state.connector ? [connectorLine(destination, state.connector, reload)] : []),
       ...startBlock,
       settingsCard(state, reload),
+      mappingCard(state, destination),
       tryCard(state, reload),
       deliveriesCard(state, reload)
     );

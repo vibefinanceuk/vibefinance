@@ -223,6 +223,7 @@ import httpsOutStringsSql from "../migrations/0232_https_out_strings.sql?raw";
 import erpDeliveriesStringsSql from "../migrations/0233_erp_deliveries_strings.sql?raw";
 import destinationUnitsStringsSql from "../migrations/0234_destination_units_strings.sql?raw";
 import routeLibraryStringsSql from "../migrations/0235_route_library_strings.sql?raw";
+import outboundMappingStringsSql from "../migrations/0236_outbound_mapping_strings.sql?raw";
 
 function stripSqlComments(sql: string): string {
   return sql
@@ -479,5 +480,6 @@ export async function applyTestSchema(): Promise<void> {
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(erpDeliveriesStringsSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(destinationUnitsStringsSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(routeLibraryStringsSql)));
+  await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(outboundMappingStringsSql)));
 
 }

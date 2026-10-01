@@ -4833,6 +4833,8 @@
 .mebt i { font-style: normal; font-weight: 400; color: var(--text-muted); margin-left: 6px; }
 .mereq { color: var(--text-danger); font-weight: 700; margin-left: 2px; }
 .mest { color: var(--text-secondary); white-space: nowrap; }
+/* Decision 0591: an outbound mapping level with nothing sent yet. */
+.omempty { padding: 4px 0 6px; }
 .mefx { position: absolute; transform: translate(-50%, -50%); font-style: italic; font-weight: 700; font-size: var(--text-sm); padding: 2px 7px; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--border-strong); color: var(--text-primary); z-index: 2; }
 .mefx.on { background: var(--text-accent); color: var(--surface-2); border-color: transparent; }
 .mefx.static { position: static; transform: none; display: inline-block; }

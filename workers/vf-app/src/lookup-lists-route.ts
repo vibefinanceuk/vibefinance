@@ -1,4 +1,4 @@
-import { listsInMapping, lookupKey, type FnContext, type MappingDefinition } from "@vibefinance/shared";
+import { listsInMapping, listsInOutbound, lookupKey, type FnContext, type MappingDefinition, type OutboundMapping } from "@vibefinance/shared";
 import type { RouteResult } from "./org-route.js";
 
 /**
@@ -57,6 +57,29 @@ async function usersOf(db: D1Database): Promise<Map<string, string[]>> {
     for (const id of listsInMapping(def)) {
       const names = users.get(id) ?? [];
       if (!names.includes(r.name)) names.push(r.name);
+      users.set(id, names);
+    }
+  }
+  // Decision 0591: a Destination's own outbound mapping uses lists too.
+  const outbound = (
+    await db
+      .prepare(
+        `SELECT i.name, v.definition_json FROM outbound_mapping_versions v JOIN route_instances i ON i.id = v.instance_id
+         WHERE v.status IN ('live', 'draft') AND i.status != 'retired'`
+      )
+      .all<{ name: string | null; definition_json: string }>()
+  ).results;
+  for (const r of outbound) {
+    let def: OutboundMapping;
+    try {
+      def = JSON.parse(r.definition_json) as OutboundMapping;
+    } catch {
+      continue;
+    }
+    for (const id of listsInOutbound(def)) {
+      const names = users.get(id) ?? [];
+      const name = r.name ?? "Destination";
+      if (!names.includes(name)) names.push(name);
       users.set(id, names);
     }
   }
@@ -203,7 +226,7 @@ export async function lookupsFor(db: D1Database, def: MappingDefinition): Promis
   return loadLookups(db, listsInMapping(def));
 }
 
-async function loadLookups(db: D1Database, ids: string[]): Promise<FnContext> {
+export async function loadLookups(db: D1Database, ids: string[]): Promise<FnContext> {
   const lookups: NonNullable<FnContext["lookups"]> = {};
   for (const id of ids) {
     const list = await db.prepare("SELECT id, name FROM lookup_lists WHERE id = ? AND status = 'active'").bind(id).first<{ id: string; name: string }>();

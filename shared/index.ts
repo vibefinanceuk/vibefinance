@@ -24,3 +24,4 @@ export * from "./ingestion/document-rules.js";
 export * from "./ingestion/mapping-proposals.js";
 export * from "./ingestion/batch-template.js";
 export * from "./connectors/library.js";
+export * from "./connectors/outbound-mapping.js";

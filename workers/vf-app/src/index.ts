@@ -219,6 +219,14 @@ import {
 } from "./lookup-lists-route.js";
 import { handleRereadPart } from "./mapping-reread.js";
 import {
+  handleCompileOutboundFunction,
+  handleCopyOutboundMapping,
+  handleGetOutboundMapping,
+  handlePublishOutboundMapping,
+  handleSaveOutboundMapping,
+  handleTryOutboundMapping,
+} from "./outbound-mapping-route.js";
+import {
   handleCompileFunction,
   handleCompileRule,
   handleCreateMapping,
@@ -4662,6 +4670,29 @@ export default {
       const allowed = (await hasPermission(db, auth.user.id, "Admin.Configure")) || (await hasPermission(db, auth.user.id, "Integration.Monitor"));
       if (!allowed) return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
       const result = await handleListDeliveries(db, decodeURIComponent(deliveriesMatch[1]));
+      return json(result.body, result.status);
+    }
+    // Decision 0591: a Destination's own outbound mapping.
+    const outboundMatch = pathname.match(/^\/route-instances\/([^/]+)\/mapping(?:\/(copy|try|publish|compile))?$/);
+    if (outboundMatch) {
+      const { db } = resolveTenant(request, env);
+      const auth = await authenticatePerson(db, request, env);
+      if (!auth.user) return json({ error: auth.reason }, 401);
+      if (!(await hasPermission(db, auth.user.id, "Admin.Configure"))) return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
+      const instanceId = decodeURIComponent(outboundMatch[1]);
+      const action = outboundMatch[2];
+      const body = request.method === "GET" ? null : await request.json().catch(() => ({}));
+      let result;
+      if (!action && request.method === "GET") result = await handleGetOutboundMapping(db, instanceId);
+      else if (!action && request.method === "PUT") result = await handleSaveOutboundMapping(db, auth.user.id, instanceId, body);
+      else if (action === "copy" && request.method === "POST") result = await handleCopyOutboundMapping(db, auth.user.id, instanceId);
+      else if (action === "try" && request.method === "POST") result = await handleTryOutboundMapping(db, instanceId, body);
+      else if (action === "publish" && request.method === "POST") result = await handlePublishOutboundMapping(db, auth.user.id, instanceId, body);
+      else if (action === "compile" && request.method === "POST") {
+        if (!env.AI) return json({ error: "AI binding not configured" }, 500);
+        result = await handleCompileOutboundFunction(db, createWorkersAiCompilerModel(env.AI), instanceId, body);
+      }
+      else return json({ error: "method not allowed" }, 405);
       return json(result.body, result.status);
     }
     const connectorMatch = pathname.match(/^\/route-instances\/([^/]+)\/connector(?:\/(preview|send|start|upgrade))?$/);

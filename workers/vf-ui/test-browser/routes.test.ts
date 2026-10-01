@@ -13,6 +13,7 @@ import httpsOutStringsSql from "../../vf-licence/migrations/0232_https_out_strin
 import erpDeliveriesStringsSql from "../../vf-licence/migrations/0233_erp_deliveries_strings.sql?raw";
 import destUnitsStringsSql from "../../vf-licence/migrations/0234_destination_units_strings.sql?raw";
 import libraryStringsSql from "../../vf-licence/migrations/0235_route_library_strings.sql?raw";
+import outboundStringsSql from "../../vf-licence/migrations/0236_outbound_mapping_strings.sql?raw";
 
 /**
  * **Routes and Process routes — decision 0557.** The standard routes with
@@ -47,7 +48,7 @@ const strings: Record<string, string> = {
   "mechanism.file_import": "File import",
   "mechanism.edi": "EDI",
 };
-for (const sql of [stringsSql, destinationStringsSql, formatStringsSql, mappingStringsSql, csvStringsSql, httpsStringsSql, httpsStateStringsSql, replaceKeyStringsSql, mailboxStringsSql, renameStringsSql, httpsOutStringsSql, erpDeliveriesStringsSql, destUnitsStringsSql, libraryStringsSql]) {
+for (const sql of [stringsSql, destinationStringsSql, formatStringsSql, mappingStringsSql, csvStringsSql, httpsStringsSql, httpsStateStringsSql, replaceKeyStringsSql, mailboxStringsSql, renameStringsSql, httpsOutStringsSql, erpDeliveriesStringsSql, destUnitsStringsSql, libraryStringsSql, outboundStringsSql]) {
   for (const m of sql.matchAll(/\('([^']+)', 'en', '((?:[^']|'')*)'\)/g)) strings[m[1]] = m[2].replace(/''/g, "'");
 }
 // 0209 updates the ERP note rather than inserting it.
@@ -1003,5 +1004,256 @@ describe("the Route library button — decision 0590", () => {
     first.click();
     await settle();
     expect(text(".topbar h2")).toBe("Route library");
+  });
+});
+
+/**
+ * **Outbound mapping — decision 0591.** The Destination panel's card, and
+ * the editor: the VibeFinance invoice on the left, what is sent on the
+ * right, each change saving the draft, functions from plain words, Try and
+ * Publish.
+ */
+describe("outbound mapping — decision 0591", () => {
+  const PUSH = { id: "dest-1", name: "Oracle push", status: "paused", routeId: "https-out", routeName: "HTTPS out", route: { live: true, ...V("process", "en16931", "vf_invoice_json_v1", "en16931", "https") }, waiting: 0, started: false, failedOpen: 0 };
+  const connector = (mapping: unknown, format = "vf_json", fixed: string[] = []) => ({
+    instance: { id: "dest-1", name: "Oracle push", status: "paused", processId: "ap", startedAt: null },
+    settings: { url: "https://erp.acme.example/api/invoices", method: "POST", format, auth: { type: "none" }, referencePath: null },
+    connector: { id: "https-out", version: 1, latestVersion: 1, upgradeAvailable: false, fixed, authTypes: null },
+    secrets: {},
+    waitingNotTaken: 0,
+    counts: {},
+    deliveries: [],
+    candidates: [{ id: "inv-9", number: "88240", supplier: "Lager Nord GmbH", currency: "EUR", total: 357 }],
+    mapping,
+  });
+  const SOURCES = [
+    { key: "invoiceNumber", level: "invoice" },
+    { key: "currency", level: "invoice" },
+    { key: "supplier.name", level: "invoice" },
+    { key: "line.description", level: "line" },
+    { key: "line.netAmount", level: "line" },
+    { key: "distribution.glCode", level: "distribution" },
+  ];
+  const INVOICE = {
+    schema: "vibefinance.invoice.v1",
+    id: "inv-9",
+    invoiceNumber: "88240",
+    currency: "EUR",
+    supplier: { name: "Lager Nord GmbH" },
+    totals: { total: 357 },
+    lines: [{ lineNumber: 1, description: "Pallets", netAmount: 300, distributions: [{ netAmount: 300, glCode: "620300" }] }],
+  };
+  const DEF = () => ({
+    format: "json",
+    invoice: [
+      { target: "InvoiceNumber", source: "invoiceNumber", fx: [], required: true },
+      { target: "Source", source: null, fixed: "VIBEFINANCE", fx: [] },
+    ],
+    lines: { name: "invoiceLines", fields: [{ target: "LineAmount", source: "line.netAmount", fx: [] }] },
+    distributions: { name: "invoiceDistributions", place: "line", fields: [{ target: "Account", source: "distribution.glCode", fx: [{ fn: "remove_prefix", args: { prefix: "62" } }], say: "drop the 62" }] },
+    empty: "omit",
+  });
+  const MAPPING = (status = "draft") => ({
+    instance: { id: "dest-1", name: "Oracle push", processId: "ap" },
+    using: false,
+    formatFixed: false,
+    standard: DEF(),
+    versions: [{ version: 1, status, copiedFrom: "https-out@1", savedAt: "2026-10-01T09:00:00Z", publishedAt: null }],
+    editing: { version: 1, status, definition: DEF(), sampleInvoiceId: "inv-9" },
+    sources: SOURCES,
+    functions: ["remove_prefix", "upper"],
+    lists: [],
+    candidates: [{ id: "inv-9", number: "88240", supplier: "Lager Nord GmbH", currency: "EUR", total: 357 }],
+    sample: { invoiceId: "inv-9", invoice: INVOICE },
+  });
+
+  function stubMapping(calls: Call[], opts: { connector?: unknown; mapping?: unknown; publish?: [number, unknown]; tryReply?: unknown } = {}) {
+    stub(calls, { "/api/process-routes": { ...FLOW, destinations: [...FLOW.destinations, PUSH] } });
+    const inner = globalThis.fetch as unknown as (url: string, init?: RequestInit) => Promise<Response>;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        const path = String(url).split("?")[0];
+        const method = init?.method ?? "GET";
+        const reply = (status: number, body: unknown) => {
+          calls.push({ method, path, query: "", body: init?.body as string | undefined });
+          return { ok: status < 300, status, json: async () => body } as Response;
+        };
+        if (path === "/api/route-instances/dest-1/connector") return reply(200, opts.connector ?? connector({ live: null, draft: null }));
+        if (path === "/api/route-instances/dest-1/deliveries") return reply(200, { deliveries: [], counts: {} });
+        if (path === "/api/route-instances/dest-1/mapping/copy") return reply(201, { version: 1, status: "draft" });
+        if (path === "/api/route-instances/dest-1/mapping") return method === "GET" ? reply(200, opts.mapping ?? MAPPING()) : reply(200, { version: 1, status: "draft" });
+        if (path === "/api/route-instances/dest-1/mapping/compile")
+          return reply(200, { kind: "compiled", steps: [{ fn: "upper", args: {} }], examples: [{ input: "Lager Nord GmbH", output: "LAGER NORD GMBH" }] });
+        if (path === "/api/route-instances/dest-1/mapping/try")
+          return reply(200, opts.tryReply ?? { version: 1, invoiceId: "inv-9", invoice: INVOICE, body: { InvoiceNumber: "88240", Source: "VIBEFINANCE" }, problems: [] });
+        if (path === "/api/route-instances/dest-1/mapping/publish") return reply(...(opts.publish ?? [200, { version: 1, status: "live", using: true }]));
+        return inner(url, init);
+      })
+    );
+  }
+
+  /** Waits for what loads in steps (a module imported on demand, then its data). */
+  async function until(ready: () => boolean) {
+    for (let i = 0; i < 100 && !ready(); i++) await new Promise((r) => setTimeout(r, 10));
+  }
+  async function openPush() {
+    await openScreen("/process-routes.js");
+    ([...document.querySelectorAll(".prcard")].find((c) => c.textContent?.includes("Oracle push")) as HTMLElement).click();
+    await until(() => !!document.querySelector("#do-mapping"));
+  }
+  async function openEditor() {
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { open } = await import("/outbound-editor.js");
+    await open("dest-1");
+    await settle();
+  }
+  const button = (root: string, label: string) => [...document.querySelectorAll(`${root} button`)].find((b) => b.textContent === label) as HTMLElement;
+  const lastPut = (calls: Call[]) => JSON.parse([...calls].reverse().find((c) => c.method === "PUT" && c.path.endsWith("/mapping"))!.body!).definition;
+
+  it("shows the standard layout on the Destination, and Make my own copy copies it and opens the editor", async () => {
+    const calls: Call[] = [];
+    stubMapping(calls);
+    await openPush();
+    expect(text("#do-mapping h4")).toBe("How each invoice is laid out");
+    expect(text("#do-mappingstatus")).toBe("The standard layout: VibeFinance invoice JSON, version 1.");
+    expect([...document.querySelectorAll("#do-format option")].map((o) => o.getAttribute("value"))).toEqual(["vf_json", "csv"]);
+    button("#do-mapping", "Make my own copy").click();
+    await until(() => text(".topbar h2").startsWith("Outbound"));
+    expect(calls.some((c) => c.method === "POST" && c.path === "/api/route-instances/dest-1/mapping/copy")).toBe(true);
+    expect(text(".topbar h2")).toBe("Outbound mapping · Oracle push");
+  });
+
+  it("says when its own mapping is live and sent, offers it as a format, and keeps a fixed connector's layout", async () => {
+    stubMapping([], { connector: connector({ live: 2, draft: 3 }, "mapped") });
+    await openPush();
+    expect(text("#do-mappingstatus")).toBe("Its own mapping, version 2 live · draft 3 · sending it");
+    expect((document.querySelector("#do-format") as HTMLSelectElement).value).toBe("mapped");
+    expect(button("#do-mapping", "Open the mapping")).toBeTruthy();
+
+    document.body.innerHTML = `<main id="shell"></main><main id="viewer" hidden></main>`;
+    stubMapping([], { connector: connector({ live: null, draft: null }, "vf_json", ["format"]) });
+    await openPush();
+    expect(text("#do-mapping")).toContain("This connector keeps its layout.");
+    expect(document.querySelectorAll("#do-mapping .dobuttons button")).toHaveLength(0);
+  });
+
+  it("lays out the invoice on the left and what is sent on the right, with a line for each source and Fx", async () => {
+    stubMapping([]);
+    await openEditor();
+    expect(text(".topbar .sub")).toBe("draft version 1, not live · this Destination sends the standard layout until one is published");
+    const sources = [...document.querySelectorAll("#om-sources .meel")].map((b) => [b.querySelector(".mep")?.textContent, b.querySelector(".mesv")?.textContent]);
+    expect(sources).toContainEqual(["Invoice number", "88240"]);
+    expect(sources).toContainEqual(["GL code", "620300"]);
+    const targets = [...document.querySelectorAll("#om-targets .megrp")].map((g) => g.textContent);
+    expect(targets).toEqual(["Once per invoice", "Each line · invoiceLines[]", "Each distribution · invoiceDistributions[] · inside each line"]);
+    expect(document.querySelector('[data-tgt="invoice:0"]')!.getAttribute("data-from")).toBe("invoiceNumber");
+    expect(text('[data-tgt="invoice:1"]')).toContain("Fixed: VIBEFINANCE");
+    expect(document.querySelector('[data-tgt="distribution:0"]')!.getAttribute("data-fx")).toBe("1");
+    expect(text("#om-sources")).toContain("Values from invoice 88240");
+  });
+
+  it("adds a field from the invoice, then uses another for it, each change saving the draft", async () => {
+    const calls: Call[] = [];
+    stubMapping(calls);
+    await openEditor();
+    (document.querySelector('[data-src="supplier.name"]') as HTMLElement).click();
+    await settle();
+    expect((document.querySelector("#om-addname") as HTMLInputElement).value).toBe("name");
+    expect([...document.querySelectorAll("#om-addlevel option")].map((o) => o.getAttribute("value"))).toEqual(["invoice", "line", "distribution"]);
+    (document.querySelector("#om-addname") as HTMLInputElement).value = "SupplierName";
+    button("#om-source", "Add").click();
+    await settle();
+    expect(lastPut(calls).invoice[2]).toEqual({ target: "SupplierName", source: "supplier.name", fx: [] });
+
+    // A line's field may not be used once per invoice.
+    (document.querySelector('[data-tgt="invoice:0"]') as HTMLElement).click();
+    await settle();
+    (document.querySelector('[data-src="line.description"]') as HTMLElement).click();
+    await settle();
+    expect(button("#om-source", "Use it for InvoiceNumber")).toBeUndefined();
+    (document.querySelector('[data-src="currency"]') as HTMLElement).click();
+    await settle();
+    button("#om-source", "Use it for InvoiceNumber").click();
+    await settle();
+    expect(lastPut(calls).invoice[0]).toMatchObject({ target: "InvoiceNumber", source: "currency" });
+  });
+
+  it("renames a field, makes it required, gives it a function said in plain words, and removes it", async () => {
+    const calls: Call[] = [];
+    stubMapping(calls);
+    await openEditor();
+    (document.querySelector('[data-tgt="line:0"]') as HTMLElement).click();
+    await settle();
+    expect(text("#om-field")).toContain("Sent once for each line.");
+    const name = document.querySelector("#om-name") as HTMLInputElement;
+    name.value = "Amount";
+    name.dispatchEvent(new Event("change"));
+    await settle();
+    expect(lastPut(calls).lines.fields[0].target).toBe("Amount");
+    (document.querySelector("#om-required") as HTMLInputElement).click();
+    await settle();
+    expect(lastPut(calls).lines.fields[0].required).toBe(true);
+
+    const say = document.querySelector("#om-say") as HTMLTextAreaElement;
+    say.value = "in capitals";
+    say.dispatchEvent(new Event("input"));
+    button("#om-field", "Understand").click();
+    await settle();
+    expect(JSON.parse(calls.find((c) => c.path.endsWith("/compile"))!.body!)).toEqual({ target: "Amount", source: "line.netAmount", say: "in capitals", invoiceId: "inv-9" });
+    expect(text("#om-field .meex")).toContain("LAGER NORD GMBH");
+    button("#om-field", "Accept").click();
+    await settle();
+    expect(lastPut(calls).lines.fields[0]).toMatchObject({ fx: [{ fn: "upper", args: {} }], say: "in capitals" });
+
+    button("#om-field", "Remove field").click();
+    await settle();
+    expect(lastPut(calls).lines.fields).toEqual([]);
+  });
+
+  it("sets the arrays' names and where distributions go", async () => {
+    const calls: Call[] = [];
+    stubMapping(calls);
+    await openEditor();
+    (document.querySelector("#om-distsname") as HTMLInputElement).value = "to_GLItems.results";
+    (document.querySelector("#om-place") as HTMLSelectElement).value = "invoice";
+    (document.querySelector("#om-empty") as HTMLSelectElement).value = "null";
+    button("#om-settings", "Save").click();
+    await settle();
+    expect(lastPut(calls)).toMatchObject({ distributions: { name: "to_GLItems.results", place: "invoice" }, empty: "null" });
+  });
+
+  it("tries the draft on an invoice, and publishes it, or says why not", async () => {
+    const calls: Call[] = [];
+    stubMapping(calls, {
+      publish: [422, { reason: "sample_problems", invoiceId: "inv-9", invoice: INVOICE, body: {}, problems: [{ at: "PoNumber", words: "PoNumber (from purchaseOrder): is required, and is empty" }] }],
+    });
+    await openEditor();
+    button(".meed .cardhead", "Try").click();
+    await settle();
+    expect(JSON.parse(calls.find((c) => c.path.endsWith("/try"))!.body!)).toEqual({ invoiceId: "inv-9" });
+    expect(text("#om-noproblems")).toBe("Laid out with no problems.");
+    expect(JSON.parse(text("#om-output"))).toEqual({ InvoiceNumber: "88240", Source: "VIBEFINANCE" });
+    button(".meed .cardhead", "Publish").click();
+    await settle();
+    expect(text("#om-note")).toBe("Not published: the draft cannot lay out the invoice it was tried on.");
+    expect(text("#om-problems")).toBe("PoNumber (from purchaseOrder): is required, and is empty");
+
+    document.body.innerHTML = `<main id="shell"></main><main id="viewer" hidden></main>`;
+    stubMapping([]);
+    await openEditor();
+    button(".meed .cardhead", "Publish").click();
+    await settle();
+    expect(text("#om-note")).toBe("Version 1 is live, and is what Oracle push sends.");
+  });
+
+  it("goes back to the Destination on Process routes, and has no Publish when nothing is drafted", async () => {
+    stubMapping([], { mapping: MAPPING("live") });
+    await openEditor();
+    expect(button(".meed .cardhead", "Publish")).toBeUndefined();
+    button(".meed .cardhead", "Back").click();
+    await until(() => !!document.querySelector(".prdetail h3"));
+    expect(text(".prdetail h3")).toBe("Destination: Oracle push");
   });
 });
