@@ -767,6 +767,9 @@ describe("paths the app is allowed to reach (decision 0212)", () => {
     "/uploads/template.csv",
     "/uploads/mappings",
     "/uploads/preview",
+    // An HTTPS source's keys — decision 0578.
+    "/sources/src-portal/keys",
+    "/sources/src-portal/keys/k1/revoke",
   ];
 
   for (const path of reachable) {

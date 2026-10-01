@@ -238,6 +238,9 @@ const PROXIED_TO_INSTANCE: RegExp[] = [
   /^\/routes$/,
   /^\/process-routes$/,
   // The Route monitor — decision 0556: the list, one message, one stored file.
+  // An HTTPS source's keys — decision 0578.
+  /^\/sources\/[^/]+\/keys$/,
+  /^\/sources\/[^/]+\/keys\/[^/]+\/revoke$/,
   // Create → Upload documents — decision 0573.
   /^\/uploads\/targets$/,
   /^\/uploads$/,

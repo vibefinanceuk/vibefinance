@@ -213,6 +213,7 @@ import createUploadStringsSql from "../migrations/0222_create_upload_strings.sql
 import createInvoiceStringsSql from "../migrations/0223_create_invoice_strings.sql?raw";
 import batchUploadStringsSql from "../migrations/0224_batch_upload_strings.sql?raw";
 import csvSeveralInvoicesSql from "../migrations/0225_csv_several_invoices_strings.sql?raw";
+import httpsInStringsSql from "../migrations/0226_https_in_strings.sql?raw";
 
 function stripSqlComments(sql: string): string {
   return sql
@@ -459,5 +460,6 @@ export async function applyTestSchema(): Promise<void> {
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(createInvoiceStringsSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(batchUploadStringsSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(csvSeveralInvoicesSql)));
+  await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(httpsInStringsSql)));
 
 }

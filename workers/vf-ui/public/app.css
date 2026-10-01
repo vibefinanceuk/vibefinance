@@ -4997,3 +4997,22 @@
 .createbtns .actionlink:not(.primary) { flex-direction: row; }
 .createbtns .actionlink:not(.primary) svg { width: 16px; height: 16px; }
 .createtable td:nth-child(1), .createtable td:nth-child(3) { white-space: nowrap; }
+
+/* Decision 0578 — HTTPS in, on a Source panel. */
+.httpsin { margin-top: 18px; border-top: 1px solid var(--border); padding-top: 12px; }
+.httpshead h4 { margin: 0; font-size: var(--text-base); }
+.httpsfield { display: flex; flex-direction: column; gap: 6px; margin-top: 12px; }
+.httpsfield label { font-size: var(--text-sm); color: var(--text-secondary); }
+.httpscopy { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.httpscopy code { font-size: var(--text-sm); background: var(--surface-1); border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; overflow-x: auto; white-space: nowrap; flex: 1 1 auto; min-width: 0; }
+.httpscopy .actionlink, .httpsin .httpskeys .actionlink { flex-direction: row; padding: 4px 8px; gap: 4px; }
+.httpscopy .actionlink svg, .httpsin .httpskeys .actionlink svg { width: 16px; height: 16px; }
+.httpskeys { width: 100%; border-collapse: collapse; font-size: var(--text-sm); }
+.httpskeys th { text-align: left; color: var(--text-muted); font-weight: 500; padding: 4px 6px; border-bottom: 1px solid var(--border); }
+.httpskeys td { padding: 4px 6px; border-bottom: 1px solid var(--border); }
+.httpskeys tr.httpsrevoked td { color: var(--text-muted); text-decoration: line-through; }
+.httpskeys tr.httpsrevoked td:nth-child(4) { text-decoration: none; }
+.httpspre { margin: 0; font-size: var(--text-sm); background: var(--surface-1); border: 1px solid var(--border); border-radius: 6px; padding: 8px; white-space: pre-wrap; word-break: break-all; }
+.httpspop { max-width: 560px; }
+.httpshead { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.httpsbuttons { display: flex; gap: 6px; }

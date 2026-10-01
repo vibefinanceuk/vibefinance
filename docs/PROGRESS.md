@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 30 September 2026 (decision 0577). A living document: what
+Last updated 1 October 2026 (decision 0578). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,15 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### HTTPS in (0578)
+- Each HTTPS source has its own address, and keys made on Process routes:
+  one per sending system, named after it, shown once, revocable. A
+  system posts one invoice file per request and the reply says what
+  became of it, with an address to ask again. Each request is a route
+  message, read as email is.
+- HTTPS out, then SFTP (a Cloudflare Containers proof of concept first),
+  come next.
 
 ### A supplier's CSV of several invoices, by email (0577)
 - A supplier's CSV whose rows carry several invoice numbers is no longer

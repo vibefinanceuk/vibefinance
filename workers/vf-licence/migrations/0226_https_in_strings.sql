@@ -1,0 +1,67 @@
+-- 0226_https_in_strings.sql
+-- Decision 0578. HTTPS in: an HTTPS source's address, keys and how to send
+-- on Process routes, the Route monitor's event, and the screen's help.
+
+INSERT INTO ui_strings (key, locale, value) VALUES
+ ('httpsin.heading', 'en', 'HTTPS in'),
+ ('httpsin.heading', 'de', 'HTTPS-Eingang'),
+ ('httpsin.address', 'en', 'Address'),
+ ('httpsin.address', 'de', 'Adresse'),
+ ('httpsin.copy', 'en', 'Copy'),
+ ('httpsin.copy', 'de', 'Kopieren'),
+ ('httpsin.keys', 'en', 'Keys that may send'),
+ ('httpsin.keys', 'de', 'Schlüssel, die senden dürfen'),
+ ('httpsin.keyshint', 'en', 'Each key is shown once, when made. Give each sender its own, so one can be revoked without stopping the others.'),
+ ('httpsin.keyshint', 'de', 'Jeder Schlüssel wird einmal angezeigt, beim Erstellen. Geben Sie jedem Sender einen eigenen, damit einer widerrufen werden kann, ohne die anderen anzuhalten.'),
+ ('httpsin.nokeys', 'en', 'No keys yet. Make one for each system that will send invoices here.'),
+ ('httpsin.nokeys', 'de', 'Noch keine Schlüssel. Erstellen Sie einen für jedes System, das hierher Rechnungen senden wird.'),
+ ('httpsin.colname', 'en', 'Name'),
+ ('httpsin.colname', 'de', 'Name'),
+ ('httpsin.colkey', 'en', 'Key'),
+ ('httpsin.colkey', 'de', 'Schlüssel'),
+ ('httpsin.colmade', 'en', 'Made'),
+ ('httpsin.colmade', 'de', 'Erstellt'),
+ ('httpsin.colused', 'en', 'Last used'),
+ ('httpsin.colused', 'de', 'Zuletzt verwendet'),
+ ('httpsin.never', 'en', 'Never'),
+ ('httpsin.never', 'de', 'Nie'),
+ ('httpsin.revokedon', 'en', 'Revoked {when}'),
+ ('httpsin.revokedon', 'de', 'Widerrufen {when}'),
+ ('httpsin.makekey', 'en', 'Make a key'),
+ ('httpsin.makekey', 'de', 'Schlüssel erstellen'),
+ ('httpsin.makekeysub', 'en', 'A key lets one system send invoices to {source}. Name it after who sends with it: it is the sender in the Route monitor, and a supplier mapping can name it.'),
+ ('httpsin.makekeysub', 'de', 'Ein Schlüssel erlaubt einem System, Rechnungen an {source} zu senden. Benennen Sie ihn nach dem Sender: Er ist der Absender im Routen-Monitor, und eine Lieferantenzuordnung kann ihn nennen.'),
+ ('httpsin.keyname', 'en', 'Who sends with it'),
+ ('httpsin.keyname', 'de', 'Wer damit sendet'),
+ ('httpsin.keynameexample', 'en', 'Lager Nord ERP'),
+ ('httpsin.keynameexample', 'de', 'Lager Nord ERP'),
+ ('httpsin.make', 'en', 'Make key'),
+ ('httpsin.make', 'de', 'Schlüssel erstellen'),
+ ('httpsin.onlyonce', 'en', 'Copy this key now. It is not shown again: only its first characters are kept to tell it apart.'),
+ ('httpsin.onlyonce', 'de', 'Kopieren Sie diesen Schlüssel jetzt. Er wird nicht wieder angezeigt: Nur seine ersten Zeichen werden zur Unterscheidung behalten.'),
+ ('httpsin.done', 'en', 'Done'),
+ ('httpsin.done', 'de', 'Fertig'),
+ ('httpsin.revoke', 'en', 'Revoke'),
+ ('httpsin.revoke', 'de', 'Widerrufen'),
+ ('httpsin.revoketitle', 'en', 'Revoke this key?'),
+ ('httpsin.revoketitle', 'de', 'Diesen Schlüssel widerrufen?'),
+ ('httpsin.revokesub', 'en', '{name} can no longer send with it, from now. What it has sent stays, and other keys still work. This cannot be undone: make a new key instead.'),
+ ('httpsin.revokesub', 'de', '{name} kann damit ab sofort nicht mehr senden. Was gesendet wurde, bleibt, und andere Schlüssel funktionieren weiter. Dies kann nicht rückgängig gemacht werden: Erstellen Sie stattdessen einen neuen Schlüssel.'),
+ ('httpsin.cancel', 'en', 'Cancel'),
+ ('httpsin.cancel', 'de', 'Abbrechen'),
+ ('httpsin.howto', 'en', 'How to send'),
+ ('httpsin.howto', 'de', 'So wird gesendet'),
+ ('httpsin.howtohint', 'en', 'One file per request: XML, PDF, an image or a supplier''s CSV, up to 15 MB, or JSON with the file in base64. The reply says what became of it, with an address to ask again later. Each request is a message in the Route monitor.'),
+ ('httpsin.howtohint', 'de', 'Eine Datei je Anfrage: XML, PDF, ein Bild oder die CSV eines Lieferanten, bis 15 MB, oder JSON mit der Datei in Base64. Die Antwort sagt, was daraus wurde, mit einer Adresse zum späteren Nachfragen. Jede Anfrage ist eine Nachricht im Routen-Monitor.'),
+ ('httpsin.loading', 'en', 'Loading…'),
+ ('httpsin.loading', 'de', 'Wird geladen…'),
+ ('httpsin.failed', 'en', 'Could not load the keys. Try again.'),
+ ('httpsin.failed', 'de', 'Die Schlüssel konnten nicht geladen werden. Versuchen Sie es erneut.'),
+ ('routemonitor.event.https_received', 'en', 'Received over HTTPS'),
+ ('routemonitor.event.https_received', 'de', 'Über HTTPS empfangen');
+
+UPDATE ui_strings SET value = 'Where each process takes information in and sends it out. Sources deliver to the process''s first stage, Destinations read from its last. Choose a source to give it an address, set its org, rename or retire it, or add a new one. An HTTPS source has its own address and keys: make a key for each system that sends, shown once, and revoke one without stopping the others.' WHERE key = 'help.screen.processroutes' AND locale = 'en';
+UPDATE ui_strings SET value = 'Wo jeder Prozess Informationen aufnimmt und abgibt. Quellen liefern an die erste Stufe des Prozesses, Ziele lesen aus der letzten. Wählen Sie eine Quelle, um ihr eine Adresse zu geben, ihre Organisation festzulegen, sie umzubenennen oder stillzulegen, oder fügen Sie eine neue hinzu. Eine HTTPS-Quelle hat eine eigene Adresse und Schlüssel: Erstellen Sie einen Schlüssel für jedes sendende System, einmal angezeigt, und widerrufen Sie einen, ohne die anderen anzuhalten.' WHERE key = 'help.screen.processroutes' AND locale = 'de';
+
+-- ASSERT: SELECT count(*) FROM ui_strings WHERE key IN ('httpsin.heading','httpsin.address','httpsin.copy','httpsin.keys','httpsin.keyshint','httpsin.nokeys','httpsin.colname','httpsin.colkey','httpsin.colmade','httpsin.colused','httpsin.never','httpsin.revokedon','httpsin.makekey','httpsin.makekeysub','httpsin.keyname','httpsin.keynameexample','httpsin.make','httpsin.onlyonce','httpsin.done','httpsin.revoke','httpsin.revoketitle','httpsin.revokesub','httpsin.cancel','httpsin.howto','httpsin.howtohint','httpsin.loading','httpsin.failed','routemonitor.event.https_received') == 56
+-- ASSERT: SELECT count(*) FROM ui_strings WHERE key = 'help.screen.processroutes' AND value LIKE '%HTTPS%' == 2

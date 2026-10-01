@@ -4,6 +4,7 @@ import destinationStringsSql from "../../vf-licence/migrations/0209_erp_destinat
 import formatStringsSql from "../../vf-licence/migrations/0211_formats_and_en16931_strings.sql?raw";
 import mappingStringsSql from "../../vf-licence/migrations/0212_supplier_mapping_strings.sql?raw";
 import csvStringsSql from "../../vf-licence/migrations/0216_supplier_csv_strings.sql?raw";
+import httpsStringsSql from "../../vf-licence/migrations/0226_https_in_strings.sql?raw";
 
 /**
  * **Routes and Process routes — decision 0557.** The standard routes with
@@ -37,7 +38,7 @@ const strings: Record<string, string> = {
   "mechanism.file_import": "File import",
   "mechanism.edi": "EDI",
 };
-for (const sql of [stringsSql, destinationStringsSql, formatStringsSql, mappingStringsSql, csvStringsSql]) {
+for (const sql of [stringsSql, destinationStringsSql, formatStringsSql, mappingStringsSql, csvStringsSql, httpsStringsSql]) {
   for (const m of sql.matchAll(/\('([^']+)', 'en', '((?:[^']|'')*)'\)/g)) strings[m[1]] = m[2].replace(/''/g, "'");
 }
 // 0209 updates the ERP note rather than inserting it.
@@ -374,5 +375,114 @@ describe("Process routes — decision 0557", () => {
     ([...document.querySelectorAll(".rmchip")].find((b) => b.textContent === "Expenses") as HTMLElement).click();
     await settle();
     expect(calls.at(-1)).toMatchObject({ path: "/api/process-routes", query: "process=exp" });
+  });
+});
+
+describe("HTTPS in — decision 0578", () => {
+  const PORTAL = { ...FLOW.sources[0], id: "portal", name: "Supplier portal API", mechanism: "https", emailAddress: null, emailRouting: "not_configured", routeId: "https-in", routeName: "HTTPS in", receivedThisWeek: 3, failedOpen: 0 };
+  const KEYS = {
+    address: "https://acme.vibefinance.example/v1/sources/portal/invoices",
+    keys: [
+      { id: "k1", name: "Lager Nord ERP", prefix: "vf_in_Ab3x", createdAt: "2026-09-29T10:00:00Z", createdBy: "Dan Young", lastUsedAt: "2026-10-01T08:12:00Z", revokedAt: null },
+      { id: "k0", name: "Old portal", prefix: "vf_in_Zq9w", createdAt: "2026-09-01T10:00:00Z", createdBy: "Dan Young", lastUsedAt: null, revokedAt: "2026-09-20T10:00:00Z" },
+    ],
+  };
+
+  function stubHttps(calls: Call[], keys = KEYS) {
+    stub(calls, { "/api/process-routes": { ...FLOW, sources: [PORTAL, ...FLOW.sources] } });
+    const inner = globalThis.fetch as unknown as (url: string, init?: RequestInit) => Promise<Response>;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        const path = String(url).split("?")[0];
+        const method = init?.method ?? "GET";
+        if (path === "/api/sources/portal/keys" && method === "GET") {
+          calls.push({ method, path, query: "" });
+          return { ok: true, status: 200, json: async () => keys } as Response;
+        }
+        if (path === "/api/sources/portal/keys" && method === "POST") {
+          calls.push({ method, path, query: "", body: init?.body as string });
+          return { ok: true, status: 201, json: async () => ({ id: "k2", name: "Coupa", prefix: "vf_in_Qr7t", key: "vf_in_Qr7tSECRETSECRETSECRETSECRET01" }) } as Response;
+        }
+        if (/^\/api\/sources\/portal\/keys\/[^/]+\/revoke$/.test(path)) {
+          calls.push({ method, path, query: "" });
+          return { ok: true, status: 200, json: async () => ({}) } as Response;
+        }
+        return inner(url, init);
+      })
+    );
+  }
+
+  async function openPortal() {
+    await openScreen("/process-routes.js");
+    (document.querySelectorAll(".prcard")[0] as HTMLElement).click();
+    await settle();
+  }
+
+  it("shows an HTTPS source's address, its keys by their start, and how to send", async () => {
+    stubHttps([]);
+    await openPortal();
+    expect(text(".prdetail h3")).toBe("Source: Supplier portal API");
+    // The panel's own buttons are unchanged by the section.
+    expect([...document.querySelectorAll(".prdetail .statebuttons button")].map((b) => b.textContent)).toEqual(["Rename", "Retire", "Close"]);
+    expect(text("#httpsin h4")).toBe("HTTPS in");
+    expect(text("#httpsin-address")).toBe("POST https://acme.vibefinance.example/v1/sources/portal/invoices");
+    const rows = [...document.querySelectorAll(".httpskeys tbody tr")];
+    expect(rows.map((r) => r.querySelector("td")?.textContent)).toEqual(["Lager Nord ERP", "Old portal"]);
+    expect(rows[0].textContent).toContain("vf_in_Ab3x…");
+    expect(rows[0].textContent).toContain("Dan Young");
+    expect(rows[0].querySelector("button")?.textContent).toBe("Revoke");
+    // A revoked key is shown, struck through, with no Revoke.
+    expect(rows[1].classList.contains("httpsrevoked")).toBe(true);
+    expect(rows[1].textContent).toContain("Revoked");
+    expect(rows[1].querySelector("button")).toBeNull();
+    expect(text(".httpspre")).toContain('curl -X POST "https://acme.vibefinance.example/v1/sources/portal/invoices"');
+    expect(text(".httpspre")).toContain("Bearer vf_in_Ab3x…");
+    expect(text("#httpsin")).toContain("Each key is shown once");
+  });
+
+  it("is not shown for an email source", async () => {
+    stub([]);
+    await openScreen("/process-routes.js");
+    (document.querySelectorAll(".prcard")[0] as HTMLElement).click();
+    await settle();
+    expect(document.querySelector("#httpsin")).toBeNull();
+  });
+
+  it("makes a key with a name, shows it once, and lists it after", async () => {
+    const calls: Call[] = [];
+    stubHttps(calls, { ...KEYS, keys: [] });
+    await openPortal();
+    expect(text("#httpsin-nokeys")).toContain("No keys yet");
+    ([...document.querySelectorAll("#httpsin button")].find((b) => b.textContent === "Make a key") as HTMLElement).click();
+    await settle();
+    const pop = document.querySelector(".httpspop") as HTMLElement;
+    expect(pop.getAttribute("role")).toBe("dialog");
+    (document.querySelector("#httpsin-keyname") as HTMLInputElement).value = "Coupa";
+    ([...pop.querySelectorAll("button")].find((b) => b.textContent === "Make key") as HTMLElement).click();
+    await settle();
+    expect(JSON.parse(calls.find((c) => c.method === "POST")!.body!)).toEqual({ name: "Coupa" });
+    expect(text("#httpsin-newkey")).toBe("vf_in_Qr7tSECRETSECRETSECRETSECRET01");
+    expect(text(".httpspop")).toContain("It is not shown again");
+    const before = calls.filter((c) => c.path === "/api/sources/portal/keys" && c.method === "GET").length;
+    ([...pop.querySelectorAll("button")].find((b) => b.textContent === "Done") as HTMLElement).click();
+    await settle();
+    expect(document.querySelector(".httpspop")).toBeNull();
+    expect(calls.filter((c) => c.path === "/api/sources/portal/keys" && c.method === "GET").length).toBe(before + 1);
+  });
+
+  it("revokes a key only once confirmed", async () => {
+    const calls: Call[] = [];
+    stubHttps(calls);
+    await openPortal();
+    (document.querySelector(".httpskeys tbody tr button") as HTMLElement).click();
+    await settle();
+    expect(text(".httpspop h3")).toBe("Revoke this key?");
+    expect(text(".httpspop")).toContain("Lager Nord ERP can no longer send with it");
+    expect(calls.some((c) => c.path.endsWith("/revoke"))).toBe(false);
+    ([...document.querySelectorAll(".httpspop button")].find((b) => b.textContent === "Revoke") as HTMLElement).click();
+    await settle();
+    expect(calls.find((c) => c.path.endsWith("/revoke"))).toMatchObject({ method: "POST", path: "/api/sources/portal/keys/k1/revoke" });
+    expect(document.querySelector(".httpspop")).toBeNull();
   });
 });

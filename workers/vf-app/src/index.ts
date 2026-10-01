@@ -266,6 +266,14 @@ import {
   handleUploadTargets,
 } from "./upload-route.js";
 import { handleBatchPreview, layoutFrom } from "./batch-route.js";
+import {
+  authenticateSourceKey,
+  handleCreateSourceKey,
+  handleHttpsInvoice,
+  handleHttpsMessageStatus,
+  handleListSourceKeys,
+  handleRevokeSourceKey,
+} from "./https-in-route.js";
 import { messagesForInvoice, partForInvoice, partResponse, receivedFiles, viewFor } from "./received-files.js";
 import { retrieveInvoiceDocument, renderXmlForDisplay, extForContentType } from "./document-storage.js";
 import { resolveVocabulary } from "@vibefinance/shared";
@@ -5096,6 +5104,68 @@ export default {
           },
           { model: createWorkersAiExtractionModel(env.AI, env.EXTRACTION_MODEL_ID), bucket: documents, customerId: env.CUSTOMER_ID }
         );
+        return json(result.body, result.status);
+      }
+      return json({ error: "method not allowed" }, 405);
+    }
+
+    /**
+     * **HTTPS in — decision 0578.** A sender's own system posts invoices
+     * to a source's address with that source's key, and asks later what
+     * became of them. No session and no user key: the source key is the
+     * only authority, and it reaches only its own source.
+     */
+    const httpsInMatch = pathname.match(/^\/v1\/sources\/([^/]+)\/(invoices|messages\/([^/]+))$/);
+    if (httpsInMatch) {
+      const { db, documents } = resolveTenant(request, env);
+      const sourceId = decodeURIComponent(httpsInMatch[1]);
+      const key = await authenticateSourceKey(db, sourceId, request.headers.get("Authorization"));
+      if (!key) return json({ error: "a live key for this source is required: Authorization: Bearer vf_in_..." }, 401);
+      if (httpsInMatch[2] === "invoices" && request.method === "POST") {
+        if (!env.AI) return json({ error: "the AI binding is not configured" }, 500);
+        const result = await handleHttpsInvoice(db, key, request, url.origin, {
+          model: createWorkersAiExtractionModel(env.AI, env.EXTRACTION_MODEL_ID),
+          bucket: documents,
+          customerId: env.CUSTOMER_ID,
+        });
+        return json(result.body, result.status);
+      }
+      if (httpsInMatch[3] && request.method === "GET") {
+        const result = await handleHttpsMessageStatus(db, key, decodeURIComponent(httpsInMatch[3]), url.origin);
+        return json(result.body, result.status);
+      }
+      return json({ error: "method not allowed" }, 405);
+    }
+
+    /**
+     * An HTTPS source's address and keys — decision 0578. Under
+     * `Admin.Configure`, as every other change to a source is.
+     */
+    const sourceKeysMatch = pathname.match(/^\/sources\/([^/]+)\/keys(?:\/([^/]+)\/revoke)?$/);
+    if (sourceKeysMatch) {
+      const { db } = resolveTenant(request, env);
+      const auth = await authenticatePerson(db, request, env);
+      if (!auth.user) return json({ error: auth.reason }, 401);
+      if (!(await hasPermission(db, auth.user.id, "Admin.Configure"))) {
+        return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
+      }
+      const sourceId = decodeURIComponent(sourceKeysMatch[1]);
+      if (sourceKeysMatch[2] && request.method === "POST") {
+        const result = await handleRevokeSourceKey(db, auth.user.id, sourceId, decodeURIComponent(sourceKeysMatch[2]));
+        return json(result.body, result.status);
+      }
+      if (!sourceKeysMatch[2] && request.method === "GET") {
+        const result = await handleListSourceKeys(db, sourceId, url.origin);
+        return json(result.body, result.status);
+      }
+      if (!sourceKeysMatch[2] && request.method === "POST") {
+        let body: unknown = {};
+        try {
+          body = await request.json();
+        } catch {
+          return json({ error: "the body must be JSON" }, 400);
+        }
+        const result = await handleCreateSourceKey(db, auth.user.id, sourceId, body);
         return json(result.body, result.status);
       }
       return json({ error: "method not allowed" }, 405);

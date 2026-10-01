@@ -1,6 +1,7 @@
 import { t } from "/strings.js";
 import { el, frame, topbar, setCurrentScreen } from "/tasks.js";
 import { actionLink } from "/viewer.js";
+import { httpsSection } from "/https-keys.js";
 import {
   setSourcesRefresh,
   loadUnits,
@@ -233,7 +234,9 @@ function sourcePanel(s) {
       el("div", { class: "l", text: t("processroutes.field.status") }),
       el("div", {}, sourceState(s, true)),
     ]),
-  ]);
+    // Decision 0578: an HTTPS source's address, keys, and how to send.
+    s.mechanism === "https" ? httpsSection(s) : null,
+  ].filter(Boolean));
 }
 
 /**
