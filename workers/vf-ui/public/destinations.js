@@ -186,7 +186,12 @@ function outcomeLine(o) {
 
 const STATUS_TONE = { delivered: "ok", failed: "bad", retrying: "warn", pending: "q" };
 
-function deliveriesCard(state, reload) {
+/**
+ * A Destination's deliveries. HTTPS out's offer Send again; the ERP CSV
+ * file's (decision 0586) are its exports, each named, undone from the
+ * ERP export screen.
+ */
+function deliveriesCard(state, reload, erp = false) {
   const rows = state.deliveries.map((d) =>
     el("tr", {}, [
       el("td", { text: d.invoiceNumber ?? d.invoiceId }),
@@ -195,7 +200,7 @@ function deliveriesCard(state, reload) {
       el("td", {
         text:
           d.status === "delivered"
-            ? `${when(d.deliveredAt)}${d.reference ? ` · ${d.reference}` : ""}`
+            ? `${when(d.deliveredAt)}${d.reference ? ` · ${erp ? t("erpout.export").replace("{id}", String(d.reference).slice(0, 8)) : d.reference}` : ""}`
             : d.status === "retrying"
               ? t("httpsout.nexttry").replace("{when}", when(d.nextAttemptAt)).replace("{n}", String(d.attempts))
               : `${d.lastStatus ? `HTTP ${d.lastStatus} · ` : ""}${d.lastError ?? ""}`,
@@ -203,7 +208,7 @@ function deliveriesCard(state, reload) {
       el(
         "td",
         { class: "httpsactions" },
-        d.status === "failed" || d.status === "retrying"
+        !erp && (d.status === "failed" || d.status === "retrying")
           ? [
               actionLink("post", {
                 label: t("httpsout.sendagain"),
@@ -225,8 +230,22 @@ function deliveriesCard(state, reload) {
           el("thead", {}, [el("tr", {}, ["httpsout.col.invoice", "httpsout.col.supplier", "httpsout.col.status", "httpsout.col.detail", null].map((k) => el("th", { text: k ? t(k) : "" })))]),
           el("tbody", {}, rows),
         ]),
-    el("p", { class: "muted sm", text: t("httpsout.deliverieshint") }),
+    el("p", { class: "muted sm", text: t(erp ? "erpout.deliverieshint" : "httpsout.deliverieshint") }),
   ]);
+}
+
+/** **The ERP CSV file's deliveries — decision 0586**: each invoice its exports took, on the same ledger as HTTPS out. */
+export function erpDeliveriesSection(destination) {
+  const holder = el("div", { class: "httpsin", id: "erpout" }, [el("div", { class: "muted", text: t("httpsout.loading") })]);
+  (async () => {
+    const r = await call(`/api/route-instances/${encodeURIComponent(destination.id)}/deliveries`);
+    if (!r.ok) {
+      holder.replaceChildren(el("div", { class: "warn", text: t("httpsout.failed") }));
+      return;
+    }
+    holder.replaceChildren(deliveriesCard({ instance: { id: destination.id }, deliveries: r.body.deliveries }, async () => {}, true));
+  })();
+  return holder;
 }
 
 /** Start sending: what is already waiting is sent only if the person says so. */

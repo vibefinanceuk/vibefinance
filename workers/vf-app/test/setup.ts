@@ -122,6 +122,7 @@ import sourceKeysSql from "../../../migrations/0115_source_keys.sql?raw";
 import sourceKeyReplaceSql from "../../../migrations/0116_source_key_replace.sql?raw";
 import intakeSourceSql from "../../../migrations/0117_intake_source_fact.sql?raw";
 import httpsOutSql from "../../../migrations/0118_https_out.sql?raw";
+import erpDeliveriesSql from "../../../migrations/0119_erp_csv_deliveries.sql?raw";
 
 // Another known divergence from production, on top of the one below:
 // D1's exec() splits its input by newline and executes each non-empty
@@ -440,6 +441,7 @@ export async function applyTestSchema(): Promise<void> {
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(sourceKeyReplaceSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(intakeSourceSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(httpsOutSql)));
+  await env.DB.exec(toOneStatementPerLine(stripSqlComments(erpDeliveriesSql)));
 }
 
 /**

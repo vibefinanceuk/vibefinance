@@ -2,7 +2,7 @@ import { t } from "/strings.js";
 import { el, frame, topbar, setCurrentScreen } from "/tasks.js";
 import { actionLink } from "/viewer.js";
 import { httpsSection } from "/https-keys.js";
-import { httpsOutSection } from "/destinations.js";
+import { erpDeliveriesSection, httpsOutSection } from "/destinations.js";
 import {
   setSourcesRefresh,
   loadUnits,
@@ -321,7 +321,9 @@ function destinationPanel(d) {
           render();
         })
       : el("p", { class: "muted sm", text: t(d.status === "paused" ? "processroutes.pausednote" : "processroutes.erpnote") }),
-  ]);
+    // Decision 0586: the ERP CSV file's exports, as deliveries on the same engine.
+    !httpsOut && d.routeId === "erp-csv" ? erpDeliveriesSection(d) : null,
+  ].filter(Boolean));
 }
 
 /** Add a Destination to this process — decision 0585: HTTPS out, paused until started. */

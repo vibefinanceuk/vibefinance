@@ -4,6 +4,8 @@ import { applyTestSchema, seedStage } from "./setup.js";
 import { eligibleInvoiceIds, handleCreateErpExport, handleUndoErpExport, toCsv } from "../src/erp-export-route.js";
 import { handleProcessRoutes, handleSetInstanceStatus } from "../src/routes-route.js";
 import { handleGetRouteMessage, handleListRouteMessages, routeMessagePart } from "../src/route-monitor-route.js";
+import { handleListDeliveries } from "../src/destination-delivery.js";
+import erpDeliveriesSql from "../../../migrations/0119_erp_csv_deliveries.sql?raw";
 
 /**
  * **The ERP export as a Destination — decision 0558**, slice 4 of the
@@ -168,5 +170,48 @@ describe("an export is its Destination's message", () => {
     expect(monitor.messages).toEqual([expect.objectContaining({ id: made.messages[0], sourceName: "ERP", direction: "out", status: "dismissed", invoices: 1 })]);
     expect(monitor.summary.failedOpen).toBe(0);
     expect(monitor.destinations).toEqual([{ id: "erp-ap", name: "ERP", status: "active" }]);
+  });
+});
+
+/**
+ * **The ERP CSV file on the delivery engine — decision 0586.** Each
+ * invoice an export takes is a delivery of its process's ERP Destination,
+ * in the ledger HTTPS out keeps (0585); undoing the export takes it back.
+ */
+describe("exports as deliveries — decision 0586", () => {
+  const deliveries = async () =>
+    (await env.DB.prepare("SELECT instance_id, invoice_id, status, reference, message_id FROM destination_deliveries ORDER BY invoice_id").all<Record<string, unknown>>()).results;
+
+  it("records each exported invoice as delivered to the ERP Destination, with the export as its reference, and undoing removes it", async () => {
+    await invoice("inv-a", "ap", "ap-eligible");
+    await invoice("inv-b", "ap", "ap-eligible");
+    const made = (await handleCreateErpExport(env.DB, "olga", null, env.DOCUMENTS, CUSTOMER)).body as { id: string; messages: string[] };
+    expect(await deliveries()).toEqual([
+      { instance_id: "erp-ap", invoice_id: "inv-a", status: "delivered", reference: made.id, message_id: made.messages[0] },
+      { instance_id: "erp-ap", invoice_id: "inv-b", status: "delivered", reference: made.id, message_id: made.messages[0] },
+    ]);
+    const listed = (await handleListDeliveries(env.DB, "erp-ap")).body as { routeId: string; counts: Record<string, number>; deliveries: Array<Record<string, unknown>> };
+    expect(listed.routeId).toBe("erp-csv");
+    expect(listed.counts).toEqual({ delivered: 2 });
+    expect(listed.deliveries.map((d) => [d.invoiceNumber, d.status, d.reference])).toEqual([
+      ["INV-A", "delivered", made.id],
+      ["INV-B", "delivered", made.id],
+    ]);
+
+    expect((await handleUndoErpExport(env.DB, "olga", made.id, { reason: "the ERP rejected the file" })).status).toBe(200);
+    expect(await deliveries()).toEqual([]);
+  });
+
+  it("migration 0119 records exports already made, and not undone ones", async () => {
+    await invoice("inv-a", "ap", "ap-eligible");
+    const kept = (await handleCreateErpExport(env.DB, "olga", null, env.DOCUMENTS, CUSTOMER)).body as { id: string; messages: string[] };
+    await invoice("inv-b", "ap", "ap-eligible");
+    const undone = (await handleCreateErpExport(env.DB, "olga", null, env.DOCUMENTS, CUSTOMER)).body as { id: string };
+    await handleUndoErpExport(env.DB, "olga", undone.id, { reason: "wrong file" });
+    // As before this decision: no deliveries recorded.
+    await env.DB.prepare("DELETE FROM destination_deliveries").run();
+    const sql = erpDeliveriesSql.replace(/--.*$/gm, "");
+    for (const statement of sql.split(";").map((x) => x.trim()).filter(Boolean)) await env.DB.prepare(statement).run();
+    expect(await deliveries()).toEqual([{ instance_id: "erp-ap", invoice_id: "inv-a", status: "delivered", reference: kept.id, message_id: kept.messages[0] }]);
   });
 });

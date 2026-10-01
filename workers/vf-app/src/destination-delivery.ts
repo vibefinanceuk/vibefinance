@@ -513,11 +513,13 @@ async function httpsOutInstance(db: D1Database, id: string): Promise<InstanceRow
 }
 const isResult = (x: InstanceRow | RouteResult): x is RouteResult => "status" in x && "body" in x;
 
-/** `GET /route-instances/:id/connector` — settings, which secrets are set, what is waiting, recent deliveries, and invoices to try. */
-export async function handleGetConnector(db: D1Database, id: string): Promise<RouteResult> {
-  const instance = await httpsOutInstance(db, id);
-  if (isResult(instance)) return instance;
-  const deliveries = (
+/**
+ * **A Destination's deliveries — decisions 0585, 0586.** Any Destination's:
+ * HTTPS out's, and the ERP CSV file's, whose exports are deliveries too.
+ * Failed first, then trying again, waiting, and the latest delivered.
+ */
+export async function deliveriesOf(db: D1Database, id: string) {
+  const rows = (
     await db
       .prepare(
         `SELECT d.invoice_id, d.status, d.attempts, d.next_attempt_at, d.last_status, d.last_error, d.reference, d.delivered_at, d.message_id, d.created_at,
@@ -538,6 +540,36 @@ export async function handleGetConnector(db: D1Database, id: string): Promise<Ro
         .all<{ status: string; n: number }>()
     ).results.map((r) => [r.status, r.n])
   );
+  return {
+    counts,
+    deliveries: rows.map((d) => ({
+      invoiceId: d.invoice_id,
+      invoiceNumber: d.invoice_number,
+      supplier: d.supplier,
+      status: d.status,
+      attempts: d.attempts,
+      nextAttemptAt: d.next_attempt_at,
+      lastStatus: d.last_status,
+      lastError: d.last_error,
+      reference: d.reference,
+      deliveredAt: d.delivered_at,
+      messageId: d.message_id,
+    })),
+  };
+}
+
+/** `GET /route-instances/:id/deliveries` — any Destination's deliveries and their counts. */
+export async function handleListDeliveries(db: D1Database, id: string): Promise<RouteResult> {
+  const instance = await instanceOf(db, id);
+  if (!instance) return { status: 404, body: { error: `there is no Destination ${id}` } };
+  return { status: 200, body: { id, routeId: instance.route_id, ...(await deliveriesOf(db, id)) } };
+}
+
+/** `GET /route-instances/:id/connector` — settings, which secrets are set, what is waiting, recent deliveries, and invoices to try. */
+export async function handleGetConnector(db: D1Database, id: string): Promise<RouteResult> {
+  const instance = await httpsOutInstance(db, id);
+  if (isResult(instance)) return instance;
+  const { deliveries: recent, counts } = await deliveriesOf(db, id);
   const payable = await payableInvoiceIds(db, instance.process_id);
   const taken = new Set(
     (await db.prepare("SELECT invoice_id FROM destination_deliveries WHERE instance_id = ?").bind(id).all<{ invoice_id: string }>()).results.map((r) => r.invoice_id)
@@ -565,19 +597,7 @@ export async function handleGetConnector(db: D1Database, id: string): Promise<Ro
       secrets: await secretsSet(db, id),
       waitingNotTaken: payable.filter((x) => !taken.has(x)).length,
       counts,
-      deliveries: deliveries.map((d) => ({
-        invoiceId: d.invoice_id,
-        invoiceNumber: d.invoice_number,
-        supplier: d.supplier,
-        status: d.status,
-        attempts: d.attempts,
-        nextAttemptAt: d.next_attempt_at,
-        lastStatus: d.last_status,
-        lastError: d.last_error,
-        reference: d.reference,
-        deliveredAt: d.delivered_at,
-        messageId: d.message_id,
-      })),
+      deliveries: recent,
       candidates,
     },
   };

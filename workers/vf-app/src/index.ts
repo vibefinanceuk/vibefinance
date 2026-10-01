@@ -147,6 +147,7 @@ const DELIVERY_CRON = "*/5 * * * *";
 import {
   handleCreateDestination,
   handleGetConnector,
+  handleListDeliveries,
   handlePreviewDelivery,
   handleSaveConnector,
   handleSendNow,
@@ -4627,6 +4628,17 @@ export default {
       if (!(await hasPermission(db, auth.user.id, "Admin.Configure"))) return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
       const body = await request.json().catch(() => ({}));
       const result = await handleCreateDestination(db, auth.user.id, decodeURIComponent(destinationsMatch[1]), body);
+      return json(result.body, result.status);
+    }
+    // Decision 0586: any Destination's deliveries, the ERP CSV file's exports among them.
+    const deliveriesMatch = pathname.match(/^\/route-instances\/([^/]+)\/deliveries$/);
+    if (deliveriesMatch && request.method === "GET") {
+      const { db } = resolveTenant(request, env);
+      const auth = await authenticatePerson(db, request, env);
+      if (!auth.user) return json({ error: auth.reason }, 401);
+      const allowed = (await hasPermission(db, auth.user.id, "Admin.Configure")) || (await hasPermission(db, auth.user.id, "Integration.Monitor"));
+      if (!allowed) return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
+      const result = await handleListDeliveries(db, decodeURIComponent(deliveriesMatch[1]));
       return json(result.body, result.status);
     }
     const connectorMatch = pathname.match(/^\/route-instances\/([^/]+)\/connector(?:\/(preview|send|start))?$/);

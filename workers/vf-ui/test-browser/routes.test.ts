@@ -10,6 +10,7 @@ import replaceKeyStringsSql from "../../vf-licence/migrations/0229_replace_key_s
 import mailboxStringsSql from "../../vf-licence/migrations/0230_mailbox_name_strings.sql?raw";
 import renameStringsSql from "../../vf-licence/migrations/0231_rename_source_strings.sql?raw";
 import httpsOutStringsSql from "../../vf-licence/migrations/0232_https_out_strings.sql?raw";
+import erpDeliveriesStringsSql from "../../vf-licence/migrations/0233_erp_deliveries_strings.sql?raw";
 
 /**
  * **Routes and Process routes — decision 0557.** The standard routes with
@@ -44,7 +45,7 @@ const strings: Record<string, string> = {
   "mechanism.file_import": "File import",
   "mechanism.edi": "EDI",
 };
-for (const sql of [stringsSql, destinationStringsSql, formatStringsSql, mappingStringsSql, csvStringsSql, httpsStringsSql, httpsStateStringsSql, replaceKeyStringsSql, mailboxStringsSql, renameStringsSql, httpsOutStringsSql]) {
+for (const sql of [stringsSql, destinationStringsSql, formatStringsSql, mappingStringsSql, csvStringsSql, httpsStringsSql, httpsStateStringsSql, replaceKeyStringsSql, mailboxStringsSql, renameStringsSql, httpsOutStringsSql, erpDeliveriesStringsSql]) {
   for (const m of sql.matchAll(/\('([^']+)', 'en', '((?:[^']|'')*)'\)/g)) strings[m[1]] = m[2].replace(/''/g, "'");
 }
 // 0209 updates the ERP note rather than inserting it.
@@ -777,5 +778,34 @@ describe("HTTPS out — decision 0585", () => {
     button(".dostartpop", "Start sending").click();
     await settle();
     expect(JSON.parse(calls.find((c) => c.path.endsWith("/start"))!.body!)).toEqual({ includeWaiting: true });
+  });
+});
+
+describe("the ERP CSV file's deliveries — decision 0586", () => {
+  it("lists each invoice an export took, with the export, and no Send again", async () => {
+    const calls: Call[] = [];
+    stub(calls, {
+      "/api/route-instances/erp-ap/deliveries": {
+        id: "erp-ap",
+        routeId: "erp-csv",
+        counts: { delivered: 2 },
+        deliveries: [
+          { invoiceId: "inv-a", invoiceNumber: "88240", supplier: "Lager Nord GmbH", status: "delivered", attempts: 1, reference: "3f9c2a7e-1111-2222-3333-444455556666", deliveredAt: "2026-10-01T09:10:00Z", messageId: "MSG-1" },
+          { invoiceId: "inv-b", invoiceNumber: "88241", supplier: "Lager Nord GmbH", status: "delivered", attempts: 1, reference: "3f9c2a7e-1111-2222-3333-444455556666", deliveredAt: "2026-10-01T09:10:00Z", messageId: "MSG-1" },
+        ],
+      },
+    });
+    await openScreen("/process-routes.js");
+    ([...document.querySelectorAll(".prcard")].at(-1) as HTMLElement).click();
+    await settle();
+    expect(text(".prdetail h3")).toBe("Destination: ERP");
+    const rows = [...document.querySelectorAll("#erpout tbody tr")].map((r) => [...r.querySelectorAll("td")].map((td) => td.textContent));
+    expect(rows.map((r) => r.slice(0, 3))).toEqual([
+      ["88240", "Lager Nord GmbH", "Delivered"],
+      ["88241", "Lager Nord GmbH", "Delivered"],
+    ]);
+    expect(rows[0][3]).toContain("export 3f9c2a7e");
+    expect(document.querySelectorAll("#erpout tbody button")).toHaveLength(0);
+    expect(text("#erpout")).toContain("Undoing an export on the ERP export screen puts its invoices back to ready.");
   });
 });

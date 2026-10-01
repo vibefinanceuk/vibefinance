@@ -532,6 +532,18 @@ async function recordExportMessages(
         if ("reason" in part) await addRouteEvent(db, id, "file_not_stored", { partSeq: 1, detail: part.reason });
       }
       for (const invoiceId of invoices) await linkRouteItem(db, id, invoiceId, null);
+      // Decision 0586: each invoice is a delivery of this ERP Destination, in the ledger every Destination keeps (0585).
+      await db.batch(
+        invoices.map((invoiceId) =>
+          db
+            .prepare(
+              `INSERT OR REPLACE INTO destination_deliveries
+                 (instance_id, invoice_id, status, attempts, message_id, reference, created_at, delivered_at)
+               VALUES (?, ?, 'delivered', 1, ?, ?, ?, ?)`
+            )
+            .bind(destinationId, invoiceId, id, exportId, receivedAt, receivedAt)
+        )
+      );
       await finishRouteMessage(db, id, { status: "delivered" });
     }
   } catch {
@@ -592,6 +604,8 @@ export async function handleUndoErpExport(
   const count = await db.prepare("SELECT count(*) AS n FROM erp_export_invoices WHERE export_id = ?").bind(exportId).first<{ n: number }>();
   await db.batch([
     db.prepare("DELETE FROM erp_export_invoices WHERE export_id = ?").bind(exportId),
+    // Decision 0586: undone, its invoices are no longer delivered to the ERP Destination.
+    db.prepare("DELETE FROM destination_deliveries WHERE reference = ? AND instance_id IN (SELECT id FROM route_instances WHERE route_id = 'erp-csv')").bind(exportId),
     db
       .prepare(
         "UPDATE erp_exports SET reversed_at = strftime('%Y-%m-%d %H:%M:%f', 'now'), reversed_by = ?, reverse_reason = ? WHERE id = ? AND reversed_at IS NULL"

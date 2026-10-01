@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 1 October 2026 (decision 0585). A living document: what
+Last updated 1 October 2026 (decision 0586). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,11 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### The ERP CSV file on the delivery engine (0586)
+- Each invoice an ERP export takes is recorded as a delivery of the ERP
+  Destination, as HTTPS out's are, and the Destination panel lists them.
+  Connector framework slice 1 is complete; the Library is next.
 
 ### HTTPS out, and the delivery engine for connectors (0585)
 - A Destination can post each payment-eligible invoice to any web

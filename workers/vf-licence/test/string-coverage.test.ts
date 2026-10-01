@@ -1681,6 +1681,8 @@ const KEYS_THE_INTERFACE_USES = [
   "help.screen.mapping.34",
   "mapping.retire",
   "mapping.retiretitle",
+  "erpout.export",
+  "erpout.deliverieshint",
   "httpsout.heading",
   "httpsout.loading",
   "httpsout.failed",
