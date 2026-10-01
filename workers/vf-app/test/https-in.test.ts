@@ -4,6 +4,7 @@ import { applyTestSchema } from "./setup.js";
 import worker from "../src/index.js";
 import type { Env } from "../src/index.js";
 import { generateApiKey, hashApiKey } from "../src/user-auth.js";
+import { handleProcessRoutes } from "../src/routes-route.js";
 import { handleCreateMapping, handlePublishMapping, handleSaveDraft, senderMatches, senderName } from "../src/supplier-mapping-route.js";
 
 /**
@@ -288,5 +289,18 @@ describe("Who it is for — decision 0579", () => {
     expect(senderMatches(["lager nord erp"], "Lager Nord ERP Ltd")).toBe(false);
     expect(senderMatches(["lager nord erp"], "Lager Nord ERP <ap@lagernord.de>")).toBe(false);
     expect(senderMatches(["@munch.de"], "Lager Nord ERP")).toBe(false);
+  });
+});
+
+describe("an HTTPS source on Process routes — decision 0580", () => {
+  it("counts its live keys, so its card can say whether it receives", async () => {
+    const liveKeys = async () =>
+      ((await handleProcessRoutes(env.DB, new URLSearchParams("process=ap"))).body as { sources: Array<{ id: string; liveKeys: number }> }).sources.find((s) => s.id === "src-portal")?.liveKeys;
+    expect(await liveKeys()).toBe(0);
+    const { id } = await makeKey("src-portal", "Portal");
+    await makeKey("src-portal", "Coupa");
+    expect(await liveKeys()).toBe(2);
+    await call(`/sources/src-portal/keys/${id}/revoke`, { method: "POST", headers: { Authorization: `Bearer ${admin}` } });
+    expect(await liveKeys()).toBe(1);
   });
 });

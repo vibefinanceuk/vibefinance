@@ -5,6 +5,7 @@ import formatStringsSql from "../../vf-licence/migrations/0211_formats_and_en169
 import mappingStringsSql from "../../vf-licence/migrations/0212_supplier_mapping_strings.sql?raw";
 import csvStringsSql from "../../vf-licence/migrations/0216_supplier_csv_strings.sql?raw";
 import httpsStringsSql from "../../vf-licence/migrations/0226_https_in_strings.sql?raw";
+import httpsStateStringsSql from "../../vf-licence/migrations/0228_https_source_state_strings.sql?raw";
 
 /**
  * **Routes and Process routes — decision 0557.** The standard routes with
@@ -38,7 +39,7 @@ const strings: Record<string, string> = {
   "mechanism.file_import": "File import",
   "mechanism.edi": "EDI",
 };
-for (const sql of [stringsSql, destinationStringsSql, formatStringsSql, mappingStringsSql, csvStringsSql, httpsStringsSql]) {
+for (const sql of [stringsSql, destinationStringsSql, formatStringsSql, mappingStringsSql, csvStringsSql, httpsStringsSql, httpsStateStringsSql]) {
   for (const m of sql.matchAll(/\('([^']+)', 'en', '((?:[^']|'')*)'\)/g)) strings[m[1]] = m[2].replace(/''/g, "'");
 }
 // 0209 updates the ERP note rather than inserting it.
@@ -439,6 +440,16 @@ describe("HTTPS in — decision 0578", () => {
     expect(text(".httpspre")).toContain('curl -X POST "https://acme.vibefinance.example/v1/sources/portal/invoices"');
     expect(text(".httpspre")).toContain("Bearer vf_in_Ab3x…");
     expect(text("#httpsin")).toContain("Each key is shown once");
+  });
+
+  it("says on its card whether it receives: Receiving with a live key, else No keys yet — decision 0580", async () => {
+    stub([], { "/api/process-routes": { ...FLOW, sources: [PORTAL, { ...PORTAL, id: "keyed", name: "Keyed API", liveKeys: 1 }] } });
+    await openScreen("/process-routes.js");
+    const cards = [...document.querySelectorAll(".prcard")];
+    expect(cards[0].querySelector(".rmpill")?.textContent).toBe("No keys yet");
+    expect(cards[0].querySelector(".rmpill")?.classList.contains("warn")).toBe(true);
+    expect(cards[1].querySelector(".rmpill")?.textContent).toBe("Receiving");
+    expect(cards[1].querySelector(".rmpill")?.classList.contains("ok")).toBe(true);
   });
 
   it("is not shown for an email source", async () => {

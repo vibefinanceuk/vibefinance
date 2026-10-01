@@ -1681,6 +1681,7 @@ const KEYS_THE_INTERFACE_USES = [
   "help.screen.mapping.34",
   "mapping.retire",
   "mapping.retiretitle",
+  "processroutes.nokeys",
   "httpsin.heading",
   "httpsin.address",
   "httpsin.copy",

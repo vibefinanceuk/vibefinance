@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 1 October 2026 (decision 0579). A living document: what
+Last updated 1 October 2026 (decision 0580). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,10 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### An HTTPS source says whether it receives (0580)
+- Its card on Process routes shows Receiving once it has a live key, and
+  No keys yet before, as an email source shows Receiving or No address.
 
 ### Supplier mappings shared by every route (0579)
 - A supplier mapping now reads its format however the file arrives:

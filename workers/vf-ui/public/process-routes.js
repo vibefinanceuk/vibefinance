@@ -69,6 +69,10 @@ function sourceState(s, full = false) {
         : pill("warn", t("processroutes.noaddress"))
     );
   }
+  // Decision 0580: an HTTPS source receives once it has a live key.
+  if (s.mechanism === "https") {
+    pills.push(s.liveKeys > 0 ? pill("ok", t("routing.active")) : pill("warn", t("processroutes.nokeys")));
+  }
   if (s.failedOpen > 0) pills.push(pill("bad", t("processroutes.failedn").replace("{n}", String(s.failedOpen))));
   // The week's count where there is room for it: on the panel always, on
   // a card only when nothing more urgent is showing.
