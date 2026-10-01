@@ -650,19 +650,21 @@ export async function handleRetireSource(
 }
 
 /**
- * Rename a source — decision 0130.
+ * Rename a source — decisions 0130, 0582, 0583.
  *
- * **Refused once a document has arrived.** `mandate.channel` is a copy
- * of the name taken at capture, so renaming would leave every past
- * invoice citing the old name while the source claims the new one —
- * and a rule written against either would be right about half the
- * documents.
+ * **A source's name is what people read — decision 0583.** 0130 refused
+ * a rename once anything had arrived, because a document records the
+ * name as `mandate.channel` and a rule written against the old name
+ * would quietly stop matching. That is still true, but narrower than
+ * 0130 assumed: a document records the source's name only when nothing
+ * in it could be read (an image or XML records its structural channel,
+ * such as "Structured XML"). So the rename is refused only where it
+ * would change what a rule does: **when a current rule names this
+ * source's name in a `mandate.channel` condition**, and the reply names
+ * those rules so they can be changed first.
  *
- * **No longer refused because an address exists — decision 0582.** It
- * was, while the address was derived from the name and never reissued
- * (0126), so a rename made the two disagree. The mailbox name is now
- * chosen on its own, so the name is only what people read, and the
- * address stays as it was.
+ * Documents that arrived keep the name they arrived under, as history.
+ * The address (0582) and the source's id never change.
  */
 export async function handleRenameSource(
   db: D1Database,
@@ -672,28 +674,82 @@ export async function handleRenameSource(
   if (typeof newName !== "string" || newName.trim() === "") {
     return { status: 400, body: { error: "name (a non-empty string) is required" } };
   }
+  const name = newName.trim();
 
   const source = await db
-    .prepare("SELECT id, name, email_address FROM sources WHERE id = ?")
+    .prepare("SELECT id, process_id, name FROM sources WHERE id = ?")
     .bind(sourceId)
-    .first<{ id: string; name: string; email_address: string | null }>();
+    .first<{ id: string; process_id: string; name: string }>();
 
   if (!source) {
     return { status: 404, body: { error: `source ${sourceId} does not exist` } };
   }
+  if (name === source.name) return { status: 200, body: { sourceId, name } };
 
-  if (await hasReceivedDocuments(db, source.name, source.id)) {
+  const taken = await db
+    .prepare("SELECT id FROM sources WHERE process_id = ? AND lower(name) = lower(?) AND id != ?")
+    .bind(source.process_id, name, sourceId)
+    .first<{ id: string }>();
+  if (taken) {
+    return { status: 409, body: { error: `another source in this process is named "${name}"`, reason: "name_taken" } };
+  }
+
+  const rules = await rulesNamingChannel(db, source.name);
+  if (rules.length > 0) {
     return {
       status: 409,
       body: {
-        error: `documents have arrived through ${sourceId}`,
-        reason: "documents_arrived",
+        error: `rules name "${source.name}" as the channel: ${rules.map((r) => r.name ?? r.id).join(", ")}`,
+        reason: "rule_names_source",
+        rules,
       },
     };
   }
 
-  await db.prepare("UPDATE sources SET name = ? WHERE id = ?").bind(newName.trim(), sourceId).run();
-  return { status: 200, body: { sourceId, name: newName.trim() } };
+  await db.prepare("UPDATE sources SET name = ? WHERE id = ?").bind(name, sourceId).run();
+  return { status: 200, body: { sourceId, name } };
+}
+
+/**
+ * The current rules with a `mandate.channel` condition naming this value
+ * — decision 0583. Read from each rule's current version (not yet ended),
+ * enabled or not, since a disabled rule turned back on would match the
+ * same way. A JSON string equal to the name, in any case, in a rule that
+ * tests `mandate.channel`.
+ */
+export async function rulesNamingChannel(db: D1Database, channel: string): Promise<Array<{ id: string; name: string | null }>> {
+  const rows = await db
+    .prepare(
+      `SELECT DISTINCT r.id, r.name, v.compiled_json FROM rule_versions v JOIN rules r ON r.id = v.rule_id
+       WHERE (v.effective_to IS NULL OR v.effective_to > ?) AND v.compiled_json LIKE '%mandate.channel%'`
+    )
+    .bind(new Date().toISOString())
+    .all<{ id: string; name: string | null; compiled_json: string }>();
+  const wanted = channel.trim().toLowerCase();
+  const names = (value: unknown): boolean =>
+    typeof value === "string"
+      ? value.trim().toLowerCase() === wanted
+      : Array.isArray(value)
+        ? value.some(names)
+        : value !== null && typeof value === "object"
+          ? Object.values(value as Record<string, unknown>).some(names)
+          : false;
+  const seen = new Set<string>();
+  const out: Array<{ id: string; name: string | null }> = [];
+  for (const row of rows.results) {
+    if (seen.has(row.id)) continue;
+    let compiled: unknown;
+    try {
+      compiled = JSON.parse(row.compiled_json);
+    } catch {
+      continue;
+    }
+    if (names(compiled)) {
+      seen.add(row.id);
+      out.push({ id: row.id, name: row.name });
+    }
+  }
+  return out;
 }
 
 /**

@@ -209,7 +209,13 @@ export function openRenameSourceForm(source) {
         });
         const body = await response.json();
         if (!response.ok) {
-          problem.textContent = outcome(body.reason) || body.error || t("sources.failed");
+          // Decision 0583: the rules that name this source, so they can be changed first.
+          problem.textContent =
+            body.reason === "rule_names_source"
+              ? t("sources.renamerules").replace("{rules}", (body.rules ?? []).map((r) => r.name ?? r.id).join(", "))
+              : body.reason === "name_taken"
+                ? t("sources.renametaken")
+                : outcome(body.reason) || body.error || t("sources.failed");
           return;
         }
         backdrop.remove();
@@ -222,9 +228,11 @@ export function openRenameSourceForm(source) {
   const stateButtons = el("div", { class: "statebuttons" }, [save, actionLink("close", { onclick: close })]);
 
   const backdrop = el("div", { class: "backdrop" }, [
-    el("div", { class: "popout" }, [
+    el("div", { class: "popout renamepop", role: "dialog" }, [
       el("div", { class: "cardhead" }, [el("h3", { text: t("sources.rename") }), stateButtons]),
       el("div", { class: "editgrid" }, [el("label", { text: t("sources.name") }), nameInput]),
+      // Decision 0583: what a rename changes, and what it does not.
+      el("p", { class: "muted sm", text: t("sources.renamehint") }),
       problem,
     ]),
   ]);

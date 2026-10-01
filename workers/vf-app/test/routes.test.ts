@@ -92,7 +92,8 @@ describe("a source is a Source instance", () => {
     await env.DB.prepare("INSERT INTO org_users (id, email, name) VALUES ('u-1', 'u1@example.com', 'Dan')").run();
     const result = await handleRetireSource(env.DB, "ap-mailbox", "u-1");
     expect(result.body).toMatchObject({ outcome: "retired", reason: "documents_arrived" });
-    expect((await handleRenameSource(env.DB, "ap-mailbox", "New name")).status).toBe(409);
+    // Renaming it is no longer refused for that (decision 0583): only a rule naming it stops it.
+    expect((await handleRenameSource(env.DB, "ap-mailbox", "New name")).status).toBe(200);
   });
 });
 

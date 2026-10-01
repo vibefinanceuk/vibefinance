@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 1 October 2026 (decision 0582). A living document: what
+Last updated 1 October 2026 (decision 0583). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,11 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Renaming a source that has received invoices (0583)
+- A source can be renamed whatever has arrived through it. Only a rule
+  that tests for its name as the channel stops it, and the rename names
+  those rules. Invoices keep the name they arrived under.
 
 ### An email source's mailbox name, chosen (0582)
 - Create address asks for a mailbox name, prefilled from the source's

@@ -8,6 +8,7 @@ import httpsStringsSql from "../../vf-licence/migrations/0226_https_in_strings.s
 import httpsStateStringsSql from "../../vf-licence/migrations/0228_https_source_state_strings.sql?raw";
 import replaceKeyStringsSql from "../../vf-licence/migrations/0229_replace_key_strings.sql?raw";
 import mailboxStringsSql from "../../vf-licence/migrations/0230_mailbox_name_strings.sql?raw";
+import renameStringsSql from "../../vf-licence/migrations/0231_rename_source_strings.sql?raw";
 
 /**
  * **Routes and Process routes — decision 0557.** The standard routes with
@@ -41,7 +42,7 @@ const strings: Record<string, string> = {
   "mechanism.file_import": "File import",
   "mechanism.edi": "EDI",
 };
-for (const sql of [stringsSql, destinationStringsSql, formatStringsSql, mappingStringsSql, csvStringsSql, httpsStringsSql, httpsStateStringsSql, replaceKeyStringsSql, mailboxStringsSql]) {
+for (const sql of [stringsSql, destinationStringsSql, formatStringsSql, mappingStringsSql, csvStringsSql, httpsStringsSql, httpsStateStringsSql, replaceKeyStringsSql, mailboxStringsSql, renameStringsSql]) {
   for (const m of sql.matchAll(/\('([^']+)', 'en', '((?:[^']|'')*)'\)/g)) strings[m[1]] = m[2].replace(/''/g, "'");
 }
 // 0209 updates the ERP note rather than inserting it.
@@ -596,5 +597,49 @@ describe("Create the address, with a mailbox name — decision 0582", () => {
     const post = calls.find((c) => c.method === "POST" && c.path === "/api/sources/new-box/email")!;
     expect(JSON.parse(post.body!)).toEqual({ mailbox: "UK.Invoices" });
     expect(document.querySelector(".praddpop")).toBeNull();
+  });
+});
+
+describe("renaming a source — decision 0583", () => {
+  async function renameTo(name: string, reply: { status: number; body: unknown }) {
+    const calls: Call[] = [];
+    stub(calls, { "/api/sources/ap-mailbox": reply.body });
+    const inner = globalThis.fetch as unknown as (url: string, init?: RequestInit) => Promise<Response>;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        if (String(url) === "/api/sources/ap-mailbox" && init?.method === "PATCH") {
+          calls.push({ method: "PATCH", path: "/api/sources/ap-mailbox", query: "", body: init.body as string });
+          return { ok: reply.status < 300, status: reply.status, json: async () => reply.body } as Response;
+        }
+        return inner(url, init);
+      })
+    );
+    await openScreen("/process-routes.js");
+    (document.querySelectorAll(".prcard")[0] as HTMLElement).click();
+    await settle();
+    ([...document.querySelectorAll(".prdetail .statebuttons button")].find((b) => b.textContent === "Rename") as HTMLElement).click();
+    await settle();
+    expect(text(".renamepop")).toContain("The name is what people read. The address never changes");
+    (document.querySelector(".renamepop input") as HTMLInputElement).value = name;
+    (document.querySelector(".renamepop button") as HTMLElement).click();
+    await settle();
+    return calls;
+  }
+
+  it("names the rules that test for the source's name, when they stop the rename", async () => {
+    const calls = await renameTo("UK supplier invoices", {
+      status: 409,
+      body: { reason: "rule_names_source", error: "x", rules: [{ id: "r-1", name: "Mailbox invoices to Dan" }, { id: "r-9", name: null }] },
+    });
+    expect(JSON.parse(calls.find((c) => c.method === "PATCH")!.body!)).toEqual({ name: "UK supplier invoices" });
+    expect(text(".renamepop .warn")).toBe(
+      "These rules test for this source's name as the channel: Mailbox invoices to Dan, r-9. Change them to the new name, or end them, then rename."
+    );
+  });
+
+  it("says when another source has the name", async () => {
+    await renameTo("New box", { status: 409, body: { reason: "name_taken", error: "x" } });
+    expect(text(".renamepop .warn")).toBe("Another source in this process already has that name.");
   });
 });

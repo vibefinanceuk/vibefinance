@@ -218,6 +218,7 @@ import sharedMappingsStringsSql from "../migrations/0227_shared_mappings_strings
 import httpsSourceStateStringsSql from "../migrations/0228_https_source_state_strings.sql?raw";
 import replaceKeyStringsSql from "../migrations/0229_replace_key_strings.sql?raw";
 import mailboxNameStringsSql from "../migrations/0230_mailbox_name_strings.sql?raw";
+import renameSourceStringsSql from "../migrations/0231_rename_source_strings.sql?raw";
 
 function stripSqlComments(sql: string): string {
   return sql
@@ -469,5 +470,6 @@ export async function applyTestSchema(): Promise<void> {
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(httpsSourceStateStringsSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(replaceKeyStringsSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(mailboxNameStringsSql)));
+  await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(renameSourceStringsSql)));
 
 }

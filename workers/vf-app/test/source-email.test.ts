@@ -292,17 +292,53 @@ describe("renaming a source (decision 0130)", () => {
     expect(row).toEqual({ name: "UK supplier invoices", email_address: "invoices.acme@vibefinance.example" });
   });
 
-  it("refuses once a document has arrived", async () => {
-    // Each one records this source's name, so renaming would leave them
-    // citing a channel that no longer exists.
+  it("renames one documents arrived through, and they keep the name they arrived under — decision 0583", async () => {
+    // 0130 refused this. A rule naming the source is what a rename can
+    // break, so that is what is checked now, not whether anything arrived.
     await seedSource("s-used", "AP Mailbox");
     await env.DB.prepare("INSERT INTO invoice_headers (id, facts_json) VALUES ('inv-b', ?)")
       .bind(JSON.stringify({ "mandate.channel": "AP Mailbox" }))
       .run();
 
-    const result = await handleRenameSource(env.DB, "s-used", "Renamed");
+    const result = await handleRenameSource(env.DB, "s-used", "UK supplier invoices");
+    expect(result.status).toBe(200);
+    expect((await env.DB.prepare("SELECT name FROM sources WHERE id = 's-used'").first())?.name).toBe("UK supplier invoices");
+    const facts = await env.DB.prepare("SELECT facts_json FROM invoice_headers WHERE id = 'inv-b'").first<{ facts_json: string }>();
+    expect(JSON.parse(facts!.facts_json)["mandate.channel"]).toBe("AP Mailbox");
+  });
+
+  async function rule(id: string, name: string, compiled: unknown, effectiveTo: string | null = null) {
+    await env.DB.prepare("INSERT OR IGNORE INTO rule_sets (id, name, mode, status) VALUES ('rs', 'AP', 'all_matches', 'active')").run();
+    await env.DB.prepare("INSERT INTO rules (id, rule_set_id, sort_order, enabled, name) VALUES (?, 'rs', 1, 1, ?)").bind(id, name).run();
+    await env.DB.prepare(
+      "INSERT INTO rule_versions (rule_id, version, source_text, compiled_json, compiled_by, effective_to) VALUES (?, 1, 'x', ?, 'test', ?)"
+    )
+      .bind(id, JSON.stringify(compiled), effectiveTo)
+      .run();
+  }
+
+  it("refuses while a current rule names the source as its channel, naming the rules — decision 0583", async () => {
+    await seedSource("s-ruled", "AP Mailbox");
+    await rule("r-1", "Mailbox invoices to Dan", { when: { all: [{ field: "mandate.channel", op: "equals", value: "ap mailbox" }] }, then: [{ action: "assign" }] });
+    // Not a channel condition, an ended rule, and another channel: none of these stop it.
+    await rule("r-2", "Tag AP Mailbox", { when: { all: [{ field: "BT-1", op: "equals", value: "AP Mailbox" }] } });
+    await rule("r-3", "Old", { when: { field: "mandate.channel", op: "equals", value: "AP Mailbox" } }, "2026-01-01T00:00:00Z");
+    await rule("r-4", "Other channel", { when: { field: "mandate.channel", op: "equals", value: "Structured XML" } });
+
+    const refused = await handleRenameSource(env.DB, "s-ruled", "UK supplier invoices");
+    expect(refused.status).toBe(409);
+    expect(refused.body).toMatchObject({ reason: "rule_names_source", rules: [{ id: "r-1", name: "Mailbox invoices to Dan" }] });
+
+    await env.DB.prepare("UPDATE rule_versions SET effective_to = '2026-01-01T00:00:00Z' WHERE rule_id = 'r-1'").run();
+    expect((await handleRenameSource(env.DB, "s-ruled", "UK supplier invoices")).status).toBe(200);
+  });
+
+  it("refuses a name another source in the process has", async () => {
+    await seedSource("s-a", "AP Mailbox");
+    await seedSource("s-b", "Second");
+    const result = await handleRenameSource(env.DB, "s-b", "ap mailbox");
     expect(result.status).toBe(409);
-    expect((result.body as { reason: string }).reason).toBe("documents_arrived");
+    expect((result.body as { reason: string }).reason).toBe("name_taken");
   });
 
   it("refuses an empty name", async () => {
