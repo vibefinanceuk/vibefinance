@@ -172,13 +172,26 @@ export async function handleCompileRequest(
     : null;
   const stages = stagesResult?.results ?? [];
 
+  /**
+   * **The customer's sources and people — decision 0584.** Sources so
+   * "invoices from the UK mailbox" compiles to `intake.source` and the
+   * source's id; people so "goes to Anna" resolves to her user id, as
+   * teams and stages above do.
+   */
+  const sources = (
+    await db.prepare("SELECT id, name, mechanism FROM sources WHERE status IS NULL OR status != 'retired' ORDER BY name").all<{ id: string; name: string; mechanism: string }>()
+  ).results;
+  const people = (await db.prepare("SELECT id, name FROM org_users WHERE name IS NOT NULL ORDER BY name").all<{ id: string; name: string }>()).results;
+
   const outcome = await compileRule(
     model,
     sourceText,
     vocabulary,
     stage?.required_permission ?? null,
     teams,
-    stages
+    stages,
+    sources,
+    people
   );
 
   // Refusal as a first-class output (Blueprint, "Subsystem one"): a
@@ -190,6 +203,18 @@ export async function handleCompileRequest(
   // and its currently-active version completely untouched.
   if (outcome.kind === "refused") {
     return { status: 422, body: { status: "refused", reason: outcome.reason } };
+  }
+
+  // Decision 0584: an intake.source naming no source would compile, activate and never fire.
+  const unknownSources = sourceValues(outcome.conditions).filter((v) => !sources.some((x) => x.id === v));
+  if (unknownSources.length > 0) {
+    return {
+      status: 422,
+      body: {
+        status: "refused",
+        reason: `there is no source ${unknownSources.map((v) => `"${v}"`).join(", ")}. Name one of: ${sources.map((x) => x.name).join(", ") || "none yet"}`,
+      },
+    };
   }
 
   const statements = [];
@@ -285,4 +310,24 @@ export async function handleCompileRequest(
       ...(isNewRule ? { name: typeof name === "string" ? name.trim() : null } : {}),
     },
   };
+}
+
+/** Every value an `intake.source` condition tests, anywhere in a compiled rule — decision 0584. */
+export function sourceValues(rule: unknown): string[] {
+  const out: string[] = [];
+  const walk = (node: unknown): void => {
+    if (Array.isArray(node)) {
+      node.forEach(walk);
+      return;
+    }
+    if (node === null || typeof node !== "object") return;
+    const o = node as Record<string, unknown>;
+    if (o.field === "intake.source") {
+      const v = o.value;
+      for (const x of Array.isArray(v) ? v : [v]) if (typeof x === "string") out.push(x);
+    }
+    Object.values(o).forEach(walk);
+  };
+  walk(rule);
+  return out;
 }

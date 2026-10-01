@@ -94,7 +94,8 @@ export function buildIntakeEnricher(
   source: SourceRow
 ): (facts: Record<string, unknown>) => Promise<Record<string, unknown>> {
   return async (facts) => {
-    const extra: Record<string, unknown> = {};
+    // Decision 0584: which source it arrived through, by id, for rules ("from the UK mailbox").
+    const extra: Record<string, unknown> = { "intake.source": source.id };
 
     // Org placement — decision 0111: the source's own default first,
     // and only where it has none does the document get read at all.

@@ -185,6 +185,8 @@ export const DERIVED_FIELDS = [
   // Decision 0560 — which e-invoice format a structured document is, and
   // what the EN 16931 checks found.
   "intake.format",
+  // Decision 0584 — which source (mailbox, upload, HTTPS) it arrived through, by id.
+  "intake.source",
   "en16931.checked",
   "en16931.failures",
   "supplier.matched",
@@ -310,6 +312,7 @@ export const INVOICE_FIELD_TYPES: Record<string, FieldType> = {
   "coding.line_invalid": "text",
   "coding.split_row": "number",
   "mandate.channel": "text",
+  "intake.source": "text",
   "validation.passed": "boolean",
   "validation.failures": "text",
   "validation.passedAfterRules": "boolean",
@@ -528,6 +531,9 @@ export const DERIVED_FIELD_DESCRIPTIONS: Record<DerivedField, string> = {
   // list.
   "mandate.channel":
     "the channel this document arrived through. AP examples: Email, Mailroom, EDI, Tax Authority, Supplier Portal. AR examples: Billing System A, Billing System B, Order Fulfillment A, Order Fulfillment B. A free string, not a closed enum.",
+  // Decision 0584.
+  "intake.source":
+    "the id of the source this invoice arrived through: one of the customer's own mailboxes, its AP upload, or an HTTPS source. Always present on an invoice that arrived through a source, whatever it is and whether it could be read, and unchanged when the source is renamed. The customer names a source by its name; the list of the customer's sources, where given, maps each name to the id that belongs here. Prefer this to mandate.channel for 'invoices from <a source>', since mandate.channel is the source's name only on documents nothing could read.",
   "validation.passed": "true if the document passed standard validation",
   "validation.failures":
     "a comma-separated list of the validation checks that failed, empty when none did. A string rather than a list so the existing contains operator works: 'validation.failures contains total_missing'.",

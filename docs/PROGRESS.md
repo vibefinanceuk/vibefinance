@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 1 October 2026 (decision 0583). A living document: what
+Last updated 1 October 2026 (decision 0584). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,12 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Rules by source: `intake.source` (0584)
+- Every invoice records which source it arrived through, so a rule such
+  as "invoices from the UK mailbox go to Anna" works, and keeps working
+  when the source is renamed. The rule compiler now knows your sources
+  and people by name.
 
 ### Renaming a source that has received invoices (0583)
 - A source can be renamed whatever has arrived through it. Only a rule

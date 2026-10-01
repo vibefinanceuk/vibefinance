@@ -1,7 +1,8 @@
 import { env } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
 import { applyTestSchema } from "./setup.js";
-import { handleCaptureFromSource } from "../src/source-capture-route.js";
+import intakeSourceSql from "../../../migrations/0117_intake_source_fact.sql?raw";
+import { captureKeyedInvoice, handleCaptureFromSource } from "../src/source-capture-route.js";
 import { handleCreateSource } from "../src/source-route.js";
 import { handleCreateIntakeChannel } from "../src/intake-channel-route.js";
 import { handleCreateProcess, handleCreateStage } from "../src/process-route.js";
@@ -514,5 +515,61 @@ describe("what each detection test found reaches storage (decision 0169)", () =>
   it("is in the vocabulary, so a rule could reach it", async () => {
     const { isKnownField } = await import("@vibefinance/shared");
     expect(isKnownField("intake.detail")).toBe(true);
+  });
+});
+
+/**
+ * **intake.source — decision 0584.** Which source an invoice arrived
+ * through, by id, whatever it is and whether it could be read, so a rule
+ * can say "invoices from the UK mailbox".
+ */
+describe("which source it arrived through — decision 0584", () => {
+  const facts = async (id: string) =>
+    JSON.parse((await env.DB.prepare("SELECT facts_json FROM invoice_headers WHERE id = ?").bind(id).first<{ facts_json: string }>())!.facts_json);
+
+  it("is recorded on XML, an image, a document nothing could read, and one keyed by hand", async () => {
+    const ids: string[] = [];
+    for (const [bytes, model] of [
+      [UBL, fakeModel("{}")],
+      [JPEG, fakeModel(IMAGE_RESULT)],
+      [GIBBERISH, fakeModel("{}")],
+    ] as const) {
+      const result = await handleCaptureFromSource(env.DB, "src-mail", bytes, model);
+      expect(result.status).toBe(201);
+      ids.push((result.body as { id: string }).id);
+    }
+    const keyed = await captureKeyedInvoice(env.DB, "src-mail", {});
+    ids.push((keyed.body as { id: string }).id);
+    for (const id of ids) expect((await facts(id))["intake.source"]).toBe("src-mail");
+    // Unlike mandate.channel, which is the structural channel for what was read.
+    const channel = await env.DB.prepare("SELECT mandate_channel FROM invoice_headers WHERE id = ?").bind(ids[0]).first<{ mandate_channel: string }>();
+    expect(channel?.mandate_channel).toBe("Structured XML");
+  });
+
+  it("stays the source's id when the source is renamed", async () => {
+    const result = await handleCaptureFromSource(env.DB, "src-mail", UBL, fakeModel("{}"));
+    await env.DB.prepare("UPDATE sources SET name = 'UK mailbox' WHERE id = 'src-mail'").run();
+    const again = await handleCaptureFromSource(env.DB, "src-mail", GIBBERISH, fakeModel("{}"));
+    expect((await facts((result.body as { id: string }).id))["intake.source"]).toBe("src-mail");
+    expect((await facts((again.body as { id: string }).id))["intake.source"]).toBe("src-mail");
+  });
+
+  it("is filled in by migration 0117 for invoices already received through a source", async () => {
+    await env.DB.prepare("INSERT INTO invoice_headers (id, facts_json) VALUES ('inv-old', '{\"BT-1\":\"1\"}'), ('inv-none', '{}'), ('inv-null', '{}')").run();
+    await env.DB.prepare(
+      "INSERT INTO route_messages (id, instance_id, direction, status, received_at) VALUES ('MSG-A', 'src-mail', 'in', 'delivered', '2026-09-30T10:00:00Z'), ('MSG-B', NULL, 'in', 'delivered', '2026-09-30T10:00:00Z')"
+    ).run();
+    await env.DB.prepare(
+      "INSERT INTO route_message_items (message_id, item_type, item_id) VALUES ('MSG-A', 'invoice', 'inv-old'), ('MSG-A', 'invoice', 'inv-null'), ('MSG-B', 'invoice', 'inv-none')"
+    ).run();
+    const sql = intakeSourceSql.replace(/--.*$/gm, "");
+    for (const statement of sql.split(";").map((x) => x.trim()).filter(Boolean)) await env.DB.prepare(statement).run();
+    expect(await facts("inv-old")).toEqual({ "BT-1": "1", "intake.source": "src-mail" });
+    expect(await facts("inv-null")).toEqual({ "intake.source": "src-mail" });
+    // Run again, nothing changes.
+    for (const statement of sql.split(";").map((x) => x.trim()).filter(Boolean)) await env.DB.prepare(statement).run();
+    expect(await facts("inv-old")).toEqual({ "BT-1": "1", "intake.source": "src-mail" });
+    // A message on no source gives none.
+    expect(await facts("inv-none")).toEqual({});
   });
 });

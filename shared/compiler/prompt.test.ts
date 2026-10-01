@@ -219,3 +219,38 @@ describe("real stages to resolve against — the same bug, found in route_to", (
     expect(prompt).toContain("REAL STAGES");
   });
 });
+
+/**
+ * **Sources and people — decision 0584.** "Invoices from the UK mailbox
+ * go to Anna" needs the customer's real sources, for intake.source, and
+ * real people, for assign_task's user.
+ */
+describe("real sources and people to resolve against — decision 0584", () => {
+  const SOURCES = [
+    { id: "uk-mail", name: "UK mailbox", mechanism: "email" },
+    { id: "portal", name: "Supplier portal API", mechanism: "https" },
+  ];
+  const PEOPLE = [{ id: "u-anna", name: "Anna Weber" }];
+
+  it("lists each source and person by id and name, and says to test intake.source, not mandate.channel", () => {
+    const prompt = buildCompilerPrompt("invoices from the UK mailbox go to Anna", "invoice", null, [], [], SOURCES, PEOPLE);
+    expect(prompt).toContain("REAL SOURCES (the only valid values for an intake.source condition)");
+    expect(prompt).toContain('- "uk-mail" — UK mailbox (email)');
+    expect(prompt).toContain('- "portal" — Supplier portal API (https)');
+    expect(prompt).toContain("Never test\nmandate.channel for this");
+    expect(prompt).toContain('REAL PEOPLE (the only valid values for an assign_task action\'s "user")');
+    expect(prompt).toContain('- "u-anna" — Anna Weber');
+  });
+
+  it("describes intake.source in the vocabulary", () => {
+    const prompt = buildCompilerPrompt("x");
+    expect(prompt).toContain("intake.source");
+    expect(prompt).toContain("unchanged when the source is renamed");
+  });
+
+  it("says nothing of sources or people where none are given", () => {
+    const prompt = buildCompilerPrompt("x");
+    expect(prompt).not.toContain("REAL SOURCES");
+    expect(prompt).not.toContain("REAL PEOPLE");
+  });
+});

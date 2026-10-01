@@ -815,3 +815,52 @@ describe("handleCompileRequest — real stages for route_to (the sibling stage-i
     expect(promptSent).not.toContain('"archive"');
   });
 });
+
+/**
+ * **Sources and people — decision 0584.** "Invoices from the UK mailbox
+ * go to Anna": the compiler is shown the real sources, for intake.source,
+ * and the real people, for assign_task's user, as it is shown teams.
+ */
+describe("sources and people to resolve against — decision 0584", () => {
+  async function seedSourcesAndPeople() {
+    await seedRuleSet("rs1");
+    await env.DB.prepare("INSERT OR IGNORE INTO processes (id, name) VALUES ('ap', 'AP')").run();
+    await env.DB.prepare(
+      "INSERT INTO sources (id, process_id, name, mechanism, status) VALUES ('uk-mail', 'ap', 'UK mailbox', 'email', 'active'), ('old', 'ap', 'Old box', 'email', 'retired'), ('portal', 'ap', 'Supplier portal API', 'https', 'active')"
+    ).run();
+    await env.DB.prepare("INSERT INTO org_users (id, name, email) VALUES ('u-anna', 'Anna Weber', 'anna@acme.example')").run();
+  }
+  const compiled = (value: unknown) =>
+    JSON.stringify({
+      status: "compiled",
+      conditions: { field: "intake.source", operator: "is", value },
+      actions: [{ type: "assign_task", params: { user: "u-anna" } }],
+    });
+
+  it("shows the live sources and the people, by id and name", async () => {
+    await seedSourcesAndPeople();
+    const model = fakeModel(compiled("uk-mail"));
+    const result = await handleCompileRequest(model, "test-model@v1", env.DB, { ruleSetId: "rs1", sourceText: "invoices from the UK mailbox go to Anna" });
+    expect(result.status).toBe(201);
+    const prompt = (model.compile as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
+    expect(prompt).toContain("REAL SOURCES");
+    expect(prompt).toContain('- "uk-mail" — UK mailbox (email)');
+    expect(prompt).toContain('- "portal" — Supplier portal API (https)');
+    expect(prompt).not.toContain("Old box");
+    expect(prompt).toContain("REAL PEOPLE");
+    expect(prompt).toContain('- "u-anna" — Anna Weber');
+    // The field is described to the model too.
+    expect(prompt).toContain("intake.source");
+  });
+
+  it("refuses a rule testing a source that does not exist, rather than one that never fires", async () => {
+    await seedSourcesAndPeople();
+    for (const value of ["UK mailbox", ["uk-mail", "nope"]]) {
+      const result = await handleCompileRequest(fakeModel(compiled(value)), "test-model@v1", env.DB, { ruleSetId: "rs1", sourceText: "x" });
+      expect(result.status).toBe(422);
+      expect((result.body as { reason: string }).reason).toContain("Name one of: Supplier portal API, UK mailbox");
+    }
+    const none = await env.DB.prepare("SELECT count(*) AS n FROM rules").first<{ n: number }>();
+    expect(none?.n).toBe(0);
+  });
+});

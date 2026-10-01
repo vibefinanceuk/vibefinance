@@ -231,6 +231,18 @@ export async function handleCaptureIntake(db: D1Database, channelId: string, bod
   if (typeof enrichFacts === "function") {
     mergedFacts = { ...mergedFacts, ...(await enrichFacts(mergedFacts)) };
   }
+  /**
+   * **Which source it arrived through is kept — decision 0584.** The
+   * other enriched facts are worked out again whenever a rule asks (a
+   * supplier can be matched later); this one cannot change, and a rule
+   * at any later stage ("from the UK mailbox") needs it on file.
+   */
+  if (typeof mergedFacts["intake.source"] === "string") {
+    await db
+      .prepare(`UPDATE invoice_headers SET facts_json = json_set(COALESCE(facts_json, '{}'), '$."intake.source"', ?) WHERE id = ?`)
+      .bind(mergedFacts["intake.source"], id)
+      .run();
+  }
   // coding.line_invalid — decision 0511. After enrichFacts, not
   // beside po.* above: the company code a Cost Centre or General
   // Ledger Code is checked against is the org that hook has only just

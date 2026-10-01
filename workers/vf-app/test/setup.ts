@@ -120,6 +120,7 @@ import lookupListsSql from "../../../migrations/0113_lookup_lists.sql?raw";
 import apUploadSql from "../../../migrations/0114_ap_upload.sql?raw";
 import sourceKeysSql from "../../../migrations/0115_source_keys.sql?raw";
 import sourceKeyReplaceSql from "../../../migrations/0116_source_key_replace.sql?raw";
+import intakeSourceSql from "../../../migrations/0117_intake_source_fact.sql?raw";
 
 // Another known divergence from production, on top of the one below:
 // D1's exec() splits its input by newline and executes each non-empty
@@ -436,6 +437,7 @@ export async function applyTestSchema(): Promise<void> {
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(apUploadSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(sourceKeysSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(sourceKeyReplaceSql)));
+  await env.DB.exec(toOneStatementPerLine(stripSqlComments(intakeSourceSql)));
 }
 
 /**
