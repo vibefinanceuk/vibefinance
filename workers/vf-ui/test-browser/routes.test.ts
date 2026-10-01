@@ -9,6 +9,7 @@ import httpsStateStringsSql from "../../vf-licence/migrations/0228_https_source_
 import replaceKeyStringsSql from "../../vf-licence/migrations/0229_replace_key_strings.sql?raw";
 import mailboxStringsSql from "../../vf-licence/migrations/0230_mailbox_name_strings.sql?raw";
 import renameStringsSql from "../../vf-licence/migrations/0231_rename_source_strings.sql?raw";
+import httpsOutStringsSql from "../../vf-licence/migrations/0232_https_out_strings.sql?raw";
 
 /**
  * **Routes and Process routes — decision 0557.** The standard routes with
@@ -22,6 +23,7 @@ import renameStringsSql from "../../vf-licence/migrations/0231_rename_source_str
 
 const strings: Record<string, string> = {
   "action.close": "Close",
+  "action.save": "Save",
   "action.rename": "Rename",
   "action.retire": "Retire",
   "action.create": "Create",
@@ -42,7 +44,7 @@ const strings: Record<string, string> = {
   "mechanism.file_import": "File import",
   "mechanism.edi": "EDI",
 };
-for (const sql of [stringsSql, destinationStringsSql, formatStringsSql, mappingStringsSql, csvStringsSql, httpsStringsSql, httpsStateStringsSql, replaceKeyStringsSql, mailboxStringsSql, renameStringsSql]) {
+for (const sql of [stringsSql, destinationStringsSql, formatStringsSql, mappingStringsSql, csvStringsSql, httpsStringsSql, httpsStateStringsSql, replaceKeyStringsSql, mailboxStringsSql, renameStringsSql, httpsOutStringsSql]) {
   for (const m of sql.matchAll(/\('([^']+)', 'en', '((?:[^']|'')*)'\)/g)) strings[m[1]] = m[2].replace(/''/g, "'");
 }
 // 0209 updates the ERP note rather than inserting it.
@@ -641,5 +643,139 @@ describe("renaming a source — decision 0583", () => {
   it("says when another source has the name", async () => {
     await renameTo("New box", { status: 409, body: { reason: "name_taken", error: "x" } });
     expect(text(".renamepop .warn")).toBe("Another source in this process already has that name.");
+  });
+});
+
+describe("HTTPS out — decision 0585", () => {
+  const PUSH = { id: "dest-1", name: "ERP push", status: "paused", routeId: "https-out", routeName: "HTTPS out", route: { live: true, ...V("process", "en16931", "vf_invoice_json_v1", "en16931", "https") }, waiting: 0, started: false, failedOpen: 0 };
+  const CONNECTOR = {
+    instance: { id: "dest-1", name: "ERP push", status: "paused", processId: "ap", startedAt: null },
+    settings: { url: "https://erp.acme.example/api/invoices", method: "POST", format: "vf_json", auth: { type: "bearer" }, referencePath: "$.id" },
+    secrets: { token: "2026-10-01T09:00:00Z" },
+    waitingNotTaken: 3,
+    counts: { failed: 1, delivered: 1 },
+    deliveries: [
+      { invoiceId: "inv-9", invoiceNumber: "88240", supplier: "Lager Nord GmbH", status: "failed", attempts: 1, nextAttemptAt: null, lastStatus: 422, lastError: "Supplier has no site", reference: null, deliveredAt: null, messageId: "MSG-1" },
+      { invoiceId: "inv-8", invoiceNumber: "88239", supplier: "Lager Nord GmbH", status: "delivered", attempts: 1, nextAttemptAt: null, lastStatus: 201, lastError: null, reference: "AP-51", deliveredAt: "2026-10-01T09:10:00Z", messageId: "MSG-2" },
+    ],
+    candidates: [{ id: "inv-9", number: "88240", supplier: "Lager Nord GmbH", currency: "EUR", total: 738.99 }],
+  };
+
+  function stubOut(calls: Call[], connector: unknown = CONNECTOR, destinations: unknown[] = [PUSH]) {
+    stub(calls, { "/api/process-routes": { ...FLOW, destinations: [...FLOW.destinations, ...destinations] } });
+    const inner = globalThis.fetch as unknown as (url: string, init?: RequestInit) => Promise<Response>;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        const path = String(url).split("?")[0];
+        const method = init?.method ?? "GET";
+        const reply = (status: number, body: unknown) => {
+          calls.push({ method, path, query: "", body: init?.body as string | undefined });
+          return { ok: status < 300, status, json: async () => body } as Response;
+        };
+        if (path === "/api/processes/ap/destinations") return reply(201, { id: "dest-2", name: "New push", routeId: "https-out", status: "paused" });
+        if (path === "/api/route-instances/dest-1/connector") return method === "GET" ? reply(200, connector) : reply(200, { settings: {}, secrets: {} });
+        if (path === "/api/route-instances/dest-1/connector/preview")
+          return reply(200, { method: "POST", url: "https://erp.acme.example/api/invoices", headers: { "Content-Type": "application/json", Authorization: "Bearer •••" }, body: '{\n  "invoiceNumber": "88240"\n}', checks: ["no_supplier_erp_id"] });
+        if (path === "/api/route-instances/dest-1/connector/send") return reply(200, { status: "delivered", httpStatus: 201, reference: "AP-77", error: null, messageId: "MSG-3" });
+        if (path === "/api/route-instances/dest-1/connector/start") return reply(200, { status: "active" });
+        return inner(url, init);
+      })
+    );
+  }
+
+  async function openPush() {
+    await openScreen("/process-routes.js");
+    ([...document.querySelectorAll(".prcard")].find((c) => c.textContent?.includes("ERP push")) as HTMLElement).click();
+    await settle();
+  }
+  const button = (root: string, label: string) => [...document.querySelectorAll(`${root} button`)].find((b) => b.textContent === label) as HTMLElement;
+
+  it("shows on its card whether it is sending, what failed and what waits", async () => {
+    stubOut([], CONNECTOR, [PUSH, { ...PUSH, id: "dest-x", name: "Live push", status: "active", started: true, failedOpen: 2, waiting: 1 }]);
+    await openScreen("/process-routes.js");
+    const cards = [...document.querySelectorAll(".prcard")];
+    const pills = (name: string) => [...cards.find((c) => c.textContent?.includes(name))!.querySelectorAll(".rmpill")].map((p) => p.textContent);
+    expect(pills("ERP push")).toEqual(["Not sending yet"]);
+    expect(pills("Live push")).toEqual(["Sending", "2 failed", "1 waiting"]);
+  });
+
+  it("adds a destination, named, as HTTPS out", async () => {
+    const calls: Call[] = [];
+    stubOut(calls);
+    await openScreen("/process-routes.js");
+    button(".prpanel .statebuttons", "Add a destination").click();
+    await settle();
+    expect(text(".praddpop h3")).toBe("Add a destination");
+    (document.querySelector("#dest-name") as HTMLInputElement).value = "New push";
+    (document.querySelector(".praddpop .statebuttons button") as HTMLElement).click();
+    await settle();
+    expect(JSON.parse(calls.find((c) => c.path === "/api/processes/ap/destinations")!.body!)).toEqual({ name: "New push", routeId: "https-out" });
+  });
+
+  it("shows its settings, signs in by bearer with the token set, and saves what is typed", async () => {
+    const calls: Call[] = [];
+    stubOut(calls);
+    await openPush();
+    expect(text(".prdetail h3")).toBe("Destination: ERP push");
+    // Not started: no Pause, no ERP export; a Start instead.
+    expect([...document.querySelectorAll(".prdetail > .cardhead .statebuttons button")].map((b) => b.textContent)).toEqual(["Close"]);
+    expect(text("#do-notstarted")).toContain("Not sending yet");
+    expect((document.querySelector("#do-url") as HTMLInputElement).value).toBe("https://erp.acme.example/api/invoices");
+    expect((document.querySelector("#do-auth") as HTMLSelectElement).value).toBe("bearer");
+    expect((document.querySelector("#do-secret") as HTMLInputElement).placeholder).toContain("Type to replace it");
+    // Choosing OAuth asks for its own fields.
+    const auth = document.querySelector("#do-auth") as HTMLSelectElement;
+    auth.value = "oauth2_client_credentials";
+    auth.dispatchEvent(new Event("change"));
+    expect(document.querySelector("#do-tokenurl")).not.toBeNull();
+    expect(text("#do-settings")).toContain("Client secret");
+    (document.querySelector("#do-tokenurl") as HTMLInputElement).value = "https://id.example/token";
+    (document.querySelector("#do-clientid") as HTMLInputElement).value = "vf";
+    (document.querySelector("#do-secret") as HTMLInputElement).value = "cs-1";
+    button("#do-settings", "Save").click();
+    await settle();
+    const put = calls.find((c) => c.method === "PUT")!;
+    expect(JSON.parse(put.body!)).toMatchObject({
+      settings: { url: "https://erp.acme.example/api/invoices", method: "POST", format: "vf_json", referencePath: "$.id", auth: { type: "oauth2_client_credentials", tokenUrl: "https://id.example/token", clientId: "vf" } },
+      secret: "cs-1",
+    });
+  });
+
+  it("shows exactly what would be sent first, then sends it and says what came back", async () => {
+    const calls: Call[] = [];
+    stubOut(calls);
+    await openPush();
+    button("#do-try", "Show what would be sent").click();
+    await settle();
+    expect(JSON.parse(calls.find((c) => c.path.endsWith("/preview"))!.body!)).toEqual({ invoiceId: "inv-9" });
+    expect(text("#do-preview")).toContain("POST https://erp.acme.example/api/invoices");
+    expect(text("#do-preview")).toContain("Authorization: Bearer •••");
+    expect(text("#do-try")).toContain("The supplier has no ERP id");
+    expect(calls.some((c) => c.path.endsWith("/send"))).toBe(false);
+    button("#do-try", "Send").click();
+    await settle();
+    expect(text("#do-outcome")).toBe("Delivered: HTTP 201. Its reference: AP-77.");
+  });
+
+  it("lists deliveries with Send again for a failed one, and starts only as chosen", async () => {
+    const calls: Call[] = [];
+    stubOut(calls);
+    await openPush();
+    const rows = [...document.querySelectorAll("#do-deliveries tbody tr")].map((r) => [...r.querySelectorAll("td")].map((td) => td.textContent));
+    expect(rows[0].slice(0, 4)).toEqual(["88240", "Lager Nord GmbH", "Failed", "HTTP 422 · Supplier has no site"]);
+    expect(rows[1][2]).toBe("Delivered");
+    expect(rows[1][3]).toContain("AP-51");
+    button("#do-deliveries", "Send again").click();
+    await settle();
+    expect(JSON.parse(calls.find((c) => c.path.endsWith("/send"))!.body!)).toEqual({ invoiceId: "inv-9" });
+
+    button("#do-notstarted", "Start sending").click();
+    await settle();
+    expect(text(".dostartpop")).toContain("Only invoices from now on (3 already waiting are set aside)");
+    (document.querySelector("#do-start-all") as HTMLInputElement).checked = true;
+    button(".dostartpop", "Start sending").click();
+    await settle();
+    expect(JSON.parse(calls.find((c) => c.path.endsWith("/start"))!.body!)).toEqual({ includeWaiting: true });
   });
 });

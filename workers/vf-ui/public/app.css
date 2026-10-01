@@ -5021,3 +5021,18 @@
 .httpskeys td.httpsactions .actionlink { display: inline-flex; }
 .httpskeys tr.httpsreplaced td:nth-child(4) { color: var(--text-secondary); font-style: italic; }
 .httpscheck { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: var(--text-sm); }
+
+/* Decision 0585 — HTTPS out, on a Destination panel. */
+.docard { margin-top: 14px; padding: 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-1); }
+.docard h4 { margin: 0; font-size: var(--text-base); }
+.docard .cardhead { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.dobuttons { display: flex; gap: 6px; }
+.dobuttons .actionlink { flex-direction: row; padding: 4px 8px; gap: 4px; }
+.dobuttons .actionlink svg { width: 16px; height: 16px; }
+.dofield { display: flex; flex-direction: column; gap: 5px; margin-top: 10px; min-width: 0; }
+.dofield label { font-size: var(--text-sm); color: var(--text-secondary); }
+.dotwo { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.dostart { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-top: 12px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; }
+.dostart .actionlink { flex-direction: row; padding: 4px 8px; gap: 4px; }
+.dostartpop { max-width: 560px; }
+@media (max-width: 720px) { .dotwo { grid-template-columns: 1fr; } }

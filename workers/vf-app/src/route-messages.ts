@@ -139,6 +139,8 @@ export async function openOutboundMessage(
     bytes: number;
     receivedAt: string;
     actor?: string;
+    /** Decision 0585: what opened it — an export ("exported", the default) or a delivery ("sending"). */
+    event?: string;
   }
 ): Promise<string | null> {
   const id = newMessageId();
@@ -151,7 +153,7 @@ export async function openOutboundMessage(
       )
       .bind(id, params.destinationId, params.erpExportId ?? null, params.recipient, params.subject, params.bytes, params.receivedAt)
       .run();
-    await addRouteEvent(db, id, "exported", params.actor ? { actor: params.actor } : {});
+    await addRouteEvent(db, id, params.event ?? "exported", params.actor ? { actor: params.actor } : {});
     return id;
   } catch {
     return null;

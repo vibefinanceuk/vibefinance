@@ -196,13 +196,16 @@ export async function handleProcessRoutes(
 
   const destinations = await db
     .prepare(
-      `SELECT i.id, i.name, i.status, i.route_id, r.name AS route_name
+      `SELECT i.id, i.name, i.status, i.route_id, i.started_at, r.name AS route_name,
+              -- Decision 0585: what an HTTPS out Destination has waiting, and what failed.
+              (SELECT count(*) FROM destination_deliveries d WHERE d.instance_id = i.id AND d.status IN ('pending', 'retrying')) AS sending,
+              (SELECT count(*) FROM destination_deliveries d WHERE d.instance_id = i.id AND d.status = 'failed') AS failed
        FROM route_instances i JOIN routes r ON r.id = i.route_id
-       WHERE i.process_id = ? AND i.source_id IS NULL
-       ORDER BY i.name`
+       WHERE i.process_id = ? AND i.source_id IS NULL AND (i.status IS NULL OR i.status != 'retired')
+       ORDER BY i.route_id != 'erp-csv', i.name`
     )
     .bind(chosen.id)
-    .all<{ id: string; name: string; status: string; route_id: string; route_name: string }>();
+    .all<{ id: string; name: string; status: string; route_id: string; route_name: string; started_at: string | null; sending: number; failed: number }>();
 
   /**
    * **What is waiting for the ERP**, for the ERP Destination's card: this
@@ -250,7 +253,10 @@ export async function handleProcessRoutes(
         routeId: d.route_id,
         routeName: d.route_name,
         route: version(d.route_id),
-        waiting: d.route_id === "erp-csv" ? erpWaiting : null,
+        waiting: d.route_id === "erp-csv" ? erpWaiting : d.sending,
+        // Decision 0585.
+        started: d.route_id === "erp-csv" || d.started_at !== null,
+        failedOpen: d.failed,
       })),
     },
   };
@@ -275,15 +281,19 @@ export async function handleSetInstanceStatus(
     return { status: 400, body: { error: "status must be active or paused", reason: "invalid_status" } };
   }
   const instance = await db
-    .prepare("SELECT id, source_id, status FROM route_instances WHERE id = ?")
+    .prepare("SELECT id, source_id, status, route_id, started_at FROM route_instances WHERE id = ?")
     .bind(instanceId)
-    .first<{ id: string; source_id: string | null; status: string | null }>();
+    .first<{ id: string; source_id: string | null; status: string | null; route_id: string; started_at: string | null }>();
   if (!instance) return { status: 404, body: { error: `route instance ${instanceId} does not exist` } };
   if (instance.source_id) {
     return { status: 409, body: { error: "a Source instance is changed through its source", reason: "is_source" } };
   }
   if (instance.status === "retired") {
     return { status: 409, body: { error: "a retired Destination cannot be resumed", reason: "retired" } };
+  }
+  // Decision 0585: a Destination that has never sent starts with Start sending, which decides what already waiting is sent.
+  if (status === "active" && !instance.started_at && instance.route_id !== "erp-csv") {
+    return { status: 409, body: { error: "start the Destination first, deciding what already waiting is sent", reason: "not_started" } };
   }
   await db.prepare("UPDATE route_instances SET status = ? WHERE id = ?").bind(status, instanceId).run();
   return { status: 200, body: { id: instanceId, status } };

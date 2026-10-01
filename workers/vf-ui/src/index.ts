@@ -241,6 +241,9 @@ const PROXIED_TO_INSTANCE: RegExp[] = [
   // An HTTPS source's keys — decision 0578.
   /^\/sources\/[^/]+\/keys$/,
   /^\/sources\/[^/]+\/keys\/[^/]+\/revoke$/,
+  // HTTPS out Destinations — decision 0585.
+  /^\/processes\/[^/]+\/destinations$/,
+  /^\/route-instances\/[^/]+\/connector(\/(preview|send|start))?$/,
   // Replace a key — decision 0581.
   /^\/sources\/[^/]+\/keys\/[^/]+\/replace$/,
   // Create → Upload documents — decision 0573.

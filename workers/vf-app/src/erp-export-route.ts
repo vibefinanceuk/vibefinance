@@ -145,6 +145,35 @@ export async function eligibleInvoiceIds(
   return rows.results.map((r) => r.id);
 }
 
+/**
+ * **Payment-eligible invoices of one process, for any Destination —
+ * decision 0585.** The same definition as `eligibleInvoiceIds` (process
+ * completed, or at its exit stage; never discarded or returned), without
+ * what is the ERP CSV file's own: its pause, and whether an export took
+ * it. Each Destination records what it has delivered itself.
+ */
+export async function payableInvoiceIds(db: D1Database, processId: string): Promise<string[]> {
+  const exits = await exitStageIds(db);
+  const exitSql = exits.length === 0 ? "0" : `pi.current_stage_id IN (${exits.map(() => "?").join(", ")})`;
+  const rows = await db
+    .prepare(
+      `SELECT DISTINCT h.id AS id, h.issue_date AS issue_date
+       FROM invoice_headers h
+       JOIN process_instances pi ON pi.subject_type = 'invoice' AND pi.subject_id = h.id
+       WHERE (pi.status = 'completed' OR (pi.status = 'in_progress' AND ${exitSql}))
+         AND pi.process_id = ?
+         AND NOT EXISTS (
+           SELECT 1 FROM process_instances other
+           WHERE other.subject_type = 'invoice' AND other.subject_id = h.id
+             AND other.status IN (${NOT_PAYABLE.map(() => "?").join(", ")})
+         )
+       ORDER BY h.issue_date, h.id`
+    )
+    .bind(...exits, processId, ...NOT_PAYABLE)
+    .all<{ id: string }>();
+  return rows.results.map((r) => r.id);
+}
+
 /** One invoice's distributions: each line, or each row of a split line. */
 export async function invoiceExportRows(db: D1Database, invoiceId: string, exportId: string): Promise<ErpExportRow[]> {
   const header = await db

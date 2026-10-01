@@ -169,7 +169,7 @@
   // bounds how stale the cached state can get if a run or two is
   // missed.
   "triggers": {
-    "crons": ["0 */6 * * *"]
+    "crons": ["0 */6 * * *", "*/5 * * * *"]
   },
 
   // R2 document retention (decision 0013, 0035). One bucket per

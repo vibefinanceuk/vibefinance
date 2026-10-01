@@ -142,6 +142,17 @@ import {
 import { createWorkersAiExtractionModel } from "./extraction-model.js";
 import { handleGetExtractionSettings, handleUpdateExtractionSettings } from "./extraction-settings-route.js";
 import { handleToMarkdownDiagnostic } from "./tomarkdown-diagnostic.js";
+/** Decision 0585: the cron HTTPS out deliveries run on (wrangler.jsonc's triggers). */
+const DELIVERY_CRON = "*/5 * * * *";
+import {
+  handleCreateDestination,
+  handleGetConnector,
+  handlePreviewDelivery,
+  handleSaveConnector,
+  handleSendNow,
+  handleStartDestination,
+  runDeliveries,
+} from "./destination-delivery.js";
 import { handleCreateSource, handleListSources , handleSetSourceEmail , handlePreviewSourceEmail , handleListAllSources , handleListProcesses , handleRetireSource, handleRenameSource } from "./source-route.js";
 import {
   handleListRules,
@@ -329,6 +340,13 @@ export interface Env {
    * refusing the terminal act itself.
    */
   RESEND_API_KEY?: string;
+  /**
+   * Decision 0585 — the key a Destination's secrets (a token, a password,
+   * an OAuth client secret) are encrypted under: 32 random bytes, base64.
+   * Set with `wrangler secret put CONNECTOR_SECRETS_KEY`. Without it a
+   * secret is refused, never kept in the clear.
+   */
+  CONNECTOR_SECRETS_KEY?: string;
   /**
    * The verified sending address — a plain var, not a secret (it is
    * not sensitive; it is printed on every email this deployment
@@ -4600,6 +4618,46 @@ export default {
     }
 
 
+    // Decision 0585 — HTTPS out Destinations: create, configure, preview, send now, start.
+    const destinationsMatch = pathname.match(/^\/processes\/([^/]+)\/destinations$/);
+    if (destinationsMatch && request.method === "POST") {
+      const { db } = resolveTenant(request, env);
+      const auth = await authenticatePerson(db, request, env);
+      if (!auth.user) return json({ error: auth.reason }, 401);
+      if (!(await hasPermission(db, auth.user.id, "Admin.Configure"))) return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
+      const body = await request.json().catch(() => ({}));
+      const result = await handleCreateDestination(db, auth.user.id, decodeURIComponent(destinationsMatch[1]), body);
+      return json(result.body, result.status);
+    }
+    const connectorMatch = pathname.match(/^\/route-instances\/([^/]+)\/connector(?:\/(preview|send|start))?$/);
+    if (connectorMatch) {
+      const { db } = resolveTenant(request, env);
+      const auth = await authenticatePerson(db, request, env);
+      if (!auth.user) return json({ error: auth.reason }, 401);
+      const instanceId = decodeURIComponent(connectorMatch[1]);
+      const action = connectorMatch[2];
+      const configure = await hasPermission(db, auth.user.id, "Admin.Configure");
+      // Sending one invoice again is the Route monitor's own work, too.
+      const monitor = await hasPermission(db, auth.user.id, "Integration.Monitor");
+      const allowed = action === "send" || (!action && request.method === "GET") ? configure || monitor : configure;
+      if (!allowed) return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
+      const body = request.method === "GET" ? null : await request.json().catch(() => ({}));
+      const deps = {
+        secretsKey: env.CONNECTOR_SECRETS_KEY,
+        bucket: env.DOCUMENTS,
+        customerId: env.CUSTOMER_ID,
+        onFinished: (messageId: string) => notifyMessageFinished(db, alertTransport(env), messageId),
+      };
+      let result;
+      if (!action && request.method === "GET") result = await handleGetConnector(db, instanceId);
+      else if (!action && request.method === "PUT") result = await handleSaveConnector(db, auth.user.id, instanceId, body, env.CONNECTOR_SECRETS_KEY);
+      else if (action === "preview" && request.method === "POST") result = await handlePreviewDelivery(db, instanceId, body);
+      else if (action === "send" && request.method === "POST") result = await handleSendNow(db, auth.user.id, instanceId, body, deps);
+      else if (action === "start" && request.method === "POST") result = await handleStartDestination(db, instanceId, body);
+      else return json({ error: "method not allowed" }, 405);
+      return json(result.body, result.status);
+    }
+
     const sourceEmailMatch = pathname.match(/^\/sources\/([^/]+)\/email$/);
     if (sourceEmailMatch && (request.method === "POST" || request.method === "GET")) {
       const { db } = resolveTenant(request, env);
@@ -6233,6 +6291,24 @@ export default {
   /* eslint-enable no-restricted-properties */
 
   async scheduled(_event: ScheduledEvent, env: Env, _ctx: ExecutionContext): Promise<void> {
+    // Decision 0585: HTTPS out deliveries, on their own five-minute cron —
+    // and only that, so the licence and usage jobs below keep their six
+    // hours. Silent on failure: tried again next run.
+    if (_event.cron === DELIVERY_CRON) {
+      try {
+        const { db } = resolveTenant(new Request("https://scheduled-trigger.internal/"), env);
+        await runDeliveries(db, {
+          secretsKey: env.CONNECTOR_SECRETS_KEY,
+          bucket: env.DOCUMENTS,
+          customerId: env.CUSTOMER_ID,
+          onFinished: (messageId) => notifyMessageFinished(db, alertTransport(env), messageId),
+        });
+      } catch {
+        // Deliberately silent.
+      }
+      return;
+    }
+
     // Two independent jobs, same cron trigger (see wrangler.jsonc's
     // triggers.crons) — deliberately not one combined guard. A missing
     // or invalid public key must not also block usage reporting, which

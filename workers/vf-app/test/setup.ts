@@ -121,6 +121,7 @@ import apUploadSql from "../../../migrations/0114_ap_upload.sql?raw";
 import sourceKeysSql from "../../../migrations/0115_source_keys.sql?raw";
 import sourceKeyReplaceSql from "../../../migrations/0116_source_key_replace.sql?raw";
 import intakeSourceSql from "../../../migrations/0117_intake_source_fact.sql?raw";
+import httpsOutSql from "../../../migrations/0118_https_out.sql?raw";
 
 // Another known divergence from production, on top of the one below:
 // D1's exec() splits its input by newline and executes each non-empty
@@ -170,7 +171,7 @@ const TABLES_IN_DROP_ORDER = [
   // route_messages, so both go first, invoice_documents before it.
   "route_alert_log", "route_alerts",
   // Supplier mappings (decision 0561): parts reference mappings, versions reference messages.
-  "source_keys", "route_message_items", "route_message_events", "route_message_parts", "supplier_mapping_versions", "supplier_mappings", "lookup_entries", "lookup_lists", "invoice_documents", "route_messages",
+  "destination_deliveries", "connector_secrets", "source_keys", "route_message_items", "route_message_events", "route_message_parts", "supplier_mapping_versions", "supplier_mappings", "lookup_entries", "lookup_lists", "invoice_documents", "route_messages",
   // Routes, slice 3 (decision 0557): instances reference sources and processes.
   "route_instances", "route_versions", "routes",
   "erp_export_rows", "erp_export_invoices", "erp_exports", "invoice_line_coding_splits", "invoice_line_po_pairings", "cost_centre_gl_codes", "document_comments",
@@ -438,6 +439,7 @@ export async function applyTestSchema(): Promise<void> {
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(sourceKeysSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(sourceKeyReplaceSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(intakeSourceSql)));
+  await env.DB.exec(toOneStatementPerLine(stripSqlComments(httpsOutSql)));
 }
 
 /**

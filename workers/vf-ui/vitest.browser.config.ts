@@ -143,6 +143,7 @@ export default defineConfig({
       "/attachments.js": resolve(__dirname, "public/attachments.js"),
       "/create.js": resolve(__dirname, "public/create.js"),
       "/https-keys.js": resolve(__dirname, "public/https-keys.js"),
+      "/destinations.js": resolve(__dirname, "public/destinations.js"),
       /**
        * **Missed by decision 0470, caught while building decision
        * 0471** — `collaborators.js` was added and imported by

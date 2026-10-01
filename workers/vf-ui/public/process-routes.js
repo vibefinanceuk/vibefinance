@@ -2,6 +2,7 @@ import { t } from "/strings.js";
 import { el, frame, topbar, setCurrentScreen } from "/tasks.js";
 import { actionLink } from "/viewer.js";
 import { httpsSection } from "/https-keys.js";
+import { httpsOutSection } from "/destinations.js";
 import {
   setSourcesRefresh,
   loadUnits,
@@ -160,10 +161,21 @@ function flow() {
       "destination",
       d,
       [`${d.routeName} · v${d.route?.version ?? "—"}`, t(`routes.gw.${d.route?.deliveryGateway}`)],
-      [
-        ...(d.status === "paused" ? [pill("warn", t("processroutes.status.paused"))] : []),
-        ...(d.waiting === null || d.waiting === undefined ? [] : [pill(d.waiting > 0 ? "warn" : "q", t("processroutes.waiting").replace("{n}", String(d.waiting)))]),
-      ]
+      d.routeId === "https-out"
+        ? // Decision 0585: an HTTPS out Destination says whether it is sending, what failed and what waits.
+          [
+            !d.started
+              ? pill("warn", t("httpsout.notstarted"))
+              : d.status === "paused"
+                ? pill("warn", t("processroutes.status.paused"))
+                : pill("ok", t("httpsout.sending")),
+            ...(d.failedOpen > 0 ? [pill("bad", t("processroutes.failedn").replace("{n}", String(d.failedOpen)))] : []),
+            ...(d.waiting > 0 ? [pill("q", t("processroutes.waiting").replace("{n}", String(d.waiting)))] : []),
+          ]
+        : [
+            ...(d.status === "paused" ? [pill("warn", t("processroutes.status.paused"))] : []),
+            ...(d.waiting === null || d.waiting === undefined ? [] : [pill(d.waiting > 0 ? "warn" : "q", t("processroutes.waiting").replace("{n}", String(d.waiting)))]),
+          ]
     )
   );
 
@@ -268,8 +280,11 @@ async function setDestinationStatus(d, status) {
 }
 
 function destinationPanel(d) {
+  const httpsOut = d.routeId === "https-out";
   const pauseOrResume =
-    d.status === "paused"
+    httpsOut && !d.started
+      ? null
+      : d.status === "paused"
       ? actionLink("release", { primary: true, label: t("processroutes.resume"), onclick: () => setDestinationStatus(d, "active") })
       : actionLink("paused", { label: t("processroutes.pause"), onclick: () => setDestinationStatus(d, "paused") });
   const openExport = actionLink("download", {
@@ -282,7 +297,7 @@ function destinationPanel(d) {
   return el("div", { class: "panel prdetail" }, [
     el("div", { class: "cardhead" }, [
       el("h3", { text: `${t("processroutes.destinationtitle")}: ${d.name}` }),
-      el("div", { class: "statebuttons" }, [pauseOrResume, openExport, actionLink("close", { onclick: () => { selected = null; render(); } })]),
+      el("div", { class: "statebuttons" }, [pauseOrResume, httpsOut ? null : openExport, actionLink("close", { onclick: () => { selected = null; render(); } })].filter(Boolean)),
     ]),
     el("p", { class: "muted sm", text: t("processroutes.destsub").replace("{route}", d.routeName).replace("{process}", data.process.name) }),
     el("div", { class: "prfields" }, [
@@ -293,10 +308,68 @@ function destinationPanel(d) {
       el("div", { class: "l", text: t("processroutes.field.gateway") }),
       el("div", { text: t(`routes.gw.${d.route?.deliveryGateway}`) }),
       el("div", { class: "l", text: t("processroutes.field.status") }),
-      el("div", {}, [pill(d.status === "active" ? "ok" : "warn", t(`processroutes.status.${d.status}`))]),
+      el("div", {}, [
+        httpsOut && !d.started
+          ? pill("warn", t("httpsout.notstarted"))
+          : pill(d.status === "active" ? "ok" : "warn", t(`processroutes.status.${d.status}`)),
+      ]),
     ]),
-    el("p", { class: "muted sm", text: t(d.status === "paused" ? "processroutes.pausednote" : "processroutes.erpnote") }),
+    httpsOut
+      ? // Decision 0585: where it sends, how it signs in, a test, and what it has delivered.
+        httpsOutSection(d, async () => {
+          await load();
+          render();
+        })
+      : el("p", { class: "muted sm", text: t(d.status === "paused" ? "processroutes.pausednote" : "processroutes.erpnote") }),
   ]);
+}
+
+/** Add a Destination to this process — decision 0585: HTTPS out, paused until started. */
+function openAddDestination() {
+  const problem = el("div", { class: "warn" });
+  const nameInput = el("input", { type: "text", id: "dest-name", placeholder: t("httpsout.nameexample") });
+  const connector = el("select", { id: "dest-connector" }, [el("option", { value: "https-out", text: t("httpsout.connector") })]);
+  const close = () => backdrop.remove();
+  const create = actionLink("create", {
+    primary: true,
+    onclick: async () => {
+      problem.textContent = "";
+      try {
+        const response = await fetch(`/api/processes/${encodeURIComponent(processId)}/destinations`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: nameInput.value, routeId: connector.value }),
+        });
+        const body = await response.json();
+        if (!response.ok) {
+          problem.textContent = body.reason === "name_taken" ? t("httpsout.error.name_taken") : body.reason === "no_name" ? t("sources.needname") : body.error || t("sources.failed");
+          return;
+        }
+        close();
+        selected = { kind: "destination", id: body.id };
+        await load();
+        render();
+      } catch {
+        problem.textContent = t("sources.failed");
+      }
+    },
+  });
+  const backdrop = el("div", { class: "backdrop" }, [
+    el("div", { class: "popout praddpop", role: "dialog", "aria-label": t("httpsout.adddestination") }, [
+      el("div", { class: "cardhead" }, [el("h3", { text: t("httpsout.adddestination") }), el("div", { class: "statebuttons" }, [create, actionLink("close", { onclick: close })])]),
+      el("p", { class: "muted sm", text: t("httpsout.adddestinationsub").replace("{stage}", stageName(data.process.exitStageId)) }),
+      el("div", { class: "newsource stacked" }, [
+        el("div", { class: "kf" }, [el("label", { for: "dest-name", text: t("httpsout.name") }), nameInput]),
+        el("div", { class: "kf" }, [el("label", { for: "dest-connector", text: t("httpsout.connectorlabel") }), connector]),
+      ]),
+      problem,
+    ]),
+  ]);
+  backdrop.onclick = (e) => {
+    if (e.target === backdrop) close();
+  };
+  document.body.append(backdrop);
+  nameInput.focus();
 }
 
 /**
@@ -475,7 +548,11 @@ function render() {
       el("div", { class: "panel prpanel" }, [
         el("div", { class: "cardhead" }, [
           el("h3", { text: data.process.name }),
-          el("div", { class: "statebuttons" }, [actionLink("addcard", { label: t("processroutes.addsource"), onclick: openAddSource })]),
+          el("div", { class: "statebuttons" }, [
+            actionLink("addcard", { label: t("processroutes.addsource"), onclick: openAddSource }),
+            // Decision 0585.
+            actionLink("addcard", { label: t("httpsout.adddestination"), onclick: openAddDestination }),
+          ]),
         ]),
         processChips(),
         flow(),

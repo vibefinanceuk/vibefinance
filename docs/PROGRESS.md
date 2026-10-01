@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 1 October 2026 (decision 0584). A living document: what
+Last updated 1 October 2026 (decision 0585). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,17 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### HTTPS out, and the delivery engine for connectors (0585)
+- A Destination can post each payment-eligible invoice to any web
+  address: signed in with a key, a token, a password or OAuth, as
+  VibeFinance invoice JSON or the ERP CSV layout. It is tried with a real
+  invoice first, started deliberately, retried when the target is busy,
+  and every request and reply is in the Route monitor.
+- First slice of the connector framework
+  (`claude/connector-framework-design.md`): the ERP CSV export joins the
+  same engine next, then the Library, outbound mapping and partner
+  publishing.
 
 ### Rules by source: `intake.source` (0584)
 - Every invoice records which source it arrived through, so a rule such

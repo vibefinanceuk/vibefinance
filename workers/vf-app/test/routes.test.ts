@@ -26,7 +26,7 @@ beforeEach(async () => {
 });
 
 describe("the standard routes", () => {
-  it("are seeded: five sources and the ERP CSV file, email, HTTPS, AP upload and the ERP live", async () => {
+  it("are seeded: five sources, the ERP CSV file and HTTPS out (0585); email, HTTPS, AP upload, the ERP and HTTPS out live", async () => {
     const body = (await handleListRoutes(env.DB)).body as {
       routes: { id: string; direction: string; origin: string; live: boolean; current: Record<string, unknown> }[];
     };
@@ -38,6 +38,8 @@ describe("the standard routes", () => {
       ["https-in", "source", "standard", true],
       ["sftp-in", "source", "standard", false],
       ["erp-csv", "destination", "standard", true],
+      // Decision 0585.
+      ["https-out", "destination", "standard", true],
     ]);
     expect(body.routes.find((r) => r.id === "email-in")?.current).toMatchObject({
       version: 1,

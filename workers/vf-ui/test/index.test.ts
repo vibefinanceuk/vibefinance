@@ -771,6 +771,12 @@ describe("paths the app is allowed to reach (decision 0212)", () => {
     "/sources/src-portal/keys",
     "/sources/src-portal/keys/k1/revoke",
     "/sources/src-portal/keys/k1/replace",
+    // HTTPS out Destinations — decision 0585.
+    "/processes/ap/destinations",
+    "/route-instances/dest-1/connector",
+    "/route-instances/dest-1/connector/preview",
+    "/route-instances/dest-1/connector/send",
+    "/route-instances/dest-1/connector/start",
   ];
 
   for (const path of reachable) {

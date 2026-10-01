@@ -103,18 +103,23 @@ function routeTable(direction) {
 /** The five parts of a route, left to right, the middle model marked. */
 function chain(route) {
   const v = route.current;
-  const part = (n, kind, value, core = false) =>
+  // Decision 0585: a Destination's delivery gateway says what it does going out ("gwdout"), where that differs.
+  const describe = (kind, value, out) => {
+    const outKey = `routes.gwdout.${value}`;
+    return out && t(outKey) !== outKey ? t(outKey) : words(`${kind}d`, value);
+  };
+  const part = (n, kind, value, core = false, out = false) =>
     el("div", { class: `rtpart${core ? " core" : ""}` }, [
       el("div", { class: "k", text: `${n} · ${t(`routes.part.${n}`)}` }),
       el("div", { class: "v", text: words(kind, value) }),
-      el("div", { class: "d", text: words(`${kind}d`, value) }),
+      el("div", { class: "d", text: describe(kind, value, out) }),
     ]);
   return el("div", { class: "rtchain" }, [
     part(1, "gw", v.receivingGateway),
     part(2, "fmt", v.receivingFormat, v.receivingFormat === "en16931"),
     part(3, "tr", v.translation),
     part(4, "fmt", v.deliveryFormat, v.deliveryFormat === "en16931"),
-    part(5, "gw", v.deliveryGateway),
+    part(5, "gw", v.deliveryGateway, false, route.direction === "destination"),
   ]);
 }
 
