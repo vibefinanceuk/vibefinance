@@ -1,5 +1,6 @@
 import type { InvoiceFacts } from "@vibefinance/shared";
 import { exitStageIds } from "./process-ends.js";
+import { coveredUnits, covers, unitIdsOf } from "./destination-units.js";
 import {
   addRouteEvent,
   finishRouteMessage,
@@ -119,7 +120,7 @@ export async function eligibleInvoiceIds(
   const processSql = processId ? "AND pi.process_id = ?" : "";
   const rows = await db
     .prepare(
-      `SELECT DISTINCT h.id AS id, h.issue_date AS issue_date
+      `SELECT DISTINCT h.id AS id, h.issue_date AS issue_date, h.org_unit_id AS org_unit_id, pi.process_id AS process_id
        FROM invoice_headers h
        JOIN process_instances pi ON pi.subject_type = 'invoice' AND pi.subject_id = h.id
        WHERE (
@@ -141,8 +142,36 @@ export async function eligibleInvoiceIds(
        ORDER BY h.issue_date, h.id`
     )
     .bind(...exits, ...(processId ? [processId] : []), ...NOT_PAYABLE, ...clause.binds)
-    .all<{ id: string }>();
-  return rows.results.map((r) => r.id);
+    .all<{ id: string; org_unit_id: string | null; process_id: string }>();
+  /**
+   * **Only the business units its process's ERP Destination covers —
+   * decision 0587.** A customer with two ERPs gives each its units: what
+   * the ERP CSV file does not cover is another Destination's to send.
+   */
+  const destinations = (
+    await db
+      .prepare("SELECT id, process_id, unit_ids FROM route_instances WHERE route_id = 'erp-csv' AND source_id IS NULL AND unit_ids IS NOT NULL")
+      .all<{ id: string; process_id: string; unit_ids: string | null }>()
+  ).results;
+  if (destinations.length === 0) return [...new Set(rows.results.map((r) => r.id))];
+  // Decision 0588: and what a rule sent to the ERP, whatever its unit.
+  const requested = new Set(
+    (
+      await db
+        .prepare(
+          `SELECT r.invoice_id FROM destination_requests r JOIN route_instances i ON i.id = r.instance_id AND i.route_id = 'erp-csv'`
+        )
+        .all<{ invoice_id: string }>()
+    ).results.map((r) => r.invoice_id)
+  );
+  const coveredByProcess = new Map<string, Set<string> | null>();
+  for (const d of destinations) coveredByProcess.set(d.process_id, await coveredUnits(db, unitIdsOf(d)));
+  const out: string[] = [];
+  for (const r of rows.results) {
+    const covered = coveredByProcess.has(r.process_id) ? (coveredByProcess.get(r.process_id) as Set<string> | null) : null;
+    if ((covers(covered, r.org_unit_id) || requested.has(r.id)) && !out.includes(r.id)) out.push(r.id);
+  }
+  return out;
 }
 
 /**

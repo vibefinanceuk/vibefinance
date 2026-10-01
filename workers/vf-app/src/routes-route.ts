@@ -1,3 +1,4 @@
+import { unitIdsOf } from "./destination-units.js";
 import type { RouteResult } from "./org-route.js";
 import { eligibleInvoiceIds } from "./erp-export-route.js";
 import { processEnds } from "./process-ends.js";
@@ -196,7 +197,7 @@ export async function handleProcessRoutes(
 
   const destinations = await db
     .prepare(
-      `SELECT i.id, i.name, i.status, i.route_id, i.started_at, r.name AS route_name,
+      `SELECT i.id, i.name, i.status, i.route_id, i.started_at, i.unit_ids, r.name AS route_name,
               -- Decision 0585: what an HTTPS out Destination has waiting, and what failed.
               (SELECT count(*) FROM destination_deliveries d WHERE d.instance_id = i.id AND d.status IN ('pending', 'retrying')) AS sending,
               (SELECT count(*) FROM destination_deliveries d WHERE d.instance_id = i.id AND d.status = 'failed') AS failed
@@ -205,7 +206,7 @@ export async function handleProcessRoutes(
        ORDER BY i.route_id != 'erp-csv', i.name`
     )
     .bind(chosen.id)
-    .all<{ id: string; name: string; status: string; route_id: string; route_name: string; started_at: string | null; sending: number; failed: number }>();
+    .all<{ id: string; name: string; status: string; route_id: string; route_name: string; started_at: string | null; unit_ids: string | null; sending: number; failed: number }>();
 
   /**
    * **What is waiting for the ERP**, for the ERP Destination's card: this
@@ -257,6 +258,8 @@ export async function handleProcessRoutes(
         // Decision 0585.
         started: d.route_id === "erp-csv" || d.started_at !== null,
         failedOpen: d.failed,
+        // Decision 0587: the business units it sends for; null is all.
+        unitIds: unitIdsOf(d),
       })),
     },
   };

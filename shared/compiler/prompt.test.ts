@@ -254,3 +254,14 @@ describe("real sources and people to resolve against — decision 0584", () => {
     expect(prompt).not.toContain("REAL PEOPLE");
   });
 });
+
+describe("real destinations to resolve against — decision 0588", () => {
+  it("lists each Destination by id and name, for send_to_destination, and nothing where none are given", () => {
+    const prompt = buildCompilerPrompt("invoices for Projekt GmbH also go to Oracle Projects", "invoice", null, [], [], [], [], [{ id: "dest-proj", name: "Oracle Projects" }]);
+    expect(prompt).toContain(`REAL DESTINATIONS (the only valid values for a send_to_destination action's "destination")`);
+    expect(prompt).toContain('- "dest-proj" — Oracle Projects');
+    expect(buildCompilerPrompt("x")).not.toContain("REAL DESTINATIONS");
+    // The action is in the vocabulary either way.
+    expect(buildCompilerPrompt("x")).toContain("send_to_destination");
+  });
+});

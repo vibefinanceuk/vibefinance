@@ -1,5 +1,6 @@
 import type { RouteResult } from "./org-route.js";
 import { invoiceExportRows, payableInvoiceIds, toCsv, type ErpExportRow } from "./erp-export-route.js";
+import { coveredInvoices, coveredUnits, unitIdsOf } from "./destination-units.js";
 import { NoSecretsKeyError, readSecret, secretsSet, setSecret } from "./connector-secrets.js";
 import {
   addRouteEvent,
@@ -86,11 +87,12 @@ interface InstanceRow {
   status: string | null;
   settings_json: string | null;
   started_at: string | null;
+  unit_ids: string | null;
 }
 
 async function instanceOf(db: D1Database, id: string): Promise<InstanceRow | null> {
   return db
-    .prepare("SELECT id, route_id, process_id, name, status, settings_json, started_at FROM route_instances WHERE id = ? AND source_id IS NULL")
+    .prepare("SELECT id, route_id, process_id, name, status, settings_json, started_at, unit_ids FROM route_instances WHERE id = ? AND source_id IS NULL")
     .bind(id)
     .first<InstanceRow>();
 }
@@ -466,8 +468,24 @@ export async function runDeliveries(db: D1Database, deps: DeliveryDeps, limitPer
   return { queued, attempted };
 }
 
-async function queueNew(db: D1Database, instanceId: string, processId: string, now: string, status: "pending" | "skipped" = "pending"): Promise<number> {
+/**
+ * **What this Destination takes — decisions 0585, 0587, 0588.** Its
+ * process's payment-eligible invoices in the business units it covers
+ * (all, when it covers none in particular), and those a rule sent to it.
+ */
+export async function destinationPayable(db: D1Database, instanceId: string, processId: string): Promise<string[]> {
+  const row = await db.prepare("SELECT unit_ids FROM route_instances WHERE id = ?").bind(instanceId).first<{ unit_ids: string | null }>();
   const payable = await payableInvoiceIds(db, processId);
+  const covered = new Set(await coveredInvoices(db, row ? unitIdsOf(row) : null, payable));
+  // Decision 0588: and what a rule sent here, whatever its unit.
+  const requested = new Set(
+    (await db.prepare("SELECT invoice_id FROM destination_requests WHERE instance_id = ?").bind(instanceId).all<{ invoice_id: string }>()).results.map((r) => r.invoice_id)
+  );
+  return payable.filter((id) => covered.has(id) || requested.has(id));
+}
+
+async function queueNew(db: D1Database, instanceId: string, processId: string, now: string, status: "pending" | "skipped" = "pending"): Promise<number> {
+  const payable = await destinationPayable(db, instanceId, processId);
   const taken = new Set(
     (await db.prepare("SELECT invoice_id FROM destination_deliveries WHERE instance_id = ?").bind(instanceId).all<{ invoice_id: string }>()).results.map(
       (r) => r.invoice_id
@@ -570,7 +588,7 @@ export async function handleGetConnector(db: D1Database, id: string): Promise<Ro
   const instance = await httpsOutInstance(db, id);
   if (isResult(instance)) return instance;
   const { deliveries: recent, counts } = await deliveriesOf(db, id);
-  const payable = await payableInvoiceIds(db, instance.process_id);
+  const payable = await destinationPayable(db, instance.id, instance.process_id);
   const taken = new Set(
     (await db.prepare("SELECT invoice_id FROM destination_deliveries WHERE instance_id = ?").bind(id).all<{ invoice_id: string }>()).results.map((r) => r.invoice_id)
   );
@@ -688,4 +706,57 @@ export async function handleStartDestination(db: D1Database, id: string, body: u
   const counted = await queueNew(db, id, instance.process_id, now, includeWaiting ? "pending" : "skipped");
   await db.prepare("UPDATE route_instances SET status = 'active', started_at = ? WHERE id = ?").bind(now, id).run();
   return { status: 200, body: { id, status: "active", startedAt: now, waiting: counted, sent: includeWaiting ? counted : 0, setAside: includeWaiting ? 0 : counted } };
+}
+
+/**
+ * `PUT /route-instances/:id/units` `{ unitIds, includeWaiting? }` — the
+ * business units a Destination sends for — decision 0587. `null` or `[]`
+ * is all. Widening a started HTTPS out Destination brings in invoices
+ * already waiting in the units it now covers: they are sent only if the
+ * person says so (`includeWaiting`), as when it was started (0585); asked
+ * without it, the reply says how many (`decide_waiting`).
+ */
+export async function handleSetDestinationUnits(db: D1Database, id: string, body: unknown): Promise<RouteResult> {
+  const instance = await instanceOf(db, id);
+  if (!instance) return { status: 404, body: { error: `there is no Destination ${id}` } };
+  if (instance.status === "retired") return { status: 409, body: { error: "the Destination is retired", reason: "retired" } };
+  const b = (body ?? {}) as Record<string, unknown>;
+  const raw = b.unitIds;
+  if (raw !== null && raw !== undefined && !Array.isArray(raw)) return { status: 400, body: { error: "unitIds must be a list of business units, or null for all", reason: "bad_units" } };
+  const unitIds = [...new Set(((raw as unknown[] | null) ?? []).map(String))];
+  if (unitIds.length > 0) {
+    const known = (
+      await db.prepare(`SELECT id FROM org_units WHERE id IN (${unitIds.map(() => "?").join(", ")})`).bind(...unitIds).all<{ id: string }>()
+    ).results.map((r) => r.id);
+    const unknown = unitIds.filter((u) => !known.includes(u));
+    if (unknown.length > 0) return { status: 400, body: { error: `there is no business unit ${unknown.join(", ")}`, reason: "unknown_unit" } };
+  }
+  const next = unitIds.length > 0 ? unitIds : null;
+
+  let setAside = 0;
+  if (instance.route_id === HTTPS_OUT && instance.started_at) {
+    const payable = await payableInvoiceIds(db, instance.process_id);
+    const before = new Set(await coveredInvoices(db, unitIdsOf(instance), payable));
+    const taken = new Set(
+      (await db.prepare("SELECT invoice_id FROM destination_deliveries WHERE instance_id = ?").bind(id).all<{ invoice_id: string }>()).results.map((r) => r.invoice_id)
+    );
+    const newly = (await coveredInvoices(db, next, payable)).filter((x) => !before.has(x) && !taken.has(x));
+    if (newly.length > 0 && typeof b.includeWaiting !== "boolean") {
+      return { status: 409, body: { error: `${newly.length} invoices already waiting in the units added`, reason: "decide_waiting", waiting: newly.length } };
+    }
+    if (newly.length > 0 && b.includeWaiting === false) {
+      const now = new Date().toISOString();
+      await db.batch(
+        newly.map((invoiceId) =>
+          db
+            .prepare("INSERT OR IGNORE INTO destination_deliveries (instance_id, invoice_id, status, created_at) VALUES (?, ?, 'skipped', ?)")
+            .bind(id, invoiceId, now)
+        )
+      );
+      setAside = newly.length;
+    }
+  }
+  await db.prepare("UPDATE route_instances SET unit_ids = ? WHERE id = ?").bind(next ? JSON.stringify(next) : null, id).run();
+  const covered = await coveredUnits(db, next);
+  return { status: 200, body: { id, unitIds: next, covered: covered ? [...covered] : null, setAside } };
 }

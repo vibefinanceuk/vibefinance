@@ -690,6 +690,8 @@ export async function visitCurrentStage(
     let anyMatched = false;
     const routeTargets = new Set<string>();
     const orgTargets = new Set<string>();
+    // Decision 0588: Destinations a rule sends this invoice to, besides those its business units choose.
+    const destinationRequests = new Map<string, string>();
     const stepStatements: D1PreparedStatement[] = [];
     const pendingTaskActions: Array<{
       params: Record<string, unknown>;
@@ -763,6 +765,10 @@ export async function visitCurrentStage(
       }
       for (const action of result.actions.filter((a) => a.type === "assign_org")) {
         orgTargets.add((action.params?.org as string) ?? "");
+      }
+      for (const attributed of result.attributedActions.filter((a) => a.action.type === "send_to_destination")) {
+        const destination = attributed.action.params?.destination;
+        if (typeof destination === "string" && destination) destinationRequests.set(destination, attributed.ruleId);
       }
       for (const attributed of result.attributedActions.filter((a) => a.action.type === "assign_task")) {
         /**
@@ -853,6 +859,31 @@ export async function visitCurrentStage(
           )
       ),
     ]);
+
+    /**
+     * **send_to_destination — decision 0588.** Recorded on the invoice for
+     * each Destination of this process a rule named; the Destination takes
+     * it once it is payment-eligible, as well as what its business units
+     * cover (0587). A Destination of another process, or none, is ignored:
+     * the compiler refuses an unknown one, and this is the second guard.
+     */
+    if (destinationRequests.size > 0 && instance.subject_type === "invoice") {
+      const known = (
+        await db
+          .prepare(
+            `SELECT id FROM route_instances WHERE source_id IS NULL AND process_id = ? AND id IN (${[...destinationRequests.keys()].map(() => "?").join(", ")})`
+          )
+          .bind(instance.process_id, ...destinationRequests.keys())
+          .all<{ id: string }>()
+      ).results.map((r) => r.id);
+      const at = new Date().toISOString();
+      for (const id of known) {
+        await db
+          .prepare("INSERT OR IGNORE INTO destination_requests (invoice_id, instance_id, rule_id, requested_at) VALUES (?, ?, ?, ?)")
+          .bind(instance.subject_id, id, destinationRequests.get(id) ?? null, at)
+          .run();
+      }
+    }
 
     // route_to (redefined, decision 0018, to mean "advance to this
     // stage") — collect every distinct target named across every

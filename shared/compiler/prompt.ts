@@ -145,7 +145,9 @@ export function buildCompilerPrompt(
    * decision 0584.** The action took a user id but the compiler was never
    * shown any, so "goes to Anna" had nothing to resolve against.
    */
-  people: { id: string; name: string }[] = []
+  people: { id: string; name: string }[] = [],
+  /** **The process's Destinations — decision 0588**, the only valid values for send_to_destination. */
+  destinations: { id: string; name: string }[] = []
 ): string {
   const workedExample = vocabulary === "expense" ? EXPENSE_WORKED_EXAMPLE : WORKED_EXAMPLE;
   return `You are compiling a business rule for ${SYSTEM_DESCRIPTION[asResolved(vocabulary).name]}. A customer has described a rule in their own words. Your job is to translate it into a strict, closed vocabulary — never to write general-purpose code, and never to approximate something the vocabulary can't express.
@@ -210,6 +212,18 @@ ${people.map((p) => `- "${p.id}" — ${p.name}`).join("\n")}
 When the sentence gives the task to a person rather than a team ("goes to
 Anna"), use { "user": "<id>" } with the matching id above. If two people
 match, or none does, refuse and say so rather than guess.`
+    : ""
+}
+${
+  destinations.length > 0
+    ? `
+REAL DESTINATIONS (the only valid values for a send_to_destination action's "destination"):
+${destinations.map((d) => `- "${d.id}" — ${d.name}`).join("\n")}
+
+When the sentence sends invoices to a system ("go to Oracle Projects",
+"also send to SAP"), use send_to_destination with the matching id above,
+by meaning. If nothing in the list plausibly matches, refuse rather than
+invent an id.`
     : ""
 }
 

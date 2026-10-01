@@ -316,3 +316,107 @@ export function httpsOutSection(destination, onChanged) {
   reload();
   return holder;
 }
+
+/** "All business units", or the units' names. */
+export function unitsSummary(unitIds, units) {
+  if (!unitIds || unitIds.length === 0) return t("destunits.all");
+  return unitIds.map((id) => units.find((u) => u.id === id)?.name ?? id).join(", ");
+}
+
+/** The units in tree order, each with its depth, so the picker indents children under their parent. */
+function asTree(units) {
+  const children = new Map();
+  for (const u of units) children.set(u.parentUnitId ?? null, [...(children.get(u.parentUnitId ?? null) ?? []), u]);
+  for (const list of children.values()) list.sort((a, b) => a.name.localeCompare(b.name));
+  const out = [];
+  const seen = new Set();
+  const walk = (parent, depth) => {
+    for (const u of children.get(parent) ?? []) {
+      if (seen.has(u.id)) continue;
+      seen.add(u.id);
+      out.push({ ...u, depth });
+      walk(u.id, depth + 1);
+    }
+  };
+  walk(null, 0);
+  // Any whose parent is not in the list.
+  for (const u of units) if (!seen.has(u.id)) out.push({ ...u, depth: 0 });
+  return out;
+}
+
+/**
+ * **Which business units a Destination sends for — decision 0587.** The
+ * summary, and Choose: all units, or some (each with the units beneath
+ * it). Adding units to a started HTTPS out Destination asks first about
+ * invoices already waiting in them, as Start sending did (0585).
+ */
+export function unitsField(destination, units, onChanged) {
+  const summary = el("span", { id: "du-summary", text: unitsSummary(destination.unitIds, units) });
+  const choose = actionLink("rename", { label: t("destunits.choose"), onclick: () => openUnits(destination, units, onChanged) });
+  return el("div", { class: "duline" }, [summary, choose]);
+}
+
+function openUnits(destination, units, onChanged) {
+  const chosen = new Set(destination.unitIds ?? []);
+  const all = el("input", { type: "checkbox", id: "du-all", ...(chosen.size === 0 ? { checked: "checked" } : {}) });
+  const boxes = asTree(units).map((u) => {
+    const box = el("input", { type: "checkbox", value: u.id, ...(chosen.has(u.id) ? { checked: "checked" } : {}) });
+    box.onchange = () => {
+      if (box.checked) all.checked = false;
+    };
+    return { box, row: el("label", { class: "httpscheck", style: `padding-left:${u.depth * 18}px` }, [box, el("span", { text: u.name })]) };
+  });
+  all.onchange = () => {
+    if (all.checked) for (const b of boxes) b.box.checked = false;
+  };
+  const problem = el("div", { class: "warn", id: "du-problem" });
+  const decide = el("div", { id: "du-decide" });
+  let includeWaiting;
+  const close = () => backdrop.remove();
+  const save = async () => {
+    problem.textContent = "";
+    const unitIds = all.checked ? null : boxes.filter((b) => b.box.checked).map((b) => b.box.value);
+    if (unitIds && unitIds.length === 0) {
+      problem.textContent = t("destunits.chooseone");
+      return;
+    }
+    const body = { unitIds, ...(includeWaiting === undefined ? {} : { includeWaiting }) };
+    const r = await call(`/api/route-instances/${encodeURIComponent(destination.id)}/units`, json("PUT", body));
+    if (r.status === 409 && r.body?.reason === "decide_waiting") {
+      const only = el("input", { type: "radio", name: "du-waiting", id: "du-setaside", checked: "checked" });
+      const send = el("input", { type: "radio", name: "du-waiting", id: "du-sendtoo" });
+      decide.replaceChildren(
+        el("p", { class: "warn", text: t("destunits.waiting").replace("{n}", String(r.body.waiting)) }),
+        el("label", { class: "httpscheck", for: "du-setaside" }, [only, el("span", { text: t("destunits.setaside") })]),
+        el("label", { class: "httpscheck", for: "du-sendtoo" }, [send, el("span", { text: t("destunits.sendtoo") })])
+      );
+      includeWaiting = false;
+      only.onchange = () => (includeWaiting = false);
+      send.onchange = () => (includeWaiting = true);
+      return;
+    }
+    if (!r.ok) {
+      problem.textContent = why(r.body);
+      return;
+    }
+    close();
+    await onChanged();
+  };
+  const backdrop = el("div", { class: "backdrop" }, [
+    el("div", { class: "popout dounitspop", role: "dialog", "aria-label": t("destunits.title") }, [
+      el("div", { class: "cardhead" }, [
+        el("h3", { text: t("destunits.title") }),
+        el("div", { class: "statebuttons" }, [actionLink("save", { primary: true, onclick: save }), actionLink("close", { label: t("httpsout.cancel"), onclick: close })]),
+      ]),
+      el("p", { class: "muted sm", text: t("destunits.sub") }),
+      el("label", { class: "httpscheck" }, [all, el("strong", { text: t("destunits.all") })]),
+      el("div", { class: "dounits" }, boxes.map((b) => b.row)),
+      decide,
+      problem,
+    ]),
+  ]);
+  backdrop.onclick = (e) => {
+    if (e.target === backdrop) close();
+  };
+  document.body.append(backdrop);
+}

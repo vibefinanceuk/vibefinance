@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 1 October 2026 (decision 0586). A living document: what
+Last updated 1 October 2026 (decision 0588). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,11 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### More than one ERP: business units and rules (0587, 0588)
+- Each Destination sends for the business units chosen (with the units
+  beneath them), or all of them. A rule at Payment Eligible can also send
+  an invoice to a named Destination, on top.
 
 ### The ERP CSV file on the delivery engine (0586)
 - Each invoice an ERP export takes is recorded as a delivery of the ERP

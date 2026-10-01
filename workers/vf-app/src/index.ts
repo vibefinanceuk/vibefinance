@@ -151,6 +151,7 @@ import {
   handlePreviewDelivery,
   handleSaveConnector,
   handleSendNow,
+  handleSetDestinationUnits,
   handleStartDestination,
   runDeliveries,
 } from "./destination-delivery.js";
@@ -4628,6 +4629,17 @@ export default {
       if (!(await hasPermission(db, auth.user.id, "Admin.Configure"))) return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
       const body = await request.json().catch(() => ({}));
       const result = await handleCreateDestination(db, auth.user.id, decodeURIComponent(destinationsMatch[1]), body);
+      return json(result.body, result.status);
+    }
+    // Decision 0587: the business units a Destination sends for.
+    const unitsMatch = pathname.match(/^\/route-instances\/([^/]+)\/units$/);
+    if (unitsMatch && request.method === "PUT") {
+      const { db } = resolveTenant(request, env);
+      const auth = await authenticatePerson(db, request, env);
+      if (!auth.user) return json({ error: auth.reason }, 401);
+      if (!(await hasPermission(db, auth.user.id, "Admin.Configure"))) return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
+      const body = await request.json().catch(() => ({}));
+      const result = await handleSetDestinationUnits(db, decodeURIComponent(unitsMatch[1]), body);
       return json(result.body, result.status);
     }
     // Decision 0586: any Destination's deliveries, the ERP CSV file's exports among them.

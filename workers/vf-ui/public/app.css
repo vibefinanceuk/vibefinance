@@ -5036,3 +5036,9 @@
 .dostart .actionlink { flex-direction: row; padding: 4px 8px; gap: 4px; }
 .dostartpop { max-width: 560px; }
 @media (max-width: 720px) { .dotwo { grid-template-columns: 1fr; } }
+/* Decision 0587 — a Destination's business units. */
+.duline { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.duline .actionlink { flex-direction: row; padding: 2px 6px; gap: 4px; }
+.duline .actionlink svg { width: 14px; height: 14px; }
+.dounitspop { max-width: 520px; }
+.dounits { max-height: 320px; overflow: auto; margin-top: 6px; }

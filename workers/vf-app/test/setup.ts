@@ -123,6 +123,8 @@ import sourceKeyReplaceSql from "../../../migrations/0116_source_key_replace.sql
 import intakeSourceSql from "../../../migrations/0117_intake_source_fact.sql?raw";
 import httpsOutSql from "../../../migrations/0118_https_out.sql?raw";
 import erpDeliveriesSql from "../../../migrations/0119_erp_csv_deliveries.sql?raw";
+import destinationUnitsSql from "../../../migrations/0120_destination_units.sql?raw";
+import destinationRequestsSql from "../../../migrations/0121_destination_requests.sql?raw";
 
 // Another known divergence from production, on top of the one below:
 // D1's exec() splits its input by newline and executes each non-empty
@@ -172,7 +174,7 @@ const TABLES_IN_DROP_ORDER = [
   // route_messages, so both go first, invoice_documents before it.
   "route_alert_log", "route_alerts",
   // Supplier mappings (decision 0561): parts reference mappings, versions reference messages.
-  "destination_deliveries", "connector_secrets", "source_keys", "route_message_items", "route_message_events", "route_message_parts", "supplier_mapping_versions", "supplier_mappings", "lookup_entries", "lookup_lists", "invoice_documents", "route_messages",
+  "destination_requests", "destination_deliveries", "connector_secrets", "source_keys", "route_message_items", "route_message_events", "route_message_parts", "supplier_mapping_versions", "supplier_mappings", "lookup_entries", "lookup_lists", "invoice_documents", "route_messages",
   // Routes, slice 3 (decision 0557): instances reference sources and processes.
   "route_instances", "route_versions", "routes",
   "erp_export_rows", "erp_export_invoices", "erp_exports", "invoice_line_coding_splits", "invoice_line_po_pairings", "cost_centre_gl_codes", "document_comments",
@@ -442,6 +444,8 @@ export async function applyTestSchema(): Promise<void> {
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(intakeSourceSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(httpsOutSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(erpDeliveriesSql)));
+  await env.DB.exec(toOneStatementPerLine(stripSqlComments(destinationUnitsSql)));
+  await env.DB.exec(toOneStatementPerLine(stripSqlComments(destinationRequestsSql)));
 }
 
 /**

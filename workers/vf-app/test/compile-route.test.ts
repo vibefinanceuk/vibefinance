@@ -864,3 +864,47 @@ describe("sources and people to resolve against — decision 0584", () => {
     expect(none?.n).toBe(0);
   });
 });
+
+/**
+ * **Destinations — decision 0588.** "Invoices for Projekt GmbH also go to
+ * Oracle Projects": the compiler is shown the process's Destinations, and
+ * a send_to_destination naming none of them is refused.
+ */
+describe("destinations to resolve against — decision 0588", () => {
+  async function seedDestinations() {
+    await seedRuleSet("rs1");
+    await env.DB.prepare("INSERT OR IGNORE INTO processes (id, name) VALUES ('ap', 'AP'), ('other', 'Other')").run();
+    await env.DB.prepare("INSERT INTO process_stages (id, process_id, name, sequence, rule_set_id) VALUES ('eligible', 'ap', 'Payment Eligible', 1, 'rs1')").run();
+    await env.DB.prepare(
+      "INSERT INTO route_instances (id, route_id, process_id, name, status) VALUES ('dest-proj', 'https-out', 'ap', 'Oracle Projects', 'paused'), ('erp-ap', 'erp-csv', 'ap', 'ERP', 'active'), ('dest-x', 'https-out', 'other', 'Elsewhere', 'active')"
+    ).run();
+  }
+  const sending = (destination: string) =>
+    JSON.stringify({
+      status: "compiled",
+      conditions: { field: "BT-27", operator: "is", value: "Projekt GmbH" },
+      actions: [{ type: "send_to_destination", params: { destination } }],
+    });
+
+  it("shows the rule set's process's Destinations, and compiles a send to one", async () => {
+    await seedDestinations();
+    const model = fakeModel(sending("dest-proj"));
+    const result = await handleCompileRequest(model, "test-model@v1", env.DB, { ruleSetId: "rs1", sourceText: "invoices for Projekt GmbH also go to Oracle Projects" });
+    expect(result.status).toBe(201);
+    const prompt = (model.compile as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
+    expect(prompt).toContain("REAL DESTINATIONS");
+    expect(prompt).toContain('- "dest-proj" — Oracle Projects');
+    expect(prompt).toContain('- "erp-ap" — ERP');
+    expect(prompt).not.toContain("Elsewhere");
+    expect(prompt).toContain("send_to_destination");
+  });
+
+  it("refuses a send to a Destination of another process, or none", async () => {
+    await seedDestinations();
+    for (const d of ["dest-x", "Oracle Projects"]) {
+      const result = await handleCompileRequest(fakeModel(sending(d)), "test-model@v1", env.DB, { ruleSetId: "rs1", sourceText: "x" });
+      expect(result.status).toBe(422);
+      expect((result.body as { reason: string }).reason).toContain("Name one of: ERP, Oracle Projects");
+    }
+  });
+});

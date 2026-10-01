@@ -183,6 +183,16 @@ export async function handleCompileRequest(
   ).results;
   const people = (await db.prepare("SELECT id, name FROM org_users WHERE name IS NOT NULL ORDER BY name").all<{ id: string; name: string }>()).results;
 
+  // Decision 0588: the Destinations a rule may send to — this rule set's process's, else every one.
+  const destinations = (
+    stage
+      ? await db
+          .prepare("SELECT id, name FROM route_instances WHERE source_id IS NULL AND process_id = ? AND (status IS NULL OR status != 'retired') ORDER BY name")
+          .bind(stage.process_id)
+          .all<{ id: string; name: string }>()
+      : await db.prepare("SELECT id, name FROM route_instances WHERE source_id IS NULL AND (status IS NULL OR status != 'retired') ORDER BY name").all<{ id: string; name: string }>()
+  ).results;
+
   const outcome = await compileRule(
     model,
     sourceText,
@@ -191,7 +201,8 @@ export async function handleCompileRequest(
     teams,
     stages,
     sources,
-    people
+    people,
+    destinations
   );
 
   // Refusal as a first-class output (Blueprint, "Subsystem one"): a
@@ -203,6 +214,21 @@ export async function handleCompileRequest(
   // and its currently-active version completely untouched.
   if (outcome.kind === "refused") {
     return { status: 422, body: { status: "refused", reason: outcome.reason } };
+  }
+
+  // Decision 0588: a send_to_destination naming no Destination of this process would never send.
+  const unknownDestinations = outcome.actions
+    .filter((a) => a.type === "send_to_destination")
+    .map((a) => String((a.params as Record<string, unknown> | undefined)?.destination ?? ""))
+    .filter((v) => !destinations.some((d) => d.id === v));
+  if (unknownDestinations.length > 0) {
+    return {
+      status: 422,
+      body: {
+        status: "refused",
+        reason: `there is no destination ${unknownDestinations.map((v) => `"${v}"`).join(", ")}. Name one of: ${destinations.map((d) => d.name).join(", ") || "none yet"}`,
+      },
+    };
   }
 
   // Decision 0584: an intake.source naming no source would compile, activate and never fire.

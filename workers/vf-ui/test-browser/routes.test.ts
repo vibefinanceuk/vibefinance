@@ -11,6 +11,7 @@ import mailboxStringsSql from "../../vf-licence/migrations/0230_mailbox_name_str
 import renameStringsSql from "../../vf-licence/migrations/0231_rename_source_strings.sql?raw";
 import httpsOutStringsSql from "../../vf-licence/migrations/0232_https_out_strings.sql?raw";
 import erpDeliveriesStringsSql from "../../vf-licence/migrations/0233_erp_deliveries_strings.sql?raw";
+import destUnitsStringsSql from "../../vf-licence/migrations/0234_destination_units_strings.sql?raw";
 
 /**
  * **Routes and Process routes — decision 0557.** The standard routes with
@@ -45,7 +46,7 @@ const strings: Record<string, string> = {
   "mechanism.file_import": "File import",
   "mechanism.edi": "EDI",
 };
-for (const sql of [stringsSql, destinationStringsSql, formatStringsSql, mappingStringsSql, csvStringsSql, httpsStringsSql, httpsStateStringsSql, replaceKeyStringsSql, mailboxStringsSql, renameStringsSql, httpsOutStringsSql, erpDeliveriesStringsSql]) {
+for (const sql of [stringsSql, destinationStringsSql, formatStringsSql, mappingStringsSql, csvStringsSql, httpsStringsSql, httpsStateStringsSql, replaceKeyStringsSql, mailboxStringsSql, renameStringsSql, httpsOutStringsSql, erpDeliveriesStringsSql, destUnitsStringsSql]) {
   for (const m of sql.matchAll(/\('([^']+)', 'en', '((?:[^']|'')*)'\)/g)) strings[m[1]] = m[2].replace(/''/g, "'");
 }
 // 0209 updates the ERP note rather than inserting it.
@@ -807,5 +808,82 @@ describe("the ERP CSV file's deliveries — decision 0586", () => {
     expect(rows[0][3]).toContain("export 3f9c2a7e");
     expect(document.querySelectorAll("#erpout tbody button")).toHaveLength(0);
     expect(text("#erpout")).toContain("Undoing an export on the ERP export screen puts its invoices back to ready.");
+  });
+});
+
+describe("a Destination's business units — decision 0587", () => {
+  const UNITS = [
+    { id: "de", name: "Acme Germany", kind: "legal_entity", parentUnitId: null },
+    { id: "de-ham", name: "Acme Hamburg", kind: "operating_unit", parentUnitId: "de" },
+    { id: "uk", name: "Acme UK", kind: "legal_entity", parentUnitId: null },
+  ];
+  function stubUnits(calls: Call[], erp: Record<string, unknown>, replies: Array<{ status: number; body: unknown }>) {
+    stub(calls, { "/api/org/units": { units: UNITS }, "/api/process-routes": { ...FLOW, destinations: [{ ...FLOW.destinations[0], ...erp }] } });
+    const inner = globalThis.fetch as unknown as (url: string, init?: RequestInit) => Promise<Response>;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        const path = String(url).split("?")[0];
+        if (path === "/api/route-instances/erp-ap/units") {
+          calls.push({ method: init?.method ?? "GET", path, query: "", body: init?.body as string });
+          const r = replies.shift() ?? { status: 200, body: {} };
+          return { ok: r.status < 300, status: r.status, json: async () => r.body } as Response;
+        }
+        return inner(url, init);
+      })
+    );
+  }
+  async function openErp() {
+    await openScreen("/process-routes.js");
+    ([...document.querySelectorAll(".prcard")].at(-1) as HTMLElement).click();
+    await settle();
+  }
+
+  it("shows the units on the card and panel, and chooses units with those beneath indented", async () => {
+    const calls: Call[] = [];
+    stubUnits(calls, { unitIds: ["de"] }, [{ status: 200, body: { unitIds: ["de", "uk"] } }]);
+    await openErp();
+    expect([...document.querySelectorAll(".prcard")].at(-1)!.textContent).toContain("Acme Germany");
+    expect(text("#du-summary")).toBe("Acme Germany");
+    ([...document.querySelectorAll(".duline button")][0] as HTMLElement).click();
+    await settle();
+    expect(text(".dounitspop h3")).toBe("Which business units it sends for");
+    const rows = [...document.querySelectorAll(".dounits label")] as HTMLElement[];
+    expect(rows.map((r) => [r.textContent, r.style.paddingLeft])).toEqual([
+      ["Acme Germany", "0px"],
+      ["Acme Hamburg", "18px"],
+      ["Acme UK", "0px"],
+    ]);
+    expect((document.querySelector("#du-all") as HTMLInputElement).checked).toBe(false);
+    const uk = rows[2].querySelector("input") as HTMLInputElement;
+    uk.checked = true;
+    uk.dispatchEvent(new Event("change"));
+    ([...document.querySelectorAll(".dounitspop .statebuttons button")][0] as HTMLElement).click();
+    await settle();
+    expect(JSON.parse(calls.find((c) => c.path === "/api/route-instances/erp-ap/units")!.body!)).toEqual({ unitIds: ["de", "uk"] });
+  });
+
+  it("asks what to do with invoices already waiting in units added, then saves with the answer", async () => {
+    const calls: Call[] = [];
+    stubUnits(calls, {}, [{ status: 409, body: { reason: "decide_waiting", waiting: 4 } }, { status: 200, body: {} }]);
+    await openErp();
+    expect(text("#du-summary")).toBe("All business units");
+    ([...document.querySelectorAll(".duline button")][0] as HTMLElement).click();
+    await settle();
+    const box = document.querySelectorAll(".dounits input")[2] as HTMLInputElement;
+    box.checked = true;
+    box.dispatchEvent(new Event("change"));
+    expect((document.querySelector("#du-all") as HTMLInputElement).checked).toBe(false);
+    const save = () => ([...document.querySelectorAll(".dounitspop .statebuttons button")][0] as HTMLElement).click();
+    save();
+    await settle();
+    expect(text("#du-decide")).toContain("4 invoices are already waiting in the units added");
+    (document.querySelector("#du-sendtoo") as HTMLInputElement).checked = true;
+    document.querySelector("#du-sendtoo")!.dispatchEvent(new Event("change"));
+    save();
+    await settle();
+    const puts = calls.filter((c) => c.path === "/api/route-instances/erp-ap/units").map((c) => JSON.parse(c.body!));
+    expect(puts).toEqual([{ unitIds: ["uk"] }, { unitIds: ["uk"], includeWaiting: true }]);
+    expect(document.querySelector(".dounitspop")).toBeNull();
   });
 });

@@ -64,6 +64,11 @@ export function slug(value) {
  * Only operating units, because a document belongs to one and never to
  * a legal entity (decision 0036).
  */
+/** The business units loaded, for other screens — decision 0587 (a Destination's units). */
+export function unitList() {
+  return units;
+}
+
 export async function loadUnits() {
   try {
     const response = await fetch("/api/org/units");

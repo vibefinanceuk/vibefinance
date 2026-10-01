@@ -4,7 +4,7 @@ import { applyTestSchema, seedStage } from "./setup.js";
 import { eligibleInvoiceIds, handleCreateErpExport, handleUndoErpExport, toCsv } from "../src/erp-export-route.js";
 import { handleProcessRoutes, handleSetInstanceStatus } from "../src/routes-route.js";
 import { handleGetRouteMessage, handleListRouteMessages, routeMessagePart } from "../src/route-monitor-route.js";
-import { handleListDeliveries } from "../src/destination-delivery.js";
+import { handleListDeliveries, handleSetDestinationUnits } from "../src/destination-delivery.js";
 import erpDeliveriesSql from "../../../migrations/0119_erp_csv_deliveries.sql?raw";
 
 /**
@@ -213,5 +213,20 @@ describe("exports as deliveries — decision 0586", () => {
     const sql = erpDeliveriesSql.replace(/--.*$/gm, "");
     for (const statement of sql.split(";").map((x) => x.trim()).filter(Boolean)) await env.DB.prepare(statement).run();
     expect(await deliveries()).toEqual([{ instance_id: "erp-ap", invoice_id: "inv-a", status: "delivered", reference: kept.id, message_id: kept.messages[0] }]);
+  });
+});
+
+describe("the ERP CSV file's business units — decision 0587", () => {
+  it("exports only the units its ERP Destination covers, leaving the rest to another Destination", async () => {
+    await env.DB.prepare("INSERT INTO org_units (id, name, parent_unit_id) VALUES ('de', 'Acme Germany', NULL), ('uk', 'Acme UK', NULL)").run();
+    await invoice("inv-de", "ap", "ap-eligible");
+    await invoice("inv-uk", "ap", "ap-eligible");
+    await env.DB.prepare("UPDATE invoice_headers SET org_unit_id = 'de' WHERE id = 'inv-de'").run();
+    await env.DB.prepare("UPDATE invoice_headers SET org_unit_id = 'uk' WHERE id = 'inv-uk'").run();
+    expect((await eligibleInvoiceIds(env.DB, null)).sort()).toEqual(["inv-de", "inv-uk"]);
+    await handleSetDestinationUnits(env.DB, "erp-ap", { unitIds: ["uk"] });
+    expect(await eligibleInvoiceIds(env.DB, null)).toEqual(["inv-uk"]);
+    const flow = (await handleProcessRoutes(env.DB, new URLSearchParams("process=ap"))).body as { destinations: Array<{ id: string; waiting: number; unitIds: string[] | null }> };
+    expect(flow.destinations.find((d) => d.id === "erp-ap")).toMatchObject({ waiting: 1, unitIds: ["uk"] });
   });
 });

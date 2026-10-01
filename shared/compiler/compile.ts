@@ -39,9 +39,11 @@ export async function compileRule(
   stages: { id: string; name: string }[] = [],
   /** Decision 0584: the customer's sources, for intake.source, and its people, for assign_task's user. */
   sources: { id: string; name: string; mechanism?: string }[] = [],
-  people: { id: string; name: string }[] = []
+  people: { id: string; name: string }[] = [],
+  /** Decision 0588: the process's Destinations, for send_to_destination. */
+  destinations: { id: string; name: string }[] = []
 ): Promise<CompileOutcome> {
-  const prompt = buildCompilerPrompt(sourceText, vocabulary, stagePermission, teams, stages, sources, people);
+  const prompt = buildCompilerPrompt(sourceText, vocabulary, stagePermission, teams, stages, sources, people, destinations);
   const raw = await model.compile(prompt);
   return parseModelOutput(raw, vocabulary);
 }

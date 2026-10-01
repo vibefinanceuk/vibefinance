@@ -429,6 +429,8 @@ export const ACTIONS = [
   "notify",
   "escalate_after",
   "assign_task",
+  // Decision 0588 — also send this invoice to a Destination (an ERP), besides those its business units choose.
+  "send_to_destination",
 ] as const;
 
 export type InvoiceField = (typeof INVOICE_FIELDS)[number];
@@ -663,6 +665,8 @@ export const ACTION_DESCRIPTIONS: Record<ActionType, string> = {
     'sets a field\'s value — params: { "field": "<field>" } plus EXACTLY ONE of { "value": <a literal> } or { "fromField": "<another field>" } to copy that field\'s current value. Both the target field and any fromField must be in this vocabulary. Every change is recorded with the value it replaced.',
   notify: 'sends a notification — params: { "target": "<who or what to notify>" }',
   escalate_after: 'escalates if untouched past a duration — params: { "after": "<duration, e.g. \\"2d\\">" }',
+  send_to_destination:
+    'also sends the invoice to a Destination (an ERP or another system) once it is payment-eligible, as well as to those its business unit sends to — params: { "destination": "<destination id>" }. The id must be one of the process\'s own Destinations, where they are listed; it belongs in rules at the stage invoices are sent from.',
   assign_task:
     'creates a task — params: exactly one of { "team": "<team id>" } or { "user": "<user id>" }, plus { "permission": "<permission>" }. **The permission may be omitted where the stage declares its own** (decision 0200): the stage supplies it, and a rule naming a different one is refused rather than quietly overridden. Omitting it is the better shape, because it cannot disagree.',
 };

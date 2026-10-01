@@ -8,6 +8,7 @@ import {
   handlePreviewDelivery,
   handleSaveConnector,
   handleSendNow,
+  handleSetDestinationUnits,
   handleStartDestination,
   readPath,
   runDeliveries,
@@ -334,5 +335,66 @@ describe("through the router", () => {
     expect((await call(`/route-instances/${id}/connector/preview`, monitor, { method: "POST", body: "{}" })).status).toBe(403);
     // Send names an invoice; with none it is refused, but monitor may ask.
     expect((await call(`/route-instances/${id}/connector/send`, monitor, { method: "POST", body: "{}" })).status).toBe(400);
+  });
+});
+
+/**
+ * **Business units — decision 0587.** A customer with two ERPs gives each
+ * Destination its units; a unit covers the units beneath it; none chosen
+ * is all, as before.
+ */
+describe("which business units a Destination sends for — decision 0587", () => {
+  async function units() {
+    await env.DB.prepare(
+      "INSERT INTO org_units (id, name, parent_unit_id) VALUES ('de', 'Acme Germany', NULL), ('de-ham', 'Acme Hamburg', 'de'), ('uk', 'Acme UK', NULL)"
+    ).run();
+  }
+  const place = (id: string, unit: string | null) => env.DB.prepare("UPDATE invoice_headers SET org_unit_id = ? WHERE id = ?").bind(unit, id).run();
+
+  it("sends only invoices of the units chosen and those beneath them; none chosen is all", async () => {
+    await units();
+    for (const [id, unit] of [["inv-de", "de"], ["inv-ham", "de-ham"], ["inv-uk", "uk"], ["inv-none", null]] as const) {
+      await invoice(id, "ap-eligible");
+      await place(id, unit);
+    }
+    const sap = await destination(undefined, undefined, "SAP");
+    const set = await handleSetDestinationUnits(env.DB, sap, { unitIds: ["de"] });
+    expect(set.body).toMatchObject({ unitIds: ["de"], covered: ["de", "de-ham"] });
+    const all = await destination(undefined, undefined, "Warehouse");
+    await handleStartDestination(env.DB, sap, { includeWaiting: true });
+    await handleStartDestination(env.DB, all, { includeWaiting: true });
+    const { calls, fetcher } = target([]);
+    await runDeliveries(env.DB, deps(fetcher));
+    const sent = (instance: string) =>
+      env.DB.prepare("SELECT invoice_id FROM destination_deliveries WHERE instance_id = ? ORDER BY invoice_id").bind(instance).all<{ invoice_id: string }>().then((r) => r.results.map((x) => x.invoice_id));
+    expect(await sent(sap)).toEqual(["inv-de", "inv-ham"]);
+    expect(await sent(all)).toEqual(["inv-de", "inv-ham", "inv-none", "inv-uk"]);
+    expect(calls).toHaveLength(6);
+    // Its test list is its own units' invoices.
+    const got = (await handleGetConnector(env.DB, sap)).body as { candidates: Array<{ id: string }> };
+    expect(got.candidates.map((c) => c.id).sort()).toEqual(["inv-de", "inv-ham"]);
+  });
+
+  it("asks before sending what is already waiting in units added to a started Destination", async () => {
+    await units();
+    await invoice("inv-uk", "ap-eligible");
+    await place("inv-uk", "uk");
+    const id = await destination();
+    await handleSetDestinationUnits(env.DB, id, { unitIds: ["de"] });
+    await handleStartDestination(env.DB, id, { includeWaiting: false });
+    expect((await handleSetDestinationUnits(env.DB, id, { unitIds: ["de", "uk"] })).body).toMatchObject({ reason: "decide_waiting", waiting: 1 });
+    expect((await handleSetDestinationUnits(env.DB, id, { unitIds: ["de", "uk"], includeWaiting: false })).body).toMatchObject({ setAside: 1 });
+    expect(await delivery(id, "inv-uk")).toMatchObject({ status: "skipped" });
+    const { calls, fetcher } = target([]);
+    await runDeliveries(env.DB, deps(fetcher));
+    expect(calls).toHaveLength(0);
+  });
+
+  it("refuses a unit that does not exist, and clears to all with null", async () => {
+    const id = await destination();
+    expect((await handleSetDestinationUnits(env.DB, id, { unitIds: ["nope"] })).body).toMatchObject({ reason: "unknown_unit" });
+    expect((await handleSetDestinationUnits(env.DB, id, { unitIds: null })).body).toMatchObject({ unitIds: null, covered: null });
+    const flow = (await handleProcessRoutes(env.DB, new URLSearchParams("process=ap"))).body as { destinations: Array<Record<string, unknown>> };
+    expect(flow.destinations.find((d) => d.id === id)).toMatchObject({ unitIds: null });
   });
 });

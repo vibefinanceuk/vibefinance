@@ -2,13 +2,14 @@ import { t } from "/strings.js";
 import { el, frame, topbar, setCurrentScreen } from "/tasks.js";
 import { actionLink } from "/viewer.js";
 import { httpsSection } from "/https-keys.js";
-import { erpDeliveriesSection, httpsOutSection } from "/destinations.js";
+import { erpDeliveriesSection, httpsOutSection, unitsField, unitsSummary } from "/destinations.js";
 import {
   setSourcesRefresh,
   loadUnits,
   retireSource,
   openRenameSourceForm,
   orgPicker,
+  unitList,
   slug,
   outcome,
 } from "/sources.js";
@@ -160,7 +161,11 @@ function flow() {
     card(
       "destination",
       d,
-      [`${d.routeName} · v${d.route?.version ?? "—"}`, t(`routes.gw.${d.route?.deliveryGateway}`)],
+      [
+        `${d.routeName} · v${d.route?.version ?? "—"}`,
+        // Decision 0587: which business units it sends for, where not all.
+        d.unitIds && d.unitIds.length > 0 ? unitsSummary(d.unitIds, unitList()) : t(`routes.gw.${d.route?.deliveryGateway}`),
+      ],
       d.routeId === "https-out"
         ? // Decision 0585: an HTTPS out Destination says whether it is sending, what failed and what waits.
           [
@@ -307,6 +312,14 @@ function destinationPanel(d) {
       el("div", { text: `${stageName(data.process.exitStageId)} · ${t("processroutes.readsfromhint")}` }),
       el("div", { class: "l", text: t("processroutes.field.gateway") }),
       el("div", { text: t(`routes.gw.${d.route?.deliveryGateway}`) }),
+      // Decision 0587.
+      el("div", { class: "l", text: t("destunits.label") }),
+      el("div", {}, [
+        unitsField(d, unitList(), async () => {
+          await load();
+          render();
+        }),
+      ]),
       el("div", { class: "l", text: t("processroutes.field.status") }),
       el("div", {}, [
         httpsOut && !d.started
