@@ -76,6 +76,9 @@ const FORWARDED: readonly RegExp[] = [
   /^\/partner-connectors$/,
   /^\/partner-connectors\/[^/]+\/versions\/\d+\/(approve|return)$/,
   /^\/partner-connectors\/[^/]+\/(suspend|reinstate)$/,
+  // The console's screens — decision 0603.
+  /^\/fleet-overview$/,
+  /^\/people$/,
 ];
 
 export default {

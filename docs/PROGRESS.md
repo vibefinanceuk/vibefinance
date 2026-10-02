@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 2 October 2026 (decision 0602). A living document: what
+Last updated 2 October 2026 (decision 0603). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,12 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### The operator console, laid out like the main site (0603)
+
+A grouped side menu: Home with what waits, Sign-up requests, Customers &
+environments and People & access (both new), Partners, Connector reviews
+and the Admin log. Interface wording and Branding come next.
 
 ### Two small fixes (0602)
 

@@ -40,6 +40,7 @@ import {
 } from "./signup-route.js";
 import { handleProvisionTrial, expireOverdueLicences, warnExpiringLicences , handleEnvironmentConfig } from "./provision-route.js";
 import { recordAdminAction, handleListAdminActions, actorFrom } from "./admin-audit.js";
+import { handleFleetOverview, handlePeople } from "./operator-views.js";
 import { libraryConnectorsFor, partnerConnectorState, submitPartnerConnector, withdrawPartnerConnector } from "./partner-connectors.js";
 import { listPartnerConnectors, reviewVersion, suspendConnector } from "./connector-review.js";
 import {
@@ -168,6 +169,9 @@ export function isPrivileged(method: string, pathname: string): boolean {
     (pathname === "/admin-actions" && method === "GET") ||
     // Partners — decision 0592 — and the customers they may be linked to.
     (pathname === "/customers" && method === "GET") ||
+    // The operator console's screens — decision 0603.
+    (pathname === "/fleet-overview" && method === "GET") ||
+    (pathname === "/people" && method === "GET") ||
     (pathname === "/partners" && (method === "GET" || method === "POST")) ||
     (matches(/^\/partners\/[^/]+\/(people|customers)$/) && (method === "POST" || method === "DELETE")) ||
     (matches(/^\/partners\/[^/]+\/(suspend|reinstate)$/) && method === "POST") ||
@@ -565,6 +569,16 @@ export default {
         }
       }
       if (result) return json(result.body, result.status);
+    }
+
+    // The operator console's screens — decision 0603.
+    if (url.pathname === "/fleet-overview" && request.method === "GET") {
+      const result = await handleFleetOverview(env.CONTROL_DB);
+      return json(result.body, result.status);
+    }
+    if (url.pathname === "/people" && request.method === "GET") {
+      const result = await handlePeople(env.CONTROL_DB, url.searchParams.get("customerId"));
+      return json(result.body, result.status);
     }
 
     // Reviewing partners' connectors — decision 0600.

@@ -28,11 +28,13 @@
   --text-sm: 12px; --text-base: 14px; --text-lg: 16px; --text-xl: 20px;
   --radius: 8px;
   --font-sans: Calibri, Carlito, "Segoe UI", -apple-system, sans-serif;
+  /* The side menu's icon colours, as the main site's at night (decision 0527). */
+  --nav-1: #60a5fa; --nav-2: #2dd4bf; --nav-3: #a78bfa; --nav-4: #fb923c; --nav-5: #f472b6;
 }
 
 * { box-sizing: border-box; }
 body {
-  margin: 0; padding: 26px;
+  margin: 0; padding: 0;
   font-family: var(--font-sans); font-size: var(--text-base); line-height: 1.6;
   color: var(--text-primary); background: var(--surface-0);
 }
@@ -110,35 +112,172 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .chip { font-size: var(--text-sm); padding: 1px 7px; border-radius: 999px; border: 0.5px solid var(--border-strong); margin-right: 4px; }
 input, select { background: var(--surface-1); color: var(--text-primary); border: 0.5px solid var(--border-strong); border-radius: var(--radius); padding: 4px 8px; min-height: 30px; }
 .empty { padding: 24px 10px; text-align: center; color: var(--text-muted); }
+
+/*
+  **The console laid out as the main site is — decision 0603.** A side
+  menu by activity, grouped, each screen its own page. Dan: "introduce
+  the site menu, like we have on the main site". Still its own words and
+  colours (0140): only the shape is shared.
+*/
+.frame { display: grid; grid-template-columns: 240px minmax(0, 1fr); min-height: 100vh; }
+.nav { position: sticky; top: 0; height: 100vh; display: flex; flex-direction: column; background: var(--surface-1); border-right: 0.5px solid var(--border); padding: 18px 12px 12px; }
+.navscroll { flex: 1 1 auto; overflow-y: auto; }
+.brandmark { display: block; width: 84px; height: auto; margin: 2px auto 4px; opacity: .85; }
+.consolename { text-align: center; font-size: var(--text-sm); color: var(--text-muted); letter-spacing: .06em; text-transform: uppercase; margin-bottom: 14px; }
+.navgroup { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--text-muted); margin: 16px 10px 4px; }
+.navitem { position: relative; display: flex; align-items: center; gap: 12px; width: 100%; padding: 8px 10px; border: 0; border-radius: var(--radius); background: none; color: var(--text-secondary); text-align: left; cursor: pointer; min-height: 0; text-decoration: none; }
+.navitem .navicon { width: 28px; height: 28px; margin: -2px; display: flex; align-items: center; justify-content: center; border-radius: 7px; flex: none; }
+.navitem svg { width: 20px; height: 20px; }
+.navitem:hover { background: var(--surface-2); color: var(--text-primary); }
+.navitem:hover .navicon, .navitem.on .navicon { color: var(--hue); background: color-mix(in srgb, var(--hue) 16%, transparent); }
+.navitem.on { background: var(--surface-2); color: var(--text-primary); }
+.navitem.on::before { content: ""; position: absolute; left: -12px; top: 6px; bottom: 6px; width: 3px; border-radius: 2px; background: var(--hue); }
+.navitem .badge { margin-left: auto; font-size: 11px; min-width: 20px; text-align: center; padding: 0 6px; border-radius: 999px; background: var(--text-warning); color: #1b1300; font-weight: 600; }
+.navitem.soon { cursor: default; opacity: .55; }
+.navitem.soon:hover { background: none; color: var(--text-secondary); }
+.navitem .next { margin-left: auto; font-size: 11px; color: var(--text-muted); }
+.hue1 { --hue: var(--nav-1); } .hue2 { --hue: var(--nav-2); } .hue3 { --hue: var(--nav-3); } .hue4 { --hue: var(--nav-4); } .hue5 { --hue: var(--nav-5); }
+.nav .who { border-top: 0.5px solid var(--border); padding: 10px 6px 0; margin: 8px 0 0; word-break: break-all; }
+.main { padding: 26px 30px 40px; min-width: 0; }
+.topbar { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; border-bottom: 0.5px solid var(--border); padding-bottom: 14px; margin-bottom: 18px; }
+.topbar p { margin: 4px 0 0; color: var(--text-secondary); font-size: var(--text-sm); max-width: 820px; }
+.screen[hidden] { display: none; }
+/* Home. */
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; margin-bottom: 14px; }
+.tile { background: var(--surface-2); border: 0.5px solid var(--border); border-radius: var(--radius); padding: 14px 16px; text-align: left; color: var(--text-primary); cursor: pointer; display: block; width: 100%; min-height: 0; }
+.tile:hover { border-color: var(--border-strong); }
+.tile .n { font-size: 28px; font-weight: 600; line-height: 1.1; }
+.tile .n.warn { color: var(--text-warning); }
+.tile .l { color: var(--text-secondary); font-size: var(--text-sm); margin-top: 4px; }
+/* Customers and environments. */
+.customer { border-top: 0.5px solid var(--border); padding: 14px 0 8px; }
+.customer:first-of-type { border-top: none; padding-top: 4px; }
+.customer h3 { font-size: var(--text-base); margin: 0 0 8px; font-weight: 600; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.customer td { font-size: var(--text-sm); }
+.licenceform { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 8px; }
+.licenceform label { font-size: var(--text-sm); color: var(--text-muted); display: flex; flex-direction: column; gap: 2px; }
+.envconfig pre { white-space: pre-wrap; word-break: break-word; background: var(--surface-1); padding: 8px; border-radius: var(--radius); max-height: 320px; overflow: auto; font-size: var(--text-sm); }
+.toolbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 12px; }
+.grant { display: inline-flex; align-items: center; gap: 4px; margin: 0 6px 4px 0; }
+.grant button { min-height: 22px; padding: 0 6px; font-size: var(--text-sm); }
+a { color: var(--text-accent); }
+@media (max-width: 860px) {
+  .frame { grid-template-columns: 1fr; }
+  .nav { position: static; height: auto; flex-direction: row; overflow-x: auto; padding: 8px; border-right: 0; border-bottom: 0.5px solid var(--border); }
+  .navscroll { display: flex; align-items: center; gap: 4px; overflow: visible; }
+  .brandmark, .consolename, .navgroup, .nav .who { display: none; }
+  .navitem { width: auto; white-space: nowrap; }
+  .navitem.on::before { display: none; }
+  .main { padding: 16px; }
+}
 </style>
 </head>
 <body>
+<div class="frame">
+<nav class="nav" aria-label="Operator console">
+  <div class="navscroll">
+    <img class="brandmark" src="/img/logo-light.png" alt="VibeFinance">
+    <div class="consolename">Operator console</div>
+    <div class="navgroup">Overview</div>
+    <a class="navitem hue1" href="#/home" data-screen="home"><span class="navicon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11.5 12 4l9 7.5"/><path d="M5 10v10h14V10"/><path d="M10 20v-6h4v6"/></svg></span><span>Home</span><span class="badge" data-badge="home" hidden></span></a>
+    <div class="navgroup">Customers</div>
+    <a class="navitem hue2" href="#/signups" data-screen="signups"><span class="navicon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 13h4l2 3h4l2-3h4"/><path d="M4 13 6.5 5h11L20 13v6H4z"/></svg></span><span>Sign-up requests</span><span class="badge" data-badge="signups" hidden></span></a>
+    <a class="navitem hue3" href="#/customers" data-screen="customers"><span class="navicon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20V6l8-3v17"/><path d="M12 9h8v11"/><path d="M7 8h2M7 12h2M7 16h2M15 13h2M15 17h2"/></svg></span><span>Customers & environments</span><span class="badge" data-badge="customers" hidden></span></a>
+    <a class="navitem hue4" href="#/people" data-screen="people"><span class="navicon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><path d="M16 4.5a3 3 0 0 1 0 6M18 14c2 .7 3 2.6 3 6"/></svg></span><span>People & access</span><span class="badge" data-badge="people" hidden></span></a>
+    <div class="navgroup">Partners</div>
+    <a class="navitem hue5" href="#/partners" data-screen="partners"><span class="navicon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 12 4 8l4-4"/><path d="M4 8h10a4 4 0 0 1 0 8h-1"/><path d="M16 12l4 4-4 4"/><path d="M20 16H10a4 4 0 0 1 0-8h1"/></svg></span><span>Partners</span><span class="badge" data-badge="partners" hidden></span></a>
+    <a class="navitem hue1" href="#/reviews" data-screen="reviews"><span class="navicon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 11l2 2 4-4"/><path d="M12 3 5 6v5c0 4.5 3 8.3 7 10 4-1.7 7-5.5 7-10V6z"/></svg></span><span>Connector reviews</span><span class="badge" data-badge="reviews" hidden></span></a>
+    <div class="navgroup">Platform</div>
+    <span class="navitem soon hue2" data-screen="wording" title="Next, after this pass"><span class="navicon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7V5h16v2"/><path d="M12 5v14"/><path d="M9 19h6"/></svg></span><span>Interface wording</span><span class="next">next</span></span>
+    <span class="navitem soon hue3" data-screen="branding" title="Next, after this pass"><span class="navicon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><circle cx="8" cy="10" r="1.2"/><circle cx="12" cy="7.5" r="1.2"/><circle cx="16" cy="10" r="1.2"/><path d="M12 21a2.5 2.5 0 0 1 0-5h2a3 3 0 0 0 3-3"/></svg></span><span>Branding</span><span class="next">next</span></span>
+    <div class="navgroup">Audit</div>
+    <a class="navitem hue4" href="#/log" data-screen="log"><span class="navicon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 3h10l3 3v15H7z"/><path d="M4 6v15h3"/><path d="M10 10h7M10 14h7M10 18h4"/></svg></span><span>Admin log</span><span class="badge" data-badge="log" hidden></span></a>
+  </div>
+  <p class="who" id="who">…</p>
+</nav>
 
-<h1>Operator</h1>
-<p class="who" id="who">…</p>
-<hr class="rule">
+<main class="main">
+<header class="topbar">
+  <div>
+    <h1 id="screen-title">Home</h1>
+    <p id="screen-sub"></p>
+  </div>
+</header>
 
-<div class="panel">
-  <h2>Waiting for a decision</h2>
+<section class="screen" data-screen="home">
+  <div class="tiles" id="home-waiting"></div>
+  <div class="panel">
+    <h2>Fleet</h2>
+    <div class="tiles" id="home-fleet" style="margin:0"></div>
+  </div>
+  <div class="panel">
+    <h2>Recent activity</h2>
+    <div id="home-activity"><div class="empty">Loading…</div></div>
+  </div>
+</section>
+
+<section class="screen" data-screen="signups" hidden>
+  <div class="panel">
+    <h2>Waiting for a decision</h2>
+    <p class="sm muted" style="margin:-6px 0 12px">
+      Everything a decision should rest on, in front of the decision.
+      Approving does not provision: the environment is built by the
+      provisioning script, and shows under Customers &amp; environments.
+    </p>
+    <div id="requests"><div class="empty">Loading…</div></div>
+  </div>
+  <div class="panel">
+    <h2>Decided</h2>
+    <div id="decided"><div class="empty">Loading…</div></div>
+  </div>
+</section>
+
+<section class="screen" data-screen="customers" hidden>
+  <div class="panel">
+    <div class="toolbar">
+      <input id="customer-filter" placeholder="Find a customer" size="28">
+      <span style="flex:1"></span>
+      <input id="customer-id" placeholder="id, e.g. acme" size="16">
+      <input id="customer-name" placeholder="Name, e.g. Acme Ltd" size="26">
+      <button id="customer-create" class="approve">Add customer</button>
+    </div>
+    <div id="fleet"><div class="empty">Loading…</div></div>
+  </div>
+</section>
+
+<section class="screen" data-screen="people" hidden>
+  <div class="panel" id="people-panel">
+    <h2>Who can sign in</h2>
+    <p class="sm muted" style="margin:-6px 0 12px">
+      Everyone with a password for a customer, and the environments they
+      may reach. A person may only be given environments of their own
+      customer. Revoking removes the way in: what they did stays in the
+      instance.
+    </p>
+    <div class="toolbar">
+      <select id="people-customer"><option value="">Every customer</option></select>
+      <input id="people-filter" placeholder="Find a person" size="26">
+    </div>
+    <div id="people"><div class="empty">Loading…</div></div>
+  </div>
+  <div class="panel" id="invitations-panel">
+  <h2>Invitations</h2>
   <p class="sm muted" style="margin:-6px 0 12px">
-    Everything a decision should rest on, in front of the decision.
+    An email with a link and a 6-digit code. The person chooses their own
+    password, and is given every environment of the customer. It works
+    once, for 72 hours; five wrong codes spend it.
   </p>
-  <div id="requests"><div class="empty">Loading…</div></div>
+  <div class="addrow">
+    <select id="invite-customer"></select>
+    <input id="invite-email" placeholder="email" size="28">
+    <button id="invite-send" class="approve">Invite</button>
+  </div>
+  <div id="invitations" style="margin-top:10px"><div class="empty">Loading…</div></div>
 </div>
+</section>
 
-<div class="panel" id="review-panel">
-  <h2>Connectors waiting for review</h2>
-  <p class="sm muted" style="margin:-6px 0 12px">
-    Each version a partner submits, before any customer sees it: what it
-    does, where it was built, and exactly what it sends. Approve it, or
-    send it back with a reason the partner sees.
-  </p>
-  <div id="reviews"><div class="empty">Loading…</div></div>
-  <h4 style="margin:18px 0 6px; font-size: var(--text-sm); color: var(--text-muted)">All partner connectors</h4>
-  <div id="connectors"><div class="empty">Loading…</div></div>
-</div>
-
-<div class="panel" id="partners-panel">
+<section class="screen" data-screen="partners" hidden>
+  <div class="panel" id="partners-panel">
   <h2>Partners</h2>
   <p class="sm muted" style="margin:-6px 0 12px">
     System integrators who build connectors in a sandbox of their own, for
@@ -155,32 +294,46 @@ input, select { background: var(--surface-1); color: var(--text-primary); border
   </div>
   <div id="partners"><div class="empty">Loading…</div></div>
 </div>
+</section>
 
-<div class="panel" id="invitations-panel">
-  <h2>Invitations</h2>
+<section class="screen" data-screen="reviews" hidden>
+  <div class="panel" id="review-panel">
+  <h2>Waiting for review</h2>
   <p class="sm muted" style="margin:-6px 0 12px">
-    An email with a link and a 6-digit code. The person chooses their own
-    password, and is given every environment of the customer. It works
-    once, for 72 hours; five wrong codes spend it.
+    Each version a partner submits, before any customer sees it: what it
+    does, where it was built, and exactly what it sends. Approve it, or
+    send it back with a reason the partner sees.
   </p>
-  <div class="addrow">
-    <select id="invite-customer"></select>
-    <input id="invite-email" placeholder="email" size="28">
-    <button id="invite-send" class="approve">Invite</button>
+  <div id="reviews"><div class="empty">Loading…</div></div>
+  <h4 style="margin:18px 0 6px; font-size: var(--text-sm); color: var(--text-muted)">All partner connectors</h4>
+  <div id="connectors"><div class="empty">Loading…</div></div>
+</div>
+</section>
+
+<section class="screen" data-screen="log" hidden>
+  <div class="panel">
+    <h2>What has been done</h2>
+    <p class="sm muted" style="margin:-6px 0 12px">
+      Every privileged action, refusals included — because a log of
+      successes cannot answer <em>“did anybody try?”</em>
+    </p>
+    <div class="toolbar">
+      <input id="log-filter" placeholder="Find who, what or which" size="30">
+      <select id="log-outcome">
+        <option value="">Every outcome</option>
+        <option value="recorded">Recorded</option>
+        <option value="refused">Refused</option>
+        <option value="failed">Failed</option>
+      </select>
+      <span class="sm muted" id="log-count"></span>
+    </div>
+    <div id="actions"><div class="empty">Loading…</div></div>
   </div>
-  <div id="invitations" style="margin-top:10px"><div class="empty">Loading…</div></div>
-</div>
-
-<div class="panel">
-  <h2>What has been done</h2>
-  <p class="sm muted" style="margin:-6px 0 12px">
-    Every privileged action, refusals included — because a log of
-    successes cannot answer <em>“did anybody try?”</em>
-  </p>
-  <div id="actions"><div class="empty">Loading…</div></div>
-</div>
+</section>
 
 <div class="problem" id="note" role="status"></div>
+</main>
+</div>
 
 <script type="module">
 const note = (message) => { document.getElementById("note").textContent = message ?? ""; };
@@ -231,7 +384,7 @@ function requestRow(request) {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({}),
         });
-        await load();
+        await refresh();
       } catch (err) {
         note(err.message);
         cell.querySelectorAll("button").forEach((b) => (b.disabled = false));
@@ -253,7 +406,7 @@ function actionRow(action) {
            action attributed to one is attributable to nobody. -->
       <div class="sm muted">${action.actorSource === "access" ? "verified" : "shared key"}</div>
     </td>
-    <td class="sm">${escapeHtml(action.action)}</td>
+    <td class="sm">${escapeHtml(action.action)}${action.subject ? `<div class="muted">${escapeHtml(action.subject)}</div>` : ""}</td>
     <td class="sm outcome-${escapeHtml(action.outcome)}">${escapeHtml(action.outcome)}</td>
     <td class="sm num muted">${action.statusCode ?? ""}</td>`;
   return tr;
@@ -290,12 +443,12 @@ async function act(path, method, body) {
   note("");
   try {
     await api(path, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body ?? {}) });
-    await loadPartners();
+    await refresh();
     return true;
   } catch (err) {
     note(err.message);
     // A refusal can still have changed something (an invitation made but not sent), so show what is.
-    await loadPartners();
+    await refresh();
     return false;
   }
 }
@@ -620,12 +773,9 @@ async function loadPartners() {
     } else {
       holder.replaceChildren(...partners.map((p) => partnerBlock(p, customers)));
     }
-    await loadInvitations(customers);
   } catch (err) {
     note(err.message);
   }
-  // Decision 0602: whatever happened above.
-  await loadReviews();
 }
 
 document.getElementById("invite-send").onclick = async () => {
@@ -642,45 +792,397 @@ document.getElementById("partner-create").onclick = async () => {
   }
 };
 
-async function load() {
+/**
+ * **Screens — decision 0603.** Each item in the side menu is a screen of
+ * its own, at `#/name`, loaded when it is opened. The badges say what
+ * waits for the operator wherever they are.
+ */
+const SCREENS = {
+  home: { title: "Home", sub: "What needs you, the fleet at a glance, and what was done last.", load: loadHome },
+  signups: { title: "Sign-up requests", sub: "Companies asking for a trial, and the decisions taken.", load: loadSignups },
+  customers: { title: "Customers & environments", sub: "Every customer, its environments, whether each is deployed, and its licence.", load: loadFleet },
+  people: { title: "People & access", sub: "Who can sign in to which customer and environment, and the invitations sent.", load: loadPeople },
+  partners: { title: "Partners", sub: "System integrators: their sandbox, their people and the customers they serve.", load: loadPartners },
+  reviews: { title: "Connector reviews", sub: "Partner connectors waiting for VibeFinance's approval, and every partner connector.", load: loadReviews },
+  log: { title: "Admin log", sub: "Every privileged action, who took it, and what came of it.", load: loadLog },
+};
+let current = "home";
+
+function screenFromHash() {
+  const name = location.hash.replace(/^#\/?/, "");
+  return SCREENS[name] ? name : "home";
+}
+
+async function show(name) {
+  current = name;
+  const s = SCREENS[name];
+  document.getElementById("screen-title").textContent = s.title;
+  document.getElementById("screen-sub").textContent = s.sub;
+  document.title = `${s.title} — VibeFinance Operator`;
+  document.querySelectorAll("section.screen").forEach((el) => (el.hidden = el.dataset.screen !== name));
+  document.querySelectorAll(".navitem[href]").forEach((a) => {
+    const on = a.dataset.screen === name;
+    a.classList.toggle("on", on);
+    if (on) a.setAttribute("aria-current", "page");
+    else a.removeAttribute("aria-current");
+  });
   note("");
-  loadPartners();
+  await s.load();
+}
 
+async function refresh() {
+  await Promise.all([SCREENS[current].load(), loadBadges()]);
+}
+
+function setBadge(name, n) {
+  const b = document.querySelector(`[data-badge="${name}"]`);
+  if (!b) return;
+  b.hidden = !n;
+  b.textContent = n ? String(n) : "";
+}
+
+/** What waits, for the badges and Home: never allowed to stop a screen loading. */
+async function waiting() {
+  const safe = (p) => api(p).catch(() => null);
+  const [signups, reviews, invitations] = await Promise.all([safe("/signup-requests?status=pending"), safe("/partner-connectors?status=submitted"), safe("/invitations")]);
+  return {
+    signups: signups ? signups.requests.length : null,
+    reviews: reviews ? reviews.versions.length : null,
+    unsent: invitations ? invitations.invitations.filter((i) => i.status === "pending" && i.sendError).length : null,
+  };
+}
+
+async function loadBadges() {
+  const w = await waiting();
+  setBadge("signups", w.signups);
+  setBadge("reviews", w.reviews);
+  setBadge("people", w.unsent);
+}
+
+function tile(n, label, screen, warn = false) {
+  const b = document.createElement("button");
+  b.type = "button";
+  b.className = "tile";
+  b.innerHTML = `<div class="n${warn && n ? " warn" : ""}">${n === null ? "—" : escapeHtml(n)}</div><div class="l">${escapeHtml(label)}</div>`;
+  b.onclick = () => (location.hash = `#/${screen}`);
+  return b;
+}
+
+async function loadHome() {
+  const w = await waiting();
+  document.getElementById("home-waiting").replaceChildren(
+    tile(w.signups, "sign-up requests waiting for a decision", "signups", true),
+    tile(w.reviews, "partner connectors waiting for review", "reviews", true),
+    tile(w.unsent, "invitations that could not be sent", "people", true)
+  );
   try {
-    const { requests = [] } = await api("/signup-requests?status=pending");
-    document
-      .getElementById("requests")
-      .replaceChildren(
-        table(
-          ["Company", "Who asked", "Requested", ""],
-          requests.map(requestRow),
-          "Nothing is waiting."
-        )
-      );
-
-    // Whoever the last action was attributed to is whoever is signed
-    // in, which saves asking a second route.
-    const { actions = [] } = await api("/admin-actions?limit=25");
-    document
-      .getElementById("actions")
-      .replaceChildren(
-        table(
-          ["When", "Who", "What", "Outcome", ""],
-          actions.map(actionRow),
-          "Nothing has been done yet."
-        )
-      );
-
-    const me = actions.find((a) => a.actorSource === "access");
-    document.getElementById("who").textContent = me
-      ? `Signed in as ${me.actor}`
-      : "Signed in through Cloudflare Access";
+    const { customers = [] } = await api("/fleet-overview");
+    const envs = customers.flatMap((c) => c.environments);
+    const soon = Date.now() + 30 * 86400000;
+    document.getElementById("home-fleet").replaceChildren(
+      tile(customers.filter((c) => !c.sandboxOf).length, "customers", "customers"),
+      tile(envs.filter((e) => e.deployed).length, `environments deployed, of ${envs.length}`, "customers"),
+      tile(envs.filter((e) => !e.deployed).length, "environments not yet deployed", "customers", true),
+      tile(envs.filter((e) => e.licence && e.licence.status !== "active").length, "licences warned or blocked", "customers", true),
+      tile(envs.filter((e) => e.licence?.validTo && Date.parse(e.licence.validTo) < soon).length, "licences ending within 30 days", "customers", true),
+      tile(customers.filter((c) => c.sandboxOf).length, "partner sandboxes", "partners")
+    );
   } catch (err) {
-    note(err.message);
+    document.getElementById("home-fleet").replaceChildren(problemBox("The fleet could not be loaded", err));
+  }
+  try {
+    const { actions = [] } = await api("/admin-actions?limit=8");
+    document.getElementById("home-activity").replaceChildren(table(["When", "Who", "What", "Outcome", ""], actions.map(actionRow), "Nothing has been done yet."));
+    whoFrom(actions);
+  } catch (err) {
+    document.getElementById("home-activity").replaceChildren(problemBox("The log could not be loaded", err));
   }
 }
 
-load();
+function problemBox(what, err) {
+  const d = document.createElement("div");
+  d.className = "problem";
+  d.textContent = `${what}: ${err.message}. If vf-licence or its migrations were just changed, check it is deployed and they are applied.`;
+  return d;
+}
+
+/** Whoever the last verified action was attributed to is whoever is signed in. */
+function whoFrom(actions) {
+  const me = actions.find((a) => a.actorSource === "access");
+  document.getElementById("who").textContent = me ? `Signed in as ${me.actor}` : "Signed in through Cloudflare Access";
+}
+
+async function loadSignups() {
+  try {
+    const [{ requests: pending = [] }, { requests: all = [] }] = await Promise.all([api("/signup-requests?status=pending"), api("/signup-requests")]);
+    document.getElementById("requests").replaceChildren(table(["Company", "Who asked", "Requested", ""], pending.map(requestRow), "Nothing is waiting."));
+    const decided = all.filter((r) => r.status !== "pending").slice(0, 40).map((r) => {
+      const tr = document.createElement("tr");
+      const where = r.status === "approved" ? (r.environmentId ? `${r.customerId ?? ""} · ${r.environmentId}` : "approved, not provisioned yet") : "";
+      tr.innerHTML = `<td><div>${escapeHtml(r.companyName)}</div><div class="sm muted">${escapeHtml(r.contactName)} · ${escapeHtml(r.contactEmail)}</div></td>
+        <td class="sm ${r.status === "approved" ? "outcome-recorded" : "outcome-refused"}">${escapeHtml(r.status)}</td>
+        <td class="sm">${escapeHtml(when(r.decidedAt))}<div class="muted">${escapeHtml(r.decidedBy ?? "")}</div></td>
+        <td class="sm ${r.status === "approved" && !r.environmentId ? "outcome-refused" : ""}">${escapeHtml(where)}</td>`;
+      return tr;
+    });
+    document.getElementById("decided").replaceChildren(table(["Company", "Decision", "When, by whom", "Customer · environment"], decided, "Nothing decided yet."));
+  } catch (err) {
+    document.getElementById("requests").replaceChildren(problemBox("Sign-up requests could not be loaded", err));
+  }
+}
+
+/**
+ * **Customers and environments.** Each customer, its environments, where
+ * each is deployed, its licence (changed here), and its deploy config.
+ * Building an environment stays with the provisioning script.
+ */
+let fleet = [];
+async function loadFleet() {
+  try {
+    ({ customers: fleet = [] } = await api("/fleet-overview"));
+    renderFleet();
+  } catch (err) {
+    document.getElementById("fleet").replaceChildren(problemBox("The fleet could not be loaded", err));
+  }
+}
+
+function renderFleet() {
+  const q = document.getElementById("customer-filter").value.trim().toLowerCase();
+  const shown = fleet.filter((c) => !q || `${c.name} ${c.id}`.toLowerCase().includes(q));
+  const holder = document.getElementById("fleet");
+  if (shown.length === 0) {
+    holder.replaceChildren(Object.assign(document.createElement("div"), { className: "empty", textContent: q ? "No customer matches." : "No customers yet." }));
+    return;
+  }
+  holder.replaceChildren(...shown.map(customerBlock));
+}
+
+function licenceCell(e) {
+  const l = e.licence;
+  if (!l) return '<span class="outcome-refused">no licence</span>';
+  const tone = l.status === "active" ? "outcome-recorded" : "outcome-refused";
+  return `<div>${escapeHtml(l.plan)} · <span class="${tone}">${escapeHtml(l.status)}</span></div>
+    <div class="muted">${escapeHtml(l.volumeEntitlement)} invoices · ${escapeHtml(String(l.validFrom ?? "").slice(0, 10))} to ${escapeHtml(l.validTo ? String(l.validTo).slice(0, 10) : "open")}</div>
+    ${l.statusReason ? `<div class="muted">${escapeHtml(l.statusReason)}</div>` : ""}`;
+}
+
+function customerBlock(c) {
+  const block = document.createElement("div");
+  block.className = "customer";
+  block.dataset.customer = c.id;
+  block.innerHTML = `<h3><span>${escapeHtml(c.name)}</span><span class="sm muted">${escapeHtml(c.id)}</span>
+    ${c.sandboxOf ? `<span class="pill">Partner sandbox · ${escapeHtml(c.sandboxOf.name)}</span>` : ""}
+    <span class="sm muted">${c.people} ${c.people === 1 ? "person" : "people"}</span></h3>`;
+  if (c.environments.length === 0) {
+    block.insertAdjacentHTML("beforeend", '<div class="sm muted">No environment yet: approve a sign-up and run the provisioning script, or provision one for this customer.</div>');
+    return block;
+  }
+  const rows = c.environments.map((e) => {
+    const tr = document.createElement("tr");
+    tr.dataset.environment = e.id;
+    tr.innerHTML = `<td><div>${escapeHtml(e.id)}</div><div class="muted">${escapeHtml(e.kind)} · ${escapeHtml(e.region)}${e.locale ? ` · ${escapeHtml(e.locale)}` : ""}</div></td>
+      <td>${e.deployed ? `<a href="${escapeHtml(e.instanceUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(e.instanceUrl.replace(/^https:\/\//, ""))}</a>` : '<span class="outcome-refused">not yet deployed</span>'}
+        <div class="muted">${escapeHtml(e.workerName ?? "no Worker recorded")}${e.d1DatabaseName ? ` · ${escapeHtml(e.d1DatabaseName)}` : ""}</div></td>
+      <td>${licenceCell(e)}</td>
+      <td class="num">${e.people}</td>
+      <td></td>`;
+    const cell = tr.lastElementChild;
+    cell.style.whiteSpace = "nowrap";
+    cell.append(button("Licence", () => toggleLicence(tr, e)), button("Config", () => toggleConfig(tr, e)));
+    cell.querySelectorAll("button + button").forEach((b) => (b.style.marginLeft = "6px"));
+    return tr;
+  });
+  block.append(table(["Environment", "Where", "Licence", "People", ""], rows, ""));
+  return block;
+}
+
+function detailRow(tr, className) {
+  const next = tr.nextElementSibling;
+  if (next?.classList.contains(className)) {
+    next.remove();
+    return null;
+  }
+  tr.parentElement.querySelectorAll(`tr.${className}`).forEach((r) => r.remove());
+  const row = document.createElement("tr");
+  row.className = className;
+  const td = document.createElement("td");
+  td.colSpan = 5;
+  row.append(td);
+  tr.after(row);
+  return td;
+}
+
+/** Change a licence: the plan, volume, dates and state. Its features are kept. */
+function toggleLicence(tr, e) {
+  const td = detailRow(tr, "licencerow");
+  if (!td) return;
+  const l = e.licence ?? { plan: "trial", volumeEntitlement: 500, validFrom: new Date().toISOString().slice(0, 10), validTo: null, status: "active", features: [] };
+  const field = (label, input) => {
+    const wrap = document.createElement("label");
+    wrap.append(label, input);
+    return wrap;
+  };
+  const input = (value, size, type = "text") => Object.assign(document.createElement("input"), { value: value ?? "", size, type });
+  const plan = input(l.plan, 12);
+  const volume = input(l.volumeEntitlement, 8, "number");
+  const from = input(String(l.validFrom ?? "").slice(0, 10), 11, "date");
+  const to = input(l.validTo ? String(l.validTo).slice(0, 10) : "", 11, "date");
+  const status = document.createElement("select");
+  for (const s of ["active", "warned", "blocked"]) status.append(Object.assign(document.createElement("option"), { value: s, textContent: s, selected: s === l.status }));
+  const reason = input(l.statusReason, 24);
+  reason.placeholder = "why, if not active";
+  const form = document.createElement("div");
+  form.className = "licenceform";
+  form.append(
+    field("Plan", plan),
+    field("Invoices", volume),
+    field("From", from),
+    field("To (blank: open)", to),
+    field("State", status),
+    field("Reason", reason),
+    button(e.licence ? "Save licence" : "Create licence", () =>
+      act("/licences", "POST", {
+        environmentId: e.id,
+        plan: plan.value.trim(),
+        volumeEntitlement: Number(volume.value),
+        validFrom: from.value,
+        ...(to.value ? { validTo: to.value } : {}),
+        status: status.value,
+        ...(reason.value.trim() ? { statusReason: reason.value.trim() } : {}),
+        features: l.features ?? [],
+      }),
+      "approve"
+    )
+  );
+  td.append(form);
+}
+
+/** What a deploy needs for this environment, from the manifest (0136). No secrets. */
+async function toggleConfig(tr, e) {
+  const td = detailRow(tr, "configrow");
+  if (!td) return;
+  td.className = "envconfig";
+  td.textContent = "Loading…";
+  try {
+    const config = await api(`/environments/${encodeURIComponent(e.id)}/config`);
+    const pre = document.createElement("pre");
+    pre.textContent = JSON.stringify(config, null, 2);
+    td.replaceChildren(pre);
+  } catch (err) {
+    td.replaceChildren(problemBox("The config could not be read", err));
+  }
+}
+
+document.getElementById("customer-filter").oninput = () => renderFleet();
+document.getElementById("customer-create").onclick = async () => {
+  const id = document.getElementById("customer-id");
+  const name = document.getElementById("customer-name");
+  if (await act("/customers", "POST", { id: id.value.trim(), name: name.value.trim() })) {
+    id.value = "";
+    name.value = "";
+  }
+};
+
+/**
+ * **People and access.** Everyone with a password, the environments of
+ * their customer they may reach (grant and revoke), and the invitations.
+ */
+let people = { people: [], environments: [] };
+async function loadPeople() {
+  try {
+    const [p, { customers = [] }] = await Promise.all([api("/people"), api("/customers")]);
+    people = p;
+    const pick = document.getElementById("people-customer");
+    const chosen = pick.value;
+    pick.replaceChildren(
+      Object.assign(document.createElement("option"), { value: "", textContent: "Every customer" }),
+      ...customers.map((c) => Object.assign(document.createElement("option"), { value: c.id, textContent: `${c.name} (${c.id})` }))
+    );
+    pick.value = chosen;
+    renderPeople();
+    await loadInvitations(customers);
+  } catch (err) {
+    document.getElementById("people").replaceChildren(problemBox("People could not be loaded", err));
+  }
+}
+
+function renderPeople() {
+  const customer = document.getElementById("people-customer").value;
+  const q = document.getElementById("people-filter").value.trim().toLowerCase();
+  const shown = people.people.filter((p) => (!customer || p.customerId === customer) && (!q || p.email.includes(q)));
+  const rows = shown.map((p) => {
+    const tr = document.createElement("tr");
+    tr.dataset.person = `${p.email}|${p.customerId}`;
+    tr.innerHTML = `<td><div>${escapeHtml(p.email)}</div>${p.partnerOf.length ? `<div class="sm"><span class="pill">Partner · ${escapeHtml(p.partnerOf.join(", "))}</span></div>` : ""}</td>
+      <td class="sm">${escapeHtml(p.customerName)}<div class="muted">${escapeHtml(p.customerId)}</div></td>
+      <td class="sm"></td>
+      <td class="sm">${escapeHtml(when(p.since))}</td>`;
+    const reach = tr.children[2];
+    if (p.environments.length === 0) reach.insertAdjacentHTML("beforeend", '<div class="muted">none yet</div>');
+    for (const e of p.environments) {
+      const chip = document.createElement("span");
+      chip.className = "grant chip";
+      chip.title = `granted ${when(e.grantedAt)}${e.grantedBy ? ` by ${e.grantedBy}` : ""}`;
+      chip.append(`${e.id} (${e.kind})`);
+      const revoke = button("×", () => {
+        // Asked once more, in place: revoking is a person losing their way in.
+        if (revoke.dataset.armed !== "1") {
+          revoke.dataset.armed = "1";
+          revoke.textContent = "Revoke?";
+          revoke.className = "reject";
+          return;
+        }
+        act("/access", "DELETE", { email: p.email, environmentId: e.id });
+      });
+      revoke.title = `Revoke ${p.email}'s access to ${e.id}`;
+      chip.append(revoke);
+      reach.append(chip);
+    }
+    const granted = new Set(p.environments.map((e) => e.id));
+    const options = people.environments.filter((e) => e.customerId === p.customerId && !granted.has(e.id));
+    if (options.length > 0) {
+      const row = document.createElement("div");
+      row.className = "addrow";
+      row.style.marginTop = "4px";
+      const pick = document.createElement("select");
+      pick.className = "grant-pick";
+      for (const e of options) pick.append(Object.assign(document.createElement("option"), { value: e.id, textContent: `${e.id} (${e.kind})` }));
+      row.append(pick, button("Grant", () => act("/access", "POST", { email: p.email, environmentId: pick.value })));
+      reach.append(row);
+    }
+    return tr;
+  });
+  document.getElementById("people").replaceChildren(table(["Person", "Customer", "May reach", "Since"], rows, customer || q ? "Nobody matches." : "Nobody can sign in yet."));
+}
+document.getElementById("people-customer").onchange = () => renderPeople();
+document.getElementById("people-filter").oninput = () => renderPeople();
+
+/** **The admin log**, the latest 500, found by who, what or which, and by outcome. */
+let log = [];
+async function loadLog() {
+  try {
+    ({ actions: log = [] } = await api("/admin-actions?limit=500"));
+    whoFrom(log);
+    renderLog();
+  } catch (err) {
+    document.getElementById("actions").replaceChildren(problemBox("The log could not be loaded", err));
+  }
+}
+
+function renderLog() {
+  const q = document.getElementById("log-filter").value.trim().toLowerCase();
+  const outcome = document.getElementById("log-outcome").value;
+  const shown = log.filter((a) => (!outcome || a.outcome === outcome) && (!q || `${a.actor} ${a.action} ${a.subject ?? ""} ${a.detail ?? ""}`.toLowerCase().includes(q)));
+  document.getElementById("log-count").textContent = `${shown.length} of ${log.length}`;
+  document.getElementById("actions").replaceChildren(table(["When", "Who", "What", "Outcome", ""], shown.map(actionRow), "Nothing matches."));
+}
+document.getElementById("log-filter").oninput = () => renderLog();
+document.getElementById("log-outcome").onchange = () => renderLog();
+
+window.addEventListener("hashchange", () => show(screenFromHash()));
+show(screenFromHash());
+loadBadges();
+api("/admin-actions?limit=5").then(({ actions = [] }) => whoFrom(actions)).catch(() => {});
 </script>
 </body>
 </html>
