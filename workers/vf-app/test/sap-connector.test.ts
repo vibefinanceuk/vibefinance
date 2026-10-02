@@ -102,7 +102,7 @@ describe("SAP S/4HANA Cloud — decision 0606", () => {
     expect([...listsCreated].sort()).toEqual(["SAP company codes", "SAP tax codes"]);
     const got = (await handleGetConnector(env.DB, id, await connectorLibrary(env.DB))).body as Record<string, unknown>;
     expect(got.settings).toMatchObject({ method: "POST", format: "mapped", referencePath: "$.d.SupplierInvoice", csrf: true });
-    expect(got.connector).toMatchObject({ id: "sap-s4hana-cloud", maturity: "first_version", fixed: ["method", "format"] });
+    expect(got.connector).toMatchObject({ id: "sap-s4hana-cloud", maturity: "first_version", fixed: ["method", "format"], asks: ["csrf"] });
   });
 
   it("fetches the token with the session's cookies, then posts the supplier invoice as SAP wants it, and keeps its document number", async () => {

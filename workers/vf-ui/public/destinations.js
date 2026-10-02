@@ -78,6 +78,16 @@ function settingsCard(state, reload) {
   // Decision 0606: a CSRF token first, as SAP's OData services need.
   const csrf = el("input", { type: "checkbox", id: "do-csrf" });
   csrf.checked = !!s.csrf;
+  /**
+   * Decision 0610: the optional settings only where they belong. Dan, on
+   * Business Central: "The Dynamics connector should not mention other
+   * ERPs." A connector names the ones it uses; the generic HTTPS out (or a
+   * Destination with no connector) shows both; one already set stays shown.
+   */
+  const asks = state.connector?.asks;
+  const generic = !state.connector || state.connector.id === "https-out" || !Array.isArray(asks);
+  const showCsrf = generic || asks.includes("csrf") || !!s.csrf;
+  const showUsername = generic || asks.includes("oauthUsername") || !!s.auth.username;
   const problem = el("div", { class: "warn", id: "do-problem" });
   const saved = el("div", { class: "muted sm", id: "do-saved" });
 
@@ -97,7 +107,7 @@ function settingsCard(state, reload) {
             field(t("httpsout.clientid"), clientId),
             field(t("httpsout.scope"), scope),
             // Decision 0607: a user name, where the token address asks for one (Sage Intacct's web services user).
-            field(t("httpsout.oauthusername"), username, t("httpsout.oauthusernamehint")),
+            ...(showUsername ? [field(t("httpsout.oauthusername"), username, t("httpsout.oauthusernamehint"))] : []),
           ]
         : []),
       ...(name ? [field(t(`httpsout.secret.${name}`), secret, t("httpsout.secrethint"))] : [])
@@ -143,8 +153,7 @@ function settingsCard(state, reload) {
     el("div", { class: "dotwo" }, [field(t("httpsout.formatlabel"), format, t("httpsout.formathint")), field(t("httpsout.authlabel"), auth)]),
     authFields,
     field(t("httpsout.reference"), reference, t("httpsout.referencehint")),
-    el("label", { class: "sm docsrf" }, [csrf, ` ${t("httpsout.csrf")}`]),
-    el("div", { class: "muted sm", text: t("httpsout.csrfhint") }),
+    ...(showCsrf ? [el("label", { class: "sm docsrf" }, [csrf, ` ${t("httpsout.csrf")}`]), el("div", { class: "muted sm", text: t("httpsout.csrfhint") })] : []),
     problem,
     saved,
   ]);

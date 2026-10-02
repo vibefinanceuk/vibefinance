@@ -766,6 +766,8 @@ export function connectorView(instance: { route_id: string; connector_id: string
     offered: connector.status !== "withdrawn",
     // Decision 0605: available, not yet proven against the real system.
     maturity: connector.maturity ?? null,
+    // Decision 0610: the optional settings it uses; null for one that names none (the generic HTTPS out shows all).
+    asks: connector.settings?.ask ?? null,
     latestVersion: connector.version,
     upgradeAvailable: connector.version > version,
     fixed: connector.settings?.fixed ?? [],

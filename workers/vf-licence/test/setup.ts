@@ -241,6 +241,7 @@ import sapStringsSql from "../migrations/0250_sap_connector_strings.sql?raw";
 import intacctStringsSql from "../migrations/0251_intacct_connector_strings.sql?raw";
 import menuRenamesSql from "../migrations/0252_menu_renames.sql?raw";
 import bcStringsSql from "../migrations/0253_bc_connector_strings.sql?raw";
+import neutralHintsSql from "../migrations/0254_neutral_setting_hints.sql?raw";
 
 function stripSqlComments(sql: string): string {
   return sql
@@ -515,5 +516,6 @@ export async function applyTestSchema(): Promise<void> {
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(intacctStringsSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(menuRenamesSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(bcStringsSql)));
+  await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(neutralHintsSql)));
 
 }

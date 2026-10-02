@@ -23,6 +23,7 @@ import partnerLibraryStringsSql from "../../vf-licence/migrations/0248_partner_l
 import oracleStringsSql from "../../vf-licence/migrations/0249_oracle_connector_strings.sql?raw";
 import sapStringsSql from "../../vf-licence/migrations/0250_sap_connector_strings.sql?raw";
 import intacctStringsSql from "../../vf-licence/migrations/0251_intacct_connector_strings.sql?raw";
+import neutralHintsSql from "../../vf-licence/migrations/0254_neutral_setting_hints.sql?raw";
 
 /**
  * **Routes and Process routes — decision 0557.** The standard routes with
@@ -60,6 +61,8 @@ const strings: Record<string, string> = {
 for (const sql of [stringsSql, destinationStringsSql, formatStringsSql, mappingStringsSql, csvStringsSql, httpsStringsSql, httpsStateStringsSql, replaceKeyStringsSql, mailboxStringsSql, renameStringsSql, httpsOutStringsSql, erpDeliveriesStringsSql, destUnitsStringsSql, libraryStringsSql, outboundStringsSql, submitStringsSql, submitFromCustomerSql, destRetireStringsSql, destDeleteStringsSql, reviewStringsSql, partnerLibraryStringsSql, oracleStringsSql, sapStringsSql, intacctStringsSql]) {
   for (const m of sql.matchAll(/\('([^']+)', 'en', '((?:[^']|'')*)'\)/g)) strings[m[1]] = m[2].replace(/''/g, "'");
 }
+// Decision 0610: 0254 rewords two hints by UPDATE.
+for (const m of neutralHintsSql.matchAll(/UPDATE ui_strings SET value = '((?:[^']|'')*)' WHERE key = '([^']+)' AND locale = 'en'/g)) strings[m[2]] = m[1].replace(/''/g, "'");
 // 0209 updates the ERP note rather than inserting it.
 strings["processroutes.erpnote"] = "Invoices reaching Payment Eligible are exported from the ERP export screen, each once, as a CSV file. Each export shows in the Route monitor as a message sent out on this Destination.";
 
@@ -777,10 +780,31 @@ describe("HTTPS out — decision 0585", () => {
     stubOut(calls, { ...CONNECTOR, settings: { ...CONNECTOR.settings, auth: { type: "oauth2_client_credentials", tokenUrl: "https://api.intacct.com/ia/api/v1/oauth2/token", clientId: "vf", username: "vibefinance@ACME" } } });
     await openPush();
     expect((document.querySelector("#do-username") as HTMLInputElement).value).toBe("vibefinance@ACME");
-    expect(text("#do-settings")).toContain("as Sage Intacct does for its web services user");
+    expect(text("#do-settings")).toContain("Only where the token address asks for one");
     button("#do-settings", "Save").click();
     await settle();
     expect(JSON.parse(calls.find((c) => c.method === "PUT")!.body!).settings.auth).toMatchObject({ type: "oauth2_client_credentials", clientId: "vf", username: "vibefinance@ACME" });
+  });
+
+  it("shows a connector's optional settings only where it uses them, naming no other ERP — decision 0610", async () => {
+    const calls: Call[] = [];
+    const as = (id: string, asks: string[] | null) => ({ ...CONNECTOR, settings: { ...CONNECTOR.settings, auth: { type: "oauth2_client_credentials", tokenUrl: "https://login.example/token", clientId: "c" } }, connector: { id, version: 1, latestVersion: 1, upgradeAvailable: false, fixed: ["method", "format"], authTypes: ["oauth2_client_credentials"], asks } });
+    stubOut(calls, as("dynamics-365-bc", []));
+    await openPush();
+    expect(document.querySelector("#do-csrf")).toBeNull();
+    expect(document.querySelector("#do-username")).toBeNull();
+    expect(text("#do-settings")).not.toMatch(/SAP|Intacct/);
+    document.body.innerHTML = `<main id="shell"></main><main id="viewer" hidden></main>`;
+    stubOut(calls, as("sage-intacct", ["oauthUsername"]));
+    await openPush();
+    expect(document.querySelector("#do-username")).not.toBeNull();
+    expect(document.querySelector("#do-csrf")).toBeNull();
+    document.body.innerHTML = `<main id="shell"></main><main id="viewer" hidden></main>`;
+    stubOut(calls, as("sap-s4hana-cloud", ["csrf"]));
+    await openPush();
+    expect(document.querySelector("#do-csrf")).not.toBeNull();
+    expect(document.querySelector("#do-username")).toBeNull();
+    expect(text("#do-settings")).toContain("Some services refuse a change without a security token");
   });
 
   it("shows exactly what would be sent first, then sends it and says what came back", async () => {

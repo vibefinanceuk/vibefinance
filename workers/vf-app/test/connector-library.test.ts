@@ -53,7 +53,7 @@ describe("adding a Destination from a connector", () => {
     expect(row).toMatchObject({ connector_id: "automation-webhook", connector_version: 1 });
     expect(JSON.parse(row!.settings_json)).toMatchObject({ method: "POST", format: "vf_json", auth: { type: "none" } });
     const got = (await handleGetConnector(env.DB, id)).body as { connector: Record<string, unknown> };
-    expect(got.connector).toEqual({ id: "automation-webhook", version: 1, name: null, publisher: "standard", partner: null, offered: true, maturity: null, latestVersion: 1, upgradeAvailable: false, fixed: ["method", "format"], authTypes: ["none", "api_key_header"] });
+    expect(got.connector).toEqual({ id: "automation-webhook", version: 1, name: null, publisher: "standard", partner: null, offered: true, maturity: null, asks: null, latestVersion: 1, upgradeAvailable: false, fixed: ["method", "format"], authTypes: ["none", "api_key_header"] });
     const listed = (await handleConnectorLibrary(env.DB)).body as Listed;
     expect(listed.connectors.find((c) => c.id === "automation-webhook")!.inUse).toMatchObject([{ instanceId: id, name: "Zapier" }]);
     const flow = (await handleProcessRoutes(env.DB, new URLSearchParams("process=ap"))).body as { destinations: Array<Record<string, unknown>> };

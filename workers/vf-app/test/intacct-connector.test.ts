@@ -90,7 +90,7 @@ describe("Sage Intacct — decision 0607", () => {
     expect([...listsCreated].sort()).toEqual(["Intacct locations", "Intacct purchase tax details"]);
     const got = (await handleGetConnector(env.DB, id, await connectorLibrary(env.DB))).body as Record<string, unknown>;
     expect(got.settings).toMatchObject({ url: BILL, method: "POST", format: "mapped", auth: { type: "oauth2_client_credentials", tokenUrl: TOKEN }, referencePath: "$.ia::result.key" });
-    expect(got.connector).toMatchObject({ id: "sage-intacct", maturity: "first_version", authTypes: ["oauth2_client_credentials"] });
+    expect(got.connector).toMatchObject({ id: "sage-intacct", maturity: "first_version", authTypes: ["oauth2_client_credentials"], asks: ["oauthUsername"] });
   });
 
   it("signs in as the web services user, posts the bill with Intacct calculating the tax, and keeps the record's key", async () => {

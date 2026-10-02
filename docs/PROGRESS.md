@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 2 October 2026 (decision 0609). A living document: what
+Last updated 2 October 2026 (decision 0610). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,12 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### A connector's optional settings only where it uses them (0610)
+
+Dan noticed the Business Central and Intacct Destinations mentioning SAP
+and Intacct. Each connector now shows only the optional settings it uses,
+and their help names no ERP.
 
 ### Microsoft Dynamics 365 Business Central, the fourth ERP connector (0609)
 

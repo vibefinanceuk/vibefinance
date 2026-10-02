@@ -84,7 +84,7 @@ describe("Microsoft Dynamics 365 Business Central — decision 0609", () => {
     expect(listsCreated).toEqual(["Business Central tax codes"]);
     expect(settings).toMatchObject({ method: "POST", format: "mapped", auth: { type: "oauth2_client_credentials", scope: "https://api.businesscentral.dynamics.com/.default" }, referencePath: "$.number" });
     const got = (await handleGetConnector(env.DB, id, await connectorLibrary(env.DB))).body as Record<string, unknown>;
-    expect(got.connector).toMatchObject({ id: "dynamics-365-bc", maturity: "first_version", authTypes: ["oauth2_client_credentials"] });
+    expect(got.connector).toMatchObject({ id: "dynamics-365-bc", maturity: "first_version", authTypes: ["oauth2_client_credentials"], asks: [] });
   });
 
   it("signs in through Entra ID, posts the draft invoice with its lines and dimensions in one request, and keeps its number", async () => {

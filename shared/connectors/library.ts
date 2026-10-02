@@ -53,6 +53,12 @@ export interface ConnectorSettings {
   fixed: Array<"method" | "format">;
   /** The ways of signing in it allows. */
   authTypes: ConnectorAuthType[];
+  /**
+   * Decision 0610: the optional settings it uses, so its Destination shows
+   * only those: `csrf` (SAP), `oauthUsername` (Sage Intacct). A connector
+   * that names none shows neither; the generic HTTPS out shows both.
+   */
+  ask?: Array<"csrf" | "oauthUsername">;
 }
 
 export interface ConnectorDefinition {
@@ -146,6 +152,7 @@ export const STANDARD_CONNECTORS: ConnectorDefinition[] = [
       defaults: { method: "POST", format: "mapped", auth: { type: "basic" }, referencePath: "$.InvoiceId" },
       fixed: ["method", "format"],
       authTypes: ["basic", "oauth2_client_credentials"],
+      ask: [],
     },
     outboundMapping: oracleFusionPayablesMapping(),
     lookupLists: Object.values(ORACLE_LISTS),
@@ -168,6 +175,7 @@ export const STANDARD_CONNECTORS: ConnectorDefinition[] = [
       defaults: { method: "POST", format: "mapped", auth: { type: "basic" }, referencePath: "$.d.SupplierInvoice", csrf: true },
       fixed: ["method", "format"],
       authTypes: ["basic", "oauth2_client_credentials"],
+      ask: ["csrf"],
     },
     outboundMapping: sapS4hanaCloudMapping(),
     lookupLists: Object.values(SAP_LISTS),
@@ -196,6 +204,7 @@ export const STANDARD_CONNECTORS: ConnectorDefinition[] = [
       },
       fixed: ["method", "format"],
       authTypes: ["oauth2_client_credentials"],
+      ask: ["oauthUsername"],
     },
     outboundMapping: sageIntacctMapping(),
     lookupLists: Object.values(INTACCT_LISTS),
@@ -218,6 +227,7 @@ export const STANDARD_CONNECTORS: ConnectorDefinition[] = [
       defaults: { method: "POST", format: "mapped", auth: { type: "oauth2_client_credentials", scope: BC_TOKEN_SCOPE }, referencePath: "$.number" },
       fixed: ["method", "format"],
       authTypes: ["oauth2_client_credentials"],
+      ask: [],
     },
     outboundMapping: dynamics365BcMapping(),
     lookupLists: Object.values(BC_LISTS),
