@@ -41,6 +41,7 @@ import {
 import { handleProvisionTrial, expireOverdueLicences, warnExpiringLicences , handleEnvironmentConfig } from "./provision-route.js";
 import { recordAdminAction, handleListAdminActions, actorFrom } from "./admin-audit.js";
 import { partnerConnectorState, submitPartnerConnector, withdrawPartnerConnector } from "./partner-connectors.js";
+import { listPartnerConnectors, reviewVersion, suspendConnector } from "./connector-review.js";
 import {
   acceptInvitation,
   cancelInvitation,
@@ -172,7 +173,11 @@ export function isPrivileged(method: string, pathname: string): boolean {
     (matches(/^\/partners\/[^/]+\/(suspend|reinstate)$/) && method === "POST") ||
     // Invitations — decision 0593. Viewing and accepting one are public; making one is the operator's.
     (pathname === "/invitations" && (method === "GET" || method === "POST")) ||
-    (matches(/^\/invitations\/[^/]+\/(resend|cancel)$/) && method === "POST")
+    (matches(/^\/invitations\/[^/]+\/(resend|cancel)$/) && method === "POST") ||
+    // Reviewing partners' connectors — decision 0600.
+    (pathname === "/partner-connectors" && method === "GET") ||
+    (matches(/^\/partner-connectors\/[^/]+\/versions\/\d+\/(approve|return)$/) && method === "POST") ||
+    (matches(/^\/partner-connectors\/[^/]+\/(suspend|reinstate)$/) && method === "POST")
   );
 }
 
@@ -560,6 +565,26 @@ export default {
         }
       }
       if (result) return json(result.body, result.status);
+    }
+
+    // Reviewing partners' connectors — decision 0600.
+    if (url.pathname === "/partner-connectors" || url.pathname.startsWith("/partner-connectors/")) {
+      const actor = actorFrom(request).actor;
+      if (url.pathname === "/partner-connectors" && request.method === "GET") {
+        const result = await listPartnerConnectors(env.CONTROL_DB, url.searchParams.get("status"));
+        return json(result.body, result.status);
+      }
+      const body = ((await request.json().catch(() => ({}))) ?? {}) as Record<string, unknown>;
+      const review = url.pathname.match(/^\/partner-connectors\/([^/]+)\/versions\/(\d+)\/(approve|return)$/);
+      if (review && request.method === "POST") {
+        const result = await reviewVersion(env.CONTROL_DB, actor, decodeURIComponent(review[1]), Number(review[2]), review[3] as "approve" | "return", body);
+        return json(result.body, result.status);
+      }
+      const suspend = url.pathname.match(/^\/partner-connectors\/([^/]+)\/(suspend|reinstate)$/);
+      if (suspend && request.method === "POST") {
+        const result = await suspendConnector(env.CONTROL_DB, actor, decodeURIComponent(suspend[1]), suspend[2] === "suspend", body);
+        return json(result.body, result.status);
+      }
     }
 
     // Partners — decision 0592.

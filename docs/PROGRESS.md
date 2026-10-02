@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 2 October 2026 (decision 0599). A living document: what
+Last updated 2 October 2026 (decision 0600). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,14 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### The review queue (0600)
+
+Slice 4, step 3. The operator console shows each partner connector
+version waiting for review with everything the decision rests on, and
+VibeFinance approves it or sends it back with a reason the partner sees.
+A whole connector can be suspended, which stops new versions. Next:
+approved partner connectors in their customers' Route library.
 
 ### Submitting from a customer, and retiring a Destination (0596, 0597)
 

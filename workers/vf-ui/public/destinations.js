@@ -424,11 +424,14 @@ function submissionCard(destination) {
     }
     for (const p of d.problems) blocks.push(el("div", { class: "warn sm", text: t(`submit.problem.${p}`) }));
     if (d.draftNotPublished) blocks.push(el("div", { class: "muted sm", text: t("submit.draftnote").replace("{n}", String(d.draftNotPublished)) }));
+    // Decision 0600: suspended by VibeFinance, with why; nothing more is submitted until it is reinstated.
+    const suspended = s.connector?.status === "suspended";
+    if (suspended) blocks.push(el("div", { class: "warn sm", id: "do-sub-suspended", text: t("submit.suspendedconnector").replace("{reason}", s.connector.suspendedReason ?? "") }));
     if (!s.canSubmit) blocks.push(el("div", { class: "muted sm", text: t(s.partner.status === "active" ? "submit.notperson" : "submit.suspended").replace("{partner}", s.partner.name) }));
 
     let form = null;
     let submit = null;
-    if (s.canSubmit && !waiting && d.problems.length === 0) {
+    if (s.canSubmit && !waiting && !suspended && d.problems.length === 0) {
       const name = el("input", { type: "text", id: "do-sub-name", value: s.connector?.name ?? d.name ?? "" });
       const description = el("textarea", { id: "do-sub-description", rows: "3" });
       description.value = versions[0]?.description ?? "";

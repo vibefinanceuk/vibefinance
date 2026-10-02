@@ -94,6 +94,20 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .line > span:last-child { display: flex; gap: 6px; flex: none; }
 #invitations td:last-child { white-space: nowrap; }
 .addrow { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+/* Reviewing partners' connectors — decision 0600. */
+.review { border-top: 0.5px solid var(--border); padding: 14px 0 8px; }
+.review:first-child { border-top: none; padding-top: 0; }
+.review h3 { font-size: var(--text-base); margin: 0 0 4px; font-weight: 600; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.review dl { display: grid; grid-template-columns: 170px 1fr; gap: 4px 12px; margin: 10px 0; font-size: var(--text-sm); }
+.review dt { color: var(--text-muted); }
+.review dd { margin: 0; }
+.review blockquote { margin: 6px 0; padding: 6px 10px; border-left: 2px solid var(--border-strong); color: var(--text-secondary); font-size: var(--text-sm); }
+.review table td { padding: 4px 8px; font-size: var(--text-sm); }
+.review h4 { font-size: var(--text-sm); color: var(--text-muted); margin: 12px 0 4px; font-weight: 600; }
+.review details { margin-top: 8px; font-size: var(--text-sm); }
+.review pre { white-space: pre-wrap; word-break: break-word; background: var(--surface-1); padding: 8px; border-radius: var(--radius); max-height: 320px; overflow: auto; }
+.review a { color: var(--text-accent); }
+.chip { font-size: var(--text-sm); padding: 1px 7px; border-radius: 999px; border: 0.5px solid var(--border-strong); margin-right: 4px; }
 input, select { background: var(--surface-1); color: var(--text-primary); border: 0.5px solid var(--border-strong); border-radius: var(--radius); padding: 4px 8px; min-height: 30px; }
 .empty { padding: 24px 10px; text-align: center; color: var(--text-muted); }
 </style>
@@ -110,6 +124,18 @@ input, select { background: var(--surface-1); color: var(--text-primary); border
     Everything a decision should rest on, in front of the decision.
   </p>
   <div id="requests"><div class="empty">Loading…</div></div>
+</div>
+
+<div class="panel" id="review-panel">
+  <h2>Connectors waiting for review</h2>
+  <p class="sm muted" style="margin:-6px 0 12px">
+    Each version a partner submits, before any customer sees it: what it
+    does, where it was built, and exactly what it sends. Approve it, or
+    send it back with a reason the partner sees.
+  </p>
+  <div id="reviews"><div class="empty">Loading…</div></div>
+  <h4 style="margin:18px 0 6px; font-size: var(--text-sm); color: var(--text-muted)">All partner connectors</h4>
+  <div id="connectors"><div class="empty">Loading…</div></div>
 </div>
 
 <div class="panel" id="partners-panel">
@@ -446,6 +472,126 @@ function partnerBlock(p, customers) {
   return block;
 }
 
+/**
+ * **The review queue — decision 0600.** Everything a decision rests on,
+ * in front of the decision: the partner and who submitted it, where it
+ * was built, the notes, which customers, how it sends and signs in, and
+ * its outbound mapping field by field.
+ */
+const FORMAT_WORDS = { vf_json: "Standard VibeFinance JSON", csv: "ERP CSV layout", mapped: "Its own mapping" };
+const AUTH_WORDS = { none: "nothing", api_key_header: "a key in a header", bearer: "a bearer token", basic: "user name and password", oauth2_client_credentials: "OAuth 2.0 client credentials" };
+const when = (iso) => String(iso ?? "").slice(0, 16).replace("T", " ");
+
+function mappingTable(mapping) {
+  const rows = [];
+  const fx = (f) => (f.fx ?? []).map((s) => s.fn + (s.args ? ` ${Object.values(s.args).join(" ")}` : "")).join(" → ");
+  const add = (level, fields) => {
+    for (const f of fields) {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `<td class="muted">${escapeHtml(level)}</td><td><code>${escapeHtml(f.target)}</code>${f.required ? " *" : ""}</td>
+        <td>${f.source ? `<code>${escapeHtml(f.source)}</code>` : `fixed: <code>${escapeHtml(f.fixed)}</code>`}</td><td class="muted">${escapeHtml(fx(f))}</td>`;
+      rows.push(tr);
+    }
+  };
+  add("invoice", mapping.invoice ?? []);
+  add(`each line · ${mapping.lines?.name ?? "—"}[]`, mapping.lines?.fields ?? []);
+  add(`each distribution · ${mapping.distributions?.name ?? "—"}[] (${mapping.distributions?.place === "invoice" ? "on the invoice" : "in each line"})`, mapping.distributions?.fields ?? []);
+  return table(["Level", "Sent as", "From", "Functions"], rows, "No fields.");
+}
+
+function reviewBlock(v) {
+  const d = v.definition ?? {};
+  const s = d.settings ?? {};
+  const block = document.createElement("div");
+  block.className = "review";
+  block.dataset.review = `${v.connectorId}:${v.version}`;
+  const built = v.source.sandbox ? `${escapeHtml(v.partner.name)}'s sandbox` : `${escapeHtml(v.source.customerName ?? v.source.customerId ?? "?")} (${escapeHtml(v.source.kind ?? "")}), a customer they serve`;
+  const audience = v.audience === "all" ? `All customers ${escapeHtml(v.partner.name)} serves` : v.audience.map((c) => escapeHtml(c.name)).join(", ");
+  block.innerHTML = `
+    <h3><span>${escapeHtml(v.name)}</span><span class="sm muted">version ${v.version}</span><span class="pill">${escapeHtml(v.partner.name)}</span>
+      ${v.partner.status !== "active" ? '<span class="pill warn">partner suspended</span>' : ""}${v.connector.status !== "active" ? '<span class="pill warn">connector suspended</span>' : ""}</h3>
+    <div class="sm">${escapeHtml(v.description)}</div>
+    ${v.notes ? `<blockquote>${escapeHtml(v.notes)}</blockquote>` : ""}
+    <dl>
+      <dt>Submitted</dt><dd>${escapeHtml(when(v.submittedAt))} by ${escapeHtml(v.submittedBy)}</dd>
+      <dt>Built in</dt><dd>${built}</dd>
+      <dt>For</dt><dd>${audience}</dd>
+      <dt>Sends</dt><dd>${escapeHtml(s.defaults?.method ?? "")} · ${escapeHtml(FORMAT_WORDS[s.defaults?.format] ?? s.defaults?.format ?? "")}</dd>
+      <dt>Signs in with</dt><dd>${escapeHtml(AUTH_WORDS[s.defaults?.auth?.type] ?? "")}${s.defaults?.auth?.header ? ` (header ${escapeHtml(s.defaults.auth.header)})` : ""}; allows ${(s.authTypes ?? []).map((a) => escapeHtml(AUTH_WORDS[a] ?? a)).join(", ")}</dd>
+      <dt>Customers may not change</dt><dd>${(s.fixed ?? []).length ? s.fixed.map(escapeHtml).join(", ") : "nothing"}</dd>
+      <dt>Its reference back</dt><dd>${s.defaults?.referencePath ? `<code>${escapeHtml(s.defaults.referencePath)}</code>` : "—"}</dd>
+      <dt>Look-up lists needed</dt><dd>${(d.lookupLists ?? []).length ? d.lookupLists.map(escapeHtml).join(", ") : "none"}</dd>
+      <dt>Vendor documentation</dt><dd>${d.vendorDocs ? `<a href="${escapeHtml(d.vendorDocs)}" target="_blank" rel="noopener noreferrer">${escapeHtml(d.vendorDocs)}</a>` : "—"}</dd>
+    </dl>`;
+  if (d.outboundMapping) {
+    const h4 = document.createElement("h4");
+    h4.textContent = `Outbound mapping (empty values ${d.outboundMapping.empty === "null" ? "sent as null" : "left out"})`;
+    block.append(h4, mappingTable(d.outboundMapping));
+  }
+  const raw = document.createElement("details");
+  raw.innerHTML = "<summary>The definition as submitted</summary>";
+  const pre = document.createElement("pre");
+  pre.textContent = JSON.stringify(d, null, 2);
+  raw.append(pre);
+  block.append(raw);
+  const decide = document.createElement("div");
+  decide.className = "addrow";
+  const reason = document.createElement("input");
+  reason.placeholder = "why it is sent back (the partner sees this)";
+  reason.size = 44;
+  reason.className = "return-reason";
+  const base = `/partner-connectors/${encodeURIComponent(v.connectorId)}/versions/${v.version}`;
+  decide.append(
+    button("Approve", () => act(`${base}/approve`, "POST", {}), "approve"),
+    reason,
+    button("Send back", () => act(`${base}/return`, "POST", { reason: reason.value }), "reject")
+  );
+  block.append(decide);
+  return block;
+}
+
+function connectorRows(versions) {
+  const byConnector = new Map();
+  for (const v of versions) {
+    if (!byConnector.has(v.connectorId)) byConnector.set(v.connectorId, []);
+    byConnector.get(v.connectorId).push(v);
+  }
+  return [...byConnector.values()].map((vs) => {
+    const latest = vs[0];
+    const tr = document.createElement("tr");
+    tr.dataset.connector = latest.connectorId;
+    tr.innerHTML = `<td>${escapeHtml(latest.name)}<div class="sm muted">${escapeHtml(latest.partner.name)}</div></td>
+      <td class="sm">${vs.map((v) => `<span class="chip">v${v.version} ${escapeHtml(v.status)}</span>`).join("")}</td>
+      <td class="sm ${latest.connector.status === "active" ? "outcome-recorded" : "outcome-refused"}">${latest.connector.status === "active" ? "active" : `suspended: ${escapeHtml(latest.connector.suspendedReason ?? "")}`}</td><td></td>`;
+    const cell = tr.lastElementChild;
+    const base = `/partner-connectors/${encodeURIComponent(latest.connectorId)}`;
+    if (latest.connector.status === "active") {
+      const reason = document.createElement("input");
+      reason.placeholder = "why";
+      reason.size = 18;
+      reason.className = "suspend-connector-reason";
+      cell.append(reason, button("Suspend", () => act(`${base}/suspend`, "POST", { reason: reason.value }), "reject"));
+    } else {
+      cell.append(button("Reinstate", () => act(`${base}/reinstate`, "POST", {}), "approve"));
+    }
+    return tr;
+  });
+}
+
+async function loadReviews() {
+  const [{ versions: waiting = [] }, { versions: all = [] }] = await Promise.all([api("/partner-connectors?status=submitted"), api("/partner-connectors")]);
+  const holder = document.getElementById("reviews");
+  if (waiting.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "empty";
+    empty.textContent = "Nothing is waiting for review.";
+    holder.replaceChildren(empty);
+  } else {
+    holder.replaceChildren(...waiting.map(reviewBlock));
+  }
+  document.getElementById("connectors").replaceChildren(table(["Connector", "Versions", "State", ""], connectorRows(all), "No partner has submitted a connector yet."));
+}
+
 async function loadPartners() {
   try {
     const [{ partners = [] }, { customers = [] }] = await Promise.all([api("/partners"), api("/customers")]);
@@ -459,6 +605,7 @@ async function loadPartners() {
       holder.replaceChildren(...partners.map((p) => partnerBlock(p, customers)));
     }
     await loadInvitations(customers);
+    await loadReviews();
   } catch (err) {
     note(err.message);
   }

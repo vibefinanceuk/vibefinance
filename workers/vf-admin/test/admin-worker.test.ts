@@ -92,6 +92,13 @@ describe("which routes it will forward", () => {
     expect((await SELF.fetch(asOperator("/api/invitations/view"))).status).toBe(404);
   });
 
+  it("forwards the review routes — decision 0600", async () => {
+    for (const path of ["/api/partner-connectors", "/api/partner-connectors/c1/versions/2/approve", "/api/partner-connectors/c1/versions/2/return", "/api/partner-connectors/c1/suspend", "/api/partner-connectors/c1/reinstate"]) {
+      expect((await SELF.fetch(asOperator(path))).status, path).not.toBe(404);
+    }
+    expect((await SELF.fetch(asOperator("/api/partner-connectors/c1/versions/two/approve"))).status).toBe(404);
+  });
+
   it("refuses a path that only looks like one", async () => {
     const response = await SELF.fetch(asOperator("/api/signup-requests/../rules"));
     expect([404, 403]).toContain(response.status);

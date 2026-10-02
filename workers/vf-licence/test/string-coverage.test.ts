@@ -1681,6 +1681,8 @@ const KEYS_THE_INTERFACE_USES = [
   "help.screen.mapping.34",
   "mapping.retire",
   "mapping.retiretitle",
+  "submit.suspendedconnector",
+  "httpsout.error.connector_suspended",
   "processroutes.dest.delete",
   "processroutes.dest.deletetitle",
   "processroutes.dest.deletehint",

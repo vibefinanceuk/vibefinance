@@ -18,6 +18,7 @@ import submitStringsSql from "../../vf-licence/migrations/0242_submit_for_review
 import submitFromCustomerSql from "../../vf-licence/migrations/0243_submit_from_customer_strings.sql?raw";
 import destRetireStringsSql from "../../vf-licence/migrations/0244_destination_rename_retire_strings.sql?raw";
 import destDeleteStringsSql from "../../vf-licence/migrations/0245_destination_delete_strings.sql?raw";
+import reviewStringsSql from "../../vf-licence/migrations/0247_connector_review_strings.sql?raw";
 
 /**
  * **Routes and Process routes — decision 0557.** The standard routes with
@@ -52,7 +53,7 @@ const strings: Record<string, string> = {
   "mechanism.file_import": "File import",
   "mechanism.edi": "EDI",
 };
-for (const sql of [stringsSql, destinationStringsSql, formatStringsSql, mappingStringsSql, csvStringsSql, httpsStringsSql, httpsStateStringsSql, replaceKeyStringsSql, mailboxStringsSql, renameStringsSql, httpsOutStringsSql, erpDeliveriesStringsSql, destUnitsStringsSql, libraryStringsSql, outboundStringsSql, submitStringsSql, submitFromCustomerSql, destRetireStringsSql, destDeleteStringsSql]) {
+for (const sql of [stringsSql, destinationStringsSql, formatStringsSql, mappingStringsSql, csvStringsSql, httpsStringsSql, httpsStateStringsSql, replaceKeyStringsSql, mailboxStringsSql, renameStringsSql, httpsOutStringsSql, erpDeliveriesStringsSql, destUnitsStringsSql, libraryStringsSql, outboundStringsSql, submitStringsSql, submitFromCustomerSql, destRetireStringsSql, destDeleteStringsSql, reviewStringsSql]) {
   for (const m of sql.matchAll(/\('([^']+)', 'en', '((?:[^']|'')*)'\)/g)) strings[m[1]] = m[2].replace(/''/g, "'");
 }
 // 0209 updates the ERP note rather than inserting it.
@@ -1390,6 +1391,16 @@ describe("submitting a Destination for review — decision 0595", () => {
     stubSub([], STATE({ source: { customerId: "partner-northwind", customerName: "Northwind (partner sandbox)", sandbox: true } }));
     await openPush();
     expect(document.querySelector("#do-sub-source")).toBeNull();
+  });
+
+  it("says when VibeFinance has suspended the connector, and offers no form — decision 0600", async () => {
+    const versions = [{ version: 1, status: "approved", submittedAt: "2026-10-02T10:00:00Z", submittedBy: "ana@northwind.example", audience: "all", description: "d" }];
+    stubSub([], STATE({ connector: { id: "c1", name: "Oracle Payables", status: "suspended", suspendedReason: "Posts to the wrong endpoint", versions } }));
+    await openPush();
+    expect(text("#do-sub-suspended")).toBe("VibeFinance has suspended this connector: Posts to the wrong endpoint. New versions cannot be submitted until it is reinstated.");
+    expect(document.querySelector("#do-sub-name")).toBeNull();
+    const rows = [...document.querySelectorAll("#do-sub-versions tr")].map((r) => [...r.querySelectorAll("td")].map((td) => td.textContent));
+    expect(rows[0].slice(0, 2)).toEqual(["Version 1", "Approved"]);
   });
 
   it("says why it cannot be submitted: not the partner's person, no published mapping, a draft not published", async () => {

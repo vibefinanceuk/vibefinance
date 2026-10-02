@@ -112,12 +112,13 @@ export async function partnerConnectorState(db: D1Database, environmentId: strin
   let connector = null;
   if (instanceId) {
     const c = await db
-      .prepare("SELECT id, name FROM partner_connectors WHERE source_environment_id = ? AND source_instance_id = ?")
+      .prepare("SELECT id, name, status, suspended_reason FROM partner_connectors WHERE source_environment_id = ? AND source_instance_id = ?")
       .bind(environmentId, instanceId)
-      .first<{ id: string; name: string }>();
+      .first<{ id: string; name: string; status: string; suspended_reason: string | null }>();
     if (c) {
       const versions = (await db.prepare("SELECT * FROM partner_connector_versions WHERE connector_id = ? ORDER BY version DESC").bind(c.id).all<VersionRow>()).results;
-      connector = { id: c.id, name: c.name, versions: versions.map(versionView) };
+      // Decision 0600: suspended by VibeFinance, with why.
+      connector = { id: c.id, name: c.name, status: c.status, suspendedReason: c.suspended_reason, versions: versions.map(versionView) };
     }
   }
   return {
@@ -171,9 +172,11 @@ export async function submitPartnerConnector(db: D1Database, environmentId: stri
   }
 
   let connector = await db
-    .prepare("SELECT id FROM partner_connectors WHERE source_environment_id = ? AND source_instance_id = ?")
+    .prepare("SELECT id, status FROM partner_connectors WHERE source_environment_id = ? AND source_instance_id = ?")
     .bind(environmentId, instanceId)
-    .first<{ id: string }>();
+    .first<{ id: string; status?: string }>();
+  // Decision 0600: a suspended connector takes no new versions until VibeFinance reinstates it.
+  if (connector?.status === "suspended") return { status: 403, body: { error: "VibeFinance has suspended this connector", reason: "connector_suspended" } };
   if (!connector) {
     const taken = await db.prepare("SELECT id FROM partner_connectors WHERE partner_id = ? AND lower(name) = lower(?)").bind(p.id, name).first();
     if (taken) return { status: 409, body: { error: `${p.name} already has a connector called ${name}`, reason: "connector_name_taken" } };
