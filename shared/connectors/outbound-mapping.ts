@@ -374,6 +374,25 @@ function fill(out: Record<string, unknown>, fields: OutboundField[], scope: Scop
   }
 }
 
+/**
+ * **A place left empty is dropped — decision 0609.** With `a.0.x` and
+ * `a.1.y`, an empty `x` would leave `[{}, { y }]`: the empty place goes,
+ * and a list left with nothing goes too.
+ */
+function dropEmptyPlaces(node: unknown): void {
+  if (!node || typeof node !== "object") return;
+  for (const [k, v] of Object.entries(node as Record<string, unknown>)) {
+    if (Array.isArray(v)) {
+      v.forEach(dropEmptyPlaces);
+      const kept = v.filter((x) => !(x && typeof x === "object" && !Array.isArray(x) && Object.keys(x).length === 0));
+      if (kept.length !== v.length) {
+        if (kept.length === 0 && v.length > 0) delete (node as Record<string, unknown>)[k];
+        else (node as Record<string, unknown>)[k] = kept;
+      }
+    } else dropEmptyPlaces(v);
+  }
+}
+
 /** One invoice laid out by an outbound mapping, with anything it could not lay out in words. */
 export function applyOutboundMapping(mapping: OutboundMapping, invoice: VfInvoice, ctx?: FnContext): AppliedOutbound {
   const problems: OutboundProblem[] = [];
@@ -403,6 +422,7 @@ export function applyOutboundMapping(mapping: OutboundMapping, invoice: VfInvoic
   });
   if (linesUsed) setAt(body, mapping.lines.name as string, lines);
   if (distsUsed && dists.place === "invoice") setAt(body, dists.name as string, atInvoice);
+  dropEmptyPlaces(body);
   return { body, problems };
 }
 

@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 2 October 2026 (decision 0608). A living document: what
+Last updated 2 October 2026 (decision 0609). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,15 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Microsoft Dynamics 365 Business Central, the fourth ERP connector (0609)
+
+Business Central is in the Route library as a first version: a draft
+purchase invoice with its lines and their department and project
+dimensions in one request, Business Central calculating the VAT and
+checking the gross total, signed in through Microsoft Entra ID. With it,
+every ERP that was planned is available; each awaits a first run against
+a real system.
 
 ### Access Control and Process Rules (0608)
 

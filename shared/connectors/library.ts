@@ -2,6 +2,7 @@ import type { OutboundMapping } from "./outbound-mapping.js";
 import { ORACLE_LISTS, oracleFusionPayablesMapping } from "./oracle-fusion-payables.js";
 import { SAP_LISTS, sapS4hanaCloudMapping } from "./sap-s4hana-cloud.js";
 import { INTACCT_BILL_URL, INTACCT_LISTS, INTACCT_TOKEN_URL, sageIntacctMapping } from "./sage-intacct.js";
+import { BC_LISTS, BC_TOKEN_SCOPE, dynamics365BcMapping } from "./dynamics-365-bc.js";
 
 /**
  * **The connector library — decision 0589**, slice 2 of the connector
@@ -43,7 +44,7 @@ export interface ConnectorSettings {
     /** "mapped": its own layout, from the outbound mapping it carries (a partner's, decision 0601). */
     format?: "vf_json" | "csv" | "mapped";
     /** Decision 0607: and, for OAuth, a token address that is the same for every customer. */
-    auth?: { type: ConnectorAuthType; header?: string; tokenUrl?: string };
+    auth?: { type: ConnectorAuthType; header?: string; tokenUrl?: string; scope?: string };
     referencePath?: string | null;
     /** Decision 0606: fetch a CSRF token first, as SAP's OData services need. */
     csrf?: boolean;
@@ -201,16 +202,26 @@ export const STANDARD_CONNECTORS: ConnectorDefinition[] = [
     vendorDocs: "https://developer.sage.com/intacct/docs/openapi/ap/accounts-payable.bill/",
   },
   {
+    // Decision 0609: the fourth ERP connector, through Business Central's standard API v2.0; a first version.
     id: "dynamics-365-bc",
     version: 1,
     direction: "destination",
     publisher: "standard",
-    status: "planned",
+    status: "available",
+    maturity: "first_version",
     categories: ["erp"],
-    routeId: null,
+    routeId: "https-out",
     transport: "https",
     formats: ["bc_purchase_invoice"],
     multiple: true,
+    settings: {
+      defaults: { method: "POST", format: "mapped", auth: { type: "oauth2_client_credentials", scope: BC_TOKEN_SCOPE }, referencePath: "$.number" },
+      fixed: ["method", "format"],
+      authTypes: ["oauth2_client_credentials"],
+    },
+    outboundMapping: dynamics365BcMapping(),
+    lookupLists: Object.values(BC_LISTS),
+    vendorDocs: "https://learn.microsoft.com/en-us/dynamics365/business-central/dev-itpro/api-reference/v2.0/api/dynamics_purchaseinvoice_create",
   },
   {
     id: "sftp-out",

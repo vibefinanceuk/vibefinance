@@ -29,3 +29,4 @@ export * from "./connectors/partner-connector.js";
 export * from "./connectors/oracle-fusion-payables.js";
 export * from "./connectors/sap-s4hana-cloud.js";
 export * from "./connectors/sage-intacct.js";
+export * from "./connectors/dynamics-365-bc.js";

@@ -336,6 +336,17 @@ export const FUNCTIONS = {
       return ok(s.padStart(Number(args.digits), "0"));
     },
   },
+  // Decision 0609: what Business Central's API wants, and any target like it.
+  present_as: {
+    describe: "where there is a value, give a fixed text in its place (such as a dimension's code, DEPARTMENT, beside its value); where there is none, nothing",
+    args: { value: "text" },
+    apply: (v, a) => ok(v === null || text(v).trim() === "" ? null : String(a.value)),
+  },
+  empty_if: {
+    describe: "leave the value empty where it is exactly this text, such as a company's own currency, which Business Central wants left blank",
+    args: { value: "text" },
+    apply: (v, a) => ok(text(v).trim().toLowerCase() === String(a.value).trim().toLowerCase() ? null : v),
+  },
   if_empty: {
     describe: "use a fixed value where the value is missing or empty",
     args: { value: "text" },
