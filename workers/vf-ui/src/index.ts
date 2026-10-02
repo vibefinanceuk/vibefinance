@@ -245,6 +245,10 @@ const PROXIED_TO_INSTANCE: RegExp[] = [
   /^\/sources\/[^/]+\/keys\/[^/]+\/revoke$/,
   // HTTPS out Destinations — decision 0585.
   /^\/processes\/[^/]+\/destinations$/,
+  // One Destination itself: pause and resume (0558), rename and retire (0597).
+  // Missing from this list since 0558, so all four were refused here as "not
+  // found" before reaching vf-app — decision 0598.
+  /^\/route-instances\/[^/]+$/,
   /^\/route-instances\/[^/]+\/connector(\/(preview|send|start|upgrade))?$/,
   // Submit a Destination for review, from a partner's sandbox — decision 0595.
   /^\/route-instances\/[^/]+\/library-submission(\/withdraw)?$/,

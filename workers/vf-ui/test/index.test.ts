@@ -796,6 +796,8 @@ describe("paths the app is allowed to reach (decision 0212)", () => {
     "/sources/src-portal/keys/k1/replace",
     // HTTPS out Destinations — decision 0585.
     "/processes/ap/destinations",
+    "/route-instances/dest-1",
+    "/route-instances/erp-ap",
     "/route-instances/dest-1/connector",
     "/route-instances/dest-1/connector/preview",
     "/route-instances/dest-1/connector/send",
