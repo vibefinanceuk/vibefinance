@@ -53,6 +53,8 @@ export interface HttpsOutSettings {
   format: PayloadFormat;
   auth: { type: AuthType; header?: string; username?: string; tokenUrl?: string; clientId?: string; scope?: string };
   referencePath: string | null;
+  /** Decision 0606: fetch a CSRF token (and its session's cookies) first, as SAP's OData services need. */
+  csrf?: boolean;
 }
 
 /** The one secret each way of signing in needs. */
@@ -159,7 +161,7 @@ export function checkSettings(input: unknown): { settings: HttpsOutSettings } | 
   if (referencePath && !/^\$(\.[A-Za-z0-9_-]+|\[\d+\])+$/.test(referencePath)) {
     return { error: "the reference must be a path such as $.id or $.data[0].documentId", reason: "bad_reference_path" };
   }
-  return { settings: { url: parsed.toString(), method, format, auth: out, referencePath: referencePath || null } };
+  return { settings: { url: parsed.toString(), method, format, auth: out, referencePath: referencePath || null, ...(b.csrf === true ? { csrf: true } : {}) } };
 }
 
 /** `$.a.b[0].c` in a JSON reply, as text; null where it is not there. */
@@ -238,10 +240,29 @@ interface BuiltRequest {
   problems: OutboundProblem[];
 }
 
+/** Today, as an ISO date: the day an invoice is laid out to be sent (decision 0606). */
+const today = () => new Date().toISOString().slice(0, 10);
+
+/** Where a CSRF token is fetched: the service the address belongs to, its last segment taken off (decision 0606). */
+export function csrfAddress(url: string): string {
+  const u = new URL(url);
+  u.search = "";
+  u.pathname = u.pathname.replace(/\/[^/]*$/, "/");
+  return u.toString();
+}
+
+/** The cookies a reply sets, as one Cookie header: name=value pairs only. */
+function cookiesOf(reply: Response): string | null {
+  const h = reply.headers as Headers & { getSetCookie?: () => string[] };
+  const all = typeof h.getSetCookie === "function" ? h.getSetCookie() : (reply.headers.get("set-cookie") ?? "").split(/,(?=\s*[^;,=\s]+=)/);
+  const pairs = all.map((c) => c.split(";")[0].trim()).filter((c) => c.includes("="));
+  return pairs.length ? pairs.join("; ") : null;
+}
+
 /** One invoice as the VibeFinance invoice JSON (0585), or null where it cannot be read. */
 export async function vfInvoiceOf(db: D1Database, invoiceId: string): Promise<VfInvoice | null> {
   const rows = await invoiceExportRows(db, invoiceId, "");
-  return rows.length === 0 ? null : (invoiceJson(rows) as VfInvoice);
+  return rows.length === 0 ? null : { ...(invoiceJson(rows) as VfInvoice), sentOn: today() };
 }
 
 /** A Destination's live outbound mapping (decision 0591), or null. */
@@ -272,7 +293,8 @@ export async function buildRequest(db: D1Database, instanceId: string, settings:
       problems = [{ at: "", source: null, value: null, reason: "the Destination's own mapping has no live version" }];
       body = "";
     } else {
-      const applied = applyOutboundMapping(live.definition, invoiceJson(rows) as VfInvoice, await loadLookups(db, listsInOutbound(live.definition)));
+      // Decision 0606: with the day it is sent, for a posting date.
+      const applied = applyOutboundMapping(live.definition, { ...(invoiceJson(rows) as VfInvoice), sentOn: today() }, await loadLookups(db, listsInOutbound(live.definition)));
       problems = applied.problems;
       body = JSON.stringify(applied.body, null, 2);
     }
@@ -435,6 +457,33 @@ export async function deliverOne(db: D1Database, instanceId: string, invoiceId: 
     return record(attempt > RETRY_MINUTES.length ? "failed" : "retrying", null, error, null);
   }
 
+  /**
+   * **A CSRF token first — decision 0606.** SAP's OData services refuse a
+   * change without one: a `GET` of the service with `x-csrf-token: Fetch`,
+   * signed in, gives the token and the session's cookies, sent with the
+   * `POST`. Fetched afresh for each attempt; a refusal is retried as any
+   * failure to reach the target is.
+   */
+  if (settings.csrf) {
+    const serviceRoot = csrfAddress(built.url);
+    let tokenReply: Response;
+    try {
+      tokenReply = await (deps.fetcher ?? fetch)(serviceRoot, {
+        method: "GET",
+        headers: { ...auth, "x-csrf-token": "Fetch", Accept: "application/json" },
+        signal: AbortSignal.timeout(15_000),
+      });
+    } catch (err) {
+      return record(attempt > RETRY_MINUTES.length ? "failed" : "retrying", null, `the CSRF token could not be fetched: ${(err as Error).message}`, null);
+    }
+    const token = tokenReply.headers.get("x-csrf-token");
+    if (!tokenReply.ok || !token || token.toLowerCase() === "required") {
+      const why = `the CSRF token could not be fetched from ${serviceRoot}: HTTP ${tokenReply.status}`;
+      return record(retryable(tokenReply.status) && attempt <= RETRY_MINUTES.length ? "retrying" : "failed", tokenReply.status, why, null);
+    }
+    auth = { ...auth, "x-csrf-token": token, ...(cookiesOf(tokenReply) ? { Cookie: cookiesOf(tokenReply) as string } : {}) };
+  }
+
   const keep = async (role: "sent" | "reply", filename: string, contentType: string, text: string) => {
     if (!deps.bucket || !deps.customerId || !messageId) return;
     // Every attempt's request and reply, numbered on after what the message holds (Send again adds to it).
@@ -561,6 +610,7 @@ export function settingsFromConnector(connector: ConnectorDefinition | null): Ht
     ...(d.method ? { method: d.method } : {}),
     ...(d.format ? { format: d.format } : {}),
     ...(d.referencePath !== undefined ? { referencePath: d.referencePath } : {}),
+    ...(d.csrf ? { csrf: true } : {}),
     auth: d.auth ? { ...d.auth } : { ...DEFAULT_SETTINGS.auth },
   };
 }
@@ -836,6 +886,10 @@ export async function handlePreviewDelivery(db: D1Database, id: string, body: un
   if (a.type === "api_key_header") shown[a.header as string] = "•••";
   if (a.type === "bearer" || a.type === "oauth2_client_credentials") shown.Authorization = "Bearer •••";
   if (a.type === "basic") shown.Authorization = `Basic (${a.username}:•••)`;
+  if (settings.csrf) {
+    shown["x-csrf-token"] = "••• (fetched first)";
+    shown.Cookie = "••• (the session's, with the token)";
+  }
   return { status: 200, body: { method: built.method, url: built.url, headers: shown, body: built.body, checks: built.checks, problems: built.problems.map(problemWords) } };
 }
 

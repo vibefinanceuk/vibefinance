@@ -75,6 +75,9 @@ function settingsCard(state, reload) {
   const scope = el("input", { type: "text", id: "do-scope", value: s.auth.scope ?? "" });
   const secret = el("input", { type: "password", id: "do-secret", autocomplete: "new-password" });
   const reference = el("input", { type: "text", id: "do-reference", value: s.referencePath ?? "", placeholder: "$.id" });
+  // Decision 0606: a CSRF token first, as SAP's OData services need.
+  const csrf = el("input", { type: "checkbox", id: "do-csrf" });
+  csrf.checked = !!s.csrf;
   const problem = el("div", { class: "warn", id: "do-problem" });
   const saved = el("div", { class: "muted sm", id: "do-saved" });
 
@@ -105,6 +108,7 @@ function settingsCard(state, reload) {
         method: method.value,
         format: format.value,
         referencePath: reference.value,
+        ...(csrf.checked ? { csrf: true } : {}),
         auth: {
           type: auth.value,
           header: header.value,
@@ -131,6 +135,8 @@ function settingsCard(state, reload) {
     el("div", { class: "dotwo" }, [field(t("httpsout.formatlabel"), format, t("httpsout.formathint")), field(t("httpsout.authlabel"), auth)]),
     authFields,
     field(t("httpsout.reference"), reference, t("httpsout.referencehint")),
+    el("label", { class: "sm docsrf" }, [csrf, ` ${t("httpsout.csrf")}`]),
+    el("div", { class: "muted sm", text: t("httpsout.csrfhint") }),
     problem,
     saved,
   ]);

@@ -32,6 +32,8 @@ export interface PartnerConnectorDefinition {
       format: "vf_json" | "csv" | "mapped";
       auth: { type: ConnectorAuthType; header?: string };
       referencePath: string | null;
+      /** Decision 0606: fetch a CSRF token first. */
+      csrf?: boolean;
     };
     fixed: Array<"method" | "format">;
     authTypes: ConnectorAuthType[];
@@ -59,6 +61,7 @@ export function validatePartnerDefinition(input: unknown): string | null {
   if (s.defaults.referencePath !== null && (typeof s.defaults.referencePath !== "string" || !/^\$(\.[A-Za-z0-9_-]+|\[\d+\])+$/.test(s.defaults.referencePath))) {
     return "the reference is a path such as $.id";
   }
+  if (s.defaults.csrf !== undefined && typeof s.defaults.csrf !== "boolean") return "fetching a CSRF token first is true or false";
   if (!Array.isArray(s.fixed) || s.fixed.some((f) => f !== "method" && f !== "format")) return "only the method and format can be fixed";
   if (!Array.isArray(s.authTypes) || s.authTypes.length === 0 || s.authTypes.some((a) => !AUTH_TYPES.includes(a))) return "allow at least one way of signing in";
   if (!s.authTypes.includes(s.defaults.auth.type)) return "the way it signs in must be one it allows";

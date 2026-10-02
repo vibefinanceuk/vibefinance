@@ -124,6 +124,8 @@ export async function handleSubmit(db: D1Database, link: LicenceLink, id: string
         format: s.format,
         auth: { type: s.auth.type, ...(s.auth.type === "api_key_header" && s.auth.header ? { header: s.auth.header } : {}) },
         referencePath: s.referencePath,
+        // Decision 0606: a Destination that fetches a CSRF token first passes it on.
+        ...(s.csrf ? { csrf: true } : {}),
       },
       fixed,
       authTypes: allowed,

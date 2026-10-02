@@ -237,6 +237,7 @@ import connectorReviewSql from "../migrations/0246_partner_connector_review.sql?
 import reviewStringsSql from "../migrations/0247_connector_review_strings.sql?raw";
 import partnerLibraryStringsSql from "../migrations/0248_partner_library_strings.sql?raw";
 import oracleStringsSql from "../migrations/0249_oracle_connector_strings.sql?raw";
+import sapStringsSql from "../migrations/0250_sap_connector_strings.sql?raw";
 
 function stripSqlComments(sql: string): string {
   return sql
@@ -507,5 +508,6 @@ export async function applyTestSchema(): Promise<void> {
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(reviewStringsSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(partnerLibraryStringsSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(oracleStringsSql)));
+  await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(sapStringsSql)));
 
 }

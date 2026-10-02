@@ -305,6 +305,34 @@ export const FUNCTIONS = {
       return String(args.otherwise) === "keep" ? ok(value) : fail(`"${s}" is not in the list ${list.name}`);
     },
   },
+  // Decision 0606: what SAP's OData services want, and any target like them.
+  odata_date: {
+    describe: "write an ISO date (2026-09-29) as OData's /Date(milliseconds)/, as SAP's OData services want it",
+    args: {},
+    apply(value) {
+      const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text(value).trim());
+      if (!m) return fail(`"${text(value)}" is not an ISO date`);
+      return ok(`/Date(${Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]))})/`);
+    },
+  },
+  decimal_text: {
+    describe: "write a number as text with a fixed number of decimal places (120 to \"120.00\"), as SAP wants amounts",
+    args: { places: "number" },
+    apply(value, args) {
+      const n = typeof value === "number" ? value : toNumber(text(value));
+      if (n === null) return fail(`"${text(value)}" is not a number`);
+      return ok(n.toFixed(Number(args.places)));
+    },
+  },
+  pad: {
+    describe: "write a whole number as text with zeros in front, to a number of digits (7 to 0007)",
+    args: { digits: "number" },
+    apply(value, args) {
+      const s = text(value).trim();
+      if (!/^\d+$/.test(s)) return fail(`"${s}" is not a whole number`);
+      return ok(s.padStart(Number(args.digits), "0"));
+    },
+  },
   if_empty: {
     describe: "use a fixed value where the value is missing or empty",
     args: { value: "text" },

@@ -21,6 +21,7 @@ import destDeleteStringsSql from "../../vf-licence/migrations/0245_destination_d
 import reviewStringsSql from "../../vf-licence/migrations/0247_connector_review_strings.sql?raw";
 import partnerLibraryStringsSql from "../../vf-licence/migrations/0248_partner_library_strings.sql?raw";
 import oracleStringsSql from "../../vf-licence/migrations/0249_oracle_connector_strings.sql?raw";
+import sapStringsSql from "../../vf-licence/migrations/0250_sap_connector_strings.sql?raw";
 
 /**
  * **Routes and Process routes — decision 0557.** The standard routes with
@@ -55,7 +56,7 @@ const strings: Record<string, string> = {
   "mechanism.file_import": "File import",
   "mechanism.edi": "EDI",
 };
-for (const sql of [stringsSql, destinationStringsSql, formatStringsSql, mappingStringsSql, csvStringsSql, httpsStringsSql, httpsStateStringsSql, replaceKeyStringsSql, mailboxStringsSql, renameStringsSql, httpsOutStringsSql, erpDeliveriesStringsSql, destUnitsStringsSql, libraryStringsSql, outboundStringsSql, submitStringsSql, submitFromCustomerSql, destRetireStringsSql, destDeleteStringsSql, reviewStringsSql, partnerLibraryStringsSql, oracleStringsSql]) {
+for (const sql of [stringsSql, destinationStringsSql, formatStringsSql, mappingStringsSql, csvStringsSql, httpsStringsSql, httpsStateStringsSql, replaceKeyStringsSql, mailboxStringsSql, renameStringsSql, httpsOutStringsSql, erpDeliveriesStringsSql, destUnitsStringsSql, libraryStringsSql, outboundStringsSql, submitStringsSql, submitFromCustomerSql, destRetireStringsSql, destDeleteStringsSql, reviewStringsSql, partnerLibraryStringsSql, oracleStringsSql, sapStringsSql]) {
   for (const m of sql.matchAll(/\('([^']+)', 'en', '((?:[^']|'')*)'\)/g)) strings[m[1]] = m[2].replace(/''/g, "'");
 }
 // 0209 updates the ERP note rather than inserting it.
@@ -751,6 +752,23 @@ describe("HTTPS out — decision 0585", () => {
       settings: { url: "https://erp.acme.example/api/invoices", method: "POST", format: "vf_json", referencePath: "$.id", auth: { type: "oauth2_client_credentials", tokenUrl: "https://id.example/token", clientId: "vf" } },
       secret: "cs-1",
     });
+  });
+
+  it("fetches a CSRF token first where the Destination says so, and saves the choice — decision 0606", async () => {
+    const calls: Call[] = [];
+    stubOut(calls, { ...CONNECTOR, settings: { ...CONNECTOR.settings, csrf: true } });
+    await openPush();
+    const csrf = document.querySelector("#do-csrf") as HTMLInputElement;
+    expect(csrf.checked).toBe(true);
+    expect(text("#do-settings")).toContain("Fetch a CSRF token first");
+    button("#do-settings", "Save").click();
+    await settle();
+    expect(JSON.parse(calls.filter((c) => c.method === "PUT")[0].body!).settings.csrf).toBe(true);
+    // Saving reloads the panel: the box is drawn afresh.
+    (document.querySelector("#do-csrf") as HTMLInputElement).checked = false;
+    button("#do-settings", "Save").click();
+    await settle();
+    expect("csrf" in JSON.parse(calls.filter((c) => c.method === "PUT")[1].body!).settings).toBe(false);
   });
 
   it("shows exactly what would be sent first, then sends it and says what came back", async () => {

@@ -1,5 +1,6 @@
 import type { OutboundMapping } from "./outbound-mapping.js";
 import { ORACLE_LISTS, oracleFusionPayablesMapping } from "./oracle-fusion-payables.js";
+import { SAP_LISTS, sapS4hanaCloudMapping } from "./sap-s4hana-cloud.js";
 
 /**
  * **The connector library — decision 0589**, slice 2 of the connector
@@ -40,6 +41,8 @@ export interface ConnectorSettings {
     format?: "vf_json" | "csv" | "mapped";
     auth?: { type: ConnectorAuthType; header?: string };
     referencePath?: string | null;
+    /** Decision 0606: fetch a CSRF token first, as SAP's OData services need. */
+    csrf?: boolean;
   };
   /** Settings the customer cannot change while using this connector: "method", "format". */
   fixed: Array<"method" | "format">;
@@ -144,16 +147,26 @@ export const STANDARD_CONNECTORS: ConnectorDefinition[] = [
     vendorDocs: "https://docs.oracle.com/en/cloud/saas/financials/25d/farfa/op-invoices-post.html",
   },
   {
+    // Decision 0606: the second ERP connector, built from SAP's documented API; a first version.
     id: "sap-s4hana-cloud",
     version: 1,
     direction: "destination",
     publisher: "standard",
-    status: "planned",
+    status: "available",
+    maturity: "first_version",
     categories: ["erp"],
-    routeId: null,
+    routeId: "https-out",
     transport: "https",
     formats: ["sap_supplier_invoice"],
     multiple: true,
+    settings: {
+      defaults: { method: "POST", format: "mapped", auth: { type: "basic" }, referencePath: "$.d.SupplierInvoice", csrf: true },
+      fixed: ["method", "format"],
+      authTypes: ["basic", "oauth2_client_credentials"],
+    },
+    outboundMapping: sapS4hanaCloudMapping(),
+    lookupLists: Object.values(SAP_LISTS),
+    vendorDocs: "https://api.sap.com/api/API_SUPPLIERINVOICE_PROCESS_SRV/overview",
   },
   {
     id: "sage-intacct",

@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 2 October 2026 (decision 0605). A living document: what
+Last updated 2 October 2026 (decision 0606). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,15 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### SAP S/4HANA Cloud, the second ERP connector (0606)
+
+SAP S/4HANA Cloud is in the Route library as a first version: a supplier
+invoice with a G/L account line for each distribution, SAP calculating
+and balancing the VAT, its document number kept. Destinations can now
+fetch a CSRF token first, as SAP's OData services need, and mappings can
+write OData dates and SAP's text amounts. It awaits a first run against a
+real S/4HANA test system.
 
 ### Oracle Fusion Payables, the first ERP connector (0605)
 

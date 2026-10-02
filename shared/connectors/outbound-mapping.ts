@@ -32,7 +32,8 @@ export interface OutboundField {
   target: string;
   /** A key of `OUTBOUND_SOURCES`, or null for a fixed value or one built from parts. */
   source: string | null;
-  fixed?: string | number | null;
+  /** Decision 0606: true or false too, as SAP's TaxIsCalculatedAutomatically. */
+  fixed?: string | number | boolean | null;
   /**
    * **Built from parts — decision 0605.** A pattern such as
    * `{company|Oracle company segments}-{distribution.costCentre}-{distribution.glCode}-0000-000`:
@@ -89,11 +90,15 @@ export interface VfInvoice {
   purchaseOrder: string | null;
   totals: { net: number | null; vat: number | null; total: number | null };
   lines: VfInvoiceLine[];
+  /** Decision 0606: the day it is laid out to be sent (ISO); not in the standard layout. */
+  sentOn?: string;
 }
 
 /** What an outbound mapping can read, at which level. Keys are paths in the VibeFinance invoice. */
 export const OUTBOUND_SOURCES: ReadonlyArray<{ key: string; level: OutboundLevel }> = [
   { key: "id", level: "invoice" },
+  // Decision 0606: the day it is sent, as a posting date.
+  { key: "sentOn", level: "invoice" },
   { key: "invoiceNumber", level: "invoice" },
   { key: "issueDate", level: "invoice" },
   { key: "dueDate", level: "invoice" },
@@ -234,7 +239,7 @@ export function validateOutboundMapping(input: unknown): string | null {
         const p = builtProblem(f.target, f.built, level);
         if (p) return p;
       } else if (f.source === null) {
-        if (f.fixed === undefined || f.fixed === null || (typeof f.fixed !== "string" && typeof f.fixed !== "number")) {
+        if (f.fixed === undefined || f.fixed === null || (typeof f.fixed !== "string" && typeof f.fixed !== "number" && typeof f.fixed !== "boolean")) {
           return `${f.target} needs a source or a fixed value`;
         }
       } else if (typeof f.source !== "string" || sourceLevel(f.source) === null) {
@@ -335,7 +340,7 @@ function fill(out: Record<string, unknown>, fields: OutboundField[], scope: Scop
       }
       raw = built.value;
     } else {
-      raw = f.source === null ? (f.fixed ?? null) : readSource(scope, f.source);
+      raw = f.source === null ? ((f.fixed ?? null) as FnValue) : readSource(scope, f.source);
     }
     let value: FnValue = raw;
     // As inbound (0561): an empty value goes through the functions only where one gives a default.
