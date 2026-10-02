@@ -17,6 +17,7 @@ import outboundStringsSql from "../../vf-licence/migrations/0236_outbound_mappin
 import submitStringsSql from "../../vf-licence/migrations/0242_submit_for_review_strings.sql?raw";
 import submitFromCustomerSql from "../../vf-licence/migrations/0243_submit_from_customer_strings.sql?raw";
 import destRetireStringsSql from "../../vf-licence/migrations/0244_destination_rename_retire_strings.sql?raw";
+import destDeleteStringsSql from "../../vf-licence/migrations/0245_destination_delete_strings.sql?raw";
 
 /**
  * **Routes and Process routes — decision 0557.** The standard routes with
@@ -51,7 +52,7 @@ const strings: Record<string, string> = {
   "mechanism.file_import": "File import",
   "mechanism.edi": "EDI",
 };
-for (const sql of [stringsSql, destinationStringsSql, formatStringsSql, mappingStringsSql, csvStringsSql, httpsStringsSql, httpsStateStringsSql, replaceKeyStringsSql, mailboxStringsSql, renameStringsSql, httpsOutStringsSql, erpDeliveriesStringsSql, destUnitsStringsSql, libraryStringsSql, outboundStringsSql, submitStringsSql, submitFromCustomerSql, destRetireStringsSql]) {
+for (const sql of [stringsSql, destinationStringsSql, formatStringsSql, mappingStringsSql, csvStringsSql, httpsStringsSql, httpsStateStringsSql, replaceKeyStringsSql, mailboxStringsSql, renameStringsSql, httpsOutStringsSql, erpDeliveriesStringsSql, destUnitsStringsSql, libraryStringsSql, outboundStringsSql, submitStringsSql, submitFromCustomerSql, destRetireStringsSql, destDeleteStringsSql]) {
   for (const m of sql.matchAll(/\('([^']+)', 'en', '((?:[^']|'')*)'\)/g)) strings[m[1]] = m[2].replace(/''/g, "'");
 }
 // 0209 updates the ERP note rather than inserting it.
@@ -1459,6 +1460,34 @@ describe("renaming and retiring a Destination — decision 0597", () => {
     await settle();
     expect(JSON.parse(calls.find((c) => c.method === "PATCH")!.body!)).toEqual({ status: "retired" });
     expect(text("#dest-retire-problem")).toBe("Rules send invoices to it: Germany to Oracle. Change or end them first.");
+  });
+
+  it("offers Delete only for one that has never sent, asks first, and says why not — decision 0599", async () => {
+    const calls: Call[] = [];
+    stubDest(calls, { ...PUSH, neverSent: false }, [200, {}]);
+    await openDest();
+    expect(button(".prdetail > .cardhead", "Delete")).toBeUndefined();
+    document.body.innerHTML = `<main id="shell"></main><main id="viewer" hidden></main>`;
+    stubDest(calls, { ...PUSH, neverSent: true }, [200, {}]);
+    const inner = globalThis.fetch as unknown as (url: string, init?: RequestInit) => Promise<Response>;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        if (String(url) === "/api/route-instances/dest-1" && init?.method === "DELETE") {
+          calls.push({ method: "DELETE", path: String(url), query: "" });
+          return { ok: false, status: 409, json: async () => ({ reason: "has_alerts" }) } as Response;
+        }
+        return inner(url, init);
+      })
+    );
+    await openDest();
+    button(".prdetail > .cardhead", "Delete").click();
+    expect(text("#dest-delete-pop h3")).toBe("Delete Oracle push");
+    expect(text("#dest-delete-pop")).toContain("cannot be undone");
+    button("#dest-delete-pop", "Delete").click();
+    await settle();
+    expect(calls.some((c) => c.method === "DELETE")).toBe(true);
+    expect(text("#dest-delete-problem")).toBe("An alert watches it. Remove the alert in the Route monitor first.");
   });
 
   it("shows a retired one dimmed, Retired, with nothing to do but close", async () => {

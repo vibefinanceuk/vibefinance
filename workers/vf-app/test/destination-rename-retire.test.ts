@@ -2,7 +2,9 @@ import { env } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
 import { applyTestSchema, seedStage } from "./setup.js";
 import { handleCreateDestination, handleSaveConnector, handleSendNow, handleStartDestination, runDeliveries } from "../src/destination-delivery.js";
-import { handleProcessRoutes, handleRenameDestination, handleRetireDestination, handleSetInstanceStatus } from "../src/routes-route.js";
+import { handleDeleteDestination, handleProcessRoutes, handleRenameDestination, handleRetireDestination, handleSetInstanceStatus } from "../src/routes-route.js";
+import { openOutboundMessage } from "../src/route-messages.js";
+import { handleCopyOutboundMapping } from "../src/outbound-mapping-route.js";
 import worker from "../src/index.js";
 import type { Env } from "../src/index.js";
 import { generateApiKey, hashApiKey } from "../src/user-auth.js";
@@ -85,6 +87,51 @@ describe("retiring a Destination — decision 0597", () => {
   });
 });
 
+/** **Deleting a Destination that has never sent — decision 0599.** */
+describe("deleting a Destination that has never sent — decision 0599", () => {
+  const exists = async (id: string) => (await env.DB.prepare("SELECT id FROM route_instances WHERE id = ?").bind(id).first()) !== null;
+  const flow = async () => ((await handleProcessRoutes(env.DB, new URLSearchParams({ process: "ap" }))).body as { destinations: Array<{ id: string; neverSent: boolean }> }).destinations;
+
+  it("deletes one that never sent, with its secrets, mapping and what was set aside, and says on the flow which may go", async () => {
+    const made = await handleCreateDestination(env.DB, "u-dan", "ap", { name: "Mistake" });
+    const id = (made.body as { id: string }).id;
+    await handleSaveConnector(env.DB, "u-dan", id, { settings: { url: "https://erp.example/x", auth: { type: "bearer" } }, secret: "tok" }, KEY);
+    await handleCopyOutboundMapping(env.DB, "u-dan", id);
+    await env.DB.prepare("INSERT INTO invoice_headers (id, facts_json) VALUES ('inv-a', '{}')").run();
+    await env.DB.prepare("INSERT INTO destination_deliveries (instance_id, invoice_id, status, created_at) VALUES (?, 'inv-a', 'skipped', '2026-10-02')").bind(id).run();
+    expect((await flow()).find((d) => d.id === id)?.neverSent).toBe(true);
+    expect(await handleDeleteDestination(env.DB, id)).toEqual({ status: 200, body: { id, deleted: true } });
+    expect(await exists(id)).toBe(false);
+    for (const table of ["connector_secrets", "outbound_mapping_versions", "destination_deliveries"]) {
+      expect((await env.DB.prepare(`SELECT count(*) AS n FROM ${table} WHERE instance_id = ?`).bind(id).first<{ n: number }>())!.n, table).toBe(0);
+    }
+    expect(await handleDeleteDestination(env.DB, id)).toMatchObject({ status: 404 });
+  });
+
+  it("refuses one that has sent or tried to, one a rule sent to or still sends to, one an alert watches, and the ERP CSV file", async () => {
+    const sent = await destination("Sent");
+    await openOutboundMessage(env.DB, { destinationId: sent, recipient: "erp.example", subject: "INV-A", bytes: 10, receivedAt: "2026-10-02T09:00:00Z", event: "sending" });
+    expect((await flow()).find((d) => d.id === sent)?.neverSent).toBe(false);
+    expect(await handleDeleteDestination(env.DB, sent)).toMatchObject({ status: 409, body: { reason: "has_sent" } });
+
+    const asked = await destination("Asked");
+    await env.DB.prepare("INSERT INTO invoice_headers (id, facts_json) VALUES ('inv-b', '{}')").run();
+    await env.DB.prepare("INSERT INTO destination_requests (invoice_id, instance_id, requested_at) VALUES ('inv-b', ?, '2026-10-02')").bind(asked).run();
+    expect(await handleDeleteDestination(env.DB, asked)).toMatchObject({ status: 409, body: { reason: "rule_requested" } });
+
+    const ruled = await destination("Ruled");
+    await rule("r-1", "To Ruled", { id: "r-1", version: 1, conditions: {}, actions: [{ type: "send_to_destination", params: { destination: ruled } }] });
+    expect(await handleDeleteDestination(env.DB, ruled)).toMatchObject({ status: 409, body: { reason: "rule_sends_here", rules: [{ name: "To Ruled" }] } });
+
+    const watched = await destination("Watched");
+    await env.DB.prepare("INSERT INTO route_alerts (id, instance_id, created_at) VALUES ('al-1', ?, '2026-10-02')").bind(watched).run();
+    expect(await handleDeleteDestination(env.DB, watched)).toMatchObject({ status: 409, body: { reason: "has_alerts" } });
+
+    await env.DB.prepare("INSERT INTO route_instances (id, route_id, process_id, name, status) VALUES ('erp-ap', 'erp-csv', 'ap', 'ERP', 'active')").run();
+    expect(await handleDeleteDestination(env.DB, "erp-ap")).toMatchObject({ status: 409, body: { reason: "not_https_out" } });
+  });
+});
+
 describe("through the router", () => {
   it("renames and retires with PATCH, under Admin.Configure", async () => {
     const key = generateApiKey();
@@ -96,5 +143,8 @@ describe("through the router", () => {
       worker.fetch(new Request(`https://vf.example/route-instances/${id}`, { method: "PATCH", headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" }, body: JSON.stringify(body) }), env as unknown as Env);
     expect(await (await patch({ name: "Renamed" })).json()).toEqual({ id, name: "Renamed" });
     expect(await (await patch({ status: "retired" })).json()).toEqual({ id, status: "retired" });
+    const other = await destination("Another");
+    const del = await worker.fetch(new Request(`https://vf.example/route-instances/${other}`, { method: "DELETE", headers: { Authorization: `Bearer ${key}` } }), env as unknown as Env);
+    expect(await del.json()).toEqual({ id: other, deleted: true });
   });
 });

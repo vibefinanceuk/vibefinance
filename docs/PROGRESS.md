@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 2 October 2026 (decision 0598). A living document: what
+Last updated 2 October 2026 (decision 0599). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2994,6 +2994,7 @@ serves as well as from its sandbox, and the version says where it was
 built. A Destination can be renamed and retired on Process routes, as a
 Source can; retiring is refused while a rule sends invoices to it. (0598
 fixed the interface not passing these, or pause and resume, to vf-app.)
+One that has never sent may be deleted instead (0599).
 
 ### Submit for review (0595)
 

@@ -201,14 +201,17 @@ export async function handleProcessRoutes(
       `SELECT i.id, i.name, i.status, i.route_id, i.started_at, i.unit_ids, i.connector_id, i.connector_version, r.name AS route_name,
               -- Decision 0585: what an HTTPS out Destination has waiting, and what failed.
               (SELECT count(*) FROM destination_deliveries d WHERE d.instance_id = i.id AND d.status IN ('pending', 'retrying')) AS sending,
-              (SELECT count(*) FROM destination_deliveries d WHERE d.instance_id = i.id AND d.status = 'failed') AS failed
+              (SELECT count(*) FROM destination_deliveries d WHERE d.instance_id = i.id AND d.status = 'failed') AS failed,
+              -- Decision 0599: whether it has ever sent, or tried to: a message, or an attempt.
+              (SELECT count(*) FROM route_messages m WHERE m.destination_id = i.id)
+                + (SELECT count(*) FROM destination_deliveries d WHERE d.instance_id = i.id AND (d.attempts > 0 OR d.status IN ('delivered', 'failed', 'retrying'))) AS sent
        FROM route_instances i JOIN routes r ON r.id = i.route_id
        WHERE i.process_id = ? AND i.source_id IS NULL
        -- Decision 0597: a retired Destination stays on the flow, last and dimmed, as a retired Source does.
        ORDER BY i.status = 'retired', i.route_id != 'erp-csv', i.name`
     )
     .bind(chosen.id)
-    .all<{ id: string; name: string; status: string; route_id: string; route_name: string; started_at: string | null; unit_ids: string | null; connector_id: string | null; connector_version: number | null; sending: number; failed: number }>();
+    .all<{ id: string; name: string; status: string; route_id: string; route_name: string; started_at: string | null; unit_ids: string | null; connector_id: string | null; connector_version: number | null; sending: number; failed: number; sent: number }>();
 
   /**
    * **What is waiting for the ERP**, for the ERP Destination's card: this
@@ -265,6 +268,8 @@ export async function handleProcessRoutes(
         // Decision 0589: the connector it was made from, and whether a later version waits.
         connectorId: d.connector_id ?? d.route_id,
         connectorUpgrade: (connectorOfInstance(STANDARD_CONNECTORS, d)?.version ?? 1) > (d.connector_version ?? 1),
+        // Decision 0599: never sent, nor tried to, so it may be deleted rather than retired.
+        neverSent: d.sent === 0,
       })),
     },
   };
@@ -394,4 +399,48 @@ export async function handleRetireDestination(db: D1Database, userId: string, id
     .bind(new Date().toISOString(), userId, id)
     .run();
   return { status: 200, body: { id, status: "retired" } };
+}
+
+/**
+ * **Deleting a Destination that has never sent — decision 0599** (Dan,
+ * 2 October 2026: *"Can we delete destinations that have never sent?"*).
+ *
+ * One made by mistake or to try something leaves no trace worth keeping,
+ * so it may go entirely: its settings, secrets, outbound mapping, and any
+ * invoices queued or set aside for it but never attempted. Anything that
+ * is history is kept, so it is refused, and Retire (0597) is the way:
+ *
+ * - it has sent, or tried to: a route message, or a delivery attempted;
+ * - a rule sent invoices to it (`destination_requests`, 0588), or a rule
+ *   in force still does;
+ * - an alert watches it (0559);
+ * - it is the ERP CSV file, or an HTTPS out Destination is all it can be.
+ */
+export async function handleDeleteDestination(db: D1Database, id: string): Promise<RouteResult> {
+  const row = await destinationRow(db, id);
+  if (isResultRow(row)) return row;
+  if (row.route_id !== "https-out") return { status: 409, body: { error: "only an HTTPS out Destination is deleted", reason: "not_https_out" } };
+  const sent = await db
+    .prepare(
+      `SELECT (SELECT count(*) FROM route_messages WHERE destination_id = ?)
+            + (SELECT count(*) FROM destination_deliveries WHERE instance_id = ? AND (attempts > 0 OR status IN ('delivered', 'failed', 'retrying'))) AS n`
+    )
+    .bind(id, id)
+    .first<{ n: number }>();
+  if ((sent?.n ?? 0) > 0) return { status: 409, body: { error: "it has sent, or tried to: retire it instead, so what it sent is kept", reason: "has_sent" } };
+  const requested = await db.prepare("SELECT count(*) AS n FROM destination_requests WHERE instance_id = ?").bind(id).first<{ n: number }>();
+  if ((requested?.n ?? 0) > 0) return { status: 409, body: { error: "a rule has sent invoices to it: retire it instead", reason: "rule_requested" } };
+  const rules = await rulesSendingTo(db, id);
+  if (rules.length > 0) {
+    return { status: 409, body: { error: `rules send invoices to it: ${rules.map((r) => r.name ?? r.id).join(", ")}`, reason: "rule_sends_here", rules } };
+  }
+  const alerts = await db.prepare("SELECT count(*) AS n FROM route_alerts WHERE instance_id = ?").bind(id).first<{ n: number }>();
+  if ((alerts?.n ?? 0) > 0) return { status: 409, body: { error: "an alert watches it: remove the alert in the Route monitor first", reason: "has_alerts" } };
+  await db.batch([
+    db.prepare("DELETE FROM destination_deliveries WHERE instance_id = ?").bind(id),
+    db.prepare("DELETE FROM connector_secrets WHERE instance_id = ?").bind(id),
+    db.prepare("DELETE FROM outbound_mapping_versions WHERE instance_id = ?").bind(id),
+    db.prepare("DELETE FROM route_instances WHERE id = ?").bind(id),
+  ]);
+  return { status: 200, body: { id, deleted: true } };
 }

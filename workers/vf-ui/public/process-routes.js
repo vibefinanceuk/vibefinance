@@ -372,6 +372,49 @@ function openRetireDestination(d) {
   document.body.append(backdrop);
 }
 
+/**
+ * **Delete a Destination that has never sent — decision 0599.** Asked
+ * first; anything that is history is refused in words, with Retire the way.
+ */
+function openDeleteDestination(d) {
+  const problem = el("div", { class: "warn", id: "dest-delete-problem" });
+  const close = () => backdrop.remove();
+  const remove = actionLink("discard", {
+    primary: true,
+    label: t("processroutes.dest.delete"),
+    onclick: async () => {
+      problem.textContent = "";
+      const r = await fetch(`/api/route-instances/${encodeURIComponent(d.id)}`, { method: "DELETE" }).catch(() => null);
+      const body = r ? await r.json().catch(() => ({})) : {};
+      if (!r || !r.ok) {
+        const key = `processroutes.dest.error.${body.reason}`;
+        problem.textContent =
+          body.reason === "rule_sends_here"
+            ? t(key).replace("{rules}", (body.rules ?? []).map((x) => x.name ?? x.id).join(", "))
+            : t(key) === key
+              ? (body.error ?? t("processroutes.pausefailed"))
+              : t(key);
+        return;
+      }
+      backdrop.remove();
+      selected = null;
+      await load();
+      render();
+    },
+  });
+  const backdrop = el("div", { class: "backdrop" }, [
+    el("div", { class: "popout", role: "dialog", id: "dest-delete-pop" }, [
+      el("div", { class: "cardhead" }, [el("h3", { text: t("processroutes.dest.deletetitle").replace("{name}", d.name) }), el("div", { class: "statebuttons" }, [remove, actionLink("close", { onclick: close })])]),
+      el("p", { text: t("processroutes.dest.deletehint") }),
+      problem,
+    ]),
+  ]);
+  backdrop.onclick = (e) => {
+    if (e.target === backdrop) backdrop.remove();
+  };
+  document.body.append(backdrop);
+}
+
 function destinationPanel(d) {
   const httpsOut = d.routeId === "https-out";
   // Decision 0597: a retired Destination is only looked at.
@@ -392,6 +435,8 @@ function destinationPanel(d) {
   const renameRetire = [
     actionLink("rename", { onclick: () => openRenameDestination(d) }),
     ...(d.routeId === "erp-csv" ? [] : [actionLink("retire", { onclick: () => openRetireDestination(d) })]),
+    // Decision 0599: one that has never sent may go entirely.
+    ...(httpsOut && d.neverSent ? [actionLink("discard", { label: t("processroutes.dest.delete"), onclick: () => openDeleteDestination(d) })] : []),
   ];
   const pauseOrResume =
     httpsOut && !d.started
