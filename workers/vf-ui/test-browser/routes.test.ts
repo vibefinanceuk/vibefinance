@@ -16,6 +16,7 @@ import libraryStringsSql from "../../vf-licence/migrations/0235_route_library_st
 import outboundStringsSql from "../../vf-licence/migrations/0236_outbound_mapping_strings.sql?raw";
 import submitStringsSql from "../../vf-licence/migrations/0242_submit_for_review_strings.sql?raw";
 import submitFromCustomerSql from "../../vf-licence/migrations/0243_submit_from_customer_strings.sql?raw";
+import destRetireStringsSql from "../../vf-licence/migrations/0244_destination_rename_retire_strings.sql?raw";
 
 /**
  * **Routes and Process routes — decision 0557.** The standard routes with
@@ -50,7 +51,7 @@ const strings: Record<string, string> = {
   "mechanism.file_import": "File import",
   "mechanism.edi": "EDI",
 };
-for (const sql of [stringsSql, destinationStringsSql, formatStringsSql, mappingStringsSql, csvStringsSql, httpsStringsSql, httpsStateStringsSql, replaceKeyStringsSql, mailboxStringsSql, renameStringsSql, httpsOutStringsSql, erpDeliveriesStringsSql, destUnitsStringsSql, libraryStringsSql, outboundStringsSql, submitStringsSql, submitFromCustomerSql]) {
+for (const sql of [stringsSql, destinationStringsSql, formatStringsSql, mappingStringsSql, csvStringsSql, httpsStringsSql, httpsStateStringsSql, replaceKeyStringsSql, mailboxStringsSql, renameStringsSql, httpsOutStringsSql, erpDeliveriesStringsSql, destUnitsStringsSql, libraryStringsSql, outboundStringsSql, submitStringsSql, submitFromCustomerSql, destRetireStringsSql]) {
   for (const m of sql.matchAll(/\('([^']+)', 'en', '((?:[^']|'')*)'\)/g)) strings[m[1]] = m[2].replace(/''/g, "'");
 }
 // 0209 updates the ERP note rather than inserting it.
@@ -344,7 +345,7 @@ describe("Process routes — decision 0557", () => {
     expect(text(".prdetail h3")).toBe("Destination: ERP");
     expect(text(".prdetail")).toContain("Payment Eligible · approved, coded and matched");
     expect(text(".prdetail")).toContain("File download");
-    expect([...document.querySelectorAll(".prdetail .statebuttons button")].map((b) => b.textContent)).toEqual(["Pause", "Open ERP export", "Close"]);
+    expect([...document.querySelectorAll(".prdetail .statebuttons button")].map((b) => b.textContent)).toEqual(["Pause", "Open ERP export", "Rename", "Close"]);
     expect(text(".prdetail")).toContain("shows in the Route monitor");
   });
 
@@ -367,7 +368,7 @@ describe("Process routes — decision 0557", () => {
     expect(erp.textContent).toContain("Paused");
     erp.click();
     await settle();
-    expect([...document.querySelectorAll(".prdetail .statebuttons button")].map((b) => b.textContent)).toEqual(["Resume", "Open ERP export", "Close"]);
+    expect([...document.querySelectorAll(".prdetail .statebuttons button")].map((b) => b.textContent)).toEqual(["Resume", "Open ERP export", "Rename", "Close"]);
     expect(text(".prdetail")).toContain("Paused: nothing is exported for this process.");
   });
 
@@ -725,7 +726,7 @@ describe("HTTPS out — decision 0585", () => {
     await openPush();
     expect(text(".prdetail h3")).toBe("Destination: ERP push");
     // Not started: no Pause, no ERP export; a Start instead.
-    expect([...document.querySelectorAll(".prdetail > .cardhead .statebuttons button")].map((b) => b.textContent)).toEqual(["Close"]);
+    expect([...document.querySelectorAll(".prdetail > .cardhead .statebuttons button")].map((b) => b.textContent)).toEqual(["Rename", "Retire", "Close"]);
     expect(text("#do-notstarted")).toContain("Not sending yet");
     expect((document.querySelector("#do-url") as HTMLInputElement).value).toBe("https://erp.acme.example/api/invoices");
     expect((document.querySelector("#do-auth") as HTMLSelectElement).value).toBe("bearer");
@@ -1398,5 +1399,78 @@ describe("submitting a Destination for review — decision 0595", () => {
     expect(text("#do-submission")).toContain("Only Northwind's people can submit connectors.");
     expect(document.querySelector("#do-sub-name")).toBeNull();
     expect(button("#do-submission .cardhead", "Submit for review")).toBeUndefined();
+  });
+});
+
+/**
+ * **Renaming and retiring a Destination — decision 0597**, as a Source can
+ * be: each asked in a pop-out, refusals in words, and a retired one only
+ * looked at.
+ */
+describe("renaming and retiring a Destination — decision 0597", () => {
+  const PUSH = { id: "dest-1", name: "Oracle push", status: "active", routeId: "https-out", routeName: "HTTPS out", route: { live: true, ...V("process", "en16931", "vf_invoice_json_v1", "en16931", "https") }, waiting: 0, started: true, failedOpen: 0 };
+  function stubDest(calls: Call[], destination: Record<string, unknown>, patch: [number, unknown]) {
+    stub(calls, { "/api/process-routes": { ...FLOW, destinations: [...FLOW.destinations, destination] } });
+    const inner = globalThis.fetch as unknown as (url: string, init?: RequestInit) => Promise<Response>;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        const path = String(url).split("?")[0];
+        const method = init?.method ?? "GET";
+        const reply = (status: number, body: unknown) => {
+          calls.push({ method, path, query: "", body: init?.body as string | undefined });
+          return { ok: status < 300, status, json: async () => body } as Response;
+        };
+        if (path === "/api/route-instances/dest-1" && method === "PATCH") return reply(...patch);
+        if (path === "/api/route-instances/dest-1/connector") return reply(200, { instance: { id: "dest-1", name: "Oracle push", status: "active", processId: "ap", startedAt: "2026-10-01" }, settings: { url: "", method: "POST", format: "vf_json", auth: { type: "none" }, referencePath: null }, secrets: {}, counts: {}, deliveries: [], candidates: [], mapping: { live: null, draft: null } });
+        if (path === "/api/route-instances/dest-1/library-submission") return reply(200, { partner: null });
+        return inner(url, init);
+      })
+    );
+  }
+  async function openDest(name = "Oracle push") {
+    await openScreen("/process-routes.js");
+    ([...document.querySelectorAll(".prcard")].find((c) => c.textContent?.includes(name)) as HTMLElement).click();
+    await settle();
+  }
+  const button = (root: string, label: string) => [...document.querySelectorAll(`${root} button`)].find((b) => b.textContent === label) as HTMLElement;
+
+  it("renames it, and says why not", async () => {
+    const calls: Call[] = [];
+    stubDest(calls, PUSH, [409, { reason: "name_taken" }]);
+    await openDest();
+    button(".prdetail > .cardhead", "Rename").click();
+    expect(text(".renamepop h3")).toBe("Rename destination");
+    (document.querySelector("#dest-rename") as HTMLInputElement).value = "Test push";
+    button(".renamepop", "Save").click();
+    await settle();
+    expect(JSON.parse(calls.find((c) => c.method === "PATCH")!.body!)).toEqual({ name: "Test push" });
+    expect(text("#dest-rename-problem")).toBe("This process already has a destination with that name.");
+  });
+
+  it("asks before retiring it, and names the rules that still send to it", async () => {
+    const calls: Call[] = [];
+    stubDest(calls, PUSH, [409, { reason: "rule_sends_here", rules: [{ id: "r-1", name: "Germany to Oracle" }] }]);
+    await openDest();
+    button(".prdetail > .cardhead", "Retire").click();
+    expect(text("#dest-retire-pop h3")).toBe("Retire Oracle push");
+    expect(text("#dest-retire-pop")).toContain("cannot be resumed");
+    button("#dest-retire-pop", "Retire").click();
+    await settle();
+    expect(JSON.parse(calls.find((c) => c.method === "PATCH")!.body!)).toEqual({ status: "retired" });
+    expect(text("#dest-retire-problem")).toBe("Rules send invoices to it: Germany to Oracle. Change or end them first.");
+  });
+
+  it("shows a retired one dimmed, Retired, with nothing to do but close", async () => {
+    stubDest([], { ...PUSH, name: "Old push", status: "retired" }, [200, {}]);
+    await openScreen("/process-routes.js");
+    const cardNode = [...document.querySelectorAll(".prcard")].find((c) => c.textContent?.includes("Old push")) as HTMLElement;
+    expect(cardNode.classList.contains("dim")).toBe(true);
+    expect([...cardNode.querySelectorAll(".rmpill")].map((p) => p.textContent)).toEqual(["Retired"]);
+    cardNode.click();
+    await settle();
+    expect([...document.querySelectorAll(".prdetail > .cardhead .statebuttons button")].map((b) => b.textContent)).toEqual(["Close"]);
+    expect(text("#dest-retired-note")).toBe("Retired. It sends nothing more. What it sent stays in the Route monitor.");
+    expect(document.querySelector("#httpsout")).toBeNull();
   });
 });

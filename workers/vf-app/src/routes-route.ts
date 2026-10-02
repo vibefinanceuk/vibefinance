@@ -203,8 +203,9 @@ export async function handleProcessRoutes(
               (SELECT count(*) FROM destination_deliveries d WHERE d.instance_id = i.id AND d.status IN ('pending', 'retrying')) AS sending,
               (SELECT count(*) FROM destination_deliveries d WHERE d.instance_id = i.id AND d.status = 'failed') AS failed
        FROM route_instances i JOIN routes r ON r.id = i.route_id
-       WHERE i.process_id = ? AND i.source_id IS NULL AND (i.status IS NULL OR i.status != 'retired')
-       ORDER BY i.route_id != 'erp-csv', i.name`
+       WHERE i.process_id = ? AND i.source_id IS NULL
+       -- Decision 0597: a retired Destination stays on the flow, last and dimmed, as a retired Source does.
+       ORDER BY i.status = 'retired', i.route_id != 'erp-csv', i.name`
     )
     .bind(chosen.id)
     .all<{ id: string; name: string; status: string; route_id: string; route_name: string; started_at: string | null; unit_ids: string | null; connector_id: string | null; connector_version: number | null; sending: number; failed: number }>();
@@ -304,4 +305,93 @@ export async function handleSetInstanceStatus(
   }
   await db.prepare("UPDATE route_instances SET status = ? WHERE id = ?").bind(status, instanceId).run();
   return { status: 200, body: { id: instanceId, status } };
+}
+
+/**
+ * **Renaming and retiring a Destination — decision 0597**, as a Source
+ * can be (Dan, 2 October 2026: *"I will need for testing"*).
+ *
+ * - **Rename**: a name of up to 80 characters, not another live
+ *   Destination's in the same process. Rules name a Destination by its id
+ *   (0588), so none needs changing.
+ * - **Retire**: it sends nothing more, cannot be resumed, and stays on
+ *   Process routes dimmed, with what it sent kept. Refused while a rule in
+ *   force sends invoices to it, naming those rules, so a rule never sends
+ *   to nowhere. The ERP CSV file is not retired here: its export screen
+ *   is how its invoices leave.
+ */
+interface DestinationRow {
+  id: string;
+  process_id: string;
+  route_id: string;
+  name: string | null;
+  status: string | null;
+  source_id: string | null;
+}
+
+async function destinationRow(db: D1Database, id: string): Promise<DestinationRow | RouteResult> {
+  const row = await db.prepare("SELECT id, process_id, route_id, name, status, source_id FROM route_instances WHERE id = ?").bind(id).first<DestinationRow>();
+  if (!row) return { status: 404, body: { error: `route instance ${id} does not exist` } };
+  if (row.source_id) return { status: 409, body: { error: "a Source instance is changed through its source", reason: "is_source" } };
+  return row;
+}
+const isResultRow = (x: DestinationRow | RouteResult): x is RouteResult => "body" in x && !("process_id" in x);
+
+export async function handleRenameDestination(db: D1Database, id: string, rawName: unknown): Promise<RouteResult> {
+  const row = await destinationRow(db, id);
+  if (isResultRow(row)) return row;
+  if (row.status === "retired") return { status: 409, body: { error: "a retired Destination is not renamed", reason: "retired" } };
+  const name = typeof rawName === "string" ? rawName.trim().replace(/\s+/g, " ") : "";
+  if (!name || name.length > 80) return { status: 400, body: { error: "give it a name of up to 80 characters", reason: "bad_name" } };
+  const taken = await db
+    .prepare("SELECT id FROM route_instances WHERE process_id = ? AND source_id IS NULL AND id != ? AND status != 'retired' AND lower(name) = lower(?)")
+    .bind(row.process_id, id, name)
+    .first();
+  if (taken) return { status: 409, body: { error: "this process already has a destination with that name", reason: "name_taken" } };
+  await db.prepare("UPDATE route_instances SET name = ? WHERE id = ?").bind(name, id).run();
+  return { status: 200, body: { id, name } };
+}
+
+/** Rules in force that send invoices to this Destination (`send_to_destination`, 0588). */
+export async function rulesSendingTo(db: D1Database, destinationId: string): Promise<Array<{ id: string; name: string | null }>> {
+  const rows = await db
+    .prepare(
+      `SELECT DISTINCT r.id, r.name, v.compiled_json FROM rule_versions v JOIN rules r ON r.id = v.rule_id
+       WHERE (v.effective_to IS NULL OR v.effective_to > ?) AND v.compiled_json LIKE '%send_to_destination%'`
+    )
+    .bind(new Date().toISOString())
+    .all<{ id: string; name: string | null; compiled_json: string }>();
+  const out: Array<{ id: string; name: string | null }> = [];
+  const seen = new Set<string>();
+  for (const r of rows.results) {
+    if (seen.has(r.id)) continue;
+    let compiled: { actions?: Array<{ type?: string; params?: Record<string, unknown> }> };
+    try {
+      compiled = JSON.parse(r.compiled_json);
+    } catch {
+      continue;
+    }
+    const sends = (compiled.actions ?? []).some((a) => a.type === "send_to_destination" && a.params?.destination === destinationId);
+    if (sends) {
+      seen.add(r.id);
+      out.push({ id: r.id, name: r.name });
+    }
+  }
+  return out;
+}
+
+export async function handleRetireDestination(db: D1Database, userId: string, id: string): Promise<RouteResult> {
+  const row = await destinationRow(db, id);
+  if (isResultRow(row)) return row;
+  if (row.status === "retired") return { status: 409, body: { error: "it is already retired", reason: "retired" } };
+  if (row.route_id === "erp-csv") return { status: 409, body: { error: "the ERP CSV file is not retired here", reason: "erp_csv" } };
+  const rules = await rulesSendingTo(db, id);
+  if (rules.length > 0) {
+    return { status: 409, body: { error: `rules send invoices to it: ${rules.map((r) => r.name ?? r.id).join(", ")}`, reason: "rule_sends_here", rules } };
+  }
+  await db
+    .prepare("UPDATE route_instances SET status = 'retired', retired_at = ?, retired_by = ? WHERE id = ?")
+    .bind(new Date().toISOString(), userId, id)
+    .run();
+  return { status: 200, body: { id, status: "retired" } };
 }

@@ -231,6 +231,7 @@ import nothingOpenSql from "../migrations/0240_nothing_open_string.sql?raw";
 import partnerConnectorsSql from "../migrations/0241_partner_connectors.sql?raw";
 import submitStringsSql from "../migrations/0242_submit_for_review_strings.sql?raw";
 import submitFromCustomerSql from "../migrations/0243_submit_from_customer_strings.sql?raw";
+import destRetireStringsSql from "../migrations/0244_destination_rename_retire_strings.sql?raw";
 
 function stripSqlComments(sql: string): string {
   return sql
@@ -495,5 +496,6 @@ export async function applyTestSchema(): Promise<void> {
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(partnerConnectorsSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(submitStringsSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(submitFromCustomerSql)));
+  await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(destRetireStringsSql)));
 
 }

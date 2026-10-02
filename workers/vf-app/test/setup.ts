@@ -127,6 +127,7 @@ import destinationUnitsSql from "../../../migrations/0120_destination_units.sql?
 import destinationRequestsSql from "../../../migrations/0121_destination_requests.sql?raw";
 import instanceConnectorsSql from "../../../migrations/0122_instance_connectors.sql?raw";
 import outboundMappingsSql from "../../../migrations/0123_outbound_mappings.sql?raw";
+import destinationRetireSql from "../../../migrations/0124_destination_retire.sql?raw";
 
 // Another known divergence from production, on top of the one below:
 // D1's exec() splits its input by newline and executes each non-empty
@@ -450,6 +451,7 @@ export async function applyTestSchema(): Promise<void> {
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(destinationRequestsSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(instanceConnectorsSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(outboundMappingsSql)));
+  await env.DB.exec(toOneStatementPerLine(stripSqlComments(destinationRetireSql)));
 }
 
 /**

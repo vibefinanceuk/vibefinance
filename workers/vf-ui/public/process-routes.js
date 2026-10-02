@@ -166,7 +166,10 @@ function flow() {
         // Decision 0587: which business units it sends for, where not all.
         d.unitIds && d.unitIds.length > 0 ? unitsSummary(d.unitIds, unitList()) : t(`routes.gw.${d.route?.deliveryGateway}`),
       ],
-      d.routeId === "https-out"
+      d.status === "retired"
+        ? // Decision 0597: retired, and nothing more.
+          [pill("q", t("processroutes.status.retired"))]
+        : d.routeId === "https-out"
         ? // Decision 0585: an HTTPS out Destination says whether it is sending, what failed and what waits.
           [
             !d.started
@@ -284,8 +287,112 @@ async function setDestinationStatus(d, status) {
   }
 }
 
+/**
+ * **Rename a Destination — decision 0597**, as a Source is renamed. Rules
+ * name it by its id, so none needs changing.
+ */
+function openRenameDestination(d) {
+  const problem = el("div", { class: "warn", id: "dest-rename-problem" });
+  const nameInput = el("input", { type: "text", id: "dest-rename", value: d.name });
+  const close = () => backdrop.remove();
+  const save = actionLink("save", {
+    primary: true,
+    onclick: async () => {
+      problem.textContent = "";
+      const r = await fetch(`/api/route-instances/${encodeURIComponent(d.id)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: nameInput.value }),
+      }).catch(() => null);
+      const body = r ? await r.json().catch(() => ({})) : {};
+      if (!r || !r.ok) {
+        const key = `processroutes.dest.error.${body.reason}`;
+        problem.textContent = t(key) === key ? (body.error ?? t("processroutes.pausefailed")) : t(key);
+        return;
+      }
+      backdrop.remove();
+      await load();
+      render();
+    },
+  });
+  const backdrop = el("div", { class: "backdrop" }, [
+    el("div", { class: "popout renamepop", role: "dialog" }, [
+      el("div", { class: "cardhead" }, [el("h3", { text: t("processroutes.dest.rename") }), el("div", { class: "statebuttons" }, [save, actionLink("close", { onclick: close })])]),
+      el("div", { class: "editgrid" }, [el("label", { text: t("sources.name") }), nameInput]),
+      el("p", { class: "muted sm", text: t("processroutes.dest.renamehint") }),
+      problem,
+    ]),
+  ]);
+  backdrop.onclick = (e) => {
+    if (e.target === backdrop) backdrop.remove();
+  };
+  document.body.append(backdrop);
+  nameInput.focus();
+}
+
+/** **Retire a Destination — decision 0597**: asked first, and refused while a rule sends to it, naming the rule. */
+function openRetireDestination(d) {
+  const problem = el("div", { class: "warn", id: "dest-retire-problem" });
+  const close = () => backdrop.remove();
+  const retire = actionLink("retire", {
+    primary: true,
+    onclick: async () => {
+      problem.textContent = "";
+      const r = await fetch(`/api/route-instances/${encodeURIComponent(d.id)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "retired" }),
+      }).catch(() => null);
+      const body = r ? await r.json().catch(() => ({})) : {};
+      if (!r || !r.ok) {
+        const key = `processroutes.dest.error.${body.reason}`;
+        problem.textContent =
+          body.reason === "rule_sends_here"
+            ? t(key).replace("{rules}", (body.rules ?? []).map((x) => x.name ?? x.id).join(", "))
+            : t(key) === key
+              ? (body.error ?? t("processroutes.pausefailed"))
+              : t(key);
+        return;
+      }
+      backdrop.remove();
+      await load();
+      render();
+    },
+  });
+  const backdrop = el("div", { class: "backdrop" }, [
+    el("div", { class: "popout", role: "dialog", id: "dest-retire-pop" }, [
+      el("div", { class: "cardhead" }, [el("h3", { text: t("processroutes.dest.retire").replace("{name}", d.name) }), el("div", { class: "statebuttons" }, [retire, actionLink("close", { onclick: close })])]),
+      el("p", { text: t("processroutes.dest.retirehint") }),
+      problem,
+    ]),
+  ]);
+  backdrop.onclick = (e) => {
+    if (e.target === backdrop) backdrop.remove();
+  };
+  document.body.append(backdrop);
+}
+
 function destinationPanel(d) {
   const httpsOut = d.routeId === "https-out";
+  // Decision 0597: a retired Destination is only looked at.
+  if (d.status === "retired") {
+    return el("div", { class: "panel prdetail" }, [
+      el("div", { class: "cardhead" }, [
+        el("h3", { text: `${t("processroutes.destinationtitle")}: ${d.name}` }),
+        el("div", { class: "statebuttons" }, [actionLink("close", { onclick: () => { selected = null; render(); } })]),
+      ]),
+      el("p", { class: "muted sm", text: t("processroutes.destsub").replace("{route}", d.routeName).replace("{process}", data.process.name) }),
+      el("div", { class: "prfields" }, [
+        el("div", { class: "l", text: t("processroutes.field.status") }),
+        el("div", {}, [pill("q", t("processroutes.status.retired"))]),
+      ]),
+      el("p", { class: "muted sm", id: "dest-retired-note", text: t("processroutes.dest.retirednote") }),
+    ]);
+  }
+  const renameRetire = [
+    actionLink("rename", { onclick: () => openRenameDestination(d) }),
+    ...(d.routeId === "erp-csv" ? [] : [actionLink("retire", { onclick: () => openRetireDestination(d) })]),
+  ];
   const pauseOrResume =
     httpsOut && !d.started
       ? null
@@ -302,7 +409,7 @@ function destinationPanel(d) {
   return el("div", { class: "panel prdetail" }, [
     el("div", { class: "cardhead" }, [
       el("h3", { text: `${t("processroutes.destinationtitle")}: ${d.name}` }),
-      el("div", { class: "statebuttons" }, [pauseOrResume, httpsOut ? null : openExport, actionLink("close", { onclick: () => { selected = null; render(); } })].filter(Boolean)),
+      el("div", { class: "statebuttons" }, [pauseOrResume, httpsOut ? null : openExport, ...renameRetire, actionLink("close", { onclick: () => { selected = null; render(); } })].filter(Boolean)),
     ]),
     el("p", { class: "muted sm", text: t("processroutes.destsub").replace("{route}", d.routeName).replace("{process}", data.process.name) }),
     el("div", { class: "prfields" }, [

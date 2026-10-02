@@ -208,7 +208,7 @@ import { handleGetRetention, handleSetRetention, handleListBeyondRetention } fro
 import { handleCaptureFromSource } from "./source-capture-route.js";
 import { handleInboundEmail, handleListInboundEmail, type EmailMessage } from "./inbound-email.js";
 import { handleGetRouteMessage, handleListRouteMessages, routeMessagePart } from "./route-monitor-route.js";
-import { handleListRoutes, handleProcessRoutes, handleSetInstanceStatus } from "./routes-route.js";
+import { handleListRoutes, handleProcessRoutes, handleRenameDestination, handleRetireDestination, handleSetInstanceStatus } from "./routes-route.js";
 import { handleDismissMessage, handleReprocessMessage } from "./route-reprocess.js";
 import {
   handleCreateLookupList,
@@ -1849,7 +1849,14 @@ export default {
           return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
         }
         const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
-        const result = await handleSetInstanceStatus(db, decodeURIComponent(match[1]), body);
+        const instanceId = decodeURIComponent(match[1]);
+        // Decision 0597: rename, and retire, as a Source can be.
+        const result =
+          "name" in body
+            ? await handleRenameDestination(db, instanceId, body.name)
+            : body.status === "retired"
+              ? await handleRetireDestination(db, auth.user.id, instanceId)
+              : await handleSetInstanceStatus(db, instanceId, body);
         return json(result.body, result.status);
       }
     }
