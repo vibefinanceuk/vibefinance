@@ -61,6 +61,8 @@ export async function handleConnectorLibrary(db: D1Database, library: ConnectorD
         multiple: c.multiple,
         mechanism: c.mechanism ?? null,
         vendorDocs: c.vendorDocs ?? null,
+        // Decision 0605: available, not yet proven against the real system.
+        maturity: c.maturity ?? null,
         inUse: used.get(c.id) ?? [],
       })),
       processes,

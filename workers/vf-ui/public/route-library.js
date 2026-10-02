@@ -109,6 +109,8 @@ function card(c) {
       : []),
     el("div", { class: "libfoot" }, [
       state,
+      // Decision 0605: available, not yet proven against the real system.
+      ...(c.maturity === "first_version" ? [el("span", { class: "rmpill q", title: t("library.firstversionhint"), text: t("library.firstversion") })] : []),
       ...(upgrades > 0 ? [pill("warn", t("library.upgrades").replace("{n}", String(upgrades)))] : []),
     ]),
   ]);

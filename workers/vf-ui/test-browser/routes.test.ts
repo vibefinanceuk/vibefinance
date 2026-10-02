@@ -20,6 +20,7 @@ import destRetireStringsSql from "../../vf-licence/migrations/0244_destination_r
 import destDeleteStringsSql from "../../vf-licence/migrations/0245_destination_delete_strings.sql?raw";
 import reviewStringsSql from "../../vf-licence/migrations/0247_connector_review_strings.sql?raw";
 import partnerLibraryStringsSql from "../../vf-licence/migrations/0248_partner_library_strings.sql?raw";
+import oracleStringsSql from "../../vf-licence/migrations/0249_oracle_connector_strings.sql?raw";
 
 /**
  * **Routes and Process routes — decision 0557.** The standard routes with
@@ -54,7 +55,7 @@ const strings: Record<string, string> = {
   "mechanism.file_import": "File import",
   "mechanism.edi": "EDI",
 };
-for (const sql of [stringsSql, destinationStringsSql, formatStringsSql, mappingStringsSql, csvStringsSql, httpsStringsSql, httpsStateStringsSql, replaceKeyStringsSql, mailboxStringsSql, renameStringsSql, httpsOutStringsSql, erpDeliveriesStringsSql, destUnitsStringsSql, libraryStringsSql, outboundStringsSql, submitStringsSql, submitFromCustomerSql, destRetireStringsSql, destDeleteStringsSql, reviewStringsSql, partnerLibraryStringsSql]) {
+for (const sql of [stringsSql, destinationStringsSql, formatStringsSql, mappingStringsSql, csvStringsSql, httpsStringsSql, httpsStateStringsSql, replaceKeyStringsSql, mailboxStringsSql, renameStringsSql, httpsOutStringsSql, erpDeliveriesStringsSql, destUnitsStringsSql, libraryStringsSql, outboundStringsSql, submitStringsSql, submitFromCustomerSql, destRetireStringsSql, destDeleteStringsSql, reviewStringsSql, partnerLibraryStringsSql, oracleStringsSql]) {
   for (const m of sql.matchAll(/\('([^']+)', 'en', '((?:[^']|'')*)'\)/g)) strings[m[1]] = m[2].replace(/''/g, "'");
 }
 // 0209 updates the ERP note rather than inserting it.
@@ -1029,6 +1030,14 @@ describe("partner connectors in the Route library — decision 0601", () => {
     expect([...document.querySelectorAll(".libcard h3")].map((h) => h.textContent)).toEqual(["Oracle Payables", "Old Sage push"]);
   });
 
+  it("marks a connector that is a first version, on its card — decision 0605", async () => {
+    stub([], { "/api/connector-library": { connectors: [{ ...STD, id: "oracle-fusion-payables", categories: ["erp"], formats: ["oracle_invoice_json"], maturity: "first_version" }], processes: [{ id: "ap", name: "Standard AP Process" }] } });
+    await openScreen("/route-library.js");
+    const pill = document.querySelector('.libcard[data-connector="oracle-fusion-payables"] .libfoot .rmpill.q') as HTMLElement;
+    expect(pill.textContent).toBe("First version");
+    expect(pill.title).toContain("simulated system");
+  });
+
   it("shows a Destination's partner connector by name and partner, the empty list to fill in, and what Upgrade did to its mapping", async () => {
     const calls: Call[] = [];
     const PUSH = { id: "dest-2", name: "Oracle push", status: "paused", routeId: "https-out", routeName: "HTTPS out", route: { live: true, ...V("process", "en16931", "vf_invoice_json_v1", "en16931", "https") }, waiting: 0, started: false, failedOpen: 0 };
@@ -1177,6 +1186,29 @@ describe("outbound mapping — decision 0591", () => {
   }
   const button = (root: string, label: string) => [...document.querySelectorAll(`${root} button`)].find((b) => b.textContent === label) as HTMLElement;
   const lastPut = (calls: Call[]) => JSON.parse([...calls].reverse().find((c) => c.method === "PUT" && c.path.endsWith("/mapping"))!.body!).definition;
+
+  it("shows a field built from parts with its lists by name, and stores what is typed with their ids — decision 0605", async () => {
+    const calls: Call[] = [];
+    const def = DEF();
+    def.distributions.fields.push({ target: "DistributionCombination", source: null, built: "{company|lst-9}-{distribution.glCode}-0000", fx: [] } as never);
+    stubMapping(calls, { mapping: { ...MAPPING(), editing: { version: 1, status: "draft", definition: def, sampleInvoiceId: "inv-9" }, lists: [{ id: "lst-9", name: "Oracle company segments" }] } });
+    await openEditor();
+    const row = document.querySelector('[data-tgt="distribution:1"]') as HTMLElement;
+    expect(row.textContent).toContain("Built from: {company|Oracle company segments}-{distribution.glCode}-0000");
+    row.click();
+    await settle();
+    const input = document.querySelector("#om-built") as HTMLInputElement;
+    expect(input.value).toBe("{company|Oracle company segments}-{distribution.glCode}-0000");
+    input.value = "{company|No such list}.{distribution.glCode}";
+    input.dispatchEvent(new Event("change"));
+    await settle();
+    expect(text("#om-builtproblem")).toBe("There is no look-up list called No such list.");
+    expect(calls.some((c) => c.method === "PUT")).toBe(false);
+    input.value = "{company|oracle company segments}.{distribution.glCode}.000";
+    input.dispatchEvent(new Event("change"));
+    await settle();
+    expect(lastPut(calls).distributions.fields[1]).toEqual({ target: "DistributionCombination", source: null, built: "{company|lst-9}.{distribution.glCode}.000", fx: [] });
+  });
 
   it("shows the standard layout on the Destination, and Make my own copy copies it and opens the editor", async () => {
     const calls: Call[] = [];

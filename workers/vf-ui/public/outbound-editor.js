@@ -85,6 +85,24 @@ const sourceName = (key) => {
   return t(k) === k ? key : t(k);
 };
 
+/**
+ * **Built from parts — decision 0605.** Stored with each look-up list by
+ * its id; shown, and typed, with the list's name.
+ */
+const PART = /\{([^{}|]+)(?:\|([^{}]+))?\}/g;
+const builtShown = (pattern) => String(pattern ?? "").replace(PART, (_m, source, list) => (list ? `{${source}|${data.lists.find((l) => l.id === list.trim())?.name ?? list}}` : `{${source}}`));
+/** The pattern as typed, its lists' names turned to ids; or the name of a list there is none of. */
+function builtStored(typed) {
+  let unknown = null;
+  const stored = typed.replace(PART, (_m, source, list) => {
+    if (!list) return `{${source.trim()}}`;
+    const hit = data.lists.find((l) => l.name.toLowerCase() === list.trim().toLowerCase() || l.id === list.trim());
+    if (!hit) unknown = unknown ?? list.trim();
+    return `{${source.trim()}|${hit ? hit.id : list.trim()}}`;
+  });
+  return { stored, unknown };
+}
+
 /** The value a source holds in the invoice shown: the first line's, the first distribution's. */
 function sampleOf(key) {
   const inv = (tried?.invoice ?? data.sample?.invoice) || null;
@@ -142,7 +160,11 @@ function targetColumn() {
       },
       [
         el("span", { class: "mebt" }, [f.target, ...(f.required ? [el("span", { class: "mereq", text: "*" })] : [])]),
-        f.source ? el("span", { class: "mest muted", text: f.source }) : el("span", { class: "mest", text: `${t("outmap.fixed")}: ${f.fixed}` }),
+        f.built !== undefined
+          ? el("span", { class: "mest", text: `${t("outmap.builtfrom")}: ${builtShown(f.built)}` })
+          : f.source
+            ? el("span", { class: "mest muted", text: f.source })
+            : el("span", { class: "mest", text: `${t("outmap.fixed")}: ${f.fixed}` }),
       ]
     );
     node.onclick = () => {
@@ -217,6 +239,7 @@ function sourcePanel() {
               onclick: async () => {
                 prior.source = key;
                 delete prior.fixed;
+                delete prior.built;
                 selectedSource = null;
                 await save();
               },
@@ -297,11 +320,29 @@ function fieldPanel() {
     else delete f.required;
     await save();
   };
-  const fixed = el("input", { class: "meinput", type: "text", id: "om-fixed", value: f.source ? "" : String(f.fixed ?? ""), placeholder: t("outmap.fixedplaceholder") });
+  const fixed = el("input", { class: "meinput", type: "text", id: "om-fixed", value: f.source || f.built !== undefined ? "" : String(f.fixed ?? ""), placeholder: t("outmap.fixedplaceholder") });
   fixed.onchange = async () => {
     if (fixed.value.trim() === "") return;
     f.source = null;
+    delete f.built;
     f.fixed = fixed.value.trim();
+    await save();
+  };
+  // Decision 0605: or built from parts of the invoice, each looked up in a list where one is named.
+  const builtProblemEl = el("div", { class: "merefused", id: "om-builtproblem" });
+  const built = el("input", { class: "meinput", type: "text", id: "om-built", value: f.built !== undefined ? builtShown(f.built) : "", placeholder: t("outmap.builtplaceholder") });
+  built.onchange = async () => {
+    builtProblemEl.textContent = "";
+    const typed = built.value.trim();
+    if (typed === "") return;
+    const { stored, unknown } = builtStored(typed);
+    if (unknown) {
+      builtProblemEl.textContent = t("outmap.builtunknownlist").replace("{name}", unknown);
+      return;
+    }
+    f.source = null;
+    delete f.fixed;
+    f.built = stored;
     await save();
   };
   const box = el("textarea", { class: "mesay", rows: "2", id: "om-say", placeholder: t("mapping.sayplaceholder") });
@@ -359,10 +400,12 @@ function fieldPanel() {
       el("span", { class: "l", text: t("outmap.name") }),
       name,
       el("span", { class: "l", text: t("outmap.comesfrom") }),
-      el("span", { class: "ref", id: "om-from", text: f.source ? `${sourceName(f.source)} · ${f.source}` : t("outmap.fixed") }),
+      el("span", { class: "ref", id: "om-from", text: f.built !== undefined ? t("outmap.builtfrom") : f.source ? `${sourceName(f.source)} · ${f.source}` : t("outmap.fixed") }),
       ...(f.source ? [el("span", { class: "l", text: t("outmap.sample") }), el("span", { class: "ref", text: sampleOf(f.source) ?? "—" })] : []),
       el("span", { class: "l", text: t("outmap.orfixed") }),
       fixed,
+      el("span", { class: "l", text: t("outmap.orbuilt") }),
+      el("div", {}, [built, el("div", { class: "muted sm", text: t("outmap.builthint") }), builtProblemEl]),
       el("span", { class: "l", text: t("outmap.required") }),
       el("label", { class: "sm" }, [required, ` ${t("outmap.requiredhint")}`]),
     ]),

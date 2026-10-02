@@ -26,3 +26,4 @@ export * from "./ingestion/batch-template.js";
 export * from "./connectors/library.js";
 export * from "./connectors/outbound-mapping.js";
 export * from "./connectors/partner-connector.js";
+export * from "./connectors/oracle-fusion-payables.js";

@@ -323,6 +323,7 @@ function connectorLine(destination, connector, reload, lists = []) {
     el("span", { text: t("library.connectorline").replace("{name}", name).replace("{v}", String(connector.version)) }),
     ...(connector.partner ? [el("span", { class: "rmpill q", text: t("library.publisher.partner").replace("{name}", connector.partner.name) })] : []),
     ...(connector.offered === false ? [el("span", { class: "rmpill warn", id: "do-withdrawn", text: t("library.withdrawn") })] : []),
+    ...(connector.maturity === "first_version" ? [el("span", { class: "rmpill q", id: "do-firstversion", title: t("library.firstversionhint"), text: t("library.firstversion") })] : []),
     ...(connector.upgradeAvailable
       ? [
           el("span", { class: "rmpill warn", text: t("library.upgradeto").replace("{n}", String(connector.latestVersion)) }),

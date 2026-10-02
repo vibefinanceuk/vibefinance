@@ -30,9 +30,18 @@ export type OutboundLevel = "invoice" | "line" | "distribution";
 
 export interface OutboundField {
   target: string;
-  /** A key of `OUTBOUND_SOURCES`, or null for a fixed value. */
+  /** A key of `OUTBOUND_SOURCES`, or null for a fixed value or one built from parts. */
   source: string | null;
   fixed?: string | number | null;
+  /**
+   * **Built from parts — decision 0605.** A pattern such as
+   * `{company|Oracle company segments}-{distribution.costCentre}-{distribution.glCode}-0000-000`:
+   * each `{source}` is that source's value, and `{source|list}` that value
+   * looked up in a look-up list (by id in a Destination's mapping, by name
+   * in a connector's definition). Oracle's account combination, SAP's
+   * coding block. Any part empty, the field is empty.
+   */
+  built?: string;
   fx: FunctionStep[];
   /** What the person said, when the functions came from plain words. */
   say?: string;
@@ -107,6 +116,8 @@ export const OUTBOUND_SOURCES: ReadonlyArray<{ key: string; level: OutboundLevel
   { key: "line.vatRate", level: "line" },
   { key: "line.netAmount", level: "line" },
   { key: "distribution.sequence", level: "distribution" },
+  // Decision 0605: 1, 2, … within each line, as Oracle numbers a line's distributions.
+  { key: "distribution.numberInLine", level: "distribution" },
   { key: "distribution.splitRow", level: "distribution" },
   { key: "distribution.netAmount", level: "distribution" },
   { key: "distribution.costCentre", level: "distribution" },
@@ -179,6 +190,26 @@ function clash(names: string[]): string | null {
   return null;
 }
 
+/** The parts of a built field: each `{source}` or `{source|list}`. Decision 0605. */
+export function builtParts(pattern: string): Array<{ source: string; list: string | null }> {
+  return [...pattern.matchAll(/\{([^{}|]+)(?:\|([^{}]+))?\}/g)].map((m) => ({ source: m[1].trim(), list: m[2] ? m[2].trim() : null }));
+}
+export const MAX_BUILT = 300;
+
+/** Why a built pattern cannot be used at this level, or null. */
+function builtProblem(target: string, pattern: unknown, level: OutboundLevel): string | null {
+  if (typeof pattern !== "string" || pattern.trim() === "" || pattern.length > MAX_BUILT) return `${target}: a pattern of up to ${MAX_BUILT} characters`;
+  const parts = builtParts(pattern);
+  if (parts.length === 0) return `${target}: the pattern names no part, such as {distribution.glCode}`;
+  if (/[{}]/.test(pattern.replace(/\{[^{}|]+(?:\|[^{}]+)?\}/g, ""))) return `${target}: a brace that opens no part`;
+  for (const p of parts) {
+    if (sourceLevel(p.source) === null) return `${target}: "${p.source}" is not part of the VibeFinance invoice`;
+    if (!sourceAllowed(p.source, level)) return `${target} is once per ${level}, and cannot read ${p.source}, which is once per ${sourceLevel(p.source)}`;
+    if (p.list !== null && (p.list === "" || p.list.length > 120)) return `${target}: name the look-up list for ${p.source}`;
+  }
+  return null;
+}
+
 /** Why an outbound mapping cannot be stored, or null where it can. */
 export function validateOutboundMapping(input: unknown): string | null {
   const d = input as OutboundMapping;
@@ -198,7 +229,11 @@ export function validateOutboundMapping(input: unknown): string | null {
     if (fields.length > MAX_FIELDS) return `at most ${MAX_FIELDS} fields at each level`;
     for (const f of fields) {
       if (!f || typeof f.target !== "string" || !validTarget(f.target)) return `"${String(f?.target)}" is not a name a field can have`;
-      if (f.source === null) {
+      if (f.built !== undefined) {
+        if (f.source !== null) return `${f.target} is built from parts, so it has no single source`;
+        const p = builtProblem(f.target, f.built, level);
+        if (p) return p;
+      } else if (f.source === null) {
         if (f.fixed === undefined || f.fixed === null || (typeof f.fixed !== "string" && typeof f.fixed !== "number")) {
           return `${f.target} needs a source or a fixed value`;
         }
@@ -258,7 +293,7 @@ function setAt(obj: Record<string, unknown>, path: string, value: unknown) {
 interface Scope {
   invoice: VfInvoice;
   line?: VfInvoiceLine;
-  distribution?: VfInvoiceDistribution & { sequence: number };
+  distribution?: VfInvoiceDistribution & { sequence: number; numberInLine?: number };
 }
 
 function readSource(scope: Scope, key: string): FnValue {
@@ -267,10 +302,41 @@ function readSource(scope: Scope, key: string): FnValue {
   return read(scope.invoice, key);
 }
 
+/** A built field's value: its parts read, looked up where a list is named, and put in place. Any part empty, it is empty. */
+function buildValue(pattern: string, scope: Scope, ctx?: FnContext): { value: FnValue } | { value: FnValue; reason: string } {
+  let empty = false;
+  let failed: { value: FnValue; reason: string } | null = null;
+  const value = pattern.replace(/\{([^{}|]+)(?:\|([^{}]+))?\}/g, (_m, source: string, list?: string) => {
+    let v = readSource(scope, source.trim());
+    if (v === null || String(v) === "") {
+      empty = true;
+      return "";
+    }
+    if (list && !failed) {
+      const r = applyChain([{ fn: "look_up", args: { list: list.trim(), otherwise: "refuse" } }], v, ctx);
+      if (!r.ok) failed = { value: v, reason: r.reason };
+      else v = r.value;
+    }
+    return String(v ?? "");
+  });
+  if (failed) return failed;
+  return { value: empty ? null : value };
+}
+
 function fill(out: Record<string, unknown>, fields: OutboundField[], scope: Scope, where: string, mapping: OutboundMapping, problems: OutboundProblem[], ctx?: FnContext) {
   for (const f of fields) {
     const at = where ? `${where}.${f.target}` : f.target;
-    const raw: FnValue = f.source === null ? (f.fixed ?? null) : readSource(scope, f.source);
+    let raw: FnValue;
+    if (f.built !== undefined) {
+      const built = buildValue(f.built, scope, ctx);
+      if ("reason" in built) {
+        problems.push({ at, source: null, value: built.value, reason: built.reason });
+        continue;
+      }
+      raw = built.value;
+    } else {
+      raw = f.source === null ? (f.fixed ?? null) : readSource(scope, f.source);
+    }
     let value: FnValue = raw;
     // As inbound (0561): an empty value goes through the functions only where one gives a default.
     const hasDefault = f.fx.some((s) => s.fn === "always" || s.fn === "if_empty");
@@ -313,7 +379,7 @@ export function applyOutboundMapping(mapping: OutboundMapping, invoice: VfInvoic
       if (!distsUsed) return;
       const distOut: Record<string, unknown> = {};
       const distAt = dists.place === "line" ? `${lineAt}.${dists.name}[${j + 1}]` : `${dists.name}[${sequence}]`;
-      fill(distOut, dists.fields, { invoice, line, distribution: { ...d, sequence } }, distAt, mapping, problems, ctx);
+      fill(distOut, dists.fields, { invoice, line, distribution: { ...d, sequence, numberInLine: j + 1 } }, distAt, mapping, problems, ctx);
       (dists.place === "line" ? inLine : atInvoice).push(distOut);
     });
     if (distsUsed && dists.place === "line") setAt(lineOut, dists.name as string, inLine);
@@ -332,15 +398,23 @@ export function outboundSamples(invoice: VfInvoice, key: string): string[] {
   let sequence = 0;
   for (const line of invoice.lines) {
     if (level === "line") values.push(readSource({ invoice, line }, key));
-    for (const d of line.distributions) {
+    line.distributions.forEach((d, j) => {
       sequence += 1;
-      if (level === "distribution") values.push(readSource({ invoice, line, distribution: { ...d, sequence } }, key));
-    }
+      if (level === "distribution") values.push(readSource({ invoice, line, distribution: { ...d, sequence, numberInLine: j + 1 } }, key));
+    });
   }
   return [...new Set(values.filter((v) => v !== null).map(String))].slice(0, 20);
 }
 
 /** The look-up lists a mapping names, by id: what a caller loads before running it. */
 export function listsInOutbound(mapping: OutboundMapping): string[] {
-  return [...new Set([...mapping.invoice, ...mapping.lines.fields, ...mapping.distributions.fields].flatMap((f) => listsInChain(f.fx)))];
+  return [
+    ...new Set(
+      [...mapping.invoice, ...mapping.lines.fields, ...mapping.distributions.fields].flatMap((f) => [
+        ...listsInChain(f.fx),
+        // Decision 0605: the lists a built field's parts are looked up in.
+        ...(f.built ? builtParts(f.built).flatMap((p) => (p.list ? [p.list] : [])) : []),
+      ])
+    ),
+  ];
 }

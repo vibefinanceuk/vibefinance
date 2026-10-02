@@ -34,7 +34,9 @@ describe("the library", () => {
     expect(body.connectors.map((c) => c.id)).toEqual(STANDARD_CONNECTORS.map((c) => c.id));
     const by = (id: string) => body.connectors.find((c) => c.id === id)!;
     expect(by("https-out")).toMatchObject({ direction: "destination", status: "available", inUse: [] });
-    expect(by("oracle-fusion-payables")).toMatchObject({ status: "planned", inUse: [] });
+    expect(by("sap-s4hana-cloud")).toMatchObject({ status: "planned", inUse: [] });
+    // Decision 0605: Oracle is available, as a first version.
+    expect(by("oracle-fusion-payables")).toMatchObject({ status: "available", inUse: [] });
     // Made before the library: the route's own connector, version 1.
     expect(by("erp-csv").inUse).toEqual([{ instanceId: "erp-ap", processId: "ap", processName: "Standard AP", name: "ERP", version: 1, upgradeAvailable: false }]);
     expect(by("email-in").inUse).toMatchObject([{ instanceId: "mail", name: "AP mailbox" }]);
@@ -51,7 +53,7 @@ describe("adding a Destination from a connector", () => {
     expect(row).toMatchObject({ connector_id: "automation-webhook", connector_version: 1 });
     expect(JSON.parse(row!.settings_json)).toMatchObject({ method: "POST", format: "vf_json", auth: { type: "none" } });
     const got = (await handleGetConnector(env.DB, id)).body as { connector: Record<string, unknown> };
-    expect(got.connector).toEqual({ id: "automation-webhook", version: 1, name: null, publisher: "standard", partner: null, offered: true, latestVersion: 1, upgradeAvailable: false, fixed: ["method", "format"], authTypes: ["none", "api_key_header"] });
+    expect(got.connector).toEqual({ id: "automation-webhook", version: 1, name: null, publisher: "standard", partner: null, offered: true, maturity: null, latestVersion: 1, upgradeAvailable: false, fixed: ["method", "format"], authTypes: ["none", "api_key_header"] });
     const listed = (await handleConnectorLibrary(env.DB)).body as Listed;
     expect(listed.connectors.find((c) => c.id === "automation-webhook")!.inUse).toMatchObject([{ instanceId: id, name: "Zapier" }]);
     const flow = (await handleProcessRoutes(env.DB, new URLSearchParams("process=ap"))).body as { destinations: Array<Record<string, unknown>> };
@@ -72,7 +74,7 @@ describe("adding a Destination from a connector", () => {
 
   it("refuses a planned connector, a Source, an unknown one, and a second ERP CSV file; adds the file where none is", async () => {
     const add = (connectorId: string, processId = "ap", name = "X") => handleCreateDestination(env.DB, "u-dan", processId, { name, connectorId });
-    expect((await add("oracle-fusion-payables")).body).toMatchObject({ reason: "not_available" });
+    expect((await add("sap-s4hana-cloud")).body).toMatchObject({ reason: "not_available" });
     expect((await add("email-in")).body).toMatchObject({ reason: "unknown_connector" });
     expect((await add("nope")).body).toMatchObject({ reason: "unknown_connector" });
     expect((await add("erp-csv")).body).toMatchObject({ reason: "one_per_process" });

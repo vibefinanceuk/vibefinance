@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 2 October 2026 (decision 0604). A living document: what
+Last updated 2 October 2026 (decision 0605). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,16 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Oracle Fusion Payables, the first ERP connector (0605)
+
+Slice 5 of the connector framework. Oracle Fusion Payables is in the Route
+library as a first version: it creates the invoice with its lines and
+distributions through Oracle's REST API, lets Oracle calculate VAT and
+checks it against the invoice's, and keeps Oracle's invoice id. Each
+distribution's account is built from the company, cost centre and GL code
+to the customer's chart of accounts. It awaits a first run against a real
+Oracle test environment.
 
 ### Interface wording and Branding in the operator console (0604)
 

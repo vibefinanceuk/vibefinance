@@ -1,4 +1,5 @@
 import type { OutboundMapping } from "./outbound-mapping.js";
+import { ORACLE_LISTS, oracleFusionPayablesMapping } from "./oracle-fusion-payables.js";
 
 /**
  * **The connector library — decision 0589**, slice 2 of the connector
@@ -73,6 +74,8 @@ export interface ConnectorDefinition {
   settings?: ConnectorSettings;
   /** Where its target documents its API, for whoever sets it up. */
   vendorDocs?: string;
+  /** Decision 0605: available, but not yet proven against the real system. */
+  maturity?: "first_version";
 }
 
 const ALL_AUTH: ConnectorAuthType[] = ["none", "api_key_header", "bearer", "basic", "oauth2_client_credentials"];
@@ -119,16 +122,25 @@ export const STANDARD_CONNECTORS: ConnectorDefinition[] = [
     multiple: false,
   },
   {
+    // Decision 0605: the first ERP connector, built from Oracle's documented API; a first version.
     id: "oracle-fusion-payables",
     version: 1,
     direction: "destination",
     publisher: "standard",
-    status: "planned",
+    status: "available",
+    maturity: "first_version",
     categories: ["erp"],
-    routeId: null,
+    routeId: "https-out",
     transport: "https",
     formats: ["oracle_invoice_json"],
     multiple: true,
+    settings: {
+      defaults: { method: "POST", format: "mapped", auth: { type: "basic" }, referencePath: "$.InvoiceId" },
+      fixed: ["method", "format"],
+      authTypes: ["basic", "oauth2_client_credentials"],
+    },
+    outboundMapping: oracleFusionPayablesMapping(),
+    lookupLists: Object.values(ORACLE_LISTS),
     vendorDocs: "https://docs.oracle.com/en/cloud/saas/financials/25d/farfa/op-invoices-post.html",
   },
   {

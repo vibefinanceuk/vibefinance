@@ -705,6 +705,8 @@ export function connectorView(instance: { route_id: string; connector_id: string
     publisher: connector.publisher,
     partner: connector.partner ?? null,
     offered: connector.status !== "withdrawn",
+    // Decision 0605: available, not yet proven against the real system.
+    maturity: connector.maturity ?? null,
     latestVersion: connector.version,
     upgradeAvailable: connector.version > version,
     fixed: connector.settings?.fixed ?? [],

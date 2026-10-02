@@ -88,6 +88,8 @@ export function renameLists(mapping: OutboundMapping, rename: (list: string) => 
     for (const step of f.fx) {
       if (step.fn === "look_up" && step.args) step.args = { ...step.args, list: rename(String(step.args.list)) };
     }
+    // Decision 0605: and the lists a built field's parts are looked up in.
+    if (f.built) f.built = f.built.replace(/\{([^{}|]+)\|([^{}]+)\}/g, (_m, source: string, list: string) => `{${source}|${rename(list.trim())}}`);
   }
   return copy;
 }
