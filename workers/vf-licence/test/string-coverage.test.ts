@@ -1681,6 +1681,8 @@ const KEYS_THE_INTERFACE_USES = [
   "help.screen.mapping.34",
   "mapping.retire",
   "mapping.retiretitle",
+  "submit.from.customer",
+  "httpsout.error.not_partner_environment",
   "httpsout.error.connector_name_taken",
   "submit.heading",
   "submit.hint",

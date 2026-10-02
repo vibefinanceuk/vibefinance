@@ -15,6 +15,7 @@ import destUnitsStringsSql from "../../vf-licence/migrations/0234_destination_un
 import libraryStringsSql from "../../vf-licence/migrations/0235_route_library_strings.sql?raw";
 import outboundStringsSql from "../../vf-licence/migrations/0236_outbound_mapping_strings.sql?raw";
 import submitStringsSql from "../../vf-licence/migrations/0242_submit_for_review_strings.sql?raw";
+import submitFromCustomerSql from "../../vf-licence/migrations/0243_submit_from_customer_strings.sql?raw";
 
 /**
  * **Routes and Process routes — decision 0557.** The standard routes with
@@ -49,7 +50,7 @@ const strings: Record<string, string> = {
   "mechanism.file_import": "File import",
   "mechanism.edi": "EDI",
 };
-for (const sql of [stringsSql, destinationStringsSql, formatStringsSql, mappingStringsSql, csvStringsSql, httpsStringsSql, httpsStateStringsSql, replaceKeyStringsSql, mailboxStringsSql, renameStringsSql, httpsOutStringsSql, erpDeliveriesStringsSql, destUnitsStringsSql, libraryStringsSql, outboundStringsSql, submitStringsSql]) {
+for (const sql of [stringsSql, destinationStringsSql, formatStringsSql, mappingStringsSql, csvStringsSql, httpsStringsSql, httpsStateStringsSql, replaceKeyStringsSql, mailboxStringsSql, renameStringsSql, httpsOutStringsSql, erpDeliveriesStringsSql, destUnitsStringsSql, libraryStringsSql, outboundStringsSql, submitStringsSql, submitFromCustomerSql]) {
   for (const m of sql.matchAll(/\('([^']+)', 'en', '((?:[^']|'')*)'\)/g)) strings[m[1]] = m[2].replace(/''/g, "'");
 }
 // 0209 updates the ERP note rather than inserting it.
@@ -1376,6 +1377,17 @@ describe("submitting a Destination for review — decision 0595", () => {
     button("#do-sub-versions", "Withdraw").click();
     await until(() => calls.some((c) => c.path.endsWith("/withdraw")));
     expect(JSON.parse(calls.find((c) => c.path.endsWith("/withdraw"))!.body!)).toEqual({ version: 2 });
+  });
+
+  it("says when it is being built in a customer's environment rather than the partner's sandbox — decision 0596", async () => {
+    stubSub([], STATE({ source: { customerId: "acme", customerName: "Acme Ltd", sandbox: false } }));
+    await openPush();
+    expect(text("#do-sub-source")).toBe("You are working in Acme Ltd's environment, a customer Northwind serves. VibeFinance will see that this version was built here.");
+    expect(document.querySelector("#do-sub-name")).not.toBeNull();
+    document.body.innerHTML = `<main id="shell"></main><main id="viewer" hidden></main>`;
+    stubSub([], STATE({ source: { customerId: "partner-northwind", customerName: "Northwind (partner sandbox)", sandbox: true } }));
+    await openPush();
+    expect(document.querySelector("#do-sub-source")).toBeNull();
   });
 
   it("says why it cannot be submitted: not the partner's person, no published mapping, a draft not published", async () => {

@@ -51,6 +51,7 @@ beforeEach(async () => {
 
 describe("submitting a connector — decision 0595", () => {
   it("says whether an environment is a partner's sandbox, who it serves, and whether this person may submit", async () => {
+    // A customer's own people never see it in the customer's environment.
     expect((await partnerConnectorState(db(), "acme-prod", "dest-1", "x@acme.example")).body).toEqual({ partner: null });
     expect((await partnerConnectorState(db(), "nw-sbx", "dest-1", ANA)).body).toEqual({
       partner: { id: "northwind", name: "Northwind", status: "active" },
@@ -59,6 +60,7 @@ describe("submitting a connector — decision 0595", () => {
         { id: "globex", name: "Globex plc" },
       ],
       canSubmit: true,
+      source: { customerId: "partner-northwind", customerName: "Northwind (partner sandbox)", sandbox: true },
       connector: null,
     });
     expect(((await partnerConnectorState(db(), "nw-sbx", "dest-1", "someone@else.example")).body as { canSubmit: boolean }).canSubmit).toBe(false);
@@ -86,7 +88,7 @@ describe("submitting a connector — decision 0595", () => {
   });
 
   it("refuses a customer's environment, someone not the partner's, a suspended partner, an unlinked audience, and what a connector cannot carry", async () => {
-    expect(await submitPartnerConnector(db(), "acme-prod", submission())).toMatchObject({ status: 403, body: { reason: "not_partner_sandbox" } });
+    expect(await submitPartnerConnector(db(), "acme-prod", submission({ submittedBy: "x@acme.example" }))).toMatchObject({ status: 403, body: { reason: "not_partner_environment" } });
     expect(await submitPartnerConnector(db(), "nw-sbx", submission({ submittedBy: "eve@elsewhere.example" }))).toMatchObject({ status: 403, body: { reason: "not_partner_person" } });
     expect(await submitPartnerConnector(db(), "nw-sbx", submission({ audience: ["other"] }))).toMatchObject({ status: 422, body: { reason: "not_linked" } });
     expect(await submitPartnerConnector(db(), "nw-sbx", submission({ audience: [] }))).toMatchObject({ status: 400, body: { reason: "no_audience" } });
@@ -99,6 +101,34 @@ describe("submitting a connector — decision 0595", () => {
     expect(await submitPartnerConnector(db(), "nw-sbx", submission({ instanceId: "dest-2" }))).toMatchObject({ status: 409, body: { reason: "connector_name_taken" } });
     await handleSuspendPartner(db(), OP, "northwind", true, { reason: "Review" });
     expect(await submitPartnerConnector(db(), "nw-sbx", submission({ instanceId: "dest-3", name: "Other" }))).toMatchObject({ status: 403, body: { reason: "partner_suspended" } });
+  });
+});
+
+/**
+ * **From a customer the partner serves — decision 0596.** Dan had no
+ * partner sandbox, and integrators often build in a customer's own
+ * environment: the partner's people may submit from there too, and the
+ * version says where it was built.
+ */
+describe("submitting from a customer the partner serves — decision 0596", () => {
+  it("lets the partner's people submit from a linked customer's environment, and says where it came from", async () => {
+    expect((await partnerConnectorState(db(), "acme-prod", "dest-9", ANA)).body).toMatchObject({
+      partner: { id: "northwind" },
+      canSubmit: true,
+      source: { customerId: "acme", customerName: "Acme Ltd", sandbox: false },
+    });
+    expect(await submitPartnerConnector(db(), "acme-prod", submission({ instanceId: "dest-9" }))).toMatchObject({ status: 201, body: { version: 1 } });
+    expect(await db().prepare("SELECT source_environment_id, source_instance_id FROM partner_connectors").first()).toEqual({ source_environment_id: "acme-prod", source_instance_id: "dest-9" });
+    expect(await withdrawPartnerConnector(db(), "acme-prod", { instanceId: "dest-9", version: 1, submittedBy: ANA })).toMatchObject({ status: 200 });
+    expect(await withdrawPartnerConnector(db(), "acme-prod", { instanceId: "dest-9", version: 1, submittedBy: "x@acme.example" })).toMatchObject({ status: 403, body: { reason: "not_partner_environment" } });
+  });
+
+  it("never from a customer the partner does not serve, or once it is unlinked", async () => {
+    await db().prepare("INSERT INTO environments (id, customer_id, kind, region, instance_url) VALUES ('other-prod', 'other', 'production', 'eu', 'https://other.example')").run();
+    expect((await partnerConnectorState(db(), "other-prod", "d", ANA)).body).toEqual({ partner: null });
+    expect(await submitPartnerConnector(db(), "other-prod", submission())).toMatchObject({ status: 403, body: { reason: "not_partner_environment" } });
+    await handlePartnerCustomer(db(), OP, "northwind", "DELETE", { customerId: "acme" });
+    expect(await submitPartnerConnector(db(), "acme-prod", submission())).toMatchObject({ status: 403, body: { reason: "not_partner_environment" } });
   });
 });
 

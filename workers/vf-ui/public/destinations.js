@@ -380,7 +380,8 @@ function mappingCard(state, destination) {
 const SUBMISSION_TONE = { submitted: "warn", approved: "ok", returned: "bad", withdrawn: "q" };
 
 /**
- * **Submit for review — decision 0595.** Only in a partner's sandbox:
+ * **Submit for review — decision 0595.** Only for a partner's people, in
+ * its sandbox or (decision 0596) a customer it serves:
  * this Destination, with its settings and published mapping, sent to
  * VibeFinance as a connector for the partner's customers. Its versions
  * and their review, Withdraw while one waits, and the form to submit.
@@ -417,6 +418,10 @@ function submissionCard(destination) {
     );
 
     const blocks = [];
+    // Decision 0596: built in a customer's environment rather than the partner's sandbox.
+    if (s.source && !s.source.sandbox) {
+      blocks.push(el("div", { class: "muted sm", id: "do-sub-source", text: t("submit.from.customer").replace("{customer}", s.source.customerName).replace("{partner}", s.partner.name) }));
+    }
     for (const p of d.problems) blocks.push(el("div", { class: "warn sm", text: t(`submit.problem.${p}`) }));
     if (d.draftNotPublished) blocks.push(el("div", { class: "muted sm", text: t("submit.draftnote").replace("{n}", String(d.draftNotPublished)) }));
     if (!s.canSubmit) blocks.push(el("div", { class: "muted sm", text: t(s.partner.status === "active" ? "submit.notperson" : "submit.suspended").replace("{partner}", s.partner.name) }));

@@ -4,11 +4,12 @@ import { validatePartnerDefinition } from "@vibefinance/shared";
 /**
  * **A partner submits a connector — decision 0595**, step 2 of slice 4.
  *
- * Asked by the partner's sandbox instance with its own environment key
- * (as invitations are, 0593), on behalf of the person signed in there:
+ * Asked by the instance with its own environment key (as invitations
+ * are, 0593), on behalf of the person signed in there:
  *
- * - the sandbox must be a partner's (`partners.sandbox_customer_id`), and
- *   the partner active;
+ * - the environment must be the partner's sandbox
+ *   (`partners.sandbox_customer_id`) or, since decision 0596, one of a
+ *   customer the partner serves; and the partner active;
  * - the person must be one of the partner's people (0592);
  * - the definition must be one a partner connector can carry
  *   (`validatePartnerDefinition`): never an address or a secret;
@@ -22,16 +23,40 @@ import { validatePartnerDefinition } from "@vibefinance/shared";
 interface PartnerOfEnv {
   environmentId: string;
   partner: { id: string; name: string; status: "active" | "suspended" } | null;
+  /** Where it is built: the partner's own sandbox, or a customer it serves (decision 0596). */
+  source: { customerId: string; customerName: string; sandbox: boolean };
 }
 
-async function partnerOfEnvironment(db: D1Database, environmentId: string): Promise<PartnerOfEnv | null> {
-  const env = await db.prepare("SELECT customer_id FROM environments WHERE id = ?").bind(environmentId).first<{ customer_id: string }>();
+/**
+ * The partner a person works for here. In a partner's **sandbox**, that
+ * partner. In **a customer's environment** (decision 0596), the partner
+ * linked to that customer of which this person is one of the people;
+ * none for anyone else, so the customer's own people never see it.
+ */
+async function partnerOfEnvironment(db: D1Database, environmentId: string, email: string | null): Promise<PartnerOfEnv | null> {
+  const env = await db
+    .prepare("SELECT e.customer_id, c.name FROM environments e JOIN customers c ON c.id = e.customer_id WHERE e.id = ?")
+    .bind(environmentId)
+    .first<{ customer_id: string; name: string }>();
   if (!env) return null;
-  const partner = await db
+  const sandboxOf = await db
     .prepare("SELECT id, name, status FROM partners WHERE sandbox_customer_id = ?")
     .bind(env.customer_id)
     .first<{ id: string; name: string; status: "active" | "suspended" }>();
-  return { environmentId, partner: partner ?? null };
+  if (sandboxOf) return { environmentId, partner: sandboxOf, source: { customerId: env.customer_id, customerName: env.name, sandbox: true } };
+  const person = (email ?? "").trim().toLowerCase();
+  const serving = person
+    ? await db
+        .prepare(
+          `SELECT p.id, p.name, p.status FROM partners p
+           JOIN partner_customers pc ON pc.partner_id = p.id AND pc.customer_id = ?
+           JOIN partner_people pp ON pp.partner_id = p.id AND pp.email = ?
+           ORDER BY lower(p.name) LIMIT 1`
+        )
+        .bind(env.customer_id, person)
+        .first<{ id: string; name: string; status: "active" | "suspended" }>()
+    : null;
+  return { environmentId, partner: serving ?? null, source: { customerId: env.customer_id, customerName: env.name, sandbox: false } };
 }
 
 async function linkedCustomers(db: D1Database, partnerId: string) {
@@ -77,7 +102,7 @@ const versionView = (v: VersionRow) => ({
  * Destination named, with its versions.
  */
 export async function partnerConnectorState(db: D1Database, environmentId: string, instanceId: string | null, email: string | null): Promise<RouteResult> {
-  const found = await partnerOfEnvironment(db, environmentId);
+  const found = await partnerOfEnvironment(db, environmentId, email);
   if (!found) return { status: 404, body: { error: "no such environment" } };
   if (!found.partner) return { status: 200, body: { partner: null } };
   const p = found.partner;
@@ -101,6 +126,7 @@ export async function partnerConnectorState(db: D1Database, environmentId: strin
       partner: { id: p.id, name: p.name, status: p.status },
       customers: await linkedCustomers(db, p.id),
       canSubmit: p.status === "active" && !!person,
+      source: found.source,
       connector,
     },
   };
@@ -110,9 +136,13 @@ const str = (v: unknown) => (typeof v === "string" ? v.trim() : "");
 
 /** `POST /environments/:id/partner-connectors` — submit a version for review. */
 export async function submitPartnerConnector(db: D1Database, environmentId: string, body: Record<string, unknown>, now = new Date()): Promise<RouteResult> {
-  const found = await partnerOfEnvironment(db, environmentId);
+  const found = await partnerOfEnvironment(db, environmentId, str(body.submittedBy));
   if (!found) return { status: 404, body: { error: "no such environment" } };
-  if (!found.partner) return { status: 403, body: { error: "this is not a partner's sandbox", reason: "not_partner_sandbox" } };
+  if (!found.partner) {
+    return found.source.sandbox
+      ? { status: 403, body: { error: "this is not a partner's sandbox", reason: "not_partner_sandbox" } }
+      : { status: 403, body: { error: `only the people of a partner serving ${found.source.customerName} may submit from here`, reason: "not_partner_environment" } };
+  }
   const p = found.partner;
   if (p.status !== "active") return { status: 403, body: { error: `${p.name} is suspended`, reason: "partner_suspended" } };
   const email = str(body.submittedBy).toLowerCase();
@@ -171,8 +201,8 @@ export async function submitPartnerConnector(db: D1Database, environmentId: stri
 
 /** `POST /environments/:id/partner-connectors/withdraw` `{ instanceId, version, submittedBy }` — take back a version still waiting. */
 export async function withdrawPartnerConnector(db: D1Database, environmentId: string, body: Record<string, unknown>): Promise<RouteResult> {
-  const found = await partnerOfEnvironment(db, environmentId);
-  if (!found?.partner) return { status: 403, body: { error: "this is not a partner's sandbox", reason: "not_partner_sandbox" } };
+  const found = await partnerOfEnvironment(db, environmentId, str(body.submittedBy));
+  if (!found?.partner) return { status: 403, body: { error: "only a partner's people may withdraw it here", reason: "not_partner_environment" } };
   const email = str(body.submittedBy).toLowerCase();
   const person = email ? await db.prepare("SELECT 1 FROM partner_people WHERE partner_id = ? AND email = ?").bind(found.partner.id, email).first() : null;
   if (!person) return { status: 403, body: { error: "only the partner's people may withdraw it", reason: "not_partner_person" } };

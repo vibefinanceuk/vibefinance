@@ -13,7 +13,8 @@ import { askLicence, type LicenceLink } from "./invitations-route.js";
 /**
  * **Submit for review — decision 0595**, step 2 of slice 4.
  *
- * In a partner's sandbox, an HTTPS out Destination with its settings and
+ * In a partner's sandbox, or (decision 0596) the environment of a customer
+ * the partner serves, an HTTPS out Destination with its settings and
  * (where it sends its own layout) its published outbound mapping becomes
  * a connector version, sent to the control plane for VibeFinance's
  * review. Only one of the partner's people may submit; the control plane
