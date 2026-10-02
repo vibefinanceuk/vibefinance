@@ -218,6 +218,7 @@ import {
   handleSaveLookupList,
 } from "./lookup-lists-route.js";
 import { handleRereadPart } from "./mapping-reread.js";
+import { handleInviteUser, handleListUserInvitations } from "./invitations-route.js";
 import {
   handleCompileOutboundFunction,
   handleCopyOutboundMapping,
@@ -3229,6 +3230,39 @@ export default {
         return json({ error: t("invalidJsonBody", resolveLocale(env.LOCALE)) }, 400);
       }
       const result = await handleSetSpendLimit(db, spendLimitMatch[1], (body ?? {}) as Record<string, unknown>);
+      return json(result.body, result.status);
+    }
+
+    /**
+     * **Invitations — decision 0593.** `Admin.UserManagement`, as adding
+     * the person is; a delegated administrator only for people in the
+     * units they administer.
+     */
+    const inviteUserMatch = pathname.match(/^\/org\/users\/([^/]+)\/invite$/);
+    if ((inviteUserMatch && request.method === "POST") || (pathname === "/org/users/invitations" && request.method === "GET")) {
+      const { db } = resolveTenant(request, env);
+      const auth = await authenticatePerson(db, request, env);
+      if (!auth.user) return json({ error: auth.reason }, 401);
+      if (!(await hasPermission(db, auth.user.id, "Admin.UserManagement"))) {
+        return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
+      }
+      if (!env.LICENCE_SERVICE || !env.ENVIRONMENT_ID || !env.VF_LICENCE_API_KEY) {
+        return json({ error: "LICENCE_SERVICE, ENVIRONMENT_ID and VF_LICENCE_API_KEY must be configured", reason: "not_configured" }, 503);
+      }
+      const link = { service: env.LICENCE_SERVICE, environmentId: env.ENVIRONMENT_ID, apiKey: env.VF_LICENCE_API_KEY };
+      if (!inviteUserMatch) {
+        const result = await handleListUserInvitations(link);
+        return json(result.body, result.status);
+      }
+      const userId = decodeURIComponent(inviteUserMatch[1]);
+      const units = await unitsWherePermitted(db, auth.user.id, "Admin.UserManagement");
+      if (units !== null) {
+        const target = await db.prepare("SELECT unit_id FROM org_users WHERE id = ?").bind(userId).first<{ unit_id: string | null }>();
+        if (target && (!target.unit_id || !units.includes(target.unit_id))) {
+          return json({ error: t("forbidden", resolveLocale(env.LOCALE)), reason: "outside_administered_units" }, 403);
+        }
+      }
+      const result = await handleInviteUser(db, link, userId, auth.user.email ?? null);
       return json(result.body, result.status);
     }
 

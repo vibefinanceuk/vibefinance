@@ -69,6 +69,9 @@ const FORWARDED: readonly RegExp[] = [
   // Partners — decision 0592.
   /^\/partners$/,
   /^\/partners\/[^/]+\/(people|customers|suspend|reinstate)$/,
+  // Invitations — decision 0593.
+  /^\/invitations$/,
+  /^\/invitations\/[^/]+\/(resend|cancel)$/,
 ];
 
 export default {

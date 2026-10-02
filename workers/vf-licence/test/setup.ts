@@ -225,6 +225,8 @@ import destinationUnitsStringsSql from "../migrations/0234_destination_units_str
 import routeLibraryStringsSql from "../migrations/0235_route_library_strings.sql?raw";
 import outboundMappingStringsSql from "../migrations/0236_outbound_mapping_strings.sql?raw";
 import partnersSql from "../migrations/0237_partners.sql?raw";
+import invitationsSql from "../migrations/0238_invitations.sql?raw";
+import invitationStringsSql from "../migrations/0239_invitation_strings.sql?raw";
 
 function stripSqlComments(sql: string): string {
   return sql
@@ -248,7 +250,7 @@ function toOneStatementPerLine(sql: string): string {
 // functions above), and storage does not appear to reset between it()
 // blocks in this pool-workers version, so every table is dropped and
 // recreated before each test rather than relying on framework isolation.
-const TABLES_IN_DROP_ORDER = ["partner_customers", "partner_people", "partners", "admin_actions", "ui_strings", "customer_branding", "user_environment_access", "user_credentials", "login_attempts", "signup_requests", "usage_periods", "licences", "environments", "customers"];
+const TABLES_IN_DROP_ORDER = ["invitations", "partner_customers", "partner_people", "partners", "admin_actions", "ui_strings", "customer_branding", "user_environment_access", "user_credentials", "login_attempts", "signup_requests", "usage_periods", "licences", "environments", "customers"];
 
 export async function applyTestSchema(): Promise<void> {
   for (const table of TABLES_IN_DROP_ORDER) {
@@ -483,5 +485,7 @@ export async function applyTestSchema(): Promise<void> {
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(routeLibraryStringsSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(outboundMappingStringsSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(partnersSql)));
+  await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(invitationsSql)));
+  await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(invitationStringsSql)));
 
 }

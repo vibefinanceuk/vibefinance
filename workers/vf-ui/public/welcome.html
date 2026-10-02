@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>VibeFinance</title>
+
+<!--
+  Accepting an invitation — decision 0593.
+
+  The page an invitation email links to. The token is in the fragment
+  (#t=…), which a browser never sends to a server, so it is in no log;
+  the page posts it with the 6-digit code and the password the person
+  chooses. Laid out as the sign-in page is, and every word fetched by key.
+-->
+<link rel="stylesheet" href="/tokens.css">
+<script>
+  try {
+    var mood = localStorage.getItem("vf-mood");
+    if (!mood) mood = window.matchMedia("(prefers-color-scheme: dark)").matches ? "night" : "day";
+    document.documentElement.setAttribute("data-mood", mood);
+  } catch (e) {}
+</script>
+<link rel="stylesheet" href="/app.css">
+</head>
+
+<body>
+<main id="welcome" hidden>
+  <div class="mark"></div>
+  <h1 data-t="welcome.title"></h1>
+  <p class="sub" id="welcome-sub"></p>
+
+  <form id="welcome-form" autocomplete="on" hidden>
+    <input type="email" id="welcome-email" name="email" autocomplete="username" hidden readonly>
+    <div class="field">
+      <label for="welcome-code" data-t="welcome.code"></label>
+      <input id="welcome-code" name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="7" required>
+    </div>
+    <div class="field">
+      <label for="welcome-password" data-t="welcome.password"></label>
+      <input id="welcome-password" name="password" type="password" autocomplete="new-password">
+    </div>
+    <div class="field">
+      <label for="welcome-again" data-t="welcome.again"></label>
+      <input id="welcome-again" name="again" type="password" autocomplete="new-password">
+    </div>
+    <button type="submit" id="welcome-submit" data-t="welcome.submit"></button>
+  </form>
+
+  <div class="problem" id="welcome-problem" role="alert"></div>
+  <div class="since" id="welcome-done"></div>
+  <p id="welcome-signin" hidden><a href="/" data-t="welcome.signin"></a></p>
+</main>
+
+<script type="module" src="/welcome.js"></script>
+</body>
+</html>

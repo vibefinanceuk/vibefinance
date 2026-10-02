@@ -1704,3 +1704,115 @@ describe("teams — decision 0332", () => {
     expect(document.body.textContent).toContain("team t1 already exists");
   });
 });
+
+/**
+ * **Inviting a person — decision 0593.** The People tab says where each
+ * person stands, and offers Invite; a new person is invited as they are
+ * added, unless that is unticked.
+ */
+describe("invitations — decision 0593", () => {
+  const USERS = {
+    ...EMPTY,
+    users: [
+      { id: "u-ana", name: "Ana", email: "ana@acme.example" },
+      { id: "u-ben", name: "Ben", email: "Ben@Acme.example" },
+      { id: "u-cy", name: "Cy", email: "cy@acme.example" },
+    ],
+  };
+  const INVITE_STRINGS = {
+    "invite.column": "Signing in",
+    "invite.onadd": "Email them an invitation to choose their password",
+    "invite.send": "Invite",
+    "invite.again": "Invite again",
+    "invite.sent": "An invitation has been emailed to {email}.",
+    "invite.unknown": "Could not be checked",
+    "invite.status.none": "Not invited",
+    "invite.status.pending": "Invited, until {until}",
+    "invite.status.notsent": "Invitation not sent",
+    "invite.status.accepted": "Can sign in",
+    "invite.status.expired": "Invitation expired",
+    "invite.error.not_sent": "The invitation was made, but its email could not be sent.",
+    "invite.error.failed": "The invitation could not be sent. Try again.",
+  };
+  Object.assign(STRINGS.strings, INVITE_STRINGS);
+  const LISTED = {
+    invitations: [
+      { email: "ana@acme.example", status: "accepted" },
+      { email: "ben@acme.example", status: "pending", expiresAt: "2026-10-05T09:00:00Z", sendError: null },
+    ],
+  };
+  const cell = (id: string) => document.querySelector(`tr[data-user="${id}"] .invitecell`) as HTMLElement;
+  const calls = () => (fetch as unknown as { mock: { calls: unknown[][] } }).mock.calls;
+
+  it("shows where each person stands, and offers Invite to all but those who can sign in", async () => {
+    await openRolesAs(["Admin.UserManagement"], USERS, { "/api/org/users/invitations": LISTED });
+    switchTab("People");
+    expect([...document.querySelectorAll("th")].map((th) => th.textContent)).toContain("Signing in");
+    expect(cell("u-ana").textContent).toBe("Can sign in");
+    expect(cell("u-ana").querySelector("button")).toBeNull();
+    expect(cell("u-ben").textContent).toContain("Invited, until");
+    expect(cell("u-ben").querySelector("button")?.textContent).toBe("Invite again");
+    expect(cell("u-cy").textContent).toContain("Not invited");
+    expect(cell("u-cy").querySelector("button")?.textContent).toBe("Invite");
+  });
+
+  it("invites a person, and says it went or why not", async () => {
+    await openRolesAs(["Admin.UserManagement"], USERS, {
+      "/api/org/users/invitations": LISTED,
+      "POST /api/org/users/u-cy/invite": { ok: true, status: 201, json: async () => ({ invitation: { email: "cy@acme.example", status: "pending" } }) },
+      "POST /api/org/users/u-ben/invite": { ok: false, status: 502, json: async () => ({ reason: "not_sent", error: "x" }) },
+    });
+    switchTab("People");
+    (cell("u-cy").querySelector("button") as HTMLElement).click();
+    await new Promise((r) => setTimeout(r, 10));
+    expect(calls().some(([url, init]) => url === "/api/org/users/u-cy/invite" && (init as RequestInit)?.method === "POST")).toBe(true);
+    expect(cell("u-cy").querySelector(".invitenote")?.textContent).toBe("An invitation has been emailed to cy@acme.example.");
+    (cell("u-ben").querySelector("button") as HTMLElement).click();
+    await new Promise((r) => setTimeout(r, 10));
+    expect(cell("u-ben").querySelector(".invitenote")?.textContent).toBe("The invitation was made, but its email could not be sent.");
+  });
+
+  it("says so when the invitations cannot be read, and shows nothing of them without Admin.UserManagement", async () => {
+    await openRolesAs(["Admin.UserManagement"], USERS, { "/api/org/users/invitations": { ok: false, status: 503, json: async () => ({}) } });
+    switchTab("People");
+    expect(cell("u-ana").textContent).toBe("Could not be checked");
+    document.body.innerHTML = `<main id="shell"></main><main id="viewer" hidden></main>`;
+    vi.resetModules();
+    await openRolesAs(["Admin.Configure"], USERS);
+    switchTab("People");
+    expect(document.querySelector(".invitecell")).toBeNull();
+  });
+
+  it("invites a new person as they are added, unless unticked", async () => {
+    await openRolesAs(["Admin.UserManagement"], { ...EMPTY }, {
+      "POST /api/org/users": { ok: true, json: async () => ({ id: "usr1", name: "Alice", email: "alice@acme.com", apiKey: "vf_live_secret123" }) },
+      "POST /api/org/users/usr1/invite": { ok: true, status: 201, json: async () => ({ invitation: { email: "alice@acme.com", status: "pending" } }) },
+    });
+    switchTab("People");
+    ([...document.querySelectorAll("button")].find((b) => b.textContent?.includes("New person")) as HTMLElement).click();
+    expect((document.querySelector("#newperson-invite") as HTMLInputElement).checked).toBe(true);
+    const inputs = document.querySelectorAll<HTMLInputElement>(".editgrid input");
+    inputs[0].value = "Alice";
+    inputs[1].value = "alice@acme.com";
+    ([...document.querySelectorAll("button")].find((b) => b.textContent?.includes("Create")) as HTMLElement).click();
+    await new Promise((r) => setTimeout(r, 10));
+    expect(document.querySelector("#newperson-invited")?.textContent).toBe("An invitation has been emailed to alice@acme.com.");
+    expect(document.querySelector<HTMLInputElement>(".apikeydisplay")?.value).toBe("vf_live_secret123");
+  });
+
+  it("does not invite when unticked", async () => {
+    await openRolesAs(["Admin.UserManagement"], { ...EMPTY }, {
+      "POST /api/org/users": { ok: true, json: async () => ({ id: "usr1", name: "Alice", email: "alice@acme.com", apiKey: "vf_live_secret123" }) },
+    });
+    switchTab("People");
+    ([...document.querySelectorAll("button")].find((b) => b.textContent?.includes("New person")) as HTMLElement).click();
+    (document.querySelector("#newperson-invite") as HTMLInputElement).checked = false;
+    const inputs = document.querySelectorAll<HTMLInputElement>(".editgrid input");
+    inputs[0].value = "Alice";
+    inputs[1].value = "alice@acme.com";
+    ([...document.querySelectorAll("button")].find((b) => b.textContent?.includes("Create")) as HTMLElement).click();
+    await new Promise((r) => setTimeout(r, 10));
+    expect(calls().some(([url]) => String(url).endsWith("/invite"))).toBe(false);
+    expect(document.querySelector("#newperson-invited")).toBeNull();
+  });
+});

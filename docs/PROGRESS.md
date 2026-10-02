@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 1 October 2026 (decision 0592). A living document: what
+Last updated 2 October 2026 (decision 0593). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,16 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Invitations (0593)
+
+A person is invited by email instead of having a password set by curl: a
+link and a 6-digit code, working once for 72 hours, with which they choose
+their own password and are given their access. The operator invites from
+the operator console (any customer, and a partner's people); a customer's
+administrator invites from the Access screen, and a new person is invited
+as they are added. Next: step 2 of slice 4, partners submitting
+connectors for review.
 
 ### Partners (0592)
 

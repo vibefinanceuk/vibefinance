@@ -146,6 +146,7 @@ export default defineConfig({
       "/destinations.js": resolve(__dirname, "public/destinations.js"),
       "/route-library.js": resolve(__dirname, "public/route-library.js"),
       "/outbound-editor.js": resolve(__dirname, "public/outbound-editor.js"),
+      "/welcome.js": resolve(__dirname, "public/welcome.js"),
       /**
        * **Missed by decision 0470, caught while building decision
        * 0471** — `collaborators.js` was added and imported by

@@ -1,3 +1,4 @@
+import welcomeHtml from "../public/welcome.html?raw";
 import { SELF } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 
@@ -272,6 +273,26 @@ describe("the interface's words come from the control plane (decision 0107)", ()
     const res = await SELF.fetch("https://ui.example.com/api/ui-strings?locale=de");
     // 503 from the stubbed binding, not 404: the route exists.
     expect(res.status).not.toBe(404);
+  });
+
+  it("proxies viewing and accepting an invitation, and nothing else of them (decision 0593)", async () => {
+    for (const path of ["/api/invitations/view", "/api/invitations/accept"]) {
+      const res = await SELF.fetch(`https://ui.example.com${path}`, { method: "POST", body: "{}" });
+      expect(res.status, path).not.toBe(404);
+    }
+    // Making, listing, resending and cancelling are the operator's, never the page's.
+    for (const path of ["/api/invitations", "/api/invitations/abc/resend", "/api/invitations/abc/cancel"]) {
+      expect((await SELF.fetch(`https://ui.example.com${path}`, { method: "POST", body: "{}" })).status, path).toBe(404);
+    }
+  });
+
+  it("serves the welcome page with no English in its markup", async () => {
+    // Read as the file it is: the asset layer serves it before the Worker runs.
+    const html = welcomeHtml;
+    expect(html).toContain('id="welcome"');
+    // The token travels in the fragment, and no referrer carries it on.
+    expect(html).toContain('<meta name="referrer" content="no-referrer">');
+    for (const literal of [">Code<", ">Password<", ">Choose your password<", ">Welcome<"]) expect(html, literal).not.toContain(literal);
   });
 
   it("ships no English labels in the markup", async () => {
@@ -734,6 +755,8 @@ describe("paths the app is allowed to reach (decision 0212)", () => {
     "/org/users",
     "/org/users/usr1/authority-limits",
     "/org/users/usr1",
+    "/org/users/usr1/invite",
+    "/org/users/invitations",
     "/org/users/usr1/spend-limit",
     "/org/teams",
     "/org/teams/t1",

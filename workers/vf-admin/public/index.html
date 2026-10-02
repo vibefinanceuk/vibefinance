@@ -91,6 +91,8 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 18px; margin-top: 10px; }
 .cols h4 { font-size: var(--text-sm); color: var(--text-muted); margin: 0 0 6px; font-weight: 600; }
 .line { display: flex; gap: 8px; align-items: center; justify-content: space-between; padding: 4px 0; }
+.line > span:last-child { display: flex; gap: 6px; flex: none; }
+#invitations td:last-child { white-space: nowrap; }
 .addrow { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
 input, select { background: var(--surface-1); color: var(--text-primary); border: 0.5px solid var(--border-strong); border-radius: var(--radius); padding: 4px 8px; min-height: 30px; }
 .empty { padding: 24px 10px; text-align: center; color: var(--text-muted); }
@@ -115,8 +117,10 @@ input, select { background: var(--surface-1); color: var(--text-primary); border
   <p class="sm muted" style="margin:-6px 0 12px">
     System integrators who build connectors in a sandbox of their own, for
     the customers linked to them here. Their sandbox is an ordinary customer:
-    provision its environment, and set its people's passwords and access, as
-    for any customer.
+    provision its environment as for any customer. Its people are invited by
+    email once it has one: an invitation lets them sign in, and its first
+    administrator needs a user in the sandbox, as any new customer's does;
+    they then add and invite colleagues from Access.
   </p>
   <div class="addrow" id="partner-new">
     <input id="partner-id" placeholder="id, e.g. northwind" size="18">
@@ -124,6 +128,21 @@ input, select { background: var(--surface-1); color: var(--text-primary); border
     <button id="partner-create" class="approve">Add partner</button>
   </div>
   <div id="partners"><div class="empty">Loading…</div></div>
+</div>
+
+<div class="panel" id="invitations-panel">
+  <h2>Invitations</h2>
+  <p class="sm muted" style="margin:-6px 0 12px">
+    An email with a link and a 6-digit code. The person chooses their own
+    password, and is given every environment of the customer. It works
+    once, for 72 hours; five wrong codes spend it.
+  </p>
+  <div class="addrow">
+    <select id="invite-customer"></select>
+    <input id="invite-email" placeholder="email" size="28">
+    <button id="invite-send" class="approve">Invite</button>
+  </div>
+  <div id="invitations" style="margin-top:10px"><div class="empty">Loading…</div></div>
 </div>
 
 <div class="panel">
@@ -249,6 +268,8 @@ async function act(path, method, body) {
     return true;
   } catch (err) {
     note(err.message);
+    // A refusal can still have changed something (an invitation made but not sent), so show what is.
+    await loadPartners();
     return false;
   }
 }
@@ -259,6 +280,52 @@ function button(label, onclick, className = "") {
   if (className) b.className = className;
   b.onclick = onclick;
   return b;
+}
+
+/** Where a person stands: signed in, invited, or not yet. */
+function invitationState(person) {
+  if (person.canSignIn) return "can sign in to the sandbox";
+  const i = person.invitation;
+  if (i?.status === "pending" && i.sendError) return `invitation not sent: ${i.sendError}`;
+  if (i?.status === "pending") return `invited, until ${String(i.expiresAt).slice(0, 16).replace("T", " ")}`;
+  if (i?.status === "expired") return "invitation expired";
+  if (i?.status === "spent") return "invitation spent (too many wrong codes)";
+  return !person.hasCredential ? "not invited yet" : "no sandbox access yet";
+}
+
+/**
+ * **Invitations — decision 0593.** Invite a person to any customer, and
+ * see the latest: who, where, its state, Resend and Cancel.
+ */
+async function loadInvitations(customers) {
+  const { invitations = [] } = await api("/invitations");
+  const names = new Map(customers.map((c) => [c.id, c.name]));
+  const rows = invitations.slice(0, 30).map((i) => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td><div>${escapeHtml(i.email)}</div><div class="sm muted">${escapeHtml(i.createdVia === "operator" ? `by ${i.createdBy ?? "?"}` : `by ${i.createdBy ?? "?"} in ${i.createdVia.slice(12)}`)}</div></td>
+      <td class="sm">${escapeHtml(names.get(i.customerId) ?? i.customerId)}</td>
+      <td class="sm ${i.status === "accepted" ? "outcome-recorded" : i.status === "pending" && !i.sendError ? "" : "outcome-refused"}">${escapeHtml(i.status === "pending" && i.sendError ? `not sent: ${i.sendError}` : i.status)}</td>
+      <td class="sm">${escapeHtml(String(i.status === "accepted" ? i.acceptedAt : i.expiresAt).slice(0, 16).replace("T", " "))}</td>
+      <td></td>`;
+    const cell = tr.lastElementChild;
+    if (i.status !== "accepted" && i.status !== "cancelled") cell.append(button("Resend", () => act(`/invitations/${encodeURIComponent(i.id)}/resend`, "POST", {})));
+    if (i.status === "pending") cell.append(button("Cancel", () => act(`/invitations/${encodeURIComponent(i.id)}/cancel`, "POST", {})));
+    cell.querySelectorAll("button + button").forEach((b) => (b.style.marginLeft = "6px"));
+    return tr;
+  });
+  document.getElementById("invitations").replaceChildren(table(["Who", "Customer", "State", "Until / accepted", ""], rows, "No invitations yet."));
+  const pick = document.getElementById("invite-customer");
+  const chosen = pick.value;
+  pick.replaceChildren(
+    ...customers.map((c) => {
+      const o = document.createElement("option");
+      o.value = c.id;
+      o.textContent = `${c.name} (${c.id})`;
+      return o;
+    })
+  );
+  if (chosen) pick.value = chosen;
 }
 
 function partnerBlock(p, customers) {
@@ -304,9 +371,16 @@ function partnerBlock(p, customers) {
   for (const person of p.people) {
     const line = document.createElement("div");
     line.className = "line sm";
-    const state = person.canSignIn ? "can sign in to the sandbox" : !person.hasCredential ? "no sandbox password yet" : "no sandbox access yet";
-    line.innerHTML = `<span>${escapeHtml(person.email)} <span class="${person.canSignIn ? "outcome-recorded" : "outcome-refused"}">· ${state}</span></span>`;
-    line.append(button("Remove", () => act(`${base}/people`, "DELETE", { email: person.email })));
+    const state = invitationState(person);
+    line.innerHTML = `<span>${escapeHtml(person.email)} <span class="${person.canSignIn ? "outcome-recorded" : "outcome-refused"}">· ${escapeHtml(state)}</span></span>`;
+    const buttons = document.createElement("span");
+    // Decision 0593: an invitation in place of a password set by curl.
+    if (!person.canSignIn && p.sandbox.environments.length > 0) {
+      const pending = person.invitation?.status === "pending" && !person.invitation.sendError;
+      buttons.append(button(pending ? "Invite again" : "Invite", () => act("/invitations", "POST", { email: person.email, customerId: p.sandbox.customerId })));
+    }
+    buttons.append(button("Remove", () => act(`${base}/people`, "DELETE", { email: person.email })));
+    line.append(buttons);
     people.append(line);
   }
   const addPerson = document.createElement("div");
@@ -314,7 +388,15 @@ function partnerBlock(p, customers) {
   const email = document.createElement("input");
   email.placeholder = "email";
   email.className = "person-email";
-  addPerson.append(email, button("Add person", () => act(`${base}/people`, "POST", { email: email.value })));
+  addPerson.append(
+    email,
+    button("Add person", async () => {
+      const value = email.value;
+      if (!(await act(`${base}/people`, "POST", { email: value }))) return;
+      // With a sandbox to sign in to, they are invited at once (decision 0593).
+      if (p.sandbox.environments.length > 0) await act("/invitations", "POST", { email: value, customerId: p.sandbox.customerId });
+    })
+  );
   people.append(addPerson);
 
   // The customers it serves.
@@ -376,10 +458,16 @@ async function loadPartners() {
     } else {
       holder.replaceChildren(...partners.map((p) => partnerBlock(p, customers)));
     }
+    await loadInvitations(customers);
   } catch (err) {
     note(err.message);
   }
 }
+
+document.getElementById("invite-send").onclick = async () => {
+  const email = document.getElementById("invite-email");
+  if (await act("/invitations", "POST", { email: email.value, customerId: document.getElementById("invite-customer").value })) email.value = "";
+};
 
 document.getElementById("partner-create").onclick = async () => {
   const id = document.getElementById("partner-id");

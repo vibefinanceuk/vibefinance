@@ -36,6 +36,14 @@ interface PartnerRow {
   suspended_reason: string | null;
 }
 
+/** `id|status|expiresAt|sendError`, from the list's subquery, as an object; a pending one past its time is expired. */
+function invitationOf(packed: string | null) {
+  if (!packed) return null;
+  const [id, status, expiresAt, ...rest] = packed.split("|");
+  const sendError = rest.join("|") || null;
+  return { id, status: status === "pending" && new Date(expiresAt).getTime() <= Date.now() ? "expired" : status, expiresAt, sendError };
+}
+
 const str = (v: unknown) => (typeof v === "string" ? v.trim() : "");
 
 async function partnerOf(db: D1Database, id: string): Promise<PartnerRow | null> {
@@ -59,11 +67,13 @@ export async function handleListPartners(db: D1Database): Promise<RouteResult> {
           `SELECT pp.email, pp.added_at,
                   EXISTS (SELECT 1 FROM user_credentials c WHERE c.email = pp.email AND c.customer_id = ?) AS has_credential,
                   (SELECT count(*) FROM user_environment_access a JOIN environments e ON e.id = a.environment_id
-                    WHERE a.email = pp.email AND e.customer_id = ?) AS environments
+                    WHERE a.email = pp.email AND e.customer_id = ?) AS environments,
+                  (SELECT i.id || '|' || i.status || '|' || i.expires_at || '|' || COALESCE(i.send_error, '') FROM invitations i
+                    WHERE i.email = pp.email AND i.customer_id = ? ORDER BY i.created_at DESC LIMIT 1) AS invitation
            FROM partner_people pp WHERE pp.partner_id = ? ORDER BY pp.email`
         )
-        .bind(p.sandbox_customer_id, p.sandbox_customer_id, p.id)
-        .all<{ email: string; added_at: string; has_credential: number; environments: number }>()
+        .bind(p.sandbox_customer_id, p.sandbox_customer_id, p.sandbox_customer_id, p.id)
+        .all<{ email: string; added_at: string; has_credential: number; environments: number; invitation: string | null }>()
     ).results;
     const customers = (
       await db
@@ -92,6 +102,8 @@ export async function handleListPartners(db: D1Database): Promise<RouteResult> {
         canSignIn: x.has_credential === 1 && x.environments > 0,
         hasCredential: x.has_credential === 1,
         environments: x.environments,
+        // Decision 0593: their latest invitation to the sandbox.
+        invitation: invitationOf(x.invitation),
       })),
       customers: customers.map((c) => ({ id: c.id, name: c.name, linkedAt: c.linked_at, linkedBy: c.linked_by })),
     });

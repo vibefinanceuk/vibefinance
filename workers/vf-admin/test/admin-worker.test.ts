@@ -83,6 +83,15 @@ describe("which routes it will forward", () => {
     expect((await SELF.fetch(asOperator("/api/partners/northwind/delete"))).status).toBe(404);
   });
 
+  it("forwards the invitation routes, but never the public ones — decision 0593", async () => {
+    for (const path of ["/api/invitations", "/api/invitations/abc/resend", "/api/invitations/abc/cancel"]) {
+      expect((await SELF.fetch(asOperator(path))).status, path).not.toBe(404);
+    }
+    // Viewing and accepting are the invited person's, through the app, never the operator's.
+    expect((await SELF.fetch(asOperator("/api/invitations/accept"))).status).toBe(404);
+    expect((await SELF.fetch(asOperator("/api/invitations/view"))).status).toBe(404);
+  });
+
   it("refuses a path that only looks like one", async () => {
     const response = await SELF.fetch(asOperator("/api/signup-requests/../rules"));
     expect([404, 403]).toContain(response.status);

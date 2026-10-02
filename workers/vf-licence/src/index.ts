@@ -41,6 +41,16 @@ import {
 import { handleProvisionTrial, expireOverdueLicences, warnExpiringLicences , handleEnvironmentConfig } from "./provision-route.js";
 import { recordAdminAction, handleListAdminActions, actorFrom } from "./admin-audit.js";
 import {
+  acceptInvitation,
+  cancelInvitation,
+  invite,
+  listForEnvironment,
+  listInvitations,
+  resendInvitation,
+  viewInvitation,
+  type InvitationMailer,
+} from "./invitations.js";
+import {
   handleCreatePartner,
   handleListCustomers,
   handleListPartners,
@@ -85,6 +95,19 @@ export interface Env {
    * docs/decisions/0006-endpoint-authentication.md.
    */
   ADMIN_API_KEY?: string;
+  /**
+   * **Invitations — decision 0593.** The Resend key (a secret, set with
+   * `wrangler secret put RESEND_API_KEY`, the same key vf-app sends
+   * supplier email with), the address invitations come from, and the
+   * welcome page their links open.
+   */
+  RESEND_API_KEY?: string;
+  INVITE_FROM_ADDRESS?: string;
+  INVITE_LINK_BASE?: string;
+}
+
+function mailerOf(env: Env): InvitationMailer {
+  return { apiKey: env.RESEND_API_KEY, from: env.INVITE_FROM_ADDRESS, linkBase: env.INVITE_LINK_BASE };
 }
 
 function json(body: unknown, status = 200): Response {
@@ -145,7 +168,10 @@ export function isPrivileged(method: string, pathname: string): boolean {
     (pathname === "/customers" && method === "GET") ||
     (pathname === "/partners" && (method === "GET" || method === "POST")) ||
     (matches(/^\/partners\/[^/]+\/(people|customers)$/) && (method === "POST" || method === "DELETE")) ||
-    (matches(/^\/partners\/[^/]+\/(suspend|reinstate)$/) && method === "POST")
+    (matches(/^\/partners\/[^/]+\/(suspend|reinstate)$/) && method === "POST") ||
+    // Invitations — decision 0593. Viewing and accepting one are public; making one is the operator's.
+    (pathname === "/invitations" && (method === "GET" || method === "POST")) ||
+    (matches(/^\/invitations\/[^/]+\/(resend|cancel)$/) && method === "POST")
   );
 }
 
@@ -507,6 +533,34 @@ export default {
       return json(result.body, result.status);
     }
 
+    // Invitations — decision 0593.
+    if (url.pathname === "/invitations" || url.pathname.startsWith("/invitations/")) {
+      const body = request.method === "GET" ? {} : (((await request.json().catch(() => ({}))) ?? {}) as Record<string, unknown>);
+      let result: { status: number; body: Record<string, unknown> } | null = null;
+      if (url.pathname === "/invitations/view" && request.method === "POST") result = await viewInvitation(env.CONTROL_DB, body);
+      else if (url.pathname === "/invitations/accept" && request.method === "POST") result = await acceptInvitation(env.CONTROL_DB, body);
+      else if (url.pathname === "/invitations" && request.method === "GET") result = await listInvitations(env.CONTROL_DB, url.searchParams.get("customerId"));
+      else if (url.pathname === "/invitations" && request.method === "POST") {
+        const ids = Array.isArray(body.environmentIds) ? body.environmentIds.filter((x): x is string => typeof x === "string") : null;
+        result = await invite(env.CONTROL_DB, mailerOf(env), {
+          email: body.email,
+          customerId: typeof body.customerId === "string" ? body.customerId : "",
+          environmentIds: ids && ids.length > 0 ? ids : null,
+          createdBy: actorFrom(request).actor,
+          createdVia: "operator",
+        });
+      } else {
+        const m = url.pathname.match(/^\/invitations\/([^/]+)\/(resend|cancel)$/);
+        if (m && request.method === "POST") {
+          result =
+            m[2] === "resend"
+              ? await resendInvitation(env.CONTROL_DB, mailerOf(env), decodeURIComponent(m[1]), actorFrom(request).actor)
+              : await cancelInvitation(env.CONTROL_DB, decodeURIComponent(m[1]));
+        }
+      }
+      if (result) return json(result.body, result.status);
+    }
+
     // Partners — decision 0592.
     if (url.pathname === "/customers" && request.method === "GET") {
       const result = await handleListCustomers(env.CONTROL_DB);
@@ -614,6 +668,34 @@ export default {
       const keyResult = parsePrivateKey(env);
       if (!keyResult.ok) return keyResult.response;
       const result = await handleIssueToken(env.CONTROL_DB, keyResult.key, environmentId);
+      return json(result.body, result.status);
+    }
+
+    /**
+     * **A customer's own administrator inviting a person — decision
+     * 0593.** From that environment's instance, with its own key: for
+     * that customer and that environment only.
+     */
+    const envInviteMatch = url.pathname.match(/^\/environments\/([^/]+)\/invitations$/);
+    if (envInviteMatch && (request.method === "GET" || request.method === "POST")) {
+      const environmentId = decodeURIComponent(envInviteMatch[1]);
+      if (!(await isValidEnvironmentKey(env.CONTROL_DB, environmentId, extractBearerToken(request)))) {
+        return json({ error: "unauthorized" }, 401);
+      }
+      if (request.method === "GET") {
+        const result = await listForEnvironment(env.CONTROL_DB, environmentId);
+        return json(result.body, result.status);
+      }
+      const body = ((await request.json().catch(() => ({}))) ?? {}) as Record<string, unknown>;
+      const environment = await env.CONTROL_DB.prepare("SELECT customer_id FROM environments WHERE id = ?").bind(environmentId).first<{ customer_id: string }>();
+      if (!environment) return json({ error: "no such environment" }, 404);
+      const result = await invite(env.CONTROL_DB, mailerOf(env), {
+        email: body.email,
+        customerId: environment.customer_id,
+        environmentIds: [environmentId],
+        createdBy: typeof body.invitedBy === "string" ? body.invitedBy.slice(0, 200) : null,
+        createdVia: `environment:${environmentId}`,
+      });
       return json(result.body, result.status);
     }
 

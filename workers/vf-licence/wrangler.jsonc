@@ -8,7 +8,11 @@
     // CORS is a browser mechanism: this decides which web pages may
     // read a response, and curl is unaffected either way.
     // Moved with the interface — decision 0189.
-    "ALLOWED_ORIGINS": "https://app.vibefinance-ai.com"
+    "ALLOWED_ORIGINS": "https://app.vibefinance-ai.com",
+    // Invitations — decision 0593. Where they come from, and the page their
+    // link opens. The Resend key is a secret: wrangler secret put RESEND_API_KEY.
+    "INVITE_FROM_ADDRESS": "VibeFinance <noreply@vibefinance-ai.com>",
+    "INVITE_LINK_BASE": "https://app.vibefinance-ai.com/welcome.html"
   },
   "compatibility_date": "2026-08-01",
   "compatibility_flags": ["nodejs_compat"],

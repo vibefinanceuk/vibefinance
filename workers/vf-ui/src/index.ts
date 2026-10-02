@@ -142,6 +142,8 @@ const PROXIED_TO_INSTANCE: RegExp[] = [
    */
   /^\/org\/users\/[^/]+$/,
   /^\/org\/users\/[^/]+\/spend-limit$/,
+  // Inviting a person — decision 0593 (the list is /org/users/invitations, above).
+  /^\/org\/users\/[^/]+\/invite$/,
   /**
    * **Teams, gated for the first time — decision 0332.** Both
    * existing routes (`/org/teams`, `/org/teams/:id/members`) had
@@ -634,6 +636,9 @@ const PROXIED_TO_INSTANCE: RegExp[] = [
  */
 const PROXIED_TO_LICENCE: RegExp[] = [
   /^\/my-environments$/,
+  // Accepting an invitation — decision 0593. Reached before anybody has a
+  // password, by whoever holds the link; the token is the credential.
+  /^\/invitations\/(view|accept)$/,
   /^\/branding\/[^/]+\/tokens\.css$/,
   // The interface's own words (decision 0107). Reached before anybody
   // signs in, like branding — a login screen needs its labels.

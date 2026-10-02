@@ -31,6 +31,8 @@ let teams = [];
 let activeTab = "units";
 let costCentres = [];
 let spendLimits = [];
+/** Decision 0593: each person's latest invitation, by email; null when it could not be read. */
+let invitations = new Map();
 
 async function load() {
   try {
@@ -64,6 +66,19 @@ async function load() {
       teams = teamsResponse.ok ? ((await teamsResponse.json()).teams ?? []) : [];
     } catch {
       teams = [];
+    }
+
+    // Decision 0593: who has been invited, and where each stands. Only an
+    // administrator of people asks; a failure leaves the column saying so.
+    invitations = new Map();
+    if (hasMyPermission("Admin.UserManagement")) {
+      try {
+        const r = await fetch("/api/org/users/invitations");
+        if (r.ok) for (const i of (await r.json()).invitations ?? []) invitations.set(String(i.email).toLowerCase(), i);
+        else invitations = null;
+      } catch {
+        invitations = null;
+      }
     }
 
     return true;
@@ -514,6 +529,8 @@ function openNewPersonForm() {
   const countryInput = el("input", { type: "text" });
   const spendCurrencyInput = currencyPicker();
   const spendAmountInput = el("input", { type: "number", min: "0" });
+  const inviteBox = el("input", { type: "checkbox", id: "newperson-invite" });
+  inviteBox.checked = true;
 
   const form = el("div", { class: "editgrid" }, [
     el("label", { text: t("roles.personname") }),
@@ -542,6 +559,9 @@ function openNewPersonForm() {
     spendCurrencyInput,
     el("label", { text: t("roles.spendlimitamount") }),
     spendAmountInput,
+    // Decision 0593: they choose their own password, from an email.
+    el("label", { text: t("invite.column") }),
+    el("label", { class: "invitecheck" }, [inviteBox, ` ${t("invite.onadd")}`]),
   ]);
 
   const close = () => backdrop.remove();
@@ -595,7 +615,8 @@ function openNewPersonForm() {
           });
         }
 
-        showApiKeyOnce(created.apiKey, backdrop);
+        const invited = inviteBox.checked ? await sendInvitation(created.id) : null;
+        showApiKeyOnce(created.apiKey, backdrop, invited);
       } catch {
         problem.textContent = t("roles.createpersonfailed");
       }
@@ -623,7 +644,7 @@ function openNewPersonForm() {
  * screen together, so there is no lingering "submit again" affordance
  * once the credential that matters has already been issued.
  */
-function showApiKeyOnce(apiKey, backdrop) {
+function showApiKeyOnce(apiKey, backdrop, invited = null) {
   const popout = backdrop.querySelector(".popout");
   const done = actionLink("done", {
     primary: true,
@@ -635,6 +656,8 @@ function showApiKeyOnce(apiKey, backdrop) {
   });
   popout.replaceChildren(
     el("div", { class: "cardhead" }, [el("h3", { text: t("roles.apikey") }), el("div", { class: "statebuttons" }, [done])]),
+    // Decision 0593: whether their invitation went.
+    ...(invited ? [el("p", { class: invited.ok ? "ok" : "warn", id: "newperson-invited", text: invited.text })] : []),
     el("p", { class: "warn", text: t("roles.apikeywarning") }),
     el("input", { type: "text", value: apiKey, readonly: "readonly", class: "apikeydisplay" })
   );
@@ -841,6 +864,51 @@ function openTeamForm(existingTeam) {
  * (0337's own first attempt) grew every row to fit both; a column of
  * its own keeps the row the height its own text already needs.
  */
+/** Decision 0593: send a person an invitation; what happened, in words. */
+async function sendInvitation(userId) {
+  try {
+    const r = await fetch(`/api/org/users/${encodeURIComponent(userId)}/invite`, { method: "POST" });
+    const body = await r.json().catch(() => ({}));
+    if (r.ok) return { ok: true, text: t("invite.sent").replace("{email}", body.invitation?.email ?? "") };
+    const key = `invite.error.${body.reason}`;
+    return { ok: false, text: t(key) === key ? (body.error ?? t("invite.error.failed")) : t(key) };
+  } catch {
+    return { ok: false, text: t("invite.error.failed") };
+  }
+}
+
+/** Where a person stands: invited (until when), accepted, expired, or not yet. */
+function invitationCell(user) {
+  if (invitations === null) return el("td", { class: "sm muted invitecell", text: t("invite.unknown") });
+  const i = invitations.get(String(user.email).toLowerCase());
+  const status = !i ? "none" : i.status === "pending" && i.sendError ? "notsent" : i.status;
+  const words = t(`invite.status.${status}`).replace("{until}", i?.expiresAt ? new Date(i.expiresAt).toLocaleString() : "");
+  const note = el("div", { class: "sm muted invitenote" });
+  const canInvite = hasMyPermission("Admin.UserManagement") && status !== "accepted";
+  return el("td", { class: "sm invitecell" }, [
+    el("div", { class: status === "accepted" ? "ok" : status === "none" ? "muted" : status === "pending" ? "" : "warn", text: words }),
+    ...(canInvite
+      ? [
+          actionLink("post", {
+            label: t(status === "none" ? "invite.send" : "invite.again"),
+            onclick: async () => {
+              const r = await sendInvitation(user.id);
+              await load();
+              render();
+              const again = [...document.querySelectorAll(".invitecell")].find((c) => c.closest("tr")?.dataset.user === user.id);
+              const n = again?.querySelector(".invitenote");
+              if (n) {
+                n.textContent = r.text;
+                n.className = `sm invitenote ${r.ok ? "ok" : "warn"}`;
+              }
+            },
+          }),
+        ]
+      : []),
+    note,
+  ]);
+}
+
 function personRow(user) {
   const own = assignments.filter((a) => a.userId === user.id);
   const limits = authorityLimits.filter((l) => l.userId === user.id);
@@ -854,12 +922,14 @@ function personRow(user) {
   const limitText =
     limits.length > 0 ? limits.map((l) => `${l.currency} ${l.maxAmount}`).join("; ") : t("roles.nolimits");
 
-  return el("tr", {}, [
+  return el("tr", { "data-user": user.id }, [
     el("td", {}, [el("div", { text: user.name }), el("div", { class: "sm muted", text: user.email })]),
     el("td", { class: "sm", text: assignmentText }),
     el("td", {}, canAssign ? [actionLink("roles", { onclick: () => openPersonRolesForm(user) })] : []),
     el("td", { class: "sm", text: limitText }),
     el("td", {}, canAssign ? [actionLink("properties", { onclick: () => openPersonPropertiesForm(user) })] : []),
+    // Decision 0593: signing in, by invitation.
+    ...(canAssign ? [invitationCell(user)] : []),
   ]);
 }
 
@@ -1256,7 +1326,7 @@ function render() {
       section(
         "roles.people",
         "roles.nopeople",
-        ["column.person", "roles.assignments", "", "roles.limits", ""],
+        ["column.person", "roles.assignments", "", "roles.limits", "", ...(canAssign ? ["invite.column"] : [])],
         users.map(personRow),
         canAssign ? actionLink("newperson", { onclick: () => openNewPersonForm() }) : null
       ),
