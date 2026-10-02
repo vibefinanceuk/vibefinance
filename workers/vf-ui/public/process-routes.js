@@ -422,7 +422,11 @@ function destinationPanel(d) {
     return el("div", { class: "panel prdetail" }, [
       el("div", { class: "cardhead" }, [
         el("h3", { text: `${t("processroutes.destinationtitle")}: ${d.name}` }),
-        el("div", { class: "statebuttons" }, [actionLink("close", { onclick: () => { selected = null; render(); } })]),
+        el("div", { class: "statebuttons" }, [
+          // Decision 0602: a retired one that never sent may still go entirely (Dan had one with no way to).
+          ...(httpsOut && d.neverSent ? [actionLink("discard", { label: t("processroutes.dest.delete"), onclick: () => openDeleteDestination(d) })] : []),
+          actionLink("close", { onclick: () => { selected = null; render(); } }),
+        ]),
       ]),
       el("p", { class: "muted sm", text: t("processroutes.destsub").replace("{route}", d.routeName).replace("{process}", data.process.name) }),
       el("div", { class: "prfields" }, [

@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 2 October 2026 (decision 0601). A living document: what
+Last updated 2 October 2026 (decision 0602). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,12 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Two small fixes (0602)
+
+A retired Destination that never sent can now be deleted from its panel,
+and the operator console's review queue says why it could not load
+instead of waiting on "Loading…".
 
 ### Partner connectors in the Route library (0601)
 

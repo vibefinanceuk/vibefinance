@@ -578,9 +578,25 @@ function connectorRows(versions) {
   });
 }
 
+/**
+ * Decision 0602: the review queue loads on its own, and says in place why
+ * it could not, rather than staying on "Loading…" (as it did on 2 October,
+ * when vf-licence was not yet redeployed).
+ */
 async function loadReviews() {
-  const [{ versions: waiting = [] }, { versions: all = [] }] = await Promise.all([api("/partner-connectors?status=submitted"), api("/partner-connectors")]);
   const holder = document.getElementById("reviews");
+  let waiting, all;
+  try {
+    [{ versions: waiting = [] }, { versions: all = [] }] = await Promise.all([api("/partner-connectors?status=submitted"), api("/partner-connectors")]);
+  } catch (err) {
+    const problem = document.createElement("div");
+    problem.className = "problem";
+    problem.id = "reviews-problem";
+    problem.textContent = `The review queue could not be loaded: ${err.message}. If vf-licence or its migrations were just changed, check it is deployed and they are applied.`;
+    holder.replaceChildren(problem);
+    document.getElementById("connectors").replaceChildren();
+    return;
+  }
   if (waiting.length === 0) {
     const empty = document.createElement("div");
     empty.className = "empty";
@@ -605,10 +621,11 @@ async function loadPartners() {
       holder.replaceChildren(...partners.map((p) => partnerBlock(p, customers)));
     }
     await loadInvitations(customers);
-    await loadReviews();
   } catch (err) {
     note(err.message);
   }
+  // Decision 0602: whatever happened above.
+  await loadReviews();
 }
 
 document.getElementById("invite-send").onclick = async () => {

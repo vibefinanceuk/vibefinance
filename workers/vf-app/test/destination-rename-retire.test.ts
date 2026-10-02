@@ -108,6 +108,14 @@ describe("deleting a Destination that has never sent — decision 0599", () => {
     expect(await handleDeleteDestination(env.DB, id)).toMatchObject({ status: 404 });
   });
 
+  it("deletes a retired one that never sent, and says so on the flow — decision 0602", async () => {
+    const id = ((await handleCreateDestination(env.DB, "u-dan", "ap", { name: "Partner HTTPS" })).body as { id: string }).id;
+    await handleRetireDestination(env.DB, "u-dan", id);
+    expect((await flow()).find((d) => d.id === id)).toMatchObject({ neverSent: true });
+    expect(await handleDeleteDestination(env.DB, id)).toEqual({ status: 200, body: { id, deleted: true } });
+    expect(await exists(id)).toBe(false);
+  });
+
   it("refuses one that has sent or tried to, one a rule sent to or still sends to, one an alert watches, and the ERP CSV file", async () => {
     const sent = await destination("Sent");
     await openOutboundMessage(env.DB, { destinationId: sent, recipient: "erp.example", subject: "INV-A", bytes: 10, receivedAt: "2026-10-02T09:00:00Z", event: "sending" });

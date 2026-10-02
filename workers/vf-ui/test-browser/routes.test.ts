@@ -1563,7 +1563,7 @@ describe("renaming and retiring a Destination — decision 0597", () => {
   });
 
   it("shows a retired one dimmed, Retired, with nothing to do but close", async () => {
-    stubDest([], { ...PUSH, name: "Old push", status: "retired" }, [200, {}]);
+    stubDest([], { ...PUSH, name: "Old push", status: "retired", neverSent: false }, [200, {}]);
     await openScreen("/process-routes.js");
     const cardNode = [...document.querySelectorAll(".prcard")].find((c) => c.textContent?.includes("Old push")) as HTMLElement;
     expect(cardNode.classList.contains("dim")).toBe(true);
@@ -1573,5 +1573,32 @@ describe("renaming and retiring a Destination — decision 0597", () => {
     expect([...document.querySelectorAll(".prdetail > .cardhead .statebuttons button")].map((b) => b.textContent)).toEqual(["Close"]);
     expect(text("#dest-retired-note")).toBe("Retired. It sends nothing more. What it sent stays in the Route monitor.");
     expect(document.querySelector("#httpsout")).toBeNull();
+  });
+
+  it("offers Delete on a retired one that has never sent, and deletes it once confirmed — decision 0602", async () => {
+    const calls: Call[] = [];
+    stubDest(calls, { ...PUSH, name: "Partner HTTPS", status: "retired", neverSent: true }, [200, {}]);
+    const inner = globalThis.fetch as unknown as (url: string, init?: RequestInit) => Promise<Response>;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        if (String(url) === "/api/route-instances/dest-1" && init?.method === "DELETE") {
+          calls.push({ method: "DELETE", path: String(url), query: "" });
+          return { ok: true, status: 200, json: async () => ({ id: "dest-1", deleted: true }) } as Response;
+        }
+        return inner(url, init);
+      })
+    );
+    await openScreen("/process-routes.js");
+    ([...document.querySelectorAll(".prcard")].find((c) => c.textContent?.includes("Partner HTTPS")) as HTMLElement).click();
+    await settle();
+    expect([...document.querySelectorAll(".prdetail > .cardhead .statebuttons button")].map((b) => b.textContent)).toEqual(["Delete", "Close"]);
+    button(".prdetail > .cardhead", "Delete").click();
+    expect(text("#dest-delete-pop h3")).toBe("Delete Partner HTTPS");
+    expect(calls.some((c) => c.method === "DELETE")).toBe(false);
+    button("#dest-delete-pop", "Delete").click();
+    await settle();
+    expect(calls.some((c) => c.method === "DELETE" && c.path === "/api/route-instances/dest-1")).toBe(true);
+    expect(document.querySelector("#dest-delete-pop")).toBeNull();
   });
 });
