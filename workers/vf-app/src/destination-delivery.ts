@@ -156,9 +156,12 @@ export function checkSettings(input: unknown): { settings: HttpsOutSettings } | 
     out.tokenUrl = tokenUrl.toString();
     out.clientId = str(auth.clientId);
     if (str(auth.scope)) out.scope = str(auth.scope);
+    // Decision 0607: a user name, where the token address asks for one (Sage Intacct's web services user, user@company).
+    if (str(auth.username)) out.username = str(auth.username);
   }
   const referencePath = str(b.referencePath);
-  if (referencePath && !/^\$(\.[A-Za-z0-9_-]+|\[\d+\])+$/.test(referencePath)) {
+  // Decision 0607: a name may hold colons, as Sage Intacct's ia::result does.
+  if (referencePath && !/^\$(\.[A-Za-z0-9_:-]+|\[\d+\])+$/.test(referencePath)) {
     return { error: "the reference must be a path such as $.id or $.data[0].documentId", reason: "bad_reference_path" };
   }
   return { settings: { url: parsed.toString(), method, format, auth: out, referencePath: referencePath || null, ...(b.csrf === true ? { csrf: true } : {}) } };
@@ -168,7 +171,10 @@ export function checkSettings(input: unknown): { settings: HttpsOutSettings } | 
 export function readPath(body: unknown, path: string | null): string | null {
   if (!path) return null;
   let node: unknown = body;
-  for (const m of path.slice(1).matchAll(/\.([A-Za-z0-9_-]+)|\[(\d+)\]/g)) {
+  for (const m of path.slice(1).matchAll(/\.([A-Za-z0-9_:-]+)|\[(\d+)\]/g)) {
+    if (node === null || typeof node !== "object") return null;
+    // A name read from a list reads its first item: a reply may give one record or a list of one (decision 0607).
+    if (m[1] !== undefined && Array.isArray(node)) node = node[0];
     if (node === null || typeof node !== "object") return null;
     node = m[1] !== undefined ? (node as Record<string, unknown>)[m[1]] : (node as unknown[])[Number(m[2])];
   }
@@ -343,6 +349,7 @@ async function signIn(db: D1Database, instanceId: string, settings: HttpsOutSett
   if (type === "basic") return { Authorization: `Basic ${btoa(`${settings.auth.username}:${secret}`)}` };
   const form = new URLSearchParams({ grant_type: "client_credentials", client_id: settings.auth.clientId as string, client_secret: secret });
   if (settings.auth.scope) form.set("scope", settings.auth.scope);
+  if (settings.auth.username) form.set("username", settings.auth.username);
   let reply: Response;
   try {
     reply = await (deps.fetcher ?? fetch)(settings.auth.tokenUrl as string, {
@@ -611,6 +618,8 @@ export function settingsFromConnector(connector: ConnectorDefinition | null): Ht
     ...(d.format ? { format: d.format } : {}),
     ...(d.referencePath !== undefined ? { referencePath: d.referencePath } : {}),
     ...(d.csrf ? { csrf: true } : {}),
+    // Decision 0607: an address every customer shares, such as Sage Intacct's.
+    ...(d.url ? { url: d.url } : {}),
     auth: d.auth ? { ...d.auth } : { ...DEFAULT_SETTINGS.auth },
   };
 }

@@ -256,7 +256,7 @@ export function drawLines(grid) {
 function argWords(step) {
   if (step.fn === "look_up") {
     const list = data.lists?.find((l) => l.id === step.args?.list)?.name ?? step.args?.list;
-    return [list, t(step.args?.otherwise === "keep" ? "mapping.lookup.keep" : "mapping.lookup.refuse")];
+    return [list, t(step.args?.otherwise === "keep" ? "mapping.lookup.keep" : step.args?.otherwise === "unless_empty" ? "mapping.lookup.unless_empty" : "mapping.lookup.refuse")];
   }
   return Object.values(step.args ?? {});
 }

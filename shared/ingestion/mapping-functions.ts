@@ -294,7 +294,7 @@ export const FUNCTIONS = {
   },
   look_up: {
     describe:
-      "look the value up in one of the customer's own look-up lists (by the list's id) and give what the list says it becomes; otherwise is refuse (a value not in the list is a problem) or keep (it is left as it is, for the next step)",
+      "look the value up in one of the customer's own look-up lists (by the list's id) and give what the list says it becomes; otherwise is refuse (a value not in the list is a problem), keep (it is left as it is, for the next step) or unless_empty (as refuse, but a list with nothing in it gives an empty value: a list a customer does not use)",
     args: { list: "text", otherwise: "text" },
     apply(value, args, ctx) {
       const list = ctx?.lookups?.[String(args.list)];
@@ -302,7 +302,10 @@ export const FUNCTIONS = {
       const s = text(value);
       const hit = list.entries[lookupKey(s)];
       if (hit !== undefined) return ok(hit);
-      return String(args.otherwise) === "keep" ? ok(value) : fail(`"${s}" is not in the list ${list.name}`);
+      if (String(args.otherwise) === "keep") return ok(value);
+      // Decision 0607: a list the customer leaves empty is one they do not use (an Intacct company without tax).
+      if (String(args.otherwise) === "unless_empty" && Object.keys(list.entries).length === 0) return ok(null);
+      return fail(`"${s}" is not in the list ${list.name}`);
     },
   },
   // Decision 0606: what SAP's OData services want, and any target like them.
@@ -369,8 +372,8 @@ export function validateChain(chain: unknown): string | null {
     if ((s.fn === "read_date" || s.fn === "write_date") && !datePattern(String(args.pattern))) {
       return `"${args.pattern}" is not a date pattern`;
     }
-    if (s.fn === "look_up" && args.otherwise !== "refuse" && args.otherwise !== "keep") {
-      return "look_up's otherwise is refuse or keep";
+    if (s.fn === "look_up" && args.otherwise !== "refuse" && args.otherwise !== "keep" && args.otherwise !== "unless_empty") {
+      return "look_up's otherwise is refuse, keep or unless_empty";
     }
   }
   return null;

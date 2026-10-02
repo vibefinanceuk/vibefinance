@@ -1,6 +1,7 @@
 import type { OutboundMapping } from "./outbound-mapping.js";
 import { ORACLE_LISTS, oracleFusionPayablesMapping } from "./oracle-fusion-payables.js";
 import { SAP_LISTS, sapS4hanaCloudMapping } from "./sap-s4hana-cloud.js";
+import { INTACCT_BILL_URL, INTACCT_LISTS, INTACCT_TOKEN_URL, sageIntacctMapping } from "./sage-intacct.js";
 
 /**
  * **The connector library — decision 0589**, slice 2 of the connector
@@ -36,10 +37,13 @@ export type ConnectorAuthType = "none" | "api_key_header" | "bearer" | "basic" |
 /** What a connector sets on a Destination it makes: defaults the customer may change, and what is fixed. */
 export interface ConnectorSettings {
   defaults: {
+    /** Decision 0607: an address that is the same for every customer, such as Sage Intacct's. */
+    url?: string;
     method?: "POST" | "PUT";
     /** "mapped": its own layout, from the outbound mapping it carries (a partner's, decision 0601). */
     format?: "vf_json" | "csv" | "mapped";
-    auth?: { type: ConnectorAuthType; header?: string };
+    /** Decision 0607: and, for OAuth, a token address that is the same for every customer. */
+    auth?: { type: ConnectorAuthType; header?: string; tokenUrl?: string };
     referencePath?: string | null;
     /** Decision 0606: fetch a CSRF token first, as SAP's OData services need. */
     csrf?: boolean;
@@ -169,17 +173,32 @@ export const STANDARD_CONNECTORS: ConnectorDefinition[] = [
     vendorDocs: "https://api.sap.com/api/API_SUPPLIERINVOICE_PROCESS_SRV/overview",
   },
   {
+    // Decision 0607: the third ERP connector, through Sage's REST API; a first version.
     id: "sage-intacct",
     version: 1,
     direction: "destination",
     publisher: "standard",
-    status: "planned",
+    status: "available",
+    maturity: "first_version",
     categories: ["erp"],
-    routeId: null,
+    routeId: "https-out",
     transport: "https",
     formats: ["sage_ap_bill"],
     multiple: true,
-    vendorDocs: "https://developer.intacct.com/api/accounts-payable/bills/",
+    settings: {
+      defaults: {
+        url: INTACCT_BILL_URL,
+        method: "POST",
+        format: "mapped",
+        auth: { type: "oauth2_client_credentials", tokenUrl: INTACCT_TOKEN_URL },
+        referencePath: "$.ia::result.key",
+      },
+      fixed: ["method", "format"],
+      authTypes: ["oauth2_client_credentials"],
+    },
+    outboundMapping: sageIntacctMapping(),
+    lookupLists: Object.values(INTACCT_LISTS),
+    vendorDocs: "https://developer.sage.com/intacct/docs/openapi/ap/accounts-payable.bill/",
   },
   {
     id: "dynamics-365-bc",

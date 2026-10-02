@@ -206,7 +206,7 @@ function stepPills(steps) {
     steps.map((s) =>
       el("span", { class: "mestep" }, [
         t(`mapping.fn.${s.fn}`) === `mapping.fn.${s.fn}` ? s.fn : t(`mapping.fn.${s.fn}`),
-        ...(s.fn === "look_up" ? [list(s.args?.list), t(s.args?.otherwise === "keep" ? "mapping.lookup.keep" : "mapping.lookup.refuse")] : Object.values(s.args ?? {})).map((v) =>
+        ...(s.fn === "look_up" ? [list(s.args?.list), t(s.args?.otherwise === "keep" ? "mapping.lookup.keep" : s.args?.otherwise === "unless_empty" ? "mapping.lookup.unless_empty" : "mapping.lookup.refuse")] : Object.values(s.args ?? {})).map((v) =>
           el("span", { class: "mearg", text: ` ${v}` })
         ),
       ])

@@ -140,11 +140,13 @@ export const sourceAllowed = (key: string, level: OutboundLevel) => {
 };
 
 export const MAX_FIELDS = 200;
-const SEGMENT = /^[A-Za-z_$@][A-Za-z0-9_\-$@]{0,63}$/;
-/** A target name: up to six dotted segments of letters, digits, _ - $ @. */
+const SEGMENT = /^[A-Za-z_$@][A-Za-z0-9_\-$@:]{0,63}$/;
+/** Decision 0607: a place in a list, 0 to 9, as in `taxEntries.0.purchasingTaxDetail.id`. */
+const INDEX = /^\d$/;
+/** A target name: up to six dotted segments of letters, digits, _ - $ @ :, or a list place after the first. */
 export const validTarget = (name: string) => {
   const parts = name.split(".");
-  return parts.length <= 6 && parts.every((p) => SEGMENT.test(p));
+  return parts.length <= 6 && parts.every((p, i) => SEGMENT.test(p) || (i > 0 && i < parts.length - 1 && INDEX.test(p)));
 };
 
 /** The standard layout: exactly the VibeFinance invoice JSON (0585). */
@@ -287,11 +289,20 @@ function read(obj: unknown, path: string): FnValue {
 
 function setAt(obj: Record<string, unknown>, path: string, value: unknown) {
   const parts = path.split(".");
-  let node = obj;
-  for (const p of parts.slice(0, -1)) {
-    if (!node[p] || typeof node[p] !== "object" || Array.isArray(node[p])) node[p] = {};
+  let node = obj as Record<string, unknown>;
+  parts.slice(0, -1).forEach((p, i) => {
+    // Decision 0607: a list where the next part is a place in it.
+    const wantList = INDEX.test(parts[i + 1]);
+    const here = node[p];
+    if (!here || typeof here !== "object" || Array.isArray(here) !== wantList) node[p] = wantList ? [] : {};
+    if (wantList) {
+      const list = node[p] as unknown[];
+      const at = Number(parts[i + 1]);
+      // The places before it are filled, so the list never has holes.
+      while (list.length <= at) list.push({});
+    }
     node = node[p] as Record<string, unknown>;
-  }
+  });
   node[parts[parts.length - 1]] = value;
 }
 

@@ -34,7 +34,7 @@ describe("the library", () => {
     expect(body.connectors.map((c) => c.id)).toEqual(STANDARD_CONNECTORS.map((c) => c.id));
     const by = (id: string) => body.connectors.find((c) => c.id === id)!;
     expect(by("https-out")).toMatchObject({ direction: "destination", status: "available", inUse: [] });
-    expect(by("sage-intacct")).toMatchObject({ status: "planned", inUse: [] });
+    expect(by("dynamics-365-bc")).toMatchObject({ status: "planned", inUse: [] });
     // Decision 0605: Oracle is available, as a first version.
     expect(by("oracle-fusion-payables")).toMatchObject({ status: "available", inUse: [] });
     // Made before the library: the route's own connector, version 1.
@@ -74,7 +74,7 @@ describe("adding a Destination from a connector", () => {
 
   it("refuses a planned connector, a Source, an unknown one, and a second ERP CSV file; adds the file where none is", async () => {
     const add = (connectorId: string, processId = "ap", name = "X") => handleCreateDestination(env.DB, "u-dan", processId, { name, connectorId });
-    expect((await add("sage-intacct")).body).toMatchObject({ reason: "not_available" });
+    expect((await add("dynamics-365-bc")).body).toMatchObject({ reason: "not_available" });
     expect((await add("email-in")).body).toMatchObject({ reason: "unknown_connector" });
     expect((await add("nope")).body).toMatchObject({ reason: "unknown_connector" });
     expect((await add("erp-csv")).body).toMatchObject({ reason: "one_per_process" });

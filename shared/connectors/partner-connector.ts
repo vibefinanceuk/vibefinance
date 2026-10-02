@@ -62,6 +62,8 @@ export function validatePartnerDefinition(input: unknown): string | null {
     return "the reference is a path such as $.id";
   }
   if (s.defaults.csrf !== undefined && typeof s.defaults.csrf !== "boolean") return "fetching a CSRF token first is true or false";
+  // Decision 0607: a standard connector may name an address every customer shares; a partner's never names one.
+  if ("url" in s.defaults || "tokenUrl" in (s.defaults.auth ?? {})) return "a connector does not carry url";
   if (!Array.isArray(s.fixed) || s.fixed.some((f) => f !== "method" && f !== "format")) return "only the method and format can be fixed";
   if (!Array.isArray(s.authTypes) || s.authTypes.length === 0 || s.authTypes.some((a) => !AUTH_TYPES.includes(a))) return "allow at least one way of signing in";
   if (!s.authTypes.includes(s.defaults.auth.type)) return "the way it signs in must be one it allows";

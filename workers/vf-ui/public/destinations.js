@@ -91,7 +91,15 @@ function settingsCard(state, reload) {
     authFields.replaceChildren(
       ...(type === "api_key_header" ? [field(t("httpsout.header"), header)] : []),
       ...(type === "basic" ? [field(t("httpsout.username"), username)] : []),
-      ...(type === "oauth2_client_credentials" ? [field(t("httpsout.tokenurl"), tokenUrl), field(t("httpsout.clientid"), clientId), field(t("httpsout.scope"), scope)] : []),
+      ...(type === "oauth2_client_credentials"
+        ? [
+            field(t("httpsout.tokenurl"), tokenUrl),
+            field(t("httpsout.clientid"), clientId),
+            field(t("httpsout.scope"), scope),
+            // Decision 0607: a user name, where the token address asks for one (Sage Intacct's web services user).
+            field(t("httpsout.oauthusername"), username, t("httpsout.oauthusernamehint")),
+          ]
+        : []),
       ...(name ? [field(t(`httpsout.secret.${name}`), secret, t("httpsout.secrethint"))] : [])
     );
   };

@@ -48,7 +48,7 @@ describe("look_up", () => {
   it("is in the closed vocabulary, with otherwise refuse or keep", () => {
     expect(FUNCTION_NAMES).toContain("look_up");
     expect(validateChain([{ fn: "look_up", args: { list: "LL-UNITS", otherwise: "keep" } }])).toBeNull();
-    expect(validateChain([{ fn: "look_up", args: { list: "LL-UNITS", otherwise: "guess" } }])).toBe("look_up's otherwise is refuse or keep");
+    expect(validateChain([{ fn: "look_up", args: { list: "LL-UNITS", otherwise: "guess" } }])).toBe("look_up's otherwise is refuse, keep or unless_empty");
     expect(validateChain([{ fn: "look_up", args: { list: "LL-UNITS" } }])).toBe("look_up needs otherwise");
   });
 

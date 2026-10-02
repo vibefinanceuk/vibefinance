@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 2 October 2026 (decision 0606). A living document: what
+Last updated 2 October 2026 (decision 0607). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,15 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Sage Intacct, the third ERP connector (0607)
+
+Sage Intacct is in the Route library as a first version, through Sage's
+REST API: an AP bill with a line for each distribution and its
+department, project and location, Intacct calculating the VAT from each
+line's purchase tax detail. Its address and token address come filled
+in; the customer gives their app's client id, secret and web services
+user. It awaits a first run against a real Intacct company.
 
 ### SAP S/4HANA Cloud, the second ERP connector (0606)
 

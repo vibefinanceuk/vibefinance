@@ -22,6 +22,7 @@ import reviewStringsSql from "../../vf-licence/migrations/0247_connector_review_
 import partnerLibraryStringsSql from "../../vf-licence/migrations/0248_partner_library_strings.sql?raw";
 import oracleStringsSql from "../../vf-licence/migrations/0249_oracle_connector_strings.sql?raw";
 import sapStringsSql from "../../vf-licence/migrations/0250_sap_connector_strings.sql?raw";
+import intacctStringsSql from "../../vf-licence/migrations/0251_intacct_connector_strings.sql?raw";
 
 /**
  * **Routes and Process routes — decision 0557.** The standard routes with
@@ -56,7 +57,7 @@ const strings: Record<string, string> = {
   "mechanism.file_import": "File import",
   "mechanism.edi": "EDI",
 };
-for (const sql of [stringsSql, destinationStringsSql, formatStringsSql, mappingStringsSql, csvStringsSql, httpsStringsSql, httpsStateStringsSql, replaceKeyStringsSql, mailboxStringsSql, renameStringsSql, httpsOutStringsSql, erpDeliveriesStringsSql, destUnitsStringsSql, libraryStringsSql, outboundStringsSql, submitStringsSql, submitFromCustomerSql, destRetireStringsSql, destDeleteStringsSql, reviewStringsSql, partnerLibraryStringsSql, oracleStringsSql, sapStringsSql]) {
+for (const sql of [stringsSql, destinationStringsSql, formatStringsSql, mappingStringsSql, csvStringsSql, httpsStringsSql, httpsStateStringsSql, replaceKeyStringsSql, mailboxStringsSql, renameStringsSql, httpsOutStringsSql, erpDeliveriesStringsSql, destUnitsStringsSql, libraryStringsSql, outboundStringsSql, submitStringsSql, submitFromCustomerSql, destRetireStringsSql, destDeleteStringsSql, reviewStringsSql, partnerLibraryStringsSql, oracleStringsSql, sapStringsSql, intacctStringsSql]) {
   for (const m of sql.matchAll(/\('([^']+)', 'en', '((?:[^']|'')*)'\)/g)) strings[m[1]] = m[2].replace(/''/g, "'");
 }
 // 0209 updates the ERP note rather than inserting it.
@@ -769,6 +770,17 @@ describe("HTTPS out — decision 0585", () => {
     button("#do-settings", "Save").click();
     await settle();
     expect("csrf" in JSON.parse(calls.filter((c) => c.method === "PUT")[1].body!).settings).toBe(false);
+  });
+
+  it("asks for a user name with OAuth, for a token address that wants one, and saves it — decision 0607", async () => {
+    const calls: Call[] = [];
+    stubOut(calls, { ...CONNECTOR, settings: { ...CONNECTOR.settings, auth: { type: "oauth2_client_credentials", tokenUrl: "https://api.intacct.com/ia/api/v1/oauth2/token", clientId: "vf", username: "vibefinance@ACME" } } });
+    await openPush();
+    expect((document.querySelector("#do-username") as HTMLInputElement).value).toBe("vibefinance@ACME");
+    expect(text("#do-settings")).toContain("as Sage Intacct does for its web services user");
+    button("#do-settings", "Save").click();
+    await settle();
+    expect(JSON.parse(calls.find((c) => c.method === "PUT")!.body!).settings.auth).toMatchObject({ type: "oauth2_client_credentials", clientId: "vf", username: "vibefinance@ACME" });
   });
 
   it("shows exactly what would be sent first, then sends it and says what came back", async () => {
