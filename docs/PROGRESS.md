@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 2 October 2026 (decision 0594). A living document: what
+Last updated 2 October 2026 (decision 0595). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,16 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Submit for review (0595)
+
+Slice 4, step 2. In a partner's sandbox, an HTTPS out Destination can be
+shared in the Route library: its way of sending and signing in and its
+published outbound mapping become a connector version (never its address
+or secrets; look-up lists by name), named and described, with what
+customers may not change and which of the partner's customers see it. It
+waits for VibeFinance's review; one waits at a time, and it can be
+withdrawn. Next: the review queue in the operator console.
 
 ### The first screen after signing in (0594)
 

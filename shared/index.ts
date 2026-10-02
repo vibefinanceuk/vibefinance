@@ -25,3 +25,4 @@ export * from "./ingestion/mapping-proposals.js";
 export * from "./ingestion/batch-template.js";
 export * from "./connectors/library.js";
 export * from "./connectors/outbound-mapping.js";
+export * from "./connectors/partner-connector.js";

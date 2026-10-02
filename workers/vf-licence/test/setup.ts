@@ -228,6 +228,8 @@ import partnersSql from "../migrations/0237_partners.sql?raw";
 import invitationsSql from "../migrations/0238_invitations.sql?raw";
 import invitationStringsSql from "../migrations/0239_invitation_strings.sql?raw";
 import nothingOpenSql from "../migrations/0240_nothing_open_string.sql?raw";
+import partnerConnectorsSql from "../migrations/0241_partner_connectors.sql?raw";
+import submitStringsSql from "../migrations/0242_submit_for_review_strings.sql?raw";
 
 function stripSqlComments(sql: string): string {
   return sql
@@ -251,7 +253,7 @@ function toOneStatementPerLine(sql: string): string {
 // functions above), and storage does not appear to reset between it()
 // blocks in this pool-workers version, so every table is dropped and
 // recreated before each test rather than relying on framework isolation.
-const TABLES_IN_DROP_ORDER = ["invitations", "partner_customers", "partner_people", "partners", "admin_actions", "ui_strings", "customer_branding", "user_environment_access", "user_credentials", "login_attempts", "signup_requests", "usage_periods", "licences", "environments", "customers"];
+const TABLES_IN_DROP_ORDER = ["partner_connector_versions", "partner_connectors", "invitations", "partner_customers", "partner_people", "partners", "admin_actions", "ui_strings", "customer_branding", "user_environment_access", "user_credentials", "login_attempts", "signup_requests", "usage_periods", "licences", "environments", "customers"];
 
 export async function applyTestSchema(): Promise<void> {
   for (const table of TABLES_IN_DROP_ORDER) {
@@ -489,5 +491,7 @@ export async function applyTestSchema(): Promise<void> {
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(invitationsSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(invitationStringsSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(nothingOpenSql)));
+  await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(partnerConnectorsSql)));
+  await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(submitStringsSql)));
 
 }

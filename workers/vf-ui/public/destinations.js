@@ -377,6 +377,118 @@ function mappingCard(state, destination) {
   ]);
 }
 
+const SUBMISSION_TONE = { submitted: "warn", approved: "ok", returned: "bad", withdrawn: "q" };
+
+/**
+ * **Submit for review — decision 0595.** Only in a partner's sandbox:
+ * this Destination, with its settings and published mapping, sent to
+ * VibeFinance as a connector for the partner's customers. Its versions
+ * and their review, Withdraw while one waits, and the form to submit.
+ */
+function submissionCard(destination) {
+  const holder = el("div", { class: "docard", id: "do-submission", hidden: "" });
+  const base = `/api/route-instances/${encodeURIComponent(destination.id)}/library-submission`;
+  const draw = async (note) => {
+    const r = await call(base);
+    if (!r.ok || !r.body?.partner) {
+      holder.hidden = true;
+      return;
+    }
+    holder.hidden = false;
+    const s = r.body;
+    const d = s.destination;
+    const versions = s.connector?.versions ?? [];
+    const waiting = versions.find((v) => v.status === "submitted");
+    const result = el("div", { class: "warn", id: "do-submitproblem", ...(note ? { text: note } : {}) });
+
+    const rows = versions.map((v) =>
+      el("tr", {}, [
+        el("td", { text: `${t("submit.version")} ${v.version}` }),
+        el("td", {}, [pill(SUBMISSION_TONE[v.status] ?? "q", t(`submit.status.${v.status}`))]),
+        el("td", { class: "sm", text: `${when(v.submittedAt)} · ${v.submittedBy}` }),
+        el("td", { class: "sm", text: v.status === "returned" && v.reviewReason ? v.reviewReason : v.audience === "all" ? t("submit.audience.all") : v.audience.map((id) => s.customers.find((c) => c.id === id)?.name ?? id).join(", ") }),
+        el("td", {}, v.status === "submitted" && s.canSubmit
+          ? [actionLink("discard", { label: t("submit.withdraw"), onclick: async () => {
+              const w = await call(`${base}/withdraw`, json("POST", { version: v.version }));
+              await draw(w.ok ? t("submit.withdrawn") : why(w.body));
+            } })]
+          : []),
+      ])
+    );
+
+    const blocks = [];
+    for (const p of d.problems) blocks.push(el("div", { class: "warn sm", text: t(`submit.problem.${p}`) }));
+    if (d.draftNotPublished) blocks.push(el("div", { class: "muted sm", text: t("submit.draftnote").replace("{n}", String(d.draftNotPublished)) }));
+    if (!s.canSubmit) blocks.push(el("div", { class: "muted sm", text: t(s.partner.status === "active" ? "submit.notperson" : "submit.suspended").replace("{partner}", s.partner.name) }));
+
+    let form = null;
+    let submit = null;
+    if (s.canSubmit && !waiting && d.problems.length === 0) {
+      const name = el("input", { type: "text", id: "do-sub-name", value: s.connector?.name ?? d.name ?? "" });
+      const description = el("textarea", { id: "do-sub-description", rows: "3" });
+      description.value = versions[0]?.description ?? "";
+      const notes = el("textarea", { id: "do-sub-notes", rows: "2" });
+      const docs = el("input", { type: "url", id: "do-sub-docs", placeholder: "https://" });
+      /** A box with its words beside it, on one line. */
+      const check = (id, label, checked, type = "checkbox", name = undefined) => {
+        const box = el("input", { type, id, ...(name ? { name } : {}) });
+        box.checked = checked;
+        return { box, node: el("label", { class: "docheck" }, [box, el("span", { text: label })]) };
+      };
+      const fixedMethod = check("do-sub-fixmethod", t("httpsout.method"), false);
+      const fixedFormat = check("do-sub-fixformat", t("httpsout.formatlabel"), d.format === "mapped");
+      const auths = ["none", "api_key_header", "bearer", "basic", "oauth2_client_credentials"].map((a) => [a, check(`do-sub-auth-${a}`, t(`httpsout.auth.${a}`), a === d.authType)]);
+      const everyone = check("do-sub-all", `${t("submit.audience.all")} (${s.customers.length})`, true, "radio", "do-sub-aud");
+      const chosen = check("do-sub-some", t("submit.audience.some"), false, "radio", "do-sub-aud");
+      const customers = s.customers.map((c) => [c.id, check(`do-sub-c-${c.id}`, c.name, false)]);
+      form = el("div", { class: "dosubform" }, [
+        el("div", { class: "dotwo" }, [field(t("submit.name"), name), field(t("submit.docs"), docs)]),
+        field(t("submit.description"), description, t("submit.descriptionhint")),
+        field(t("submit.notes"), notes, t("submit.noteshint")),
+        el("div", { class: "dotwo" }, [
+          field(t("submit.fixed"), el("div", {}, [fixedMethod.node, fixedFormat.node]), t("submit.fixedhint")),
+          field(t("submit.auths"), el("div", {}, auths.map(([, c]) => c.node))),
+        ]),
+        field(
+          t("submit.audience"),
+          el("div", {}, [everyone.node, chosen.node, el("div", { class: "dosubcustomers" }, customers.map(([, c]) => c.node))])
+        ),
+      ]);
+      submit = actionLink("publish", {
+        primary: true,
+        label: t(versions.length ? "submit.again" : "submit.submit").replace("{n}", String((versions[0]?.version ?? 0) + 1)),
+        onclick: async () => {
+          const audience = chosen.box.checked ? customers.filter(([, c]) => c.box.checked).map(([id]) => id) : "all";
+          const r2 = await call(
+            base,
+            json("POST", {
+              name: name.value,
+              description: description.value,
+              notes: notes.value,
+              vendorDocs: docs.value,
+              audience,
+              fixed: [...(fixedMethod.box.checked ? ["method"] : []), ...(fixedFormat.box.checked ? ["format"] : [])],
+              authTypes: auths.filter(([, c]) => c.box.checked).map(([a]) => a),
+            })
+          );
+          await draw(r2.ok ? t("submit.sent").replace("{n}", String(r2.body.version)) : why(r2.body));
+        },
+      });
+    }
+
+    holder.replaceChildren(
+      el("div", { class: "cardhead" }, [el("h4", { text: t("submit.heading") }), el("div", { class: "dobuttons" }, submit ? [submit] : [])]),
+      el("p", { class: "muted sm", text: t("submit.hint").replace("{partner}", s.partner.name) }),
+      ...blocks,
+      ...(rows.length > 0 ? [el("table", { class: "dotable", id: "do-sub-versions" }, [el("tbody", {}, rows)])] : []),
+      ...(form ? [form] : []),
+      result
+    );
+  };
+  draw();
+  return holder;
+}
+
 /** The HTTPS out section of a Destination panel. `onChanged` reloads the flow (its cards' counts). */
 export function httpsOutSection(destination, onChanged) {
   const holder = el("div", { class: "httpsin", id: "httpsout" }, [el("div", { class: "muted", text: t("httpsout.loading") })]);
@@ -401,6 +513,8 @@ export function httpsOutSection(destination, onChanged) {
       ...startBlock,
       settingsCard(state, reload),
       mappingCard(state, destination),
+      // Decision 0595: in a partner's sandbox only.
+      submissionCard(destination),
       tryCard(state, reload),
       deliveriesCard(state, reload)
     );

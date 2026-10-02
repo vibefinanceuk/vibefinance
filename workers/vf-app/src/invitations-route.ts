@@ -16,9 +16,10 @@ export interface LicenceLink {
   apiKey: string;
 }
 
-async function ask(link: LicenceLink, method: "GET" | "POST", body?: unknown): Promise<RouteResult> {
+/** Asks the control plane about this environment, with its own key: `/environments/:id<path>`. */
+export async function askLicence(link: LicenceLink, method: "GET" | "POST", path: string, body?: unknown): Promise<RouteResult> {
   try {
-    const res = await link.service.fetch(`https://vf-licence.internal/environments/${encodeURIComponent(link.environmentId)}/invitations`, {
+    const res = await link.service.fetch(`https://vf-licence.internal/environments/${encodeURIComponent(link.environmentId)}${path}`, {
       method,
       headers: { Authorization: `Bearer ${link.apiKey}`, ...(body ? { "Content-Type": "application/json" } : {}) },
       ...(body ? { body: JSON.stringify(body) } : {}),
@@ -34,7 +35,7 @@ async function ask(link: LicenceLink, method: "GET" | "POST", body?: unknown): P
 export async function handleInviteUser(db: D1Database, link: LicenceLink, userId: string, invitedBy: string | null): Promise<RouteResult> {
   const user = await db.prepare("SELECT id, email FROM org_users WHERE id = ?").bind(userId).first<{ id: string; email: string }>();
   if (!user) return { status: 404, body: { error: `user ${userId} does not exist` } };
-  const r = await ask(link, "POST", { email: user.email, invitedBy });
+  const r = await askLicence(link, "POST", "/invitations", { email: user.email, invitedBy });
   const invitation = (r.body.invitation ?? null) as Record<string, unknown> | null;
   return {
     status: r.status,
@@ -47,5 +48,5 @@ export async function handleInviteUser(db: D1Database, link: LicenceLink, userId
 
 /** `GET /org/users/invitations` — the latest invitation for each person, by email. */
 export async function handleListUserInvitations(link: LicenceLink): Promise<RouteResult> {
-  return ask(link, "GET");
+  return askLicence(link, "GET", "/invitations");
 }

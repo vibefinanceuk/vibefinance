@@ -5038,6 +5038,13 @@
 .dostart .actionlink { flex-direction: row; padding: 4px 8px; gap: 4px; }
 .dostartpop { max-width: 560px; }
 @media (max-width: 720px) { .dotwo { grid-template-columns: 1fr; } }
+/* Decision 0595: submitting a Destination for review. */
+.dotable { width: 100%; border-collapse: collapse; margin: 6px 0 10px; }
+.dotable td { padding: 5px 8px 5px 0; vertical-align: top; border-bottom: 0.5px solid var(--border); }
+.dosubform textarea { width: 100%; font: inherit; }
+.dosubcustomers { margin: 2px 0 0 22px; }
+.docheck { display: flex; align-items: center; gap: 7px; margin: 3px 0; font-size: var(--text-sm); color: var(--text-primary); }
+.docheck input { margin: 0; }
 /* Decision 0587 — a Destination's business units. */
 .duline { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .duline .actionlink { flex-direction: row; padding: 2px 6px; gap: 4px; }

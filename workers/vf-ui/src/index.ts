@@ -246,6 +246,8 @@ const PROXIED_TO_INSTANCE: RegExp[] = [
   // HTTPS out Destinations — decision 0585.
   /^\/processes\/[^/]+\/destinations$/,
   /^\/route-instances\/[^/]+\/connector(\/(preview|send|start|upgrade))?$/,
+  // Submit a Destination for review, from a partner's sandbox — decision 0595.
+  /^\/route-instances\/[^/]+\/library-submission(\/withdraw)?$/,
   // A Destination's own outbound mapping — decision 0591.
   /^\/route-instances\/[^/]+\/mapping(\/(copy|try|publish|compile))?$/,
   // The Route library — decision 0589.

@@ -219,6 +219,7 @@ import {
 } from "./lookup-lists-route.js";
 import { handleRereadPart } from "./mapping-reread.js";
 import { handleInviteUser, handleListUserInvitations } from "./invitations-route.js";
+import { handleGetSubmission, handleSubmit, handleWithdraw } from "./library-submission-route.js";
 import {
   handleCompileOutboundFunction,
   handleCopyOutboundMapping,
@@ -4704,6 +4705,26 @@ export default {
       const allowed = (await hasPermission(db, auth.user.id, "Admin.Configure")) || (await hasPermission(db, auth.user.id, "Integration.Monitor"));
       if (!allowed) return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
       const result = await handleListDeliveries(db, decodeURIComponent(deliveriesMatch[1]));
+      return json(result.body, result.status);
+    }
+    // Decision 0595: submit this Destination to the library, from a partner's sandbox.
+    const submissionMatch = pathname.match(/^\/route-instances\/([^/]+)\/library-submission(\/withdraw)?$/);
+    if (submissionMatch) {
+      const { db } = resolveTenant(request, env);
+      const auth = await authenticatePerson(db, request, env);
+      if (!auth.user) return json({ error: auth.reason }, 401);
+      if (!(await hasPermission(db, auth.user.id, "Admin.Configure"))) return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
+      if (!env.LICENCE_SERVICE || !env.ENVIRONMENT_ID || !env.VF_LICENCE_API_KEY) {
+        return json({ error: "LICENCE_SERVICE, ENVIRONMENT_ID and VF_LICENCE_API_KEY must be configured", reason: "not_configured" }, 503);
+      }
+      const link = { service: env.LICENCE_SERVICE, environmentId: env.ENVIRONMENT_ID, apiKey: env.VF_LICENCE_API_KEY };
+      const instanceId = decodeURIComponent(submissionMatch[1]);
+      const email = auth.user.email ?? "";
+      let result;
+      if (!submissionMatch[2] && request.method === "GET") result = await handleGetSubmission(db, link, instanceId, email);
+      else if (!submissionMatch[2] && request.method === "POST") result = await handleSubmit(db, link, instanceId, email, await request.json().catch(() => ({})));
+      else if (submissionMatch[2] && request.method === "POST") result = await handleWithdraw(link, instanceId, email, await request.json().catch(() => ({})));
+      else return json({ error: "method not allowed" }, 405);
       return json(result.body, result.status);
     }
     // Decision 0591: a Destination's own outbound mapping.

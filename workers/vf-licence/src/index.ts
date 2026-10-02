@@ -40,6 +40,7 @@ import {
 } from "./signup-route.js";
 import { handleProvisionTrial, expireOverdueLicences, warnExpiringLicences , handleEnvironmentConfig } from "./provision-route.js";
 import { recordAdminAction, handleListAdminActions, actorFrom } from "./admin-audit.js";
+import { partnerConnectorState, submitPartnerConnector, withdrawPartnerConnector } from "./partner-connectors.js";
 import {
   acceptInvitation,
   cancelInvitation,
@@ -696,6 +697,31 @@ export default {
         createdBy: typeof body.invitedBy === "string" ? body.invitedBy.slice(0, 200) : null,
         createdVia: `environment:${environmentId}`,
       });
+      return json(result.body, result.status);
+    }
+
+    /**
+     * **A partner submits a connector — decision 0595.** From the
+     * partner's sandbox instance, with its own key, for the person signed
+     * in there.
+     */
+    const partnerConnectorMatch = url.pathname.match(/^\/environments\/([^/]+)\/partner-connectors(\/withdraw)?$/);
+    if (partnerConnectorMatch) {
+      const environmentId = decodeURIComponent(partnerConnectorMatch[1]);
+      if (!(await isValidEnvironmentKey(env.CONTROL_DB, environmentId, extractBearerToken(request)))) {
+        return json({ error: "unauthorized" }, 401);
+      }
+      let result;
+      if (!partnerConnectorMatch[2] && request.method === "GET") {
+        result = await partnerConnectorState(env.CONTROL_DB, environmentId, url.searchParams.get("instanceId"), url.searchParams.get("email"));
+      } else if (request.method === "POST") {
+        const body = ((await request.json().catch(() => ({}))) ?? {}) as Record<string, unknown>;
+        result = partnerConnectorMatch[2]
+          ? await withdrawPartnerConnector(env.CONTROL_DB, environmentId, body)
+          : await submitPartnerConnector(env.CONTROL_DB, environmentId, body);
+      } else {
+        return json({ error: "method not allowed" }, 405);
+      }
       return json(result.body, result.status);
     }
 

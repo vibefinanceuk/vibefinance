@@ -809,6 +809,8 @@ describe("paths the app is allowed to reach (decision 0212)", () => {
     "/route-instances/dest-1/mapping/try",
     "/route-instances/dest-1/mapping/publish",
     "/route-instances/dest-1/mapping/compile",
+    "/route-instances/dest-1/library-submission",
+    "/route-instances/dest-1/library-submission/withdraw",
   ];
 
   for (const path of reachable) {

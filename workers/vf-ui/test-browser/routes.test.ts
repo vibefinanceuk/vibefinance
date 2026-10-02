@@ -14,6 +14,7 @@ import erpDeliveriesStringsSql from "../../vf-licence/migrations/0233_erp_delive
 import destUnitsStringsSql from "../../vf-licence/migrations/0234_destination_units_strings.sql?raw";
 import libraryStringsSql from "../../vf-licence/migrations/0235_route_library_strings.sql?raw";
 import outboundStringsSql from "../../vf-licence/migrations/0236_outbound_mapping_strings.sql?raw";
+import submitStringsSql from "../../vf-licence/migrations/0242_submit_for_review_strings.sql?raw";
 
 /**
  * **Routes and Process routes — decision 0557.** The standard routes with
@@ -48,7 +49,7 @@ const strings: Record<string, string> = {
   "mechanism.file_import": "File import",
   "mechanism.edi": "EDI",
 };
-for (const sql of [stringsSql, destinationStringsSql, formatStringsSql, mappingStringsSql, csvStringsSql, httpsStringsSql, httpsStateStringsSql, replaceKeyStringsSql, mailboxStringsSql, renameStringsSql, httpsOutStringsSql, erpDeliveriesStringsSql, destUnitsStringsSql, libraryStringsSql, outboundStringsSql]) {
+for (const sql of [stringsSql, destinationStringsSql, formatStringsSql, mappingStringsSql, csvStringsSql, httpsStringsSql, httpsStateStringsSql, replaceKeyStringsSql, mailboxStringsSql, renameStringsSql, httpsOutStringsSql, erpDeliveriesStringsSql, destUnitsStringsSql, libraryStringsSql, outboundStringsSql, submitStringsSql]) {
   for (const m of sql.matchAll(/\('([^']+)', 'en', '((?:[^']|'')*)'\)/g)) strings[m[1]] = m[2].replace(/''/g, "'");
 }
 // 0209 updates the ERP note rather than inserting it.
@@ -1255,5 +1256,135 @@ describe("outbound mapping — decision 0591", () => {
     button(".meed .cardhead", "Back").click();
     await until(() => !!document.querySelector(".prdetail h3"));
     expect(text(".prdetail h3")).toBe("Destination: Oracle push");
+  });
+});
+
+/**
+ * **Submit for review — decision 0595.** In a partner's sandbox only: the
+ * Destination's versions and their review, Withdraw, and the form.
+ */
+describe("submitting a Destination for review — decision 0595", () => {
+  const PUSH = { id: "dest-1", name: "Oracle push", status: "paused", routeId: "https-out", routeName: "HTTPS out", route: { live: true, ...V("process", "en16931", "vf_invoice_json_v1", "en16931", "https") }, waiting: 0, started: false, failedOpen: 0 };
+  const CONNECTOR = {
+    instance: { id: "dest-1", name: "Oracle push", status: "paused", processId: "ap", startedAt: null },
+    settings: { url: "https://erp.example/x", method: "POST", format: "mapped", auth: { type: "basic" }, referencePath: null },
+    connector: null,
+    secrets: {},
+    waitingNotTaken: 0,
+    counts: {},
+    deliveries: [],
+    candidates: [],
+    mapping: { live: 1, draft: null },
+  };
+  const DEST = { name: "Oracle push", method: "POST", format: "mapped", authType: "basic", referencePath: null, lookupLists: ["Business units"], problems: [], draftNotPublished: null };
+  const STATE = (extra: Record<string, unknown> = {}) => ({
+    partner: { id: "northwind", name: "Northwind", status: "active" },
+    customers: [
+      { id: "acme", name: "Acme Ltd" },
+      { id: "globex", name: "Globex plc" },
+    ],
+    canSubmit: true,
+    connector: null,
+    destination: DEST,
+    ...extra,
+  });
+
+  function stubSub(calls: Call[], state: unknown, replies: Record<string, [number, unknown]> = {}) {
+    stub(calls, { "/api/process-routes": { ...FLOW, destinations: [...FLOW.destinations, PUSH] } });
+    const inner = globalThis.fetch as unknown as (url: string, init?: RequestInit) => Promise<Response>;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        const path = String(url).split("?")[0];
+        const method = init?.method ?? "GET";
+        const reply = (status: number, body: unknown) => {
+          calls.push({ method, path, query: "", body: init?.body as string | undefined });
+          return { ok: status < 300, status, json: async () => body } as Response;
+        };
+        if (`${method} ${path}` in replies) return reply(...replies[`${method} ${path}`]);
+        if (path === "/api/route-instances/dest-1/connector") return reply(200, CONNECTOR);
+        if (path === "/api/route-instances/dest-1/library-submission") return reply(200, state);
+        return inner(url, init);
+      })
+    );
+  }
+  async function until(ready: () => boolean) {
+    for (let i = 0; i < 100 && !ready(); i++) await new Promise((r) => setTimeout(r, 10));
+  }
+  async function openPush() {
+    await openScreen("/process-routes.js");
+    ([...document.querySelectorAll(".prcard")].find((c) => c.textContent?.includes("Oracle push")) as HTMLElement).click();
+    await until(() => !!document.querySelector("#do-submission:not([hidden]) h4"));
+  }
+  const button = (root: string, label: string) => [...document.querySelectorAll(`${root} button`)].find((b) => b.textContent === label) as HTMLElement;
+
+  it("is not there outside a partner's sandbox", async () => {
+    stubSub([], { partner: null });
+    await openScreen("/process-routes.js");
+    ([...document.querySelectorAll(".prcard")].find((c) => c.textContent?.includes("Oracle push")) as HTMLElement).click();
+    await until(() => !!document.querySelector("#do-mapping"));
+    await new Promise((r) => setTimeout(r, 30));
+    expect((document.querySelector("#do-submission") as HTMLElement).hidden).toBe(true);
+  });
+
+  it("submits what is chosen: the name, description, notes, what is fixed, sign-ins, and which customers", async () => {
+    const calls: Call[] = [];
+    stubSub(calls, STATE(), { "POST /api/route-instances/dest-1/library-submission": [201, { version: 1, status: "submitted" }] });
+    await openPush();
+    expect(text("#do-submission h4")).toBe("Share in the Route library");
+    expect(text("#do-submission")).toContain("Northwind's customers");
+    expect((document.querySelector("#do-sub-name") as HTMLInputElement).value).toBe("Oracle push");
+    expect((document.querySelector("#do-sub-fixformat") as HTMLInputElement).checked).toBe(true);
+    expect((document.querySelector("#do-sub-auth-basic") as HTMLInputElement).checked).toBe(true);
+    (document.querySelector("#do-sub-name") as HTMLInputElement).value = "Oracle Payables";
+    (document.querySelector("#do-sub-description") as HTMLTextAreaElement).value = "Creates the invoice in Oracle Payables.";
+    (document.querySelector("#do-sub-notes") as HTMLTextAreaElement).value = "Tried on INV-A.";
+    (document.querySelector("#do-sub-auth-oauth2_client_credentials") as HTMLInputElement).checked = true;
+    (document.querySelector("#do-sub-some") as HTMLInputElement).checked = true;
+    (document.querySelector("#do-sub-c-acme") as HTMLInputElement).checked = true;
+    button("#do-submission .cardhead", "Submit for review").click();
+    await until(() => calls.some((c) => c.method === "POST"));
+    expect(JSON.parse(calls.find((c) => c.method === "POST")!.body!)).toEqual({
+      name: "Oracle Payables",
+      description: "Creates the invoice in Oracle Payables.",
+      notes: "Tried on INV-A.",
+      vendorDocs: "",
+      audience: ["acme"],
+      fixed: ["format"],
+      authTypes: ["basic", "oauth2_client_credentials"],
+    });
+    await until(() => text("#do-submitproblem") !== "");
+    expect(text("#do-submitproblem")).toBe("Version 1 is waiting for VibeFinance's review.");
+  });
+
+  it("lists its versions and their review, offers Withdraw while one waits, and no form until it is decided", async () => {
+    const calls: Call[] = [];
+    const versions = [
+      { version: 2, status: "submitted", submittedAt: "2026-10-02T10:00:00Z", submittedBy: "ana@northwind.example", audience: "all", description: "d" },
+      { version: 1, status: "returned", submittedAt: "2026-10-01T10:00:00Z", submittedBy: "ana@northwind.example", audience: ["acme"], reviewReason: "Add the supplier site", description: "d" },
+    ];
+    stubSub(calls, STATE({ connector: { id: "c1", name: "Oracle Payables", versions } }), {
+      "POST /api/route-instances/dest-1/library-submission/withdraw": [200, { version: 2, status: "withdrawn" }],
+    });
+    await openPush();
+    const rows = [...document.querySelectorAll("#do-sub-versions tr")].map((r) => [...r.querySelectorAll("td")].map((td) => td.textContent));
+    expect(rows[0].slice(0, 2)).toEqual(["Version 2", "Waiting for review"]);
+    expect(rows[0][3]).toBe("All the customers you serve");
+    expect(rows[1].slice(0, 2)).toEqual(["Version 1", "Sent back"]);
+    expect(rows[1][3]).toBe("Add the supplier site");
+    expect(document.querySelector("#do-sub-name")).toBeNull();
+    button("#do-sub-versions", "Withdraw").click();
+    await until(() => calls.some((c) => c.path.endsWith("/withdraw")));
+    expect(JSON.parse(calls.find((c) => c.path.endsWith("/withdraw"))!.body!)).toEqual({ version: 2 });
+  });
+
+  it("says why it cannot be submitted: not the partner's person, no published mapping, a draft not published", async () => {
+    stubSub([], STATE({ canSubmit: false, destination: { ...DEST, problems: ["no_live_mapping"], draftNotPublished: 2 } }));
+    await openPush();
+    expect(text("#do-submission")).toContain("It sends its own layout, but no version of its mapping is published.");
+    expect(text("#do-submission")).toContain("Draft 2 of its mapping is not published");
+    expect(text("#do-submission")).toContain("Only Northwind's people can submit connectors.");
+    expect(document.querySelector("#do-sub-name")).toBeNull();
+    expect(button("#do-submission .cardhead", "Submit for review")).toBeUndefined();
   });
 });
