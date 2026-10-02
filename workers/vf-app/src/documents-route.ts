@@ -298,6 +298,19 @@ export async function handleListDocuments(
   const since = params.get("since");
 
   /**
+   * **One person's work this week, and one team's queue — decision 0611.**
+   * From AP Analytics' *Throughput by user* and *Team queue depth* bars
+   * (Dan: "click on the barchart and launch the items for that user in
+   * the Documents search window"). `doneBy` is the invoices a person
+   * completed a task on in the last seven days, the window the
+   * throughput card counts; `team` is the invoices with a task open in
+   * that team's queue, claimed or not, as queue depth counts. Who may
+   * ask for someone else's work is the router's to decide.
+   */
+  const doneBy = params.get("doneBy") || null;
+  const team = params.get("team") || null;
+
+  /**
    * The sender and recipient come from the email that brought it —
    * decision 0147's log — because that is what a person searches by
    * when the supplier name was never extracted.
@@ -373,6 +386,27 @@ export async function handleListDocuments(
          )
          AND (?14 IS NULL OR h.created_at >= ?14)
          AND (
+           ?18 IS NULL
+           OR EXISTS (
+             SELECT 1 FROM tasks bt
+             JOIN stage_visits bv ON bv.id = bt.stage_visit_id
+             WHERE bv.process_instance_id = i.id
+               AND bt.status = 'completed'
+               AND bt.completed_by = ?18
+               AND julianday('now') - julianday(bt.completed_at) < 7
+           )
+         )
+         AND (
+           ?19 IS NULL
+           OR EXISTS (
+             SELECT 1 FROM tasks qt
+             JOIN stage_visits qv ON qv.id = qt.stage_visit_id
+             WHERE qv.process_instance_id = i.id
+               AND qt.status = 'open'
+               AND qt.owner_team_id = ?19
+           )
+         )
+         AND (
            ?16 IS NULL
            OR (
              h.invoice_number LIKE ?16 ESCAPE '\\'
@@ -443,6 +477,8 @@ export async function handleListDocuments(
     stageIdsRaw,
     searchPattern,
   ] as const;
+  // Decision 0611: ?17 is the page's offset (below); the two new filters come after it.
+  const filterBinds = [doneBy, team] as const;
 
   /**
    * **`total`, only when a page was actually asked for.** A second,
@@ -457,7 +493,7 @@ export async function handleListDocuments(
   const totalRow = paginating
     ? await db
         .prepare(`SELECT count(*) AS n ${joins} ${whereClause}`)
-        .bind(...whereBinds)
+        .bind(...whereBinds, null, ...filterBinds)
         .first<{ n: number }>()
     : null;
 
@@ -476,7 +512,7 @@ export async function handleListDocuments(
        ORDER BY h.created_at DESC, h.rowid DESC
        LIMIT ?2 OFFSET ?17`
     )
-    .bind(...whereBinds, offset)
+    .bind(...whereBinds, offset, ...filterBinds)
     .all<DocumentRow>();
 
   const documents = rows.results.map((row) => {

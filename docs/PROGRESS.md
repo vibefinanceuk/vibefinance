@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 2 October 2026 (decision 0610). A living document: what
+Last updated 2 October 2026 (decision 0611). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,13 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### AP Analytics bars on their side, opening Documents (0611)
+
+At Dan's asking, Throughput by user and Team queue depth draw their
+stacked bars horizontally, the name on the left. A click on a person's
+bar opens Documents at the invoices they completed work on in the last
+seven days; on a team's, at the invoices open in its queue.
 
 ### A connector's optional settings only where it uses them (0610)
 

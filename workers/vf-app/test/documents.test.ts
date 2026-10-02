@@ -1044,3 +1044,67 @@ describe("filtering documents by an aging bucket's own open work (decision 0411)
     expect((await list("")).documents).toHaveLength(1);
   });
 });
+
+/**
+ * **One person's work, and one team's queue — decision 0611.** From AP
+ * Analytics' *Throughput by user* and *Team queue depth* bars. Each must
+ * match the card it is clicked from: completed in the last seven days,
+ * and open in the team's queue, claimed or not.
+ */
+describe("filtering documents by a person's week and a team's queue (decision 0611)", () => {
+  async function invoiceWithTask(docId: string, task: { status: "open" | "completed"; completedBy?: string; daysAgo?: number; team?: string; claimedBy?: string }) {
+    await env.DB.prepare("INSERT OR IGNORE INTO org_units (id, name) VALUES ('ou-1', 'Acme UK')").run();
+    for (const u of [task.completedBy, task.claimedBy].filter(Boolean) as string[]) {
+      await env.DB.prepare("INSERT OR IGNORE INTO org_users (id, email, name) VALUES (?, ?, ?)").bind(u, `${u}@acme.com`, u).run();
+    }
+    if (task.team) await env.DB.prepare("INSERT OR IGNORE INTO org_teams (id, name, unit_id) VALUES (?, ?, 'ou-1')").bind(task.team, task.team).run();
+    await env.DB.prepare("INSERT INTO invoice_headers (id, facts_json) VALUES (?, '{}')").bind(docId).run();
+    await env.DB.prepare("INSERT INTO process_instances (id, process_id, subject_type, subject_id, current_stage_id, status) VALUES (?, 'ap', 'invoice', ?, 'validation', 'in_progress')")
+      .bind(`pi-${docId}`, docId)
+      .run();
+    await env.DB.prepare("INSERT INTO stage_visits (id, process_instance_id, stage_id, outcome) VALUES (?, ?, 'validation', 'matched')").bind(`v-${docId}`, `pi-${docId}`).run();
+    await env.DB.prepare(
+      `INSERT INTO tasks (id, stage_id, stage_visit_id, required_permission, status, owner_team_id, owner_user_id, claimed_by, completed_by, completed_at)
+       VALUES (?, 'validation', ?, 'AP.Validate', ?, ?, ?, ?, ?, ${task.status === "completed" ? "datetime('now', ?)" : "NULL"})`
+    )
+      .bind(
+        `t-${docId}`,
+        `v-${docId}`,
+        task.status,
+        task.team ?? null,
+        task.team ? null : (task.completedBy ?? task.claimedBy ?? null),
+        task.claimedBy ?? null,
+        task.completedBy ?? null,
+        ...(task.status === "completed" ? [`-${task.daysAgo ?? 1} days`] : [])
+      )
+      .run();
+  }
+
+  it("shows the invoices a person completed a task on in the last seven days, as the throughput card counts", async () => {
+    await invoiceWithTask("inv-1", { status: "completed", completedBy: "mo", daysAgo: 2 });
+    await invoiceWithTask("inv-2", { status: "completed", completedBy: "mo", daysAgo: 8 });
+    await invoiceWithTask("inv-3", { status: "completed", completedBy: "alice", daysAgo: 1 });
+    expect((await list("doneBy=mo", null, "alice")).documents.map((d) => d.id)).toEqual(["inv-1"]);
+    // Paged, as the Documents screen asks: the total agrees.
+    const paged = await list("doneBy=mo&page=1&pageSize=25", null, "alice");
+    expect(paged.total).toBe(1);
+    expect(paged.documents.map((d) => d.id)).toEqual(["inv-1"]);
+  });
+
+  it("shows the invoices with a task open in a team's queue, claimed or not, as queue depth counts", async () => {
+    await invoiceWithTask("inv-1", { status: "open", team: "ap-team" });
+    await invoiceWithTask("inv-2", { status: "open", team: "ap-team", claimedBy: "mo" });
+    await invoiceWithTask("inv-3", { status: "open", team: "other-team" });
+    await invoiceWithTask("inv-4", { status: "completed", team: "ap-team", completedBy: "mo" });
+    const paged = await list("team=ap-team&page=1&pageSize=25");
+    expect(paged.documents.map((d) => d.id).sort()).toEqual(["inv-1", "inv-2"]);
+    expect(paged.total).toBe(2);
+  });
+
+  it("leaves the paging as it was when neither is asked for", async () => {
+    for (const id of ["inv-1", "inv-2", "inv-3"]) await invoiceWithTask(id, { status: "open", team: "ap-team" });
+    const first = await list("page=1&pageSize=25");
+    expect(first.total).toBe(3);
+    expect(first.documents).toHaveLength(3);
+  });
+});

@@ -78,6 +78,27 @@ let supplierFilter = null;
 let agingFilter = null;
 
 /**
+ * **A person's week, or a team's queue, from AP Analytics — decision
+ * 0611.** A bar on *Throughput by user* opens the invoices that person
+ * completed a task on in the last seven days, the window the card
+ * counts; a bar on *Team Queue Depth* opens the invoices with a task
+ * open in that team's queue. The id is the filter; the name is carried
+ * only for the banner.
+ */
+let personFilter = null;
+let teamFilter = null;
+
+/** Every filter a card can open this screen with, cleared together. */
+function clearFilters() {
+  alertFilter = null;
+  stageFilter = null;
+  supplierFilter = null;
+  agingFilter = null;
+  personFilter = null;
+  teamFilter = null;
+}
+
+/**
  * Which part of the business to show — decision 0193.
  *
  * **Empty means all of them**, which is what a customer with one unit
@@ -185,6 +206,8 @@ async function load() {
   if (alertFilter === "donebyme") params.set("doneByMe", "1");
   if (stageFilter) params.set("stage", stageFilter.id);
   if (supplierFilter) params.set("exceptionSupplier", supplierFilter.name);
+  if (personFilter) params.set("doneBy", personFilter.userId);
+  if (teamFilter) params.set("team", teamFilter.teamId);
   if (agingFilter) {
     params.set("agingMinDays", String(agingFilter.minDays));
     if (agingFilter.maxDays !== null && agingFilter.maxDays !== undefined) {
@@ -439,6 +462,8 @@ function bannerText() {
   if (stageFilter) return t("documents.showing.stage").replace("{stage}", stageFilter.name);
   if (supplierFilter) return t("documents.showing.exceptionsupplier").replace("{supplier}", supplierFilter.name);
   if (agingFilter) return t("documents.showing.aging").replace("{bucket}", agingFilter.label);
+  if (personFilter) return t("documents.showing.doneby").replace("{name}", personFilter.name);
+  if (teamFilter) return t("documents.showing.team").replace("{team}", teamFilter.name);
   return t(`documents.showing.${alertFilter}`);
 }
 
@@ -568,17 +593,14 @@ function render() {
          * one — decision 0256 fixed exactly this shape of confusion for
          * a dropdown that quietly filtered without saying so.
          */
-        alertFilter || stageFilter || supplierFilter || agingFilter
+        alertFilter || stageFilter || supplierFilter || agingFilter || personFilter || teamFilter
           ? el("div", { class: "panel alertbanner" }, [
               el("span", { text: bannerText() }),
               el("button", {
                 class: "chip",
                 text: t("documents.clearfilter"),
                 onclick: async () => {
-                  alertFilter = null;
-                  stageFilter = null;
-                  supplierFilter = null;
-                  agingFilter = null;
+                  clearFilters();
                   await load();
                   render();
                 },
@@ -673,8 +695,8 @@ export async function openDocumentsFiltered(kind) {
   query = "";
   unit = "";
   page = 1;
+  clearFilters();
   alertFilter = kind;
-  stageFilter = null;
   setCurrentScreen("documents");
   await loadUnits();
   if (!(await load())) return;
@@ -708,7 +730,7 @@ export async function openDocumentsAtStage(stageId, stageName) {
   query = "";
   unit = "";
   page = 1;
-  alertFilter = null;
+  clearFilters();
   stageFilter = { id: stageId, name: stageName };
   setCurrentScreen("documents");
   await loadUnits();
@@ -730,9 +752,7 @@ export async function openDocumentsForSupplierExceptions(supplierName) {
   query = "";
   unit = "";
   page = 1;
-  alertFilter = null;
-  stageFilter = null;
-  agingFilter = null;
+  clearFilters();
   supplierFilter = { name: supplierName };
   setCurrentScreen("documents");
   await loadUnits();
@@ -753,10 +773,39 @@ export async function openDocumentsAged(bucket) {
   query = "";
   unit = "";
   page = 1;
-  alertFilter = null;
-  stageFilter = null;
-  supplierFilter = null;
+  clearFilters();
   agingFilter = bucket;
+  setCurrentScreen("documents");
+  await loadUnits();
+  if (!(await load())) return;
+  render();
+}
+
+/**
+ * Open the documents screen at one person's week — decision 0611, from
+ * AP Analytics' *Throughput by user*. Another person's work is asked
+ * for by id; the server allows it only to someone holding AP.Analysis,
+ * as the card itself is.
+ */
+export async function openDocumentsDoneBy(userId, name) {
+  query = "";
+  unit = "";
+  page = 1;
+  clearFilters();
+  personFilter = { userId, name };
+  setCurrentScreen("documents");
+  await loadUnits();
+  if (!(await load())) return;
+  render();
+}
+
+/** Open the documents screen at one team's open queue — decision 0611, from *Team Queue Depth*. */
+export async function openDocumentsForTeam(teamId, name) {
+  query = "";
+  unit = "";
+  page = 1;
+  clearFilters();
+  teamFilter = { teamId, name };
   setCurrentScreen("documents");
   await loadUnits();
   if (!(await load())) return;

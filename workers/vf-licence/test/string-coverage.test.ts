@@ -1681,6 +1681,8 @@ const KEYS_THE_INTERFACE_USES = [
   "help.screen.mapping.34",
   "mapping.retire",
   "mapping.retiretitle",
+  "documents.showing.doneby",
+  "documents.showing.team",
   "mapping.fn.present_as",
   "mapping.fn.empty_if",
   "httpsout.oauthusername",

@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 /** Team queue depth — decision 0428. */
 
 function mountShell() {
-  document.body.innerHTML = `<div id="card-under-test"></div>`;
+  document.body.innerHTML = `<div id="card-under-test"></div><main id="shell"></main><main id="viewer" hidden></main>`;
 }
 
 const STRINGS = {
@@ -14,6 +14,7 @@ const STRINGS = {
     "workload.noqueuedepth": "No team-owned tasks open right now",
     "workload.available": "Available",
     "workload.locked": "Locked",
+    "documents.showing.team": "Showing what is open in {team}'s queue",
   },
 };
 
@@ -25,6 +26,8 @@ function stubQueueDepth(data: unknown, seen: string[] = []) {
       seen.push(path);
       if (path.startsWith("/api/ui-strings")) return { ok: true, json: async () => STRINGS } as Response;
       if (path.startsWith("/api/workload/queue-depth")) return { ok: true, json: async () => data } as Response;
+      if (path.startsWith("/api/org/units")) return { ok: true, json: async () => ({ units: [] }) } as Response;
+      if (path.startsWith("/api/documents")) return { ok: true, json: async () => ({ documents: [], searched: 0 }) } as Response;
       throw new Error(`no stub for ${path}`);
     })
   );
@@ -75,18 +78,29 @@ describe("the chart the route's data draws", () => {
     ],
   };
 
-  it("draws two stacked segments for a team with both available and locked tasks, one for a team with only one", async () => {
+  it("lays each team's bar on its side, available then locked, one segment for a team with only one", async () => {
     await renderQueueDepth(DATA);
     // AP Processing: 2 segments (available + locked); Exceptions: 1
-    // segment (locked is 0, skipped by stackedBarChart itself).
-    expect(document.querySelectorAll(".panel svg rect")).toHaveLength(3);
+    // segment (locked is 0, skipped by stackedBarRows itself).
+    expect(document.querySelector(".panel svg")).toBeNull();
+    const rows = [...document.querySelectorAll(".stackrow")];
+    expect(rows).toHaveLength(2);
+    expect(rows[0].querySelectorAll(".stackrow-seg")).toHaveLength(2);
+    expect(rows[1].querySelectorAll(".stackrow-seg")).toHaveLength(1);
+    // Proportional to the busiest team: 6 of 9 and 3 of 9.
+    const widths = [...rows[0].querySelectorAll<HTMLElement>(".stackrow-seg")].map((n) => parseFloat(n.style.width));
+    expect(widths[0]).toBeCloseTo(66.67, 1);
+    expect(widths[1]).toBeCloseTo(33.33, 1);
   });
 
-  it("names each team beneath its own bar", async () => {
+  it("names each team on the left of its bar, its total on the right", async () => {
     await renderQueueDepth(DATA);
-    const labels = [...document.querySelectorAll(".panel svg text")].map((n) => n.textContent);
-    expect(labels).toContain("AP Processing");
-    expect(labels).toContain("Exceptions");
+    const rows = [...document.querySelectorAll(".stackrow")];
+    expect(rows.map((r) => r.querySelector(".stackrow-name")?.textContent)).toEqual(["AP Processing", "Exceptions"]);
+    expect(rows.map((r) => r.querySelector(".stackrow-total")?.textContent)).toEqual(["9", "1"]);
+    expect(rows[0].firstElementChild?.className).toBe("stackrow-name");
+    expect(rows[0].lastElementChild?.className).toContain("stackrow-total");
+    expect(rows[0].querySelector(".stackrow-seg")?.getAttribute("title")).toBe("Available: 6");
   });
 
   it("totals available and locked across every team in the legend", async () => {
@@ -97,8 +111,8 @@ describe("the chart the route's data draws", () => {
 
   it("colours available and locked consistently, matching the legend's own dots", async () => {
     await renderQueueDepth(DATA);
-    const rects = [...document.querySelectorAll(".panel svg rect")];
-    const fills = new Set(rects.map((r) => r.getAttribute("fill")));
+    const segs = [...document.querySelectorAll<HTMLElement>(".stackrow-seg")];
+    const fills = new Set(segs.map((r) => r.style.background));
     expect(fills).toEqual(new Set(["var(--chart-1)", "var(--chart-2)"]));
 
     const legendDots = [...document.querySelectorAll(".chartkey")].map((row) => ({
@@ -107,5 +121,32 @@ describe("the chart the route's data draws", () => {
     }));
     expect(legendDots.find((d) => d.label === "Available")?.colour).toBe("var(--chart-1)");
     expect(legendDots.find((d) => d.label === "Locked")?.colour).toBe("var(--chart-2)");
+  });
+});
+
+describe("a team's bar opens its queue in Documents (decision 0611)", () => {
+  it("asks Documents for the invoices open in that team's queue, and says so", async () => {
+    const seen: string[] = [];
+    await renderQueueDepth(
+      {
+        teams: [
+          { teamId: "t1", teamName: "AP Processing", available: 6, locked: 3 },
+          { teamId: "t2", teamName: "Exceptions", available: 1, locked: 0 },
+        ],
+      },
+      seen
+    );
+    const row = [...document.querySelectorAll<HTMLElement>(".stackrow")].find((r) => r.textContent?.includes("Exceptions"));
+    expect(row?.classList.contains("clickable")).toBe(true);
+    row!.click();
+    await vi.waitFor(() => expect(seen.some((u) => u.startsWith("/api/documents"))).toBe(true));
+    const request = seen.find((u) => u.startsWith("/api/documents"))!;
+    expect(new URL(request, "http://x").searchParams.get("team")).toBe("t2");
+    await vi.waitFor(() => expect(document.querySelector(".alertbanner")?.textContent).toContain("Showing what is open in Exceptions's queue"));
+  });
+
+  it("offers no click on a team with nothing open", async () => {
+    await renderQueueDepth({ teams: [{ teamId: "t1", teamName: "AP Processing", available: 0, locked: 0 }] });
+    expect(document.querySelectorAll(".stackrow.clickable")).toHaveLength(0);
   });
 });

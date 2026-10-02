@@ -18,7 +18,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
  */
 
 function mountShell() {
-  document.body.innerHTML = `<div id="card-under-test"></div>`;
+  document.body.innerHTML = `<div id="card-under-test"></div><main id="shell"></main><main id="viewer" hidden></main>`;
 }
 
 const STRINGS = {
@@ -27,6 +27,7 @@ const STRINGS = {
     "workload.throughput": "Throughput by user",
     "workload.throughputsub": "Completed in the last 7 days, stacked by stage",
     "workload.nothroughput": "Nothing completed in the last 7 days",
+    "documents.showing.doneby": "Showing what {name} completed in the last 7 days",
   },
 };
 
@@ -38,6 +39,8 @@ function stubWorkload(data: unknown, seen: string[] = []) {
       seen.push(path);
       if (path.startsWith("/api/ui-strings")) return { ok: true, json: async () => STRINGS } as Response;
       if (path.startsWith("/api/workload/throughput")) return { ok: true, json: async () => data } as Response;
+      if (path.startsWith("/api/org/units")) return { ok: true, json: async () => ({ units: [] }) } as Response;
+      if (path.startsWith("/api/documents")) return { ok: true, json: async () => ({ documents: [], searched: 0 }) } as Response;
       throw new Error(`no stub for ${path}`);
     })
   );
@@ -118,17 +121,22 @@ describe("the chart the route's data draws", () => {
 
     // dana: 2 segments, wei: 2 segments — never 4 apiece just because
     // the legend names 4 buckets in all.
-    expect(document.querySelectorAll(".panel svg rect")).toHaveLength(4);
+    expect(document.querySelectorAll(".stackrow-seg")).toHaveLength(4);
   });
 
-  it("names each user and their total beneath and above their own bar", async () => {
+  it("lays each user's bar on its side, their name on the left and their total on the right (decision 0611)", async () => {
     await renderWorkload(DATA);
 
-    const labels = [...document.querySelectorAll(".panel svg text")].map((n) => n.textContent);
-    expect(labels).toContain("Dana R.");
-    expect(labels).toContain("Wei C.");
-    expect(labels).toContain("5");
-    expect(labels).toContain("2");
+    expect(document.querySelector(".panel svg")).toBeNull();
+    const rows = [...document.querySelectorAll(".stackrow")];
+    expect(rows.map((r) => [...r.children].map((c) => c.className.split(" ")[0]))).toEqual([
+      ["stackrow-name", "stackrow-track", "stackrow-total"],
+      ["stackrow-name", "stackrow-track", "stackrow-total"],
+    ]);
+    expect(rows.map((r) => r.querySelector(".stackrow-name")?.textContent)).toEqual(["Dana R.", "Wei C."]);
+    expect(rows.map((r) => r.querySelector(".stackrow-total")?.textContent)).toEqual(["5", "2"]);
+    // A segment names its stage when pointed at.
+    expect(rows[0].querySelector(".stackrow-seg")?.getAttribute("title")).toBe("Received: 2");
   });
 
   it("keys every bucket the legend names, with its own real total", async () => {
@@ -140,7 +148,7 @@ describe("the chart the route's data draws", () => {
 
   it("colours a segment by its own bucket, not by its position in one user's own row", async () => {
     /**
-     * **The property `stackedBarChart`'s own doc comment exists to
+     * **The property `stackedBarRows`'s own doc comment exists to
      * guarantee.** Dana's own second segment (bucket 3) and Wei's own
      * second segment (bucket 5) sit at the same array index within
      * their respective rows, but name different real stage buckets —
@@ -149,8 +157,8 @@ describe("the chart the route's data draws", () => {
      */
     await renderWorkload(DATA);
 
-    const rects = [...document.querySelectorAll(".panel svg rect")];
-    const fills = rects.map((r) => r.getAttribute("fill"));
+    const segs = [...document.querySelectorAll<HTMLElement>(".stackrow-seg")];
+    const fills = segs.map((r) => r.style.background);
 
     // Every real bucket used gets its own, distinct colour token.
     expect(new Set(fills).size).toBe(4);
@@ -168,5 +176,42 @@ describe("the chart the route's data draws", () => {
     }));
     const matching = legendDots.find((d) => d.label === "Matching & Coding");
     expect(matching?.colour).toBe("var(--chart-3)");
+  });
+});
+
+describe("a person's bar opens their week in Documents (decision 0611)", () => {
+  it("asks Documents for what that person completed, and says so", async () => {
+    const seen: string[] = [];
+    await renderWorkload(
+      {
+        users: [{ userId: "wei", userName: "Wei C.", total: 2, buckets: [{ bucket: 2, label: "Validation", n: 2 }] }],
+        legend: [{ bucket: 2, label: "Validation", n: 2 }],
+      },
+      seen
+    );
+    const row = document.querySelector<HTMLElement>(".stackrow.clickable");
+    expect(row?.textContent).toContain("Wei C.");
+    row!.click();
+    await vi.waitFor(() => expect(seen.some((u) => u.startsWith("/api/documents"))).toBe(true));
+    const request = seen.find((u) => u.startsWith("/api/documents"))!;
+    expect(new URL(request, "http://x").searchParams.get("doneBy")).toBe("wei");
+    await vi.waitFor(() =>
+      expect(document.querySelector(".alertbanner")?.textContent).toContain("Showing what Wei C. completed in the last 7 days")
+    );
+  });
+
+  it("opens from the keyboard too", async () => {
+    const seen: string[] = [];
+    await renderWorkload(
+      {
+        users: [{ userId: "wei", userName: "Wei C.", total: 2, buckets: [{ bucket: 2, label: "Validation", n: 2 }] }],
+        legend: [{ bucket: 2, label: "Validation", n: 2 }],
+      },
+      seen
+    );
+    const row = document.querySelector<HTMLElement>(".stackrow.clickable")!;
+    expect(row.tabIndex).toBe(0);
+    row.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    await vi.waitFor(() => expect(seen.some((u) => u.includes("doneBy=wei"))).toBe(true));
   });
 });

@@ -517,103 +517,83 @@ export function donutChart(segments, { size = 150, legend = true, onSelect = nul
 
 /**
  * Several series, stacked in one bar per row — decision 0415, the
- * Workload screen's "throughput by user" chart.
+ * Workload screen's "throughput by user" chart, and 0428's team queue
+ * depth.
  *
- * **Colour is given, not computed from position.** `donutChart` above
- * can assign `chart-${i % 5}` because every ring draws its own full
- * segment list; here two rows can hold different subsets of the same
- * categories (one user touched every stage this week, another only
- * three of them), so a segment's colour has to travel with what it
- * *is* — decision 0415's own stage bucket — never with where it lands
- * in one particular row's own filtered array. Color follows the
- * entity, never its rank.
+ * **Horizontal, the name on the left** — decision 0611. The first
+ * version stood the bars upright in an SVG, with each name in 9px type
+ * beneath its bar: a long name ran into its neighbour's, and ten people
+ * left each bar too narrow to read. Lying down, each row has the whole
+ * width for its bar and its own line for the name, in HTML so it wraps
+ * and can be selected, as `barList` does for supplier names.
  *
- * @param rows `[{ label, total, segments: [{ value, colour }] }]` —
- * `segments` already bottom-to-top: index 0 sits on the baseline. A
- * segment with no value is skipped rather than drawn as a sliver.
+ * **Colour is given, not computed from position.** Two rows can hold
+ * different subsets of the same categories (one user touched every
+ * stage this week, another only three of them), so a segment's colour
+ * travels with what it *is*, never with where it lands in one row.
+ *
+ * **`onSelect`** — offered per row where `total > 0`, as `barList` does
+ * (decision 0161's rule): a row with nothing in it leads nowhere.
+ *
+ * @param rows `[{ label, total, segments: [{ value, colour, label? }] }]` —
+ * `segments` left to right. A segment with no value is skipped rather
+ * than drawn as a sliver; its `label` is its tooltip.
  */
-export function stackedBarChart(rows, { height = 132 } = {}) {
-  const width = 560;
-  const node = svg(width, height);
-  if (rows.length === 0) return node;
-
+export function stackedBarRows(rows, { onSelect = null } = {}) {
   const hi = Math.max(...rows.map((r) => r.total), 1);
-  const slot = width / rows.length;
-  const barWidth = Math.min(slot * 0.55, 54);
-  const plot = height - 34;
+  const wrap = document.createElement("div");
+  wrap.className = "stackrows";
 
-  for (let i = 1; i <= 4; i++) {
-    const y = height - 22 - (plot * i) / 4;
-    node.append(
-      el("line", {
-        x1: 0,
-        x2: width,
-        y1: y.toFixed(1),
-        y2: y.toFixed(1),
-        stroke: "var(--border)",
-        "stroke-width": 0.5,
-        opacity: 0.55,
-      })
-    );
+  for (const row of rows) {
+    const line = document.createElement("div");
+    line.className = "stackrow";
+
+    const name = document.createElement("span");
+    name.className = "stackrow-name";
+    name.textContent = row.label;
+
+    const track = document.createElement("div");
+    track.className = "stackrow-track";
+    for (const seg of row.segments) {
+      if (!seg.value) continue;
+      const part = document.createElement("div");
+      part.className = "stackrow-seg";
+      part.style.width = `${(seg.value / hi) * 100}%`;
+      part.style.background = seg.colour;
+      if (seg.label) part.title = `${seg.label}: ${seg.value}`;
+      track.append(part);
+    }
+
+    const total = document.createElement("span");
+    total.className = "stackrow-total muted";
+    total.textContent = String(row.total);
+
+    line.append(name, track, total);
+
+    if (onSelect && row.total > 0) {
+      line.classList.add("clickable");
+      line.tabIndex = 0;
+      line.setAttribute("role", "button");
+      line.onclick = () => onSelect(row);
+      line.onkeydown = (e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onSelect(row);
+        }
+      };
+    }
+
+    wrap.append(line);
   }
 
-  rows.forEach((row, i) => {
-    const x = i * slot + (slot - barWidth) / 2;
-    let cursorY = height - 22;
-
-    row.segments.forEach((seg) => {
-      if (!seg.value) return;
-      const segHeight = Math.max((seg.value / hi) * plot, 1);
-      const y = cursorY - segHeight;
-      node.append(
-        el("rect", {
-          x: x.toFixed(1),
-          y: y.toFixed(1),
-          width: barWidth.toFixed(1),
-          height: segHeight.toFixed(1),
-          rx: 2,
-          fill: seg.colour,
-        })
-      );
-      // A 2px surface gap between stacked segments — the same
-      // separation an adjacent pair of bars already gets.
-      cursorY = y - 2;
-    });
-
-    node.append(
-      el(
-        "text",
-        {
-          x: (x + barWidth / 2).toFixed(1),
-          y: (cursorY - 2).toFixed(1),
-          "text-anchor": "middle",
-          "font-size": 10,
-          fill: "var(--text-secondary)",
-        },
-        row.total
-      ),
-      el(
-        "text",
-        {
-          x: (x + barWidth / 2).toFixed(1),
-          y: height - 8,
-          "text-anchor": "middle",
-          "font-size": 9,
-          fill: "var(--text-muted)",
-        },
-        row.label
-      )
-    );
-  });
-
-  return node;
+  return wrap;
 }
 
 /**
  * A key row for a chart whose colour needs naming, standing alone
  * rather than beside a ring — decision 0415. `donutChart`'s own
  * legend lives inside its ring's flex row and reads top to bottom;
- * `stackedBarChart` above has no ring to sit beside, so this wraps
+ * `stackedBarRows` above has no ring to sit beside, so this wraps
  * left to right under a chart of any width instead.
  *
  * @param items `[{ label, value, colour }]`

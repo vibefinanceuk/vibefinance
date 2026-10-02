@@ -2186,6 +2186,33 @@
   .barlist-row.clickable:hover { background: var(--surface-1); }
 
   /*
+    **Stacked bars lying down, the name on the left** — decision 0611.
+    A grid so every bar starts at the same place whatever the name's
+    length; a long name wraps within its column rather than pushing
+    its bar along.
+  */
+  .stackrow {
+    display: grid;
+    grid-template-columns: minmax(80px, 28%) 1fr auto;
+    align-items: center;
+    gap: 10px;
+    padding: 3px 0;
+    font-size: var(--text-sm);
+  }
+  .stackrow-name { overflow-wrap: anywhere; }
+  .stackrow-track { display: flex; gap: 2px; height: 12px; }
+  .stackrow-seg { height: 12px; border-radius: 2px; min-width: 2px; }
+  .stackrow-total { min-width: 2ch; text-align: right; }
+  .stackrow.clickable {
+    cursor: pointer;
+    margin-left: -6px;
+    margin-right: -6px;
+    padding: 3px 6px;
+    border-radius: 6px;
+  }
+  .stackrow.clickable:hover, .stackrow.clickable:focus-visible { background: var(--surface-1); }
+
+  /*
     **A bar that leads somewhere** — decision 0411. Unlike a donut's
     arc, a bar is wide and tall enough to be its own click target, so
     this sits on the SVG group itself rather than needing an HTML
