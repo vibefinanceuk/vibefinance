@@ -1,5 +1,6 @@
 import { unitIdsOf } from "./destination-units.js";
-import { STANDARD_CONNECTORS, connectorOfInstance } from "@vibefinance/shared";
+import { connectorOfInstance } from "@vibefinance/shared";
+import { connectorLibrary } from "./partner-library.js";
 import type { RouteResult } from "./org-route.js";
 import { eligibleInvoiceIds } from "./erp-export-route.js";
 import { processEnds } from "./process-ends.js";
@@ -172,6 +173,8 @@ export async function handleProcessRoutes(
     processes.results.find((p) => p.sources > 0) ??
     processes.results.at(0) ??
     null;
+  // Decision 0601: partners' connectors too, for whether a later version waits.
+  const library = await connectorLibrary(db);
   if (!chosen) {
     return { status: 200, body: { processes: [], process: null, sources: [], destinations: [] } };
   }
@@ -267,7 +270,7 @@ export async function handleProcessRoutes(
         unitIds: unitIdsOf(d),
         // Decision 0589: the connector it was made from, and whether a later version waits.
         connectorId: d.connector_id ?? d.route_id,
-        connectorUpgrade: (connectorOfInstance(STANDARD_CONNECTORS, d)?.version ?? 1) > (d.connector_version ?? 1),
+        connectorUpgrade: (connectorOfInstance(library, d)?.version ?? 1) > (d.connector_version ?? 1),
         // Decision 0599: never sent, nor tried to, so it may be deleted rather than retired.
         neverSent: d.sent === 0,
       })),

@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 2 October 2026 (decision 0600). A living document: what
+Last updated 2 October 2026 (decision 0601). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,15 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Partner connectors in the Route library (0601)
+
+Slice 4, step 4, which completes partner authoring. A partner's
+connector, once VibeFinance approves a version, appears in the Route
+library of each customer the partner serves, labelled with the partner.
+A customer adds it with its mapping and the look-up lists it needs, and
+later versions arrive as Upgrade, without overwriting the customer's own
+mapping changes.
 
 ### The review queue (0600)
 

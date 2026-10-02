@@ -5082,3 +5082,7 @@
 .libcard > * { flex-shrink: 0; }
 .libchips, .libfoot { align-items: center; }
 .libchips .rmpill, .libfoot .rmpill { align-self: center; }
+/* Decision 0601: the look-up lists a partner's connector reads; an empty one needs filling in. */
+.dolists { flex-basis: 100%; }
+.dolists .listempty { color: var(--text-warning); }
+.libpartner { color: var(--text-accent); }

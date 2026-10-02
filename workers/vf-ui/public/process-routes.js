@@ -501,7 +501,7 @@ function openAddDestination() {
     .then((r) => (r.ok ? r.json() : null))
     .then((lib) => {
       const ready = (lib?.connectors ?? []).filter((c) => c.direction === "destination" && c.status === "available" && c.id !== "https-out" && (c.multiple || !c.inUse.some((u) => u.processId === processId)));
-      for (const c of ready) connector.append(el("option", { value: c.id, text: t(`connector.${c.id}.name`) }));
+      for (const c of ready) connector.append(el("option", { value: c.id, text: c.name ?? t(`connector.${c.id}.name`) }));
     })
     .catch(() => {});
   const close = () => backdrop.remove();

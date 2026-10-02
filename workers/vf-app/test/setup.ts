@@ -128,6 +128,7 @@ import destinationRequestsSql from "../../../migrations/0121_destination_request
 import instanceConnectorsSql from "../../../migrations/0122_instance_connectors.sql?raw";
 import outboundMappingsSql from "../../../migrations/0123_outbound_mappings.sql?raw";
 import destinationRetireSql from "../../../migrations/0124_destination_retire.sql?raw";
+import partnerConnectorCopiesSql from "../../../migrations/0125_partner_connector_copies.sql?raw";
 
 // Another known divergence from production, on top of the one below:
 // D1's exec() splits its input by newline and executes each non-empty
@@ -177,7 +178,7 @@ const TABLES_IN_DROP_ORDER = [
   // route_messages, so both go first, invoice_documents before it.
   "route_alert_log", "route_alerts",
   // Supplier mappings (decision 0561): parts reference mappings, versions reference messages.
-  "outbound_mapping_versions", "destination_requests", "destination_deliveries", "connector_secrets", "source_keys", "route_message_items", "route_message_events", "route_message_parts", "supplier_mapping_versions", "supplier_mappings", "lookup_entries", "lookup_lists", "invoice_documents", "route_messages",
+  "partner_connector_copies", "outbound_mapping_versions", "destination_requests", "destination_deliveries", "connector_secrets", "source_keys", "route_message_items", "route_message_events", "route_message_parts", "supplier_mapping_versions", "supplier_mappings", "lookup_entries", "lookup_lists", "invoice_documents", "route_messages",
   // Routes, slice 3 (decision 0557): instances reference sources and processes.
   "route_instances", "route_versions", "routes",
   "erp_export_rows", "erp_export_invoices", "erp_exports", "invoice_line_coding_splits", "invoice_line_po_pairings", "cost_centre_gl_codes", "document_comments",
@@ -452,6 +453,7 @@ export async function applyTestSchema(): Promise<void> {
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(instanceConnectorsSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(outboundMappingsSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(destinationRetireSql)));
+  await env.DB.exec(toOneStatementPerLine(stripSqlComments(partnerConnectorCopiesSql)));
 }
 
 /**

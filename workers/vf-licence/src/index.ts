@@ -40,7 +40,7 @@ import {
 } from "./signup-route.js";
 import { handleProvisionTrial, expireOverdueLicences, warnExpiringLicences , handleEnvironmentConfig } from "./provision-route.js";
 import { recordAdminAction, handleListAdminActions, actorFrom } from "./admin-audit.js";
-import { partnerConnectorState, submitPartnerConnector, withdrawPartnerConnector } from "./partner-connectors.js";
+import { libraryConnectorsFor, partnerConnectorState, submitPartnerConnector, withdrawPartnerConnector } from "./partner-connectors.js";
 import { listPartnerConnectors, reviewVersion, suspendConnector } from "./connector-review.js";
 import {
   acceptInvitation,
@@ -747,6 +747,17 @@ export default {
       } else {
         return json({ error: "method not allowed" }, 405);
       }
+      return json(result.body, result.status);
+    }
+
+    // Decision 0601: the partner connectors this environment's Route library offers.
+    const libraryConnectorsMatch = url.pathname.match(/^\/environments\/([^/]+)\/library-connectors$/);
+    if (libraryConnectorsMatch && request.method === "GET") {
+      const environmentId = decodeURIComponent(libraryConnectorsMatch[1]);
+      if (!(await isValidEnvironmentKey(env.CONTROL_DB, environmentId, extractBearerToken(request)))) {
+        return json({ error: "unauthorized" }, 401);
+      }
+      const result = await libraryConnectorsFor(env.CONTROL_DB, environmentId);
       return json(result.body, result.status);
     }
 

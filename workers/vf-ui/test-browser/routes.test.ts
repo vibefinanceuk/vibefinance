@@ -19,6 +19,7 @@ import submitFromCustomerSql from "../../vf-licence/migrations/0243_submit_from_
 import destRetireStringsSql from "../../vf-licence/migrations/0244_destination_rename_retire_strings.sql?raw";
 import destDeleteStringsSql from "../../vf-licence/migrations/0245_destination_delete_strings.sql?raw";
 import reviewStringsSql from "../../vf-licence/migrations/0247_connector_review_strings.sql?raw";
+import partnerLibraryStringsSql from "../../vf-licence/migrations/0248_partner_library_strings.sql?raw";
 
 /**
  * **Routes and Process routes — decision 0557.** The standard routes with
@@ -53,7 +54,7 @@ const strings: Record<string, string> = {
   "mechanism.file_import": "File import",
   "mechanism.edi": "EDI",
 };
-for (const sql of [stringsSql, destinationStringsSql, formatStringsSql, mappingStringsSql, csvStringsSql, httpsStringsSql, httpsStateStringsSql, replaceKeyStringsSql, mailboxStringsSql, renameStringsSql, httpsOutStringsSql, erpDeliveriesStringsSql, destUnitsStringsSql, libraryStringsSql, outboundStringsSql, submitStringsSql, submitFromCustomerSql, destRetireStringsSql, destDeleteStringsSql, reviewStringsSql]) {
+for (const sql of [stringsSql, destinationStringsSql, formatStringsSql, mappingStringsSql, csvStringsSql, httpsStringsSql, httpsStateStringsSql, replaceKeyStringsSql, mailboxStringsSql, renameStringsSql, httpsOutStringsSql, erpDeliveriesStringsSql, destUnitsStringsSql, libraryStringsSql, outboundStringsSql, submitStringsSql, submitFromCustomerSql, destRetireStringsSql, destDeleteStringsSql, reviewStringsSql, partnerLibraryStringsSql]) {
   for (const m of sql.matchAll(/\('([^']+)', 'en', '((?:[^']|'')*)'\)/g)) strings[m[1]] = m[2].replace(/''/g, "'");
 }
 // 0209 updates the ERP note rather than inserting it.
@@ -994,6 +995,66 @@ describe("the Route library — decision 0589", () => {
     ([...document.querySelectorAll("#do-connector button")].find((b) => b.textContent === "Upgrade") as HTMLElement).click();
     await settle();
     expect(calls.some((c) => c.method === "POST" && c.path === "/api/route-instances/dest-1/connector/upgrade")).toBe(true);
+  });
+});
+
+describe("partner connectors in the Route library — decision 0601", () => {
+  const P = (extra: Record<string, unknown> = {}) => ({
+    id: "partner:c-1", version: 2, direction: "destination", publisher: "partner", partner: { id: "northwind", name: "Northwind" },
+    name: "Oracle Payables", description: "Creates the invoice in Oracle Payables.", lookupLists: ["Business units"],
+    status: "available", categories: ["partner"], transport: "https", formats: ["mapped"], multiple: true, mechanism: null, vendorDocs: null, inUse: [], ...extra,
+  });
+  const STD = { id: "https-out", version: 1, direction: "destination", publisher: "standard", status: "available", categories: ["generic"], transport: "https", formats: ["vf_json"], multiple: true, mechanism: null, vendorDocs: null, inUse: [] };
+
+  it("shows a partner's connector by its own name, with its partner, the lists it reads, a Partner filter, and one no longer offered", async () => {
+    stub([], {
+      "/api/connector-library": {
+        connectors: [STD, P(), P({ id: "partner:c-2", name: "Old Sage push", status: "withdrawn", inUse: [{ instanceId: "dest-3", processId: "ap", processName: "Standard AP Process", name: "Sage", version: 1, upgradeAvailable: false }] })],
+        processes: [{ id: "ap", name: "Standard AP Process" }],
+        partnerError: "unauthorized",
+      },
+    });
+    await openScreen("/route-library.js");
+    const card = (id: string) => document.querySelector(`.libcard[data-connector="${id}"]`) as HTMLElement;
+    expect(card("partner:c-1").querySelector("h3")?.textContent).toBe("Oracle Payables");
+    expect(card("partner:c-1").textContent).toContain("Partner · Northwind");
+    expect(card("partner:c-1").textContent).toContain("Creates the invoice in Oracle Payables.");
+    expect(card("partner:c-1").textContent).toContain("Look-up lists it reads: Business units");
+    expect(card("partner:c-1").textContent).toContain("Its own layout");
+    expect(card("partner:c-1").querySelector(".libadd button")?.textContent).toBe("Add to my routes");
+    expect(card("partner:c-2").textContent).toContain("No longer offered");
+    expect(card("partner:c-2").querySelector(".libadd button")).toBeNull();
+    expect(text("#lib-partnerfailed")).toBe("Partners' connectors could not be fetched just now. Those already added keep working.");
+    ([...document.querySelectorAll("#lib-filters button")].find((b) => b.textContent === "Partner") as HTMLElement).click();
+    expect([...document.querySelectorAll(".libcard h3")].map((h) => h.textContent)).toEqual(["Oracle Payables", "Old Sage push"]);
+  });
+
+  it("shows a Destination's partner connector by name and partner, the empty list to fill in, and what Upgrade did to its mapping", async () => {
+    const calls: Call[] = [];
+    const PUSH = { id: "dest-2", name: "Oracle push", status: "paused", routeId: "https-out", routeName: "HTTPS out", route: { live: true, ...V("process", "en16931", "vf_invoice_json_v1", "en16931", "https") }, waiting: 0, started: false, failedOpen: 0 };
+    stub(calls, {
+      "/api/process-routes": { ...FLOW, destinations: [...FLOW.destinations, PUSH] },
+      "/api/route-instances/dest-2/connector": {
+        instance: { id: "dest-2", name: "Oracle push", status: "paused", processId: "ap", startedAt: null },
+        settings: { url: "https://erp.acme.example/x", method: "POST", format: "mapped", auth: { type: "basic", username: "i" }, referencePath: "$.InvoiceId" },
+        connector: { id: "partner:c-1", version: 1, name: "Oracle Payables", publisher: "partner", partner: { id: "northwind", name: "Northwind" }, offered: true, latestVersion: 2, upgradeAvailable: true, fixed: ["format"], authTypes: ["basic"] },
+        lists: [{ name: "Business units", entries: 0, exists: true }, { name: "Cost centres", entries: 4, exists: true }],
+        mapping: { live: 1, draft: null },
+        secrets: {}, waitingNotTaken: 0, counts: {}, deliveries: [], candidates: [],
+      },
+      "/api/route-instances/dest-2/connector/upgrade": { from: 1, to: 2, authChanged: false, mapping: "kept", listsCreated: [] },
+    });
+    await openScreen("/process-routes.js");
+    ([...document.querySelectorAll(".prcard")].find((c) => c.textContent?.includes("Oracle push")) as HTMLElement).click();
+    await settle();
+    expect(text("#do-connector")).toContain("Connector: Oracle Payables · version 1");
+    expect(text("#do-connector")).toContain("Partner · Northwind");
+    expect(text("#do-lists")).toBe("Look-up lists it reads: Business units (empty: fill it in under Look-up lists), Cost centres");
+    expect(document.querySelector("#do-withdrawn")).toBeNull();
+    ([...document.querySelectorAll("#do-connector button")].find((b) => b.textContent === "Upgrade") as HTMLElement).click();
+    await settle();
+    expect(calls.some((c) => c.method === "POST" && c.path === "/api/route-instances/dest-2/connector/upgrade")).toBe(true);
+    expect(text("#do-upgraded")).toBe("Your own changes to the outbound mapping were kept, so it does not follow the new version.");
   });
 });
 

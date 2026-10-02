@@ -1,3 +1,5 @@
+import type { OutboundMapping } from "./outbound-mapping.js";
+
 /**
  * **The connector library — decision 0589**, slice 2 of the connector
  * framework (`claude/connector-framework-design.md`).
@@ -23,16 +25,18 @@
  */
 
 export type ConnectorDirection = "source" | "destination";
-export type ConnectorStatus = "available" | "planned";
+/** Decision 0601: "withdrawn", a partner connector no longer offered, kept for the Destinations made from it. */
+export type ConnectorStatus = "available" | "planned" | "withdrawn";
 export type ConnectorTransport = "email" | "https" | "upload" | "sftp" | "edi" | "file_download" | "peppol";
-export type ConnectorCategory = "generic" | "erp" | "automation";
+export type ConnectorCategory = "generic" | "erp" | "automation" | "partner";
 export type ConnectorAuthType = "none" | "api_key_header" | "bearer" | "basic" | "oauth2_client_credentials";
 
 /** What a connector sets on a Destination it makes: defaults the customer may change, and what is fixed. */
 export interface ConnectorSettings {
   defaults: {
     method?: "POST" | "PUT";
-    format?: "vf_json" | "csv";
+    /** "mapped": its own layout, from the outbound mapping it carries (a partner's, decision 0601). */
+    format?: "vf_json" | "csv" | "mapped";
     auth?: { type: ConnectorAuthType; header?: string };
     referencePath?: string | null;
   };
@@ -46,7 +50,14 @@ export interface ConnectorDefinition {
   id: string;
   version: number;
   direction: ConnectorDirection;
-  publisher: "standard";
+  publisher: "standard" | "partner";
+  /** Decision 0601: a partner's connector says whose it is, and carries its own name and description. */
+  partner?: { id: string; name: string };
+  name?: string;
+  description?: string;
+  /** Its outbound mapping, look-up lists named by list name, and the lists it reads (a partner's). */
+  outboundMapping?: OutboundMapping | null;
+  lookupLists?: string[];
   status: ConnectorStatus;
   categories: ConnectorCategory[];
   /** The route it runs on: its transport and engine. Null for one not built yet. */

@@ -221,3 +221,64 @@ export async function withdrawPartnerConnector(db: D1Database, environmentId: st
   if ((r.meta.changes ?? 0) === 0) return { status: 409, body: { error: "that version is not waiting for review", reason: "not_waiting" } };
   return { status: 200, body: { version: Number(body.version), status: "withdrawn" } };
 }
+
+/**
+ * `GET /environments/:id/library-connectors` — **the partner connectors
+ * this environment's Route library offers — decision 0601**, step 4 of
+ * slice 4. For each connector of an active partner that serves this
+ * environment's customer (or whose sandbox it is), not suspended: its
+ * latest version VibeFinance approved whose audience includes the
+ * customer, with its definition. The instance keeps a copy of each
+ * version it uses, so nothing changes under a customer without Upgrade.
+ */
+export async function libraryConnectorsFor(db: D1Database, environmentId: string): Promise<RouteResult> {
+  const env = await db.prepare("SELECT customer_id FROM environments WHERE id = ?").bind(environmentId).first<{ customer_id: string }>();
+  if (!env) return { status: 404, body: { error: "no such environment" } };
+  const customer = env.customer_id;
+  const rows = (
+    await db
+      .prepare(
+        `SELECT v.connector_id, v.version, v.name, v.description, v.audience_json, v.definition_json, v.reviewed_at,
+                p.id AS partner_id, p.name AS partner_name, p.sandbox_customer_id
+           FROM partner_connector_versions v
+           JOIN partner_connectors c ON c.id = v.connector_id AND c.status = 'active'
+           JOIN partners p ON p.id = c.partner_id AND p.status = 'active'
+          WHERE v.status = 'approved'
+            AND (p.sandbox_customer_id = ? OR EXISTS (SELECT 1 FROM partner_customers pc WHERE pc.partner_id = p.id AND pc.customer_id = ?))
+          ORDER BY lower(v.name), v.connector_id, v.version DESC`
+      )
+      .bind(customer, customer)
+      .all<{
+        connector_id: string;
+        version: number;
+        name: string;
+        description: string;
+        audience_json: string | null;
+        definition_json: string;
+        reviewed_at: string | null;
+        partner_id: string;
+        partner_name: string;
+        sandbox_customer_id: string;
+      }>()
+  ).results;
+  const chosen = new Map<string, (typeof rows)[number]>();
+  for (const r of rows) {
+    if (chosen.has(r.connector_id)) continue;
+    const audience = r.audience_json ? (JSON.parse(r.audience_json) as string[]) : null;
+    if (r.sandbox_customer_id === customer || audience === null || audience.includes(customer)) chosen.set(r.connector_id, r);
+  }
+  return {
+    status: 200,
+    body: {
+      connectors: [...chosen.values()].map((r) => ({
+        connectorId: r.connector_id,
+        version: r.version,
+        name: r.name,
+        description: r.description,
+        partner: { id: r.partner_id, name: r.partner_name },
+        approvedAt: r.reviewed_at,
+        definition: JSON.parse(r.definition_json) as unknown,
+      })),
+    },
+  };
+}

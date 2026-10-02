@@ -79,7 +79,9 @@ async function versionsOf(db: D1Database, id: string): Promise<VersionRow[]> {
 
 /** Whether its connector keeps the format fixed (an automation webhook sends the standard JSON). */
 function formatFixed(instance: InstanceRow, library: ConnectorDefinition[]): boolean {
-  return connectorOfInstance(library, instance)?.settings?.fixed.includes("format") ?? false;
+  const s = connectorOfInstance(library, instance)?.settings;
+  // Decision 0601: a partner's connector that fixes its own layout keeps the format, and the customer may still change the mapping.
+  return (s?.fixed.includes("format") ?? false) && s?.defaults.format !== "mapped";
 }
 
 /** `GET /route-instances/:id/mapping` — the standard layout, its own versions, what a field can read, and invoices to try. */

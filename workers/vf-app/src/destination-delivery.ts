@@ -2,6 +2,7 @@ import type { RouteResult } from "./org-route.js";
 import { invoiceExportRows, payableInvoiceIds, toCsv, type ErpExportRow } from "./erp-export-route.js";
 import { coveredInvoices, coveredUnits, unitIdsOf } from "./destination-units.js";
 import { STANDARD_CONNECTORS, connectorById, connectorOfInstance, type ConnectorDefinition } from "@vibefinance/shared";
+import { installMapping, listsNeeded, mappingForCustomer, partnerCopy } from "./partner-library.js";
 import { loadLookups } from "./lookup-lists-route.js";
 import { applyOutboundMapping, listsInOutbound, type OutboundMapping, type OutboundProblem, type VfInvoice } from "@vibefinance/shared";
 import { NoSecretsKeyError, readSecret, secretsSet, setSecret } from "./connector-secrets.js";
@@ -619,7 +620,16 @@ export async function handleCreateDestination(
     )
     .bind(id, HTTPS_OUT, processId, name, JSON.stringify(settingsFromConnector(connector)), userId, connector.id, connector.version)
     .run();
-  return { status: 201, body: { id, name, routeId: HTTPS_OUT, connectorId: connector.id, status: "paused" } };
+  // Decision 0601: a partner's connector brings its mapping, live, with this customer's look-up lists, made where missing.
+  let listsCreated: string[] = [];
+  if (connector.outboundMapping) {
+    const resolved = await mappingForCustomer(db, userId, connector, true);
+    if (resolved) {
+      await installMapping(db, id, userId, connector, resolved.mapping);
+      listsCreated = resolved.created;
+    }
+  }
+  return { status: 201, body: { id, name, routeId: HTTPS_OUT, connectorId: connector.id, status: "paused", listsCreated } };
 }
 
 async function httpsOutInstance(db: D1Database, id: string): Promise<InstanceRow | RouteResult> {
@@ -690,6 +700,11 @@ export function connectorView(instance: { route_id: string; connector_id: string
   return {
     id: connector.id,
     version,
+    // Decision 0601: a partner's connector carries its own name, and says whose it is.
+    name: connector.name ?? null,
+    publisher: connector.publisher,
+    partner: connector.partner ?? null,
+    offered: connector.status !== "withdrawn",
     latestVersion: connector.version,
     upgradeAvailable: connector.version > version,
     fixed: connector.settings?.fixed ?? [],
@@ -724,7 +739,7 @@ export async function mappingSummary(db: D1Database, instanceId: string): Promis
   return { live: rows.find((r) => r.status === "live")?.version ?? null, draft: rows.find((r) => r.status === "draft")?.version ?? null };
 }
 
-export async function handleGetConnector(db: D1Database, id: string): Promise<RouteResult> {
+export async function handleGetConnector(db: D1Database, id: string, library: ConnectorDefinition[] = STANDARD_CONNECTORS): Promise<RouteResult> {
   const instance = await httpsOutInstance(db, id);
   if (isResult(instance)) return instance;
   const { deliveries: recent, counts } = await deliveriesOf(db, id);
@@ -739,7 +754,12 @@ export async function handleGetConnector(db: D1Database, id: string): Promise<Ro
     body: {
       instance: { id: instance.id, name: instance.name, status: instance.status, processId: instance.process_id, startedAt: instance.started_at },
       settings: settingsOf(instance),
-      connector: connectorView(instance),
+      connector: connectorView(instance, library),
+      // Decision 0601: the look-up lists a partner's connector reads, and whether each is filled in.
+      lists: await (async () => {
+        const c = connectorOfInstance(library, instance);
+        return c?.lookupLists?.length ? listsNeeded(db, c) : [];
+      })(),
       secrets: await secretsSet(db, id),
       waitingNotTaken: payable.filter((x) => !taken.has(x)).length,
       counts,
@@ -922,7 +942,7 @@ export async function handleSetDestinationUnits(db: D1Database, id: string, body
  * secret, reference, units) stay. Where the new version no longer allows
  * its way of signing in, it moves to the new default, and says so.
  */
-export async function handleUpgradeConnector(db: D1Database, id: string, library: ConnectorDefinition[] = STANDARD_CONNECTORS): Promise<RouteResult> {
+export async function handleUpgradeConnector(db: D1Database, id: string, library: ConnectorDefinition[] = STANDARD_CONNECTORS, userId: string | null = null): Promise<RouteResult> {
   const instance = await instanceOf(db, id);
   if (!instance) return { status: 404, body: { error: `there is no Destination ${id}` } };
   const connector = connectorOfInstance(library, instance);
@@ -942,9 +962,33 @@ export async function handleUpgradeConnector(db: D1Database, id: string, library
     }
     await db.prepare("UPDATE route_instances SET settings_json = ? WHERE id = ?").bind(JSON.stringify(settings), id).run();
   }
+  /**
+   * Decision 0601: a partner's mapping follows the connector while the
+   * Destination's live mapping is still the one the connector gave it.
+   * Once the customer has published their own changes, theirs is kept,
+   * and the upgrade says so.
+   */
+  let mapping: "updated" | "kept" | null = null;
+  let listsCreated: string[] = [];
+  if (connector.publisher === "partner" && connector.outboundMapping) {
+    const before = await partnerCopy(db, connector.id, from);
+    const was = before ? await mappingForCustomer(db, "", before, false) : null;
+    const live = await liveOutboundMapping(db, id);
+    const following = !live || (was !== null && JSON.stringify(was.mapping) === JSON.stringify(live.definition));
+    if (following) {
+      const next = await mappingForCustomer(db, userId ?? "", connector, true);
+      if (next) {
+        await installMapping(db, id, userId ?? "", connector, next.mapping);
+        listsCreated = next.created;
+      }
+      mapping = "updated";
+    } else {
+      mapping = "kept";
+    }
+  }
   await db
     .prepare("UPDATE route_instances SET connector_id = ?, connector_version = ? WHERE id = ?")
     .bind(connector.id, connector.version, id)
     .run();
-  return { status: 200, body: { id, connectorId: connector.id, from, to: connector.version, authChanged } };
+  return { status: 200, body: { id, connectorId: connector.id, from, to: connector.version, authChanged, mapping, listsCreated } };
 }

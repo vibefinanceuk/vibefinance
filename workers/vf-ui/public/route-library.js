@@ -13,14 +13,17 @@ import { slug } from "/sources.js";
 
 let library = { connectors: [], processes: [] };
 let filter = "all";
+let partnerFailed = false;
 
-const FILTERS = ["all", "destination", "source", "erp", "automation", "generic"];
+const FILTERS = ["all", "destination", "source", "erp", "automation", "generic", "partner"];
 
 async function load() {
   try {
     const response = await fetch("/api/connector-library");
     if (!response.ok) return false;
     library = await response.json();
+    // Decision 0601: partners' connectors could not be fetched just now; the ones already kept are shown.
+    partnerFailed = !!library.partnerError;
     return true;
   } catch {
     return false;
@@ -49,14 +52,19 @@ function shown(c) {
   return c.categories.includes(filter);
 }
 
+/** Decision 0601: a partner's connector carries its own name and description. */
+const nameOf = (c) => c.name ?? words(`connector.${c.id}.name`, c.id);
+
 function card(c) {
-  const name = words(`connector.${c.id}.name`, c.id);
+  const name = nameOf(c);
   const inUse = c.inUse.length > 0;
   const upgrades = c.inUse.filter((u) => u.upgradeAvailable).length;
   const canAdd = c.status === "available" && (c.multiple || c.inUse.length < library.processes.length);
   const state =
     c.status === "planned"
       ? pill("q", t("library.planned"))
+      : c.status === "withdrawn"
+        ? pill("warn", t("library.withdrawn"))
       : inUse
         ? pill("ok", t("library.inuse").replace("{n}", String(c.inUse.length)))
         : pill("ok", t("library.available"));
@@ -66,12 +74,15 @@ function card(c) {
       el("div", { class: "libtitle" }, [
         el("div", { class: "libkind", text: t(`processroutes.${c.direction}`) }),
         el("h3", { text: name }),
-        el("div", { class: "muted sm", text: t(`library.publisher.${c.publisher}`) }),
+        c.publisher === "partner"
+          ? el("div", { class: "sm libpartner", text: t("library.publisher.partner").replace("{name}", c.partner?.name ?? "") })
+          : el("div", { class: "muted sm", text: t(`library.publisher.${c.publisher}`) }),
       ]),
       // Decision 0590: top right, as on every other card.
       el("div", { class: "statebuttons libadd" }, canAdd ? [actionLink("addcard", { label: t("library.add"), onclick: () => openAdd(c) })] : []),
     ]),
-    el("div", { class: "muted sm libdesc", text: words(`connector.${c.id}.description`, "") }),
+    el("div", { class: "muted sm libdesc", text: c.description ?? words(`connector.${c.id}.description`, "") }),
+    ...((c.lookupLists ?? []).length > 0 ? [el("div", { class: "muted sm liblists", text: `${t("library.listsneeded")} ${c.lookupLists.join(", ")}` })] : []),
     el("div", { class: "libchips" }, [
       pill("q", words(`library.transport.${c.transport}`, c.transport)),
       ...c.formats.map((f) => pill("q", words(`library.format.${f}`, f))),
@@ -110,7 +121,7 @@ async function openInProcess(c, processId, instanceId) {
 
 /** Add a connector to a process: which one, and its name. */
 function openAdd(c) {
-  const name = words(`connector.${c.id}.name`, c.id);
+  const name = nameOf(c);
   const problem = el("div", { class: "warn", id: "lib-problem" });
   const process = el("select", { id: "lib-process" }, library.processes.map((p) => el("option", { value: p.id, text: p.name })));
   const nameInput = el("input", { type: "text", id: "lib-name", value: name });
@@ -185,6 +196,7 @@ function render(failed = false) {
       el("div", {}, [
         topbar(t("library.heading"), t("library.subtitle")),
         el("div", { class: "panel" }, [chips, el("p", { class: "muted sm", text: t("library.note") })]),
+        ...(partnerFailed && !failed ? [el("div", { class: "warn", id: "lib-partnerfailed", text: t("library.partnerfailed") })] : []),
         failed ? el("div", { class: "warn", text: t("library.failed") }) : el("div", { class: "libgrid", id: "lib-grid" }, cards),
       ])
     )

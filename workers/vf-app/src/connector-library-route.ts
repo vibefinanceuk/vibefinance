@@ -44,11 +44,16 @@ export async function handleConnectorLibrary(db: D1Database, library: ConnectorD
   return {
     status: 200,
     body: {
-      connectors: library.map((c) => ({
+      // Decision 0601: a partner's connector no longer offered stays listed only where it is in use.
+      connectors: library.filter((c) => c.status !== "withdrawn" || used.has(c.id)).map((c) => ({
         id: c.id,
         version: c.version,
         direction: c.direction,
         publisher: c.publisher,
+        partner: c.partner ?? null,
+        name: c.name ?? null,
+        description: c.description ?? null,
+        lookupLists: c.lookupLists ?? [],
         status: c.status,
         categories: c.categories,
         transport: c.transport,

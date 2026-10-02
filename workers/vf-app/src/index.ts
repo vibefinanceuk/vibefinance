@@ -143,6 +143,7 @@ import { createWorkersAiExtractionModel } from "./extraction-model.js";
 import { handleGetExtractionSettings, handleUpdateExtractionSettings } from "./extraction-settings-route.js";
 import { handleToMarkdownDiagnostic } from "./tomarkdown-diagnostic.js";
 import { handleConnectorLibrary } from "./connector-library-route.js";
+import { connectorLibrary, refreshPartnerConnectors } from "./partner-library.js";
 /** Decision 0585: the cron HTTPS out deliveries run on (wrangler.jsonc's triggers). */
 const DELIVERY_CRON = "*/5 * * * *";
 import {
@@ -4691,7 +4692,7 @@ export default {
       if (!auth.user) return json({ error: auth.reason }, 401);
       if (!(await hasPermission(db, auth.user.id, "Admin.Configure"))) return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
       const body = await request.json().catch(() => ({}));
-      const result = await handleCreateDestination(db, auth.user.id, decodeURIComponent(destinationsMatch[1]), body);
+      const result = await handleCreateDestination(db, auth.user.id, decodeURIComponent(destinationsMatch[1]), body, await connectorLibrary(db));
       return json(result.body, result.status);
     }
     // Decision 0589: the Route library.
@@ -4700,7 +4701,11 @@ export default {
       const auth = await authenticatePerson(db, request, env);
       if (!auth.user) return json({ error: auth.reason }, 401);
       if (!(await hasPermission(db, auth.user.id, "Admin.Configure"))) return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
-      const result = await handleConnectorLibrary(db);
+      // Decision 0601: the partner connectors the control plane offers this customer, kept as copies.
+      const link = env.LICENCE_SERVICE && env.ENVIRONMENT_ID && env.VF_LICENCE_API_KEY ? { service: env.LICENCE_SERVICE, environmentId: env.ENVIRONMENT_ID, apiKey: env.VF_LICENCE_API_KEY } : null;
+      const refreshed = await refreshPartnerConnectors(db, link);
+      const result = await handleConnectorLibrary(db, await connectorLibrary(db));
+      if (!refreshed.ok) (result.body as Record<string, unknown>).partnerError = refreshed.error;
       return json(result.body, result.status);
     }
     // Decision 0587: the business units a Destination sends for.
@@ -4756,9 +4761,9 @@ export default {
       const action = outboundMatch[2];
       const body = request.method === "GET" ? null : await request.json().catch(() => ({}));
       let result;
-      if (!action && request.method === "GET") result = await handleGetOutboundMapping(db, instanceId);
+      if (!action && request.method === "GET") result = await handleGetOutboundMapping(db, instanceId, await connectorLibrary(db));
       else if (!action && request.method === "PUT") result = await handleSaveOutboundMapping(db, auth.user.id, instanceId, body);
-      else if (action === "copy" && request.method === "POST") result = await handleCopyOutboundMapping(db, auth.user.id, instanceId);
+      else if (action === "copy" && request.method === "POST") result = await handleCopyOutboundMapping(db, auth.user.id, instanceId, await connectorLibrary(db));
       else if (action === "try" && request.method === "POST") result = await handleTryOutboundMapping(db, instanceId, body);
       else if (action === "publish" && request.method === "POST") result = await handlePublishOutboundMapping(db, auth.user.id, instanceId, body);
       else if (action === "compile" && request.method === "POST") {
@@ -4788,13 +4793,13 @@ export default {
         onFinished: (messageId: string) => notifyMessageFinished(db, alertTransport(env), messageId),
       };
       let result;
-      if (!action && request.method === "GET") result = await handleGetConnector(db, instanceId);
-      else if (!action && request.method === "PUT") result = await handleSaveConnector(db, auth.user.id, instanceId, body, env.CONNECTOR_SECRETS_KEY);
+      if (!action && request.method === "GET") result = await handleGetConnector(db, instanceId, await connectorLibrary(db));
+      else if (!action && request.method === "PUT") result = await handleSaveConnector(db, auth.user.id, instanceId, body, env.CONNECTOR_SECRETS_KEY, await connectorLibrary(db));
       else if (action === "preview" && request.method === "POST") result = await handlePreviewDelivery(db, instanceId, body);
       else if (action === "send" && request.method === "POST") result = await handleSendNow(db, auth.user.id, instanceId, body, deps);
       else if (action === "start" && request.method === "POST") result = await handleStartDestination(db, instanceId, body);
       // Decision 0589.
-      else if (action === "upgrade" && request.method === "POST") result = await handleUpgradeConnector(db, instanceId);
+      else if (action === "upgrade" && request.method === "POST") result = await handleUpgradeConnector(db, instanceId, await connectorLibrary(db), auth.user.id);
       else return json({ error: "method not allowed" }, 405);
       return json(result.body, result.status);
     }

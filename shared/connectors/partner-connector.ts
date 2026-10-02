@@ -1,4 +1,4 @@
-import type { ConnectorAuthType } from "./library.js";
+import type { ConnectorAuthType, ConnectorDefinition } from "./library.js";
 import { listsInOutbound, validateOutboundMapping, type OutboundMapping } from "./outbound-mapping.js";
 
 /**
@@ -90,4 +90,42 @@ export function renameLists(mapping: OutboundMapping, rename: (list: string) => 
     }
   }
   return copy;
+}
+
+/** The library id of a partner's connector: never one of the standard ids. */
+export const partnerLibraryId = (connectorId: string) => `partner:${connectorId}`;
+
+/**
+ * **A partner's approved connector as a library entry — decision 0601.**
+ * Step 4 of slice 4: it is listed, added and upgraded as a standard one
+ * is, labelled with its partner, carrying its mapping and the look-up
+ * lists it needs by name.
+ */
+export function partnerLibraryEntry(
+  meta: { connectorId: string; version: number; name: string; description: string; partner: { id: string; name: string }; offered: boolean },
+  d: PartnerConnectorDefinition
+): ConnectorDefinition {
+  return {
+    id: partnerLibraryId(meta.connectorId),
+    version: meta.version,
+    direction: "destination",
+    publisher: "partner",
+    partner: meta.partner,
+    name: meta.name,
+    description: meta.description,
+    status: meta.offered ? "available" : "withdrawn",
+    categories: ["partner"],
+    routeId: "https-out",
+    transport: "https",
+    formats: [d.settings.defaults.format],
+    multiple: true,
+    settings: {
+      defaults: { ...d.settings.defaults, auth: { ...d.settings.defaults.auth } },
+      fixed: [...d.settings.fixed],
+      authTypes: [...d.settings.authTypes],
+    },
+    outboundMapping: d.outboundMapping,
+    lookupLists: [...d.lookupLists],
+    ...(d.vendorDocs ? { vendorDocs: d.vendorDocs } : {}),
+  };
 }

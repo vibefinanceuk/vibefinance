@@ -302,11 +302,27 @@ function openStart(state, onStarted) {
  * Upgrade where the library has a later one: what the connector fixes is
  * applied, and the Destination's own settings stay.
  */
-function connectorLine(destination, connector, reload) {
-  const name = t(`connector.${connector.id}.name`);
+function connectorLine(destination, connector, reload, lists = []) {
+  // Decision 0601: a partner's connector carries its own name, and says whose it is.
+  const name = connector.name ?? t(`connector.${connector.id}.name`);
   const result = el("span", { class: "muted sm", id: "do-upgraded" });
+  const listsLine =
+    lists.length > 0
+      ? [
+          el("div", { class: "muted sm dolists", id: "do-lists" }, [
+            t("library.listsneeded"),
+            " ",
+            ...lists.flatMap((l, i) => [
+              ...(i > 0 ? [", "] : []),
+              el("span", { class: l.entries > 0 ? "" : "listempty", text: l.entries > 0 ? l.name : t("library.listempty").replace("{name}", l.name) }),
+            ]),
+          ]),
+        ]
+      : [];
   return el("div", { class: "doconnector", id: "do-connector" }, [
     el("span", { text: t("library.connectorline").replace("{name}", name).replace("{v}", String(connector.version)) }),
+    ...(connector.partner ? [el("span", { class: "rmpill q", text: t("library.publisher.partner").replace("{name}", connector.partner.name) })] : []),
+    ...(connector.offered === false ? [el("span", { class: "rmpill warn", id: "do-withdrawn", text: t("library.withdrawn") })] : []),
     ...(connector.upgradeAvailable
       ? [
           el("span", { class: "rmpill warn", text: t("library.upgradeto").replace("{n}", String(connector.latestVersion)) }),
@@ -320,12 +336,21 @@ function connectorLine(destination, connector, reload) {
               }
               await reload();
               const again = document.getElementById("do-upgraded");
-              if (again && r.body.authChanged) again.textContent = t("library.authchanged");
+              if (again) {
+                // Decision 0601: what happened to a partner connector's mapping.
+                const said = [
+                  ...(r.body.authChanged ? [t("library.authchanged")] : []),
+                  ...(r.body.mapping === "updated" ? [t("library.mappingupdated")] : []),
+                  ...(r.body.mapping === "kept" ? [t("library.mappingkept")] : []),
+                ];
+                again.textContent = said.join(" ");
+              }
             },
           }),
         ]
       : []),
     result,
+    ...listsLine,
   ]);
 }
 
@@ -517,7 +542,7 @@ export function httpsOutSection(destination, onChanged) {
         ];
     holder.replaceChildren(
       el("div", { class: "cardhead httpshead" }, [el("h4", { text: t("httpsout.heading") })]),
-      ...(state.connector ? [connectorLine(destination, state.connector, reload)] : []),
+      ...(state.connector ? [connectorLine(destination, state.connector, reload, state.lists ?? [])] : []),
       ...startBlock,
       settingsCard(state, reload),
       mappingCard(state, destination),
