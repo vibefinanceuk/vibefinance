@@ -1681,6 +1681,7 @@ const KEYS_THE_INTERFACE_USES = [
   "help.screen.mapping.34",
   "mapping.retire",
   "mapping.retiretitle",
+  "tasks.nothingopen",
   "welcome.title",
   "welcome.for",
   "welcome.code",

@@ -942,6 +942,64 @@ function navLink(screen, iconName, hue) {
   );
 }
 
+/** The menu, in order, by heading — decisions 0276, 0346, 0552. */
+const NAV_GROUPS = [
+  {
+    heading: "accountspayable",
+    screens: [
+      ["dashboard", "dashboard"],
+      ["apanalytics", "apanalytics"],
+      ["tasks", "tasks"],
+      // Create — decision 0573: the AP team's own way in, after Tasks.
+      ["create", "create"],
+      ["documents", "documents"],
+    ],
+  },
+  {
+    heading: "suppliermanagement",
+    screens: [["suppliers", "suppliers"]],
+  },
+  {
+    heading: "configuration",
+    screens: [
+      ["access", "users"],
+      ["apsetup", "apsetup"],
+      ["purchaseorders", "purchaseorders"],
+      ["rules", "rules"],
+      ["processes", "processes"],
+    ],
+  },
+  /**
+   * **Integration — decision 0552.** The ERP export, last in the menu
+   * so no existing screen changes colour (0527 numbers them by place).
+   * The operator plans an API push and ERP-specific layouts here later.
+   */
+  {
+    heading: "integration",
+    // The Route monitor (decision 0556) after it, last in the menu, so no
+    // existing screen changes colour (0527).
+    screens: [
+      // Decision 0557: Routes and Process routes, which replaces
+      // Sources (moved here from Configuration: the one menu change
+      // the Routes design accepted, so some screens change colour).
+      ["routes", "routes"],
+      ["processroutes", "processroutes"],
+      ["routemonitor", "systemalert"],
+      ["erpexport", "download"],
+    ],
+  },
+];
+
+/**
+ * **Held, whether one permission or a choice of several** — most
+ * screens name exactly one; `access` names either of two.
+ */
+function mayOpen(screen) {
+  const required = NAV_PERMISSIONS[screen];
+  const names = Array.isArray(required) ? required : [required];
+  return names.some((p) => me?.permissions?.includes(p));
+}
+
 export function frame(main) {
   /**
    * **A flat list again, decision 0276** — the "Vibe AP" group
@@ -968,63 +1026,13 @@ export function frame(main) {
    * so anyone without it would otherwise see an orphaned heading over
    * an empty gap.
    */
-  const NAV_GROUPS = [
-    {
-      heading: "accountspayable",
-      screens: [
-        ["dashboard", "dashboard"],
-        ["apanalytics", "apanalytics"],
-        ["tasks", "tasks"],
-        // Create — decision 0573: the AP team's own way in, after Tasks.
-        ["create", "create"],
-        ["documents", "documents"],
-      ],
-    },
-    {
-      heading: "suppliermanagement",
-      screens: [["suppliers", "suppliers"]],
-    },
-    {
-      heading: "configuration",
-      screens: [
-        ["access", "users"],
-        ["apsetup", "apsetup"],
-        ["purchaseorders", "purchaseorders"],
-        ["rules", "rules"],
-        ["processes", "processes"],
-      ],
-    },
-    /**
-     * **Integration — decision 0552.** The ERP export, last in the menu
-     * so no existing screen changes colour (0527 numbers them by place).
-     * The operator plans an API push and ERP-specific layouts here later.
-     */
-    {
-      heading: "integration",
-      // The Route monitor (decision 0556) after it, last in the menu, so no
-      // existing screen changes colour (0527).
-      screens: [
-        // Decision 0557: Routes and Process routes, which replaces
-        // Sources (moved here from Configuration: the one menu change
-        // the Routes design accepted, so some screens change colour).
-        ["routes", "routes"],
-        ["processroutes", "processroutes"],
-        ["routemonitor", "systemalert"],
-        ["erpexport", "download"],
-      ],
-    },
-  ];
   /**
    * **Held, whether one permission or a choice of several** — most
    * screens name exactly one; `roles` (decision 0321) names either of
    * two, and this same check works for both without the caller
    * needing to know which shape it is.
    */
-  function unlocked(screen) {
-    const required = NAV_PERMISSIONS[screen];
-    const names = Array.isArray(required) ? required : [required];
-    return names.some((p) => me?.permissions?.includes(p));
-  }
+  const unlocked = mayOpen;
 
   /**
    * **A fixed colour per screen — decision 0527.** Numbered by each
@@ -1382,10 +1390,30 @@ async function openDefaultScreen() {
   if (hasMyPermission("AP.Dashboard")) {
     const { open } = await import("/dashboard.js");
     await open();
-  } else {
-    if (!(await load())) return;
-    render();
+    return;
   }
+  /**
+   * **The first screen this person may open — decision 0594.** Reported
+   * live: an administrator whose role held only configuration permissions
+   * signed in to a blank page. Without `AP.Dashboard` this fell back to
+   * Tasks, whose list needs `AP.TaskView`; refused, nothing was drawn,
+   * not even the menu. Now it is Tasks only for someone who may see it,
+   * else the first screen in the menu they may open (Access, for that
+   * administrator), else the frame with a word that nothing is open yet.
+   */
+  if (mayOpen("tasks")) {
+    const ok = await load();
+    render();
+    if (!ok) problem(t("tasks.loadfailed"));
+    return;
+  }
+  const first = NAV_GROUPS.flatMap(({ screens }) => screens).map(([screen]) => screen).find(mayOpen);
+  if (first) {
+    await go(first);
+    return;
+  }
+  setCurrentScreen("none");
+  shell.replaceChildren(frame(el("div", {}, [el("p", { class: "problem", id: "nothing-open", role: "status", text: t("tasks.nothingopen") })])));
 }
 
 export async function start() {

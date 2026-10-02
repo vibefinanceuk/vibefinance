@@ -896,8 +896,22 @@ describe("the flat nav, permission-filtered (decisions 0274 and 0276)", () => {
       ["Admin.RuleManagement", "Rules"],
       ["AP.Review", "Documents"],
     ];
+    /**
+     * **Each lands on the first screen it may open — decision 0594** —
+     * so the screens' own data is not this test's subject: anything not
+     * stubbed is refused, as the server refuses what is not held.
+     */
+    const lenient = (routes: Record<string, unknown>) =>
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async (url: string) => {
+          const path = String(url).split("?")[0];
+          if (path in routes) return { ok: true, json: async () => routes[path] } as Response;
+          return { ok: false, status: 403, json: async () => ({}) } as Response;
+        })
+      );
     for (const [permission, label] of cases) {
-      stubFetch({
+      lenient({
         "/api/ui-strings": STRINGS,
         "/api/whoami": { id: "u-dan", name: "Dan", permissions: [permission] },
         "/api/tasks": { tasks: [], counts: {} },
@@ -911,11 +925,13 @@ describe("the flat nav, permission-filtered (decisions 0274 and 0276)", () => {
       const { start } = await import("/tasks.js");
       await start();
 
-      const labels = [...document.querySelectorAll(".navitem")].map((a) => a.textContent);
+      // The menu itself, as frame() draws it for this person, whatever screen they landed on.
+      const { frame } = await import("/tasks.js");
+      const labels = [...frame(document.createElement("div")).querySelectorAll(".navitem")].map((a) => a.textContent);
       expect(labels, `permission ${permission}`).toEqual([label]);
     }
 
-    stubFetch({
+    lenient({
       "/api/ui-strings": STRINGS,
       "/api/whoami": { id: "u-dan", name: "Dan", permissions: ["Admin.Configure"] },
       "/api/tasks": { tasks: [], counts: {} },
@@ -924,7 +940,8 @@ describe("the flat nav, permission-filtered (decisions 0274 and 0276)", () => {
     await loadStrings();
     const { start } = await import("/tasks.js");
     await start();
-    const labels = [...document.querySelectorAll(".navitem")].map((a) => a.textContent);
+    const { frame } = await import("/tasks.js");
+    const labels = [...frame(document.createElement("div")).querySelectorAll(".navitem")].map((a) => a.textContent);
     expect(labels, "permission Admin.Configure").toEqual(["Access", "AP Setup", "Purchase Orders", "Processes", "Routes", "Process routes"]);
 
     /**

@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 2 October 2026 (decision 0593). A living document: what
+Last updated 2 October 2026 (decision 0594). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,12 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### The first screen after signing in (0594)
+
+Someone without the Dashboard or Tasks now lands on the first screen in
+the menu they may open (Access, for a configuration-only administrator),
+or is told nothing is open to them yet, instead of a blank page.
 
 ### Invitations (0593)
 
