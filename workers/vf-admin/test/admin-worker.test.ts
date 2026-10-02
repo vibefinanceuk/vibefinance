@@ -106,6 +106,13 @@ describe("which routes it will forward", () => {
     expect((await SELF.fetch(asOperator("/api/people/ana"))).status).toBe(404);
   });
 
+  it("forwards Interface wording and Branding — decision 0604", async () => {
+    for (const path of ["/api/ui-strings", "/api/ui-strings/keys", "/api/branding/acme"]) {
+      expect((await SELF.fetch(asOperator(path))).status, path).not.toBe(404);
+    }
+    expect((await SELF.fetch(asOperator("/api/branding/acme/logo"))).status).toBe(404);
+  });
+
   it("refuses a path that only looks like one", async () => {
     const response = await SELF.fetch(asOperator("/api/signup-requests/../rules"));
     expect([404, 403]).toContain(response.status);

@@ -19,7 +19,7 @@ import { handleCreateEnvironment, handleDeleteEnvironment } from "./environment-
 import { handleDevLogin } from "./dev-login-route.js";
 import { handleLogin, handleListMyEnvironments, setCredential } from "./login-route.js";
 import { grantAccess, revokeAccess } from "./credentials.js";
-import { setBranding, handleBrandingStylesheet } from "./branding.js";
+import { setBranding, handleBrandingStylesheet, handleGetBranding } from "./branding.js";
 import {
   handleUiStrings,
   handleSetUiString,
@@ -151,6 +151,8 @@ export function isPrivileged(method: string, pathname: string): boolean {
     (pathname === "/licences" && method === "POST") ||
     (pathname === "/credentials" && method === "POST") ||
     (pathname.startsWith("/branding/") && method === "PUT") ||
+    // Decision 0604: the Branding screen reads what is set.
+    (matches(/^\/branding\/[^/]+$/) && method === "GET") ||
     (pathname === "/ui-strings" && (method === "PUT" || method === "POST")) ||
     (pathname === "/ui-strings/keys" && method === "GET") ||
     // The manifest names every binding a customer's Worker runs with
@@ -502,8 +504,13 @@ export default {
         env.CONTROL_DB,
         decodeURIComponent(brandingSetMatch[1]),
         (brandingBody ?? {}) as Record<string, unknown>,
-        "operator"
+        // Decision 0604: the operator Access verified, where there is one.
+        actorFrom(request).actorSource === "access" ? actorFrom(request).actor : "operator"
       );
+      return json(result.body, result.status);
+    }
+    if (brandingSetMatch && request.method === "GET") {
+      const result = await handleGetBranding(env.CONTROL_DB, decodeURIComponent(brandingSetMatch[1]));
       return json(result.body, result.status);
     }
 

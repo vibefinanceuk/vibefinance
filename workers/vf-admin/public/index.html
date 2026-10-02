@@ -170,6 +170,35 @@ a { color: var(--text-accent); }
   .navitem.on::before { display: none; }
   .main { padding: 16px; }
 }
+
+/* Interface wording and Branding — decision 0604. */
+.coverage { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+.coverage .chip.full { color: var(--text-success); border-color: var(--text-success); }
+.coverage .chip.gap { color: var(--text-warning); border-color: var(--text-warning); }
+#wording td { vertical-align: top; }
+#wording code { font-size: var(--text-sm); color: var(--text-secondary); word-break: break-all; }
+#wording textarea { width: 100%; min-height: 34px; height: 34px; resize: vertical; background: var(--surface-1); color: var(--text-primary); border: 0.5px solid var(--border-strong); border-radius: var(--radius); padding: 6px 8px; font: inherit; font-size: var(--text-sm); }
+#wording textarea.missing { border-color: var(--text-warning); }
+#wording .rowstate { font-size: var(--text-sm); margin-top: 4px; min-height: 18px; }
+.filebtn { position: relative; overflow: hidden; display: inline-flex; align-items: center; padding: 5px 12px; min-height: 30px; border: 0.5px solid var(--border-strong); border-radius: var(--radius); background: var(--surface-1); cursor: pointer; }
+.filebtn input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.brandgrid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(280px, 380px); gap: 22px; align-items: start; }
+.brandfield { display: grid; grid-template-columns: 130px auto 1fr; gap: 4px 10px; align-items: center; padding: 10px 0; border-bottom: 0.5px solid var(--border); }
+.brandfield:last-of-type { border-bottom: none; }
+.brandfield .what { grid-column: 2 / 4; font-size: var(--text-sm); color: var(--text-muted); }
+.brandfield input[type="color"] { width: 42px; height: 30px; padding: 2px; }
+.brandfield .warnline { grid-column: 2 / 4; font-size: var(--text-sm); color: var(--text-warning); }
+.preview { border-radius: 12px; border: 0.5px solid var(--border); overflow: hidden; background: #0b1220; }
+.preview .wash { padding: 26px 26px 22px; }
+.preview .pmark { width: 34px; height: 3px; border-radius: 2px; margin-bottom: 14px; }
+.preview .pname { font-size: var(--text-xl); font-weight: 600; color: #e8eef7; margin-bottom: 14px; }
+.preview .pinput { height: 32px; border-radius: 8px; border: 1px solid; background: #111a2b; margin-bottom: 10px; }
+.preview .pbutton { height: 36px; border-radius: 8px; color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 500; }
+.preview .pbar { height: 6px; }
+.preview .pchips { display: flex; gap: 8px; padding: 12px 26px 18px; }
+.preview .pchip { font-size: var(--text-sm); padding: 2px 10px; border-radius: 999px; }
+.preview .pcaption { font-size: 11px; color: #9dabc0; padding: 0 26px 14px; }
+@media (max-width: 1000px) { .brandgrid { grid-template-columns: 1fr; } }
 </style>
 </head>
 <body>
@@ -188,8 +217,8 @@ a { color: var(--text-accent); }
     <a class="navitem hue5" href="#/partners" data-screen="partners"><span class="navicon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 12 4 8l4-4"/><path d="M4 8h10a4 4 0 0 1 0 8h-1"/><path d="M16 12l4 4-4 4"/><path d="M20 16H10a4 4 0 0 1 0-8h1"/></svg></span><span>Partners</span><span class="badge" data-badge="partners" hidden></span></a>
     <a class="navitem hue1" href="#/reviews" data-screen="reviews"><span class="navicon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 11l2 2 4-4"/><path d="M12 3 5 6v5c0 4.5 3 8.3 7 10 4-1.7 7-5.5 7-10V6z"/></svg></span><span>Connector reviews</span><span class="badge" data-badge="reviews" hidden></span></a>
     <div class="navgroup">Platform</div>
-    <span class="navitem soon hue2" data-screen="wording" title="Next, after this pass"><span class="navicon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7V5h16v2"/><path d="M12 5v14"/><path d="M9 19h6"/></svg></span><span>Interface wording</span><span class="next">next</span></span>
-    <span class="navitem soon hue3" data-screen="branding" title="Next, after this pass"><span class="navicon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><circle cx="8" cy="10" r="1.2"/><circle cx="12" cy="7.5" r="1.2"/><circle cx="16" cy="10" r="1.2"/><path d="M12 21a2.5 2.5 0 0 1 0-5h2a3 3 0 0 0 3-3"/></svg></span><span>Branding</span><span class="next">next</span></span>
+    <a class="navitem hue2" href="#/wording" data-screen="wording"><span class="navicon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7V5h16v2"/><path d="M12 5v14"/><path d="M9 19h6"/></svg></span><span>Interface wording</span><span class="badge" data-badge="wording" hidden></span></a>
+    <a class="navitem hue3" href="#/branding" data-screen="branding"><span class="navicon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><circle cx="8" cy="10" r="1.2"/><circle cx="12" cy="7.5" r="1.2"/><circle cx="16" cy="10" r="1.2"/><path d="M12 21a2.5 2.5 0 0 1 0-5h2a3 3 0 0 0 3-3"/></svg></span><span>Branding</span><span class="badge" data-badge="branding" hidden></span></a>
     <div class="navgroup">Audit</div>
     <a class="navitem hue4" href="#/log" data-screen="log"><span class="navicon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 3h10l3 3v15H7z"/><path d="M4 6v15h3"/><path d="M10 10h7M10 14h7M10 18h4"/></svg></span><span>Admin log</span><span class="badge" data-badge="log" hidden></span></a>
   </div>
@@ -308,6 +337,58 @@ a { color: var(--text-accent); }
   <h4 style="margin:18px 0 6px; font-size: var(--text-sm); color: var(--text-muted)">All partner connectors</h4>
   <div id="connectors"><div class="empty">Loading…</div></div>
 </div>
+</section>
+
+<section class="screen" data-screen="wording" hidden>
+  <div class="panel">
+    <p class="sm muted" style="margin:0 0 12px">
+      Every word on every customer's screens, in each language. English is
+      the fallback: a key with no translation shows in English. A change
+      appears within five minutes, with no deployment. A translation must
+      keep the English placeholders, such as <code>{name}</code>.
+    </p>
+    <div class="coverage" id="w-coverage"></div>
+    <div class="toolbar">
+      <select id="w-locale"></select>
+      <input id="w-filter" placeholder="Find a key or words" size="28">
+      <select id="w-area"><option value="">Every area</option></select>
+      <label class="sm"><input type="checkbox" id="w-missing"> Only those not yet translated</label>
+      <span class="sm muted" id="w-count"></span>
+    </div>
+    <div class="toolbar">
+      <button id="w-export">Download those not yet translated (JSON)</button>
+      <label class="filebtn sm">Upload translations (JSON)<input type="file" id="w-import" accept="application/json,.json"></label>
+      <span class="sm" id="w-importstate"></span>
+    </div>
+    <div id="wording"><div class="empty">Loading…</div></div>
+    <div class="addrow"><button id="w-more" hidden>Show more</button></div>
+  </div>
+</section>
+
+<section class="screen" data-screen="branding" hidden>
+  <div class="panel">
+    <p class="sm muted" style="margin:0 0 12px">
+      A customer's livery: a name and four colours, set by VibeFinance,
+      never by the customer. Anything not set is VibeFinance's own. It
+      shows on the customer's sign-in page once the person is known, and
+      on primary buttons and highlights; the bar and chip colours are held
+      for screens that use them. A change appears within five minutes.
+    </p>
+    <div class="toolbar">
+      <select id="b-customer"></select>
+      <span class="sm muted" id="b-updated"></span>
+    </div>
+    <div class="brandgrid">
+      <div id="b-form"><div class="empty">Loading…</div></div>
+      <div>
+        <div class="preview" id="b-preview"></div>
+      </div>
+    </div>
+    <div class="addrow" style="margin-top:14px">
+      <button id="b-save" class="approve">Save livery</button>
+      <button id="b-reset">Use VibeFinance's own</button>
+    </div>
+  </div>
 </section>
 
 <section class="screen" data-screen="log" hidden>
@@ -804,6 +885,8 @@ const SCREENS = {
   people: { title: "People & access", sub: "Who can sign in to which customer and environment, and the invitations sent.", load: loadPeople },
   partners: { title: "Partners", sub: "System integrators: their sandbox, their people and the customers they serve.", load: loadPartners },
   reviews: { title: "Connector reviews", sub: "Partner connectors waiting for VibeFinance's approval, and every partner connector.", load: loadReviews },
+  wording: { title: "Interface wording", sub: "The words on every customer's screens, in each language, with what is not yet translated.", load: loadWording },
+  branding: { title: "Branding", sub: "Each customer's livery: its name and colours, previewed before it is saved.", load: loadBranding },
   log: { title: "Admin log", sub: "Every privileged action, who took it, and what came of it.", load: loadLog },
 };
 let current = "home";
@@ -1178,6 +1261,338 @@ function renderLog() {
 }
 document.getElementById("log-filter").oninput = () => renderLog();
 document.getElementById("log-outcome").onchange = () => renderLog();
+
+/**
+ * **Interface wording — decision 0604.** Every key, its English, and the
+ * chosen language beside it; found by key or words, by area, or only those
+ * not yet translated. Saved one at a time, or a language at once from a
+ * file a translator returns.
+ */
+const LANGUAGE = { en: "English", de: "German", fr: "French", es: "Spanish", it: "Italian", nl: "Dutch" };
+let wording = { locales: [], keys: [], coverage: {} };
+let wordingShown = 100;
+const placeholders = (s) => [...new Set([...String(s ?? "").matchAll(/\{([a-z0-9_]+)\}/gi)].map((m) => m[1]))];
+const lostPlaceholders = (english, text) => placeholders(english).filter((p) => !placeholders(text).includes(p));
+
+async function loadWording() {
+  try {
+    wording = await api("/ui-strings/keys");
+  } catch (err) {
+    document.getElementById("wording").replaceChildren(problemBox("The wording could not be loaded", err));
+    return;
+  }
+  const pick = document.getElementById("w-locale");
+  const chosen = pick.value || "de";
+  pick.replaceChildren(...wording.locales.filter((l) => l !== "en").map((l) => Object.assign(document.createElement("option"), { value: l, textContent: `${LANGUAGE[l] ?? l} (${l})` })));
+  pick.value = chosen;
+  const area = document.getElementById("w-area");
+  const areaChosen = area.value;
+  const areas = [...new Set(wording.keys.map((k) => k.key.split(".")[0]))].sort();
+  area.replaceChildren(Object.assign(document.createElement("option"), { value: "", textContent: "Every area" }), ...areas.map((a) => Object.assign(document.createElement("option"), { value: a, textContent: a })));
+  area.value = areaChosen;
+  document.getElementById("w-coverage").replaceChildren(
+    ...wording.locales.map((l) => {
+      const [have, all] = String(wording.coverage[l] ?? "0/0").split("/").map(Number);
+      return Object.assign(document.createElement("span"), { className: `chip ${have === all ? "full" : "gap"}`, textContent: `${LANGUAGE[l] ?? l}: ${have} of ${all}` });
+    })
+  );
+  renderWording();
+}
+
+function wordingMatches() {
+  const locale = document.getElementById("w-locale").value;
+  const q = document.getElementById("w-filter").value.trim().toLowerCase();
+  const area = document.getElementById("w-area").value;
+  const missing = document.getElementById("w-missing").checked;
+  return wording.keys.filter(
+    (k) =>
+      (!area || k.key.split(".")[0] === area) &&
+      (!missing || !(locale in k.values)) &&
+      (!q || k.key.includes(q) || Object.values(k.values).some((v) => v.toLowerCase().includes(q)))
+  );
+}
+
+function renderWording() {
+  const locale = document.getElementById("w-locale").value;
+  const all = wordingMatches();
+  const shown = all.slice(0, wordingShown);
+  document.getElementById("w-count").textContent = `${all.length} ${all.length === 1 ? "key" : "keys"}`;
+  document.getElementById("w-more").hidden = all.length <= shown.length;
+  const rows = shown.map((k) => {
+    const tr = document.createElement("tr");
+    tr.dataset.key = k.key;
+    const keyCell = document.createElement("td");
+    keyCell.style.width = "22%";
+    keyCell.innerHTML = `<code>${escapeHtml(k.key)}</code>`;
+    const english = Object.assign(document.createElement("textarea"), { value: k.values.en ?? "", className: "w-en" });
+    const translated = Object.assign(document.createElement("textarea"), { value: k.values[locale] ?? "", className: `w-tr${locale in k.values ? "" : " missing"}`, placeholder: `Not yet in ${LANGUAGE[locale] ?? locale}: English shows` });
+    const state = Object.assign(document.createElement("div"), { className: "rowstate" });
+    const save = button("Save", async () => {
+      state.className = "rowstate";
+      state.textContent = "";
+      const lost = lostPlaceholders(english.value, translated.value);
+      if (translated.value.trim() && lost.length) {
+        state.className = "rowstate outcome-refused";
+        state.textContent = `Keep ${lost.map((p) => `{${p}}`).join(", ")} in the translation.`;
+        return;
+      }
+      try {
+        // English first: a translation is checked against the English as stored.
+        if (english.value.trim() && english.value.trim() !== (k.values.en ?? "")) {
+          await api("/ui-strings", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key: k.key, locale: "en", value: english.value }) });
+          k.values.en = english.value.trim();
+        }
+        if (translated.value.trim() && translated.value.trim() !== (k.values[locale] ?? "")) {
+          await api("/ui-strings", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key: k.key, locale, value: translated.value }) });
+          k.values[locale] = translated.value.trim();
+          translated.classList.remove("missing");
+        }
+        state.className = "rowstate outcome-recorded";
+        state.textContent = "Saved. It shows within five minutes.";
+        save.disabled = true;
+      } catch (err) {
+        state.className = "rowstate outcome-refused";
+        state.textContent = err.message;
+      }
+    });
+    save.disabled = true;
+    const changed = () => {
+      save.disabled = english.value.trim() === (k.values.en ?? "") && translated.value.trim() === (k.values[locale] ?? "");
+      const lost = translated.value.trim() ? lostPlaceholders(english.value, translated.value) : [];
+      state.className = lost.length ? "rowstate outcome-refused" : "rowstate";
+      state.textContent = lost.length ? `Keep ${lost.map((p) => `{${p}}`).join(", ")} in the translation.` : "";
+    };
+    english.oninput = changed;
+    translated.oninput = changed;
+    const enCell = document.createElement("td");
+    enCell.append(english);
+    const trCell = document.createElement("td");
+    trCell.append(translated, state);
+    const actCell = document.createElement("td");
+    actCell.append(save);
+    tr.append(keyCell, enCell, trCell, actCell);
+    return tr;
+  });
+  document.getElementById("wording").replaceChildren(table(["Key", "English", LANGUAGE[locale] ?? locale, ""], rows, "No key matches."));
+}
+
+const rewording = () => {
+  wordingShown = 100;
+  renderWording();
+};
+document.getElementById("w-locale").onchange = rewording;
+document.getElementById("w-filter").oninput = rewording;
+document.getElementById("w-area").onchange = rewording;
+document.getElementById("w-missing").onchange = rewording;
+document.getElementById("w-more").onclick = () => {
+  wordingShown += 200;
+  renderWording();
+};
+
+/** For a translator: the keys not yet in the chosen language, with their English, ready to fill in. */
+document.getElementById("w-export").onclick = () => {
+  const locale = document.getElementById("w-locale").value;
+  const strings = Object.fromEntries(wording.keys.filter((k) => !(locale in k.values) && k.values.en).map((k) => [k.key, k.values.en]));
+  const blob = new Blob([JSON.stringify({ locale, strings }, null, 2)], { type: "application/json" });
+  const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(blob), download: `vibefinance-wording-${locale}-to-translate.json` });
+  a.click();
+  URL.revokeObjectURL(a.href);
+};
+
+/** A translator's file back: `{ locale, strings }`, or bare `{ key: text }` for the chosen language. Checked, then applied all or nothing. */
+document.getElementById("w-import").onchange = async (event) => {
+  const state = document.getElementById("w-importstate");
+  const file = event.target.files[0];
+  event.target.value = "";
+  if (!file) return;
+  state.className = "sm";
+  let parsed;
+  try {
+    parsed = JSON.parse(await file.text());
+  } catch {
+    state.className = "sm outcome-refused";
+    state.textContent = `${file.name} is not JSON.`;
+    return;
+  }
+  const locale = typeof parsed.locale === "string" ? parsed.locale : document.getElementById("w-locale").value;
+  const strings = parsed.strings && typeof parsed.strings === "object" ? parsed.strings : parsed;
+  const english = new Map(wording.keys.map((k) => [k.key, k.values.en]));
+  const unknown = Object.keys(strings).filter((k) => !english.has(k));
+  const lost = Object.entries(strings).filter(([k, v]) => english.has(k) && lostPlaceholders(english.get(k), v).length);
+  if (unknown.length || lost.length) {
+    state.className = "sm outcome-refused";
+    state.textContent = [unknown.length ? `${unknown.length} unknown keys (${unknown.slice(0, 3).join(", ")}…)` : "", lost.length ? `${lost.length} drop a placeholder (${lost.slice(0, 3).map(([k]) => k).join(", ")}…)` : ""].filter(Boolean).join("; ") + ". Nothing was applied.";
+    return;
+  }
+  const replacing = Object.keys(strings).filter((k) => wording.keys.find((x) => x.key === k)?.values[locale]).length;
+  state.textContent = `${Object.keys(strings).length} strings for ${LANGUAGE[locale] ?? locale}, ${replacing} replacing what is there. `;
+  const apply = button("Apply", async () => {
+    apply.disabled = true;
+    try {
+      const r = await api("/ui-strings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ locale, strings }) });
+      state.className = "sm outcome-recorded";
+      state.textContent = `${r.written} strings saved for ${LANGUAGE[locale] ?? locale}. They show within five minutes.`;
+      await loadWording();
+    } catch (err) {
+      state.className = "sm outcome-refused";
+      state.textContent = err.message;
+    }
+  }, "approve");
+  state.append(apply);
+};
+
+/**
+ * **Branding — decision 0604.** A customer's name and four colours,
+ * previewed as its sign-in page will look, with the contrast of the text
+ * on each checked. Anything left unset is VibeFinance's own.
+ */
+const BRAND_FIELDS = [
+  ["brandName", "Name", "Shown as the product's name on the sign-in page.", null],
+  ["brandFill", "Fill", "The sign-in page's wash, mark, focus and button; primary buttons and highlights. White text sits on it.", "#ffffff"],
+  ["brandBar", "Bar", "Held for screens that use it: none does yet.", null],
+  ["brandChip", "Chip", "Held for screens that use it: none does yet. Chip text sits on it.", "brandChipText"],
+  ["brandChipText", "Chip text", "The text on a chip.", null],
+];
+let brand = null;
+let brandDraft = {};
+
+function luminance(hex) {
+  const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255).map((c) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4));
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+function contrast(a, b) {
+  const [x, y] = [luminance(a), luminance(b)].sort((m, n) => n - m);
+  return (x + 0.05) / (y + 0.05);
+}
+const brandValue = (k) => brandDraft[k] ?? brand.defaults[k];
+
+async function loadBranding() {
+  try {
+    const { customers = [] } = await api("/customers");
+    const pick = document.getElementById("b-customer");
+    const chosen = pick.value || customers.find((c) => !c.sandboxOf)?.id || customers[0]?.id || "";
+    pick.replaceChildren(...customers.map((c) => Object.assign(document.createElement("option"), { value: c.id, textContent: `${c.name} (${c.id})` })));
+    pick.value = chosen;
+    if (!chosen) {
+      document.getElementById("b-form").replaceChildren(Object.assign(document.createElement("div"), { className: "empty", textContent: "No customers yet." }));
+      return;
+    }
+    brand = await api(`/branding/${encodeURIComponent(chosen)}`);
+    brandDraft = { ...brand.set };
+    renderBranding();
+  } catch (err) {
+    document.getElementById("b-form").replaceChildren(problemBox("The livery could not be loaded", err));
+  }
+}
+
+function renderBranding() {
+  document.getElementById("b-updated").textContent = brand.updatedAt ? `Last changed ${when(brand.updatedAt)} by ${brand.updatedBy ?? "?"}` : "Never changed: VibeFinance's own livery.";
+  const form = document.getElementById("b-form");
+  form.replaceChildren(
+    ...BRAND_FIELDS.map(([key, label, what, against]) => {
+      const row = document.createElement("div");
+      row.className = "brandfield";
+      row.dataset.field = key;
+      const name = Object.assign(document.createElement("strong"), { textContent: label });
+      const set = brandDraft[key] !== null && brandDraft[key] !== undefined;
+      let controls;
+      if (key === "brandName") {
+        const text = Object.assign(document.createElement("input"), { value: brandDraft[key] ?? "", placeholder: brand.defaults[key], size: 30, maxLength: 60, className: "b-name" });
+        text.oninput = () => {
+          brandDraft[key] = text.value.trim() ? text.value : null;
+          renderPreview();
+        };
+        controls = [Object.assign(document.createElement("span")), text];
+      } else {
+        const colour = Object.assign(document.createElement("input"), { type: "color", value: brandValue(key), className: `b-colour b-${key}` });
+        const hex = Object.assign(document.createElement("input"), { value: set ? brandDraft[key] : "", placeholder: `${brand.defaults[key]} (VibeFinance's)`, size: 22, className: `b-hex b-hex-${key}` });
+        const sync = (value) => {
+          brandDraft[key] = value;
+          renderPreview();
+          renderWarnings();
+        };
+        colour.oninput = () => {
+          hex.value = colour.value;
+          sync(colour.value);
+        };
+        hex.oninput = () => {
+          const v = hex.value.trim();
+          if (/^#[0-9a-fA-F]{6}$/.test(v)) {
+            colour.value = v;
+            sync(v.toLowerCase());
+          } else if (!v) {
+            colour.value = brand.defaults[key];
+            sync(null);
+          }
+        };
+        controls = [colour, hex];
+      }
+      const note = Object.assign(document.createElement("div"), { className: "what", textContent: what });
+      const warn = Object.assign(document.createElement("div"), { className: "warnline", id: `b-warn-${key}` });
+      row.append(name, ...controls, note, warn);
+      return row;
+    })
+  );
+  renderPreview();
+  renderWarnings();
+}
+
+/** Text below 4.5 to 1 against its background is hard to read (WCAG AA). */
+function renderWarnings() {
+  for (const [key, , , against] of BRAND_FIELDS) {
+    const line = document.getElementById(`b-warn-${key}`);
+    if (!line || !against) continue;
+    const fg = against.startsWith("#") ? against : brandValue(against);
+    const ratio = contrast(brandValue(key), fg);
+    line.textContent = ratio < 4.5 ? `${against.startsWith("#") ? "White" : "Chip"} text on this colour is hard to read (${ratio.toFixed(1)} to 1; aim for 4.5 or more).` : "";
+  }
+}
+
+function renderPreview() {
+  const fill = brandValue("brandFill");
+  const p = document.getElementById("b-preview");
+  p.innerHTML = `
+    <div class="pbar" style="background:${escapeHtml(brandValue("brandBar"))}"></div>
+    <div class="wash" style="background: radial-gradient(120% 90% at 50% -10%, color-mix(in oklab, ${escapeHtml(fill)} 14%, transparent), transparent 65%), #0b1220">
+      <div class="pmark" style="background:${escapeHtml(fill)}"></div>
+      <div class="pname"></div>
+      <div class="pinput" style="border-color:${escapeHtml(fill)}"></div>
+      <div class="pinput" style="border-color:#2a3650"></div>
+      <div class="pbutton" style="background:${escapeHtml(fill)}">Sign in</div>
+    </div>
+    <div class="pchips"><span class="pchip" style="background:${escapeHtml(brandValue("brandChip"))};color:${escapeHtml(brandValue("brandChipText"))}">Chip</span></div>
+    <div class="pcaption">The sign-in page, once the person is known. The bar and chip are shown for completeness.</div>`;
+  p.querySelector(".pname").textContent = brandValue("brandName");
+}
+
+document.getElementById("b-customer").onchange = async () => {
+  note("");
+  try {
+    brand = await api(`/branding/${encodeURIComponent(document.getElementById("b-customer").value)}`);
+    brandDraft = { ...brand.set };
+    renderBranding();
+  } catch (err) {
+    note(err.message);
+  }
+};
+document.getElementById("b-save").onclick = async () => {
+  const ok = await act(`/branding/${encodeURIComponent(brand.customerId)}`, "PUT", brandDraft);
+  if (ok) note(`Saved ${brand.customerName}'s livery. It shows within five minutes.`);
+};
+document.getElementById("b-reset").onclick = async (event) => {
+  const b = event.currentTarget;
+  // Asked once more, in place.
+  if (b.dataset.armed !== "1") {
+    b.dataset.armed = "1";
+    b.textContent = "Reset to VibeFinance's own?";
+    b.className = "reject";
+    return;
+  }
+  b.dataset.armed = "";
+  b.textContent = "Use VibeFinance's own";
+  b.className = "";
+  await act(`/branding/${encodeURIComponent(brand.customerId)}`, "PUT", {});
+};
 
 window.addEventListener("hashchange", () => show(screenFromHash()));
 show(screenFromHash());

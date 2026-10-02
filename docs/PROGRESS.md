@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 2 October 2026 (decision 0603). A living document: what
+Last updated 2 October 2026 (decision 0604). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,14 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Interface wording and Branding in the operator console (0604)
+
+The last two screens of the console. Wording shows every key in English
+and another language, with what is not yet translated, and takes a
+translator's file back; a translation must keep the English placeholders.
+Branding sets a customer's name and colours with a preview and contrast
+checks.
 
 ### The operator console, laid out like the main site (0603)
 

@@ -79,6 +79,10 @@ const FORWARDED: readonly RegExp[] = [
   // The console's screens — decision 0603.
   /^\/fleet-overview$/,
   /^\/people$/,
+  // Interface wording and Branding — decision 0604.
+  /^\/ui-strings$/,
+  /^\/ui-strings\/keys$/,
+  /^\/branding\/[^/]+$/,
 ];
 
 export default {

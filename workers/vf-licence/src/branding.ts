@@ -173,3 +173,36 @@ export async function handleBrandingStylesheet(
     },
   });
 }
+
+/**
+ * `GET /branding/:customer` — **what the operator console's Branding
+ * screen reads (decision 0604)**: the livery in force, which values the
+ * customer has set (null is the default), the defaults, and when and by
+ * whom it was last changed. Privileged, as setting it is.
+ */
+export async function handleGetBranding(db: D1Database, customerId: string): Promise<RouteResult> {
+  const customer = await db.prepare("SELECT id, name FROM customers WHERE id = ?").bind(customerId).first<{ id: string; name: string }>();
+  if (!customer) return { status: 404, body: { error: `customer ${customerId} does not exist` } };
+  const row = await db
+    .prepare("SELECT brand_bar, brand_fill, brand_chip, brand_chip_text, brand_name, updated_at, updated_by FROM customer_branding WHERE customer_id = ?")
+    .bind(customerId)
+    .first<Record<string, string | null>>();
+  return {
+    status: 200,
+    body: {
+      customerId,
+      customerName: customer.name,
+      branding: await loadBranding(db, customerId),
+      set: {
+        brandBar: row?.brand_bar ?? null,
+        brandFill: row?.brand_fill ?? null,
+        brandChip: row?.brand_chip ?? null,
+        brandChipText: row?.brand_chip_text ?? null,
+        brandName: row?.brand_name ?? null,
+      },
+      defaults: DEFAULT_BRANDING,
+      updatedAt: row?.updated_at ?? null,
+      updatedBy: row?.updated_by ?? null,
+    },
+  };
+}

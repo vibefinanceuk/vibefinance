@@ -67,6 +67,21 @@ export async function handleUiStrings(db: D1Database, requested: string | null):
   });
 }
 
+/**
+ * **A translation keeps the English placeholders — decision 0604.** The
+ * interface replaces `{name}`, `{n}` and the like; a translation missing
+ * one shows nothing where the value should be, and nobody notices until
+ * a customer does. The operator console's wording screen checks this as
+ * it is typed; this is the same rule where it is stored.
+ */
+export function placeholdersOf(value: string): string[] {
+  return [...new Set([...value.matchAll(/\{([a-z0-9_]+)\}/gi)].map((m) => m[1]))].sort();
+}
+export function missingPlaceholders(english: string, translation: string): string[] {
+  const have = new Set(placeholdersOf(translation));
+  return placeholdersOf(english).filter((p) => !have.has(p));
+}
+
 export async function handleSetUiString(
   db: D1Database,
   body: Record<string, unknown>
@@ -89,9 +104,9 @@ export async function handleSetUiString(
     // string with no English sibling breaks it for everybody who is not
     // German — which a standing invariant also refuses.
     const english = await db
-      .prepare("SELECT 1 FROM ui_strings WHERE key = ? AND locale = 'en'")
+      .prepare("SELECT value FROM ui_strings WHERE key = ? AND locale = 'en'")
       .bind(key)
-      .first();
+      .first<{ value: string }>();
     if (!english) {
       return {
         status: 422,
@@ -100,6 +115,10 @@ export async function handleSetUiString(
           detail: "English is the fallback, so it must be set before any translation",
         },
       };
+    }
+    const lost = missingPlaceholders(english.value, value);
+    if (lost.length > 0) {
+      return { status: 422, body: { error: `the translation must keep ${lost.map((p) => `{${p}}`).join(", ")}`, reason: "placeholders" } };
     }
   }
 
@@ -201,9 +220,10 @@ export async function handleBulkUiStrings(
     // the standing invariant enforces, checked here so the caller gets
     // the list rather than a constraint error.
     const english = await db
-      .prepare("SELECT key FROM ui_strings WHERE locale = 'en'")
-      .all<{ key: string }>();
+      .prepare("SELECT key, value FROM ui_strings WHERE locale = 'en'")
+      .all<{ key: string; value: string }>();
     const known = new Set(english.results.map((r) => r.key));
+    const englishOf = new Map(english.results.map((r) => [r.key, r.value]));
     const orphans = entries.map(([k]) => k).filter((k) => !known.has(k));
     if (orphans.length > 0) {
       return {
@@ -212,6 +232,16 @@ export async function handleBulkUiStrings(
           error: `no English value exists for: ${orphans.join(", ")}`,
           detail: "English is the fallback, so it must be set before any translation",
         },
+      };
+    }
+    // Decision 0604: every translation keeps the English placeholders.
+    const lost = entries
+      .map(([k, v]) => [k, missingPlaceholders(englishOf.get(k) ?? "", v as string)] as const)
+      .filter(([, m]) => m.length > 0);
+    if (lost.length > 0) {
+      return {
+        status: 422,
+        body: { error: `placeholders missing: ${lost.map(([k, m]) => `${k} (${m.map((p) => `{${p}}`).join(", ")})`).join("; ")}`, reason: "placeholders" },
       };
     }
   }
