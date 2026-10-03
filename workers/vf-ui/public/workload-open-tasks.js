@@ -68,13 +68,42 @@ function colourFor(stageId) {
  */
 const RING_SIZE = 120;
 
+/**
+ * **The ring opens Documents** — decision 0614. A slice, or its row in
+ * the key, opens the invoices with a task open for the chosen person at
+ * that stage; anywhere else on the ring, all of their open tasks. The
+ * same tasks the card counts (`openFor`, `openStage`).
+ */
+async function openFor(user, stage = null) {
+  const { openDocumentsOpenFor } = await import("/documents.js");
+  openDocumentsOpenFor(user.userId, user.userName, stage);
+}
+
 function ringAndKey(user) {
   const wrap = donutChart(
-    (user?.stages ?? []).map((s) => ({ label: s.stageName, value: s.n, colour: colourFor(s.stageId) })),
-    { size: RING_SIZE }
+    (user?.stages ?? []).map((s) => ({ label: s.stageName, value: s.n, colour: colourFor(s.stageId), stageId: s.stageId })),
+    {
+      size: RING_SIZE,
+      arcs: true,
+      onSelect: user ? (segment) => openFor(user, { id: segment.stageId, name: segment.label }) : null,
+    }
   );
   const key = wrap.querySelector(".donutlegend");
   key?.remove();
+  const svg = wrap.querySelector("svg");
+  if (svg && user) {
+    svg.classList.add("clickable");
+    svg.setAttribute("role", "button");
+    svg.setAttribute("tabindex", "0");
+    svg.setAttribute("aria-label", t("workload.opentasksopenall").replace("{name}", user.userName));
+    svg.addEventListener("click", () => openFor(user));
+    svg.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        openFor(user);
+      }
+    });
+  }
   return { ring: wrap, key: key ?? document.createElement("div") };
 }
 

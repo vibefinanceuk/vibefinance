@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 3 October 2026 (decision 0613). A living document: what
+Last updated 3 October 2026 (decision 0614). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,12 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Open tasks by user opens Documents (0614)
+
+A slice of the ring, or its row in the key, opens Documents at the
+chosen person's open tasks at that stage; the rest of the ring at all of
+them.
 
 ### Open tasks by user: the key under the drop-down (0613)
 

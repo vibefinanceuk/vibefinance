@@ -309,6 +309,16 @@ export async function handleListDocuments(
    */
   const doneBy = params.get("doneBy") || null;
   const team = params.get("team") || null;
+  /**
+   * **One person's open tasks, at one stage or all — decision 0614.**
+   * From *Open tasks by user*'s ring: `openFor` is the invoices with a
+   * task open that the person owns or has claimed, as the card counts
+   * (`workload-open-tasks-route.ts`), and `openStage` narrows it to the
+   * stage of the slice clicked. `openStage` alone means nothing and is
+   * ignored.
+   */
+  const openFor = params.get("openFor") || null;
+  const openStage = openFor ? params.get("openStage") || null : null;
 
   /**
    * The sender and recipient come from the email that brought it —
@@ -407,6 +417,17 @@ export async function handleListDocuments(
            )
          )
          AND (
+           ?20 IS NULL
+           OR EXISTS (
+             SELECT 1 FROM tasks ot
+             JOIN stage_visits ov ON ov.id = ot.stage_visit_id
+             WHERE ov.process_instance_id = i.id
+               AND ot.status = 'open'
+               AND COALESCE(ot.owner_user_id, ot.claimed_by) = ?20
+               AND (?21 IS NULL OR ot.stage_id = ?21)
+           )
+         )
+         AND (
            ?16 IS NULL
            OR (
              h.invoice_number LIKE ?16 ESCAPE '\\'
@@ -478,7 +499,7 @@ export async function handleListDocuments(
     searchPattern,
   ] as const;
   // Decision 0611: ?17 is the page's offset (below); the two new filters come after it.
-  const filterBinds = [doneBy, team] as const;
+  const filterBinds = [doneBy, team, openFor, openStage] as const;
 
   /**
    * **`total`, only when a page was actually asked for.** A second,

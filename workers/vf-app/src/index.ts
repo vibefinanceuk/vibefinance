@@ -4323,10 +4323,13 @@ export default {
        * **Someone else's work is AP Analytics' to show — decision 0611.**
        * `doneBy` naming another person comes from the *Throughput by
        * user* card, which `AP.Analysis` gates; `AP.Review` alone shows a
-       * person their own.
+       * person their own. `openFor`, from *Open tasks by user* (decision
+       * 0614), the same.
        */
       const doneBy = url.searchParams.get("doneBy");
-      if (doneBy && doneBy !== auth.user.id && !(await hasPermission(db, auth.user.id, "AP.Analysis"))) {
+      const openFor = url.searchParams.get("openFor");
+      const someoneElse = [doneBy, openFor].some((who) => who && who !== auth.user.id);
+      if (someoneElse && !(await hasPermission(db, auth.user.id, "AP.Analysis"))) {
         return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
       }
 

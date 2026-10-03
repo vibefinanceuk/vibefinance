@@ -2023,7 +2023,11 @@
     padding: 2px 6px;
     border-radius: 6px;
   }
-  .donutkey.clickable:hover { background: var(--surface-1); }
+  .donutkey.clickable:hover, .donutkey.clickable:focus-visible { background: var(--surface-1); }
+  /* A ring whose slices lead somewhere — decision 0614. */
+  .donutwrap svg.clickable { cursor: pointer; }
+  .donutwrap svg circle.clickable { cursor: pointer; }
+  .donutwrap svg circle.clickable:hover { opacity: 0.8; }
 
   @media (max-width: 480px) {
     .donutwrap { flex-direction: column; align-items: stretch; }

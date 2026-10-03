@@ -1108,3 +1108,62 @@ describe("filtering documents by a person's week and a team's queue (decision 06
     expect(first.documents).toHaveLength(3);
   });
 });
+
+/**
+ * **One person's open tasks, at a stage or all — decision 0614.** From
+ * *Open tasks by user*'s ring and key: the invoices with a task open that
+ * the person owns or has claimed, as the card counts.
+ */
+describe("filtering documents by a person's open tasks (decision 0614)", () => {
+  async function openTaskOn(docId: string, task: { stage: "validation" | "payment"; owner?: string; team?: string; claimedBy?: string; status?: "open" | "completed" }) {
+    await env.DB.prepare("INSERT OR IGNORE INTO org_units (id, name) VALUES ('ou-1', 'Acme UK')").run();
+    for (const u of [task.owner, task.claimedBy].filter(Boolean) as string[]) {
+      await env.DB.prepare("INSERT OR IGNORE INTO org_users (id, email, name) VALUES (?, ?, ?)").bind(u, `${u}@acme.com`, u).run();
+    }
+    if (task.team) await env.DB.prepare("INSERT OR IGNORE INTO org_teams (id, name, unit_id) VALUES (?, ?, 'ou-1')").bind(task.team, task.team).run();
+    await env.DB.prepare("INSERT INTO invoice_headers (id, facts_json) VALUES (?, '{}')").bind(docId).run();
+    await env.DB.prepare("INSERT INTO process_instances (id, process_id, subject_type, subject_id, current_stage_id, status) VALUES (?, 'ap', 'invoice', ?, ?, 'in_progress')")
+      .bind(`pi-${docId}`, docId, task.stage)
+      .run();
+    await env.DB.prepare("INSERT INTO stage_visits (id, process_instance_id, stage_id, outcome) VALUES (?, ?, ?, 'matched')").bind(`v-${docId}`, `pi-${docId}`, task.stage).run();
+    await env.DB.prepare(
+      `INSERT INTO tasks (id, stage_id, stage_visit_id, required_permission, status, owner_team_id, owner_user_id, claimed_by, completed_by, completed_at)
+       VALUES (?, ?, ?, 'AP.Validate', ?, ?, ?, ?, ?, ?)`
+    )
+      .bind(
+        `t-${docId}`,
+        task.stage,
+        `v-${docId}`,
+        task.status ?? "open",
+        task.team ?? null,
+        task.owner ?? null,
+        task.claimedBy ?? null,
+        task.status === "completed" ? (task.owner ?? task.claimedBy) : null,
+        task.status === "completed" ? "2026-10-01 10:00:00" : null
+      )
+      .run();
+  }
+
+  beforeEach(async () => {
+    await openTaskOn("inv-1", { stage: "validation", owner: "mo" });
+    await openTaskOn("inv-2", { stage: "payment", team: "ap-team", claimedBy: "mo" });
+    await openTaskOn("inv-3", { stage: "validation", team: "ap-team" });
+    await openTaskOn("inv-4", { stage: "validation", owner: "alice" });
+    await openTaskOn("inv-5", { stage: "validation", owner: "mo", status: "completed" });
+  });
+
+  it("shows the invoices with a task open that the person owns or has claimed, as the card counts", async () => {
+    const paged = await list("openFor=mo&page=1&pageSize=25");
+    expect(paged.documents.map((d) => d.id).sort()).toEqual(["inv-1", "inv-2"]);
+    expect(paged.total).toBe(2);
+  });
+
+  it("narrows to the stage of the slice clicked", async () => {
+    expect((await list("openFor=mo&openStage=payment&page=1&pageSize=25")).documents.map((d) => d.id)).toEqual(["inv-2"]);
+    expect((await list("openFor=mo&openStage=validation&page=1&pageSize=25")).documents.map((d) => d.id)).toEqual(["inv-1"]);
+  });
+
+  it("ignores a stage asked for without a person", async () => {
+    expect((await list("openStage=payment&page=1&pageSize=25")).total).toBe(5);
+  });
+});

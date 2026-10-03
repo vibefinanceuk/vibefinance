@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 /** Open task count by user, split by ownership — decision 0428. */
 
 function mountShell() {
-  document.body.innerHTML = `<div id="card-under-test"></div>`;
+  document.body.innerHTML = `<div id="card-under-test"></div><main id="shell"></main><main id="viewer" hidden></main>`;
 }
 
 const STRINGS = {
@@ -14,6 +14,9 @@ const STRINGS = {
     "workload.noopentasks": "No open tasks right now",
     "workload.opentasksavailable": "{n} unclaimed",
     "workload.opentasksuser": "User",
+    "workload.opentasksopenall": "Open all of {name}'s open tasks in Documents",
+    "documents.showing.openfor": "Showing what is open for {name}",
+    "documents.showing.openforstage": "Showing what is open for {name} at {stage}",
   },
 };
 
@@ -25,6 +28,8 @@ function stubOpenTasks(data: unknown, seen: string[] = []) {
       seen.push(path);
       if (path.startsWith("/api/ui-strings")) return { ok: true, json: async () => STRINGS } as Response;
       if (path.startsWith("/api/workload/open-tasks")) return { ok: true, json: async () => data } as Response;
+      if (path.startsWith("/api/org/units")) return { ok: true, json: async () => ({ units: [] }) } as Response;
+      if (path.startsWith("/api/documents")) return { ok: true, json: async () => ({ documents: [], searched: 0 }) } as Response;
       throw new Error(`no stub for ${path}`);
     })
   );
@@ -201,4 +206,65 @@ describe("the key stays inside the card, however narrow (decision 0613)", () => 
       }
     });
   }
+});
+
+describe("the ring opens Documents (decision 0614)", () => {
+  const DATA = {
+    users: [
+      {
+        userId: "wei",
+        userName: "Wei C.",
+        openCount: 5,
+        stages: [
+          { stageId: "validation", stageName: "Validation", n: 1 },
+          { stageId: "approval", stageName: "Approval", n: 4 },
+        ],
+      },
+    ],
+    stages: [
+      { stageId: "validation", stageName: "Validation" },
+      { stageId: "approval", stageName: "Approval" },
+    ],
+    available: 0,
+  };
+
+  async function documentsAsked(seen: string[]) {
+    await vi.waitFor(() => expect(seen.some((u) => u.startsWith("/api/documents"))).toBe(true));
+    return new URL(seen.find((u) => u.startsWith("/api/documents"))!, "http://x").searchParams;
+  }
+
+  it("a slice opens that person's open tasks at that stage, and says so", async () => {
+    const seen: string[] = [];
+    await renderOpenTasks(DATA, seen);
+    const arcs = document.querySelectorAll<SVGCircleElement>(".opentasks-ring svg circle.clickable");
+    expect(arcs).toHaveLength(2);
+    arcs[1].dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    const asked = await documentsAsked(seen);
+    expect(asked.get("openFor")).toBe("wei");
+    expect(asked.get("openStage")).toBe("approval");
+    await vi.waitFor(() => expect(document.querySelector(".alertbanner")?.textContent).toContain("Showing what is open for Wei C. at Approval"));
+  });
+
+  it("a row of the key does the same, by mouse or keyboard", async () => {
+    const seen: string[] = [];
+    await renderOpenTasks(DATA, seen);
+    const row = [...document.querySelectorAll<HTMLElement>(".opentasks-key .donutkey")].find((r) => r.textContent?.startsWith("Validation"))!;
+    expect(row.classList.contains("clickable")).toBe(true);
+    row.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    const asked = await documentsAsked(seen);
+    expect(asked.get("openFor")).toBe("wei");
+    expect(asked.get("openStage")).toBe("validation");
+  });
+
+  it("the rest of the ring opens all of that person's open tasks", async () => {
+    const seen: string[] = [];
+    await renderOpenTasks(DATA, seen);
+    const svg = document.querySelector<SVGSVGElement>(".opentasks-ring svg")!;
+    expect(svg.getAttribute("aria-label")).toBe("Open all of Wei C.'s open tasks in Documents");
+    svg.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    const asked = await documentsAsked(seen);
+    expect(asked.get("openFor")).toBe("wei");
+    expect(asked.has("openStage")).toBe(false);
+    await vi.waitFor(() => expect(document.querySelector(".alertbanner")?.textContent).toContain("Showing what is open for Wei C."));
+  });
 });

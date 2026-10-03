@@ -244,6 +244,7 @@ import bcStringsSql from "../migrations/0253_bc_connector_strings.sql?raw";
 import neutralHintsSql from "../migrations/0254_neutral_setting_hints.sql?raw";
 import analyticsDrilldownSql from "../migrations/0255_analytics_drilldown_strings.sql?raw";
 import openTasksPickerSql from "../migrations/0256_open_tasks_picker_strings.sql?raw";
+import openTasksDrilldownSql from "../migrations/0257_open_tasks_drilldown_strings.sql?raw";
 
 function stripSqlComments(sql: string): string {
   return sql
@@ -521,5 +522,6 @@ export async function applyTestSchema(): Promise<void> {
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(neutralHintsSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(analyticsDrilldownSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(openTasksPickerSql)));
+  await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(openTasksDrilldownSql)));
 
 }

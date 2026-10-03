@@ -88,6 +88,12 @@ let agingFilter = null;
 let personFilter = null;
 let teamFilter = null;
 
+/**
+ * **A person's open tasks, at a stage or all — decision 0614**, from
+ * *Open tasks by user*'s ring. `{ userId, name, stage: { id, name } | null }`.
+ */
+let openForFilter = null;
+
 /** Every filter a card can open this screen with, cleared together. */
 function clearFilters() {
   alertFilter = null;
@@ -96,6 +102,7 @@ function clearFilters() {
   agingFilter = null;
   personFilter = null;
   teamFilter = null;
+  openForFilter = null;
 }
 
 /**
@@ -208,6 +215,10 @@ async function load() {
   if (supplierFilter) params.set("exceptionSupplier", supplierFilter.name);
   if (personFilter) params.set("doneBy", personFilter.userId);
   if (teamFilter) params.set("team", teamFilter.teamId);
+  if (openForFilter) {
+    params.set("openFor", openForFilter.userId);
+    if (openForFilter.stage) params.set("openStage", openForFilter.stage.id);
+  }
   if (agingFilter) {
     params.set("agingMinDays", String(agingFilter.minDays));
     if (agingFilter.maxDays !== null && agingFilter.maxDays !== undefined) {
@@ -464,6 +475,10 @@ function bannerText() {
   if (agingFilter) return t("documents.showing.aging").replace("{bucket}", agingFilter.label);
   if (personFilter) return t("documents.showing.doneby").replace("{name}", personFilter.name);
   if (teamFilter) return t("documents.showing.team").replace("{team}", teamFilter.name);
+  if (openForFilter?.stage) {
+    return t("documents.showing.openforstage").replace("{name}", openForFilter.name).replace("{stage}", openForFilter.stage.name);
+  }
+  if (openForFilter) return t("documents.showing.openfor").replace("{name}", openForFilter.name);
   return t(`documents.showing.${alertFilter}`);
 }
 
@@ -593,7 +608,7 @@ function render() {
          * one — decision 0256 fixed exactly this shape of confusion for
          * a dropdown that quietly filtered without saying so.
          */
-        alertFilter || stageFilter || supplierFilter || agingFilter || personFilter || teamFilter
+        alertFilter || stageFilter || supplierFilter || agingFilter || personFilter || teamFilter || openForFilter
           ? el("div", { class: "panel alertbanner" }, [
               el("span", { text: bannerText() }),
               el("button", {
@@ -806,6 +821,24 @@ export async function openDocumentsForTeam(teamId, name) {
   page = 1;
   clearFilters();
   teamFilter = { teamId, name };
+  setCurrentScreen("documents");
+  await loadUnits();
+  if (!(await load())) return;
+  render();
+}
+
+/**
+ * Open the documents screen at one person's open tasks — decision 0614,
+ * from *Open tasks by user*: at one stage (a slice or its key row), or
+ * all of them (the rest of the ring). Another person's needs
+ * AP.Analysis, as the card does.
+ */
+export async function openDocumentsOpenFor(userId, name, stage = null) {
+  query = "";
+  unit = "";
+  page = 1;
+  clearFilters();
+  openForFilter = { userId, name, stage };
   setCurrentScreen("documents");
   await loadUnits();
   if (!(await load())) return;

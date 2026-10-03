@@ -390,7 +390,7 @@ export function barList(rows, { colour = "var(--chart-1)", onSelect = null } = {
  * destroys it: *under a day* and *over thirty days* are not two slices
  * of a pie, they are two ends of a line.
  */
-export function donutChart(segments, { size = 150, legend = true, onSelect = null } = {}) {
+export function donutChart(segments, { size = 150, legend = true, onSelect = null, arcs = false } = {}) {
   const wrap = document.createElement("div");
   wrap.className = "donutwrap";
 
@@ -443,6 +443,21 @@ export function donutChart(segments, { size = 150, legend = true, onSelect = nul
         transform: `rotate(-90 ${c} ${c})`,
       })
     );
+    /**
+     * **The arc as a target too, where a card asks** — decision 0614.
+     * 0264 kept clicks to the legend because a thin stroke is a poor
+     * target on a small dashboard ring; *Open tasks by user* asks for
+     * the slices themselves (Dan: "allow this graph to also be clicked
+     * into"), so `arcs: true` offers both. Never the folded rest.
+     */
+    if (arcs && onSelect && !segment.rest) {
+      const arc = node.lastElementChild;
+      arc.classList.add("clickable");
+      arc.addEventListener("click", (e) => {
+        e.stopPropagation();
+        onSelect(segment);
+      });
+    }
     offset += length;
     segment.colour = colour;
   });
@@ -512,6 +527,15 @@ export function donutChart(segments, { size = 150, legend = true, onSelect = nul
     if (onSelect && !segment.rest) {
       row.classList.add("clickable");
       row.onclick = () => onSelect(segment);
+      // Reachable from the keyboard too — decision 0614.
+      row.tabIndex = 0;
+      row.setAttribute("role", "button");
+      row.onkeydown = (e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onSelect(segment);
+        }
+      };
     }
 
     keys.append(row);
