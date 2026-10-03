@@ -234,16 +234,17 @@ export const STANDARD_CONNECTORS: ConnectorDefinition[] = [
     vendorDocs: "https://learn.microsoft.com/en-us/dynamics365/business-central/dev-itpro/api-reference/v2.0/api/dynamics_purchaseinvoice_create",
   },
   /**
-   * **SFTP out and SFTP in — decision 0620**, a first version: proved
-   * against an SFTP server in the tests, run by vf-sftp's container.
+   * **SFTP out and SFTP in — decision 0620**, built and proved against an
+   * SFTP server in the tests, run by vf-sftp's container. **Planned again
+   * — decision 0621**: the container needs the Workers Paid plan, which
+   * is not taken until a customer needs SFTP, so neither can be added.
    */
   {
     id: "sftp-out",
     version: 1,
     direction: "destination",
     publisher: "standard",
-    status: "available",
-    maturity: "first_version",
+    status: "planned",
     categories: ["generic"],
     routeId: "sftp-out",
     transport: "sftp",
@@ -254,7 +255,7 @@ export const STANDARD_CONNECTORS: ConnectorDefinition[] = [
   { id: "email-in", version: 1, direction: "source", publisher: "standard", status: "available", categories: ["generic"], routeId: "email-in", transport: "email", formats: ["detected"], mechanism: "email", multiple: true },
   { id: "https-in", version: 1, direction: "source", publisher: "standard", status: "available", categories: ["generic"], routeId: "https-in", transport: "https", formats: ["detected"], mechanism: "https", multiple: true },
   { id: "file-import", version: 1, direction: "source", publisher: "standard", status: "available", categories: ["generic"], routeId: "file-import", transport: "upload", formats: ["detected"], mechanism: "file_import", multiple: false },
-  { id: "sftp-in", version: 1, direction: "source", publisher: "standard", status: "available", maturity: "first_version", categories: ["generic"], routeId: "sftp-in", transport: "sftp", formats: ["detected"], mechanism: "sftp", multiple: true },
+  { id: "sftp-in", version: 1, direction: "source", publisher: "standard", status: "planned", categories: ["generic"], routeId: "sftp-in", transport: "sftp", formats: ["detected"], mechanism: "sftp", multiple: true },
   { id: "edi-in", version: 1, direction: "source", publisher: "standard", status: "planned", categories: ["generic"], routeId: "edi-in", transport: "edi", formats: ["edifact"], mechanism: "edi", multiple: true },
   { id: "peppol-in", version: 1, direction: "source", publisher: "standard", status: "planned", categories: ["generic"], routeId: null, transport: "peppol", formats: ["ubl"], multiple: false },
 ];

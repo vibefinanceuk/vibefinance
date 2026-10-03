@@ -129,8 +129,13 @@ beforeEach(async () => {
   await env.DB.prepare("INSERT INTO process_instances (id, process_id, subject_type, subject_id, current_stage_id, status) VALUES ('pi-a', 'ap', 'invoice', 'inv-a', 'ap-eligible', 'in_progress')").run();
 });
 
+/** Decision 0621: SFTP out is planned in the library until the container runs; these tests add it as available, as it was built. */
+async function sftpAvailable() {
+  return (await connectorLibrary(env.DB)).map((c) => (c.id === "sftp-out" ? { ...c, status: "available" as const } : c));
+}
+
 async function addSftpOut(server = fakeServer()) {
-  const made = await handleCreateDestination(env.DB, "u-dan", "ap", { name: "ERP drop", connectorId: "sftp-out" }, await connectorLibrary(env.DB));
+  const made = await handleCreateDestination(env.DB, "u-dan", "ap", { name: "ERP drop", connectorId: "sftp-out" }, await sftpAvailable());
   expect(made.status).toBe(201);
   const id = (made.body as { id: string }).id;
   const saved = await handleSaveSftp(env.DB, "u-dan", id, { settings: { host: "sftp.acme.example", username: "vibefinance", folder: "/to-erp", format: "csv" }, secret: "s3cret" }, KEY);
