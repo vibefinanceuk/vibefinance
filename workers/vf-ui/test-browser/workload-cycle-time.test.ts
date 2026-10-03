@@ -14,6 +14,12 @@ const STRINGS = {
     "workload.nocycletime": "No completed, claimed tasks yet",
     "workload.taskcountnote": "{n} tasks",
     "workload.hourscount": "{n} hours",
+    "workload.taskcountnote.one": "{n} task",
+    "workload.window": "Period",
+    "workload.window.all": "All time",
+    "workload.window.days": "Last {n} days",
+    "workload.window.none": "Nothing claimed and completed in this period",
+    "documents.showing.lastdays": "in the last {n} days",
     "documents.showing.handledby": "Showing where {name} claimed and completed a task",
   },
 };
@@ -110,5 +116,21 @@ describe("a person's bar opens Documents (decision 0616)", () => {
   it("offers it at 0 hours too, where there were tasks", async () => {
     await renderCycleTime({ users: [{ userId: "bo", userName: "Bo", avgHours: 0, n: 2 }] });
     expect(document.querySelectorAll(".barlist-row.clickable")).toHaveLength(1);
+  });
+});
+
+describe("a period to average over (decision 0617)", () => {
+  it("fetches for the period chosen, and a bar opens Documents for the same period", async () => {
+    const seen: string[] = [];
+    await renderCycleTime({ users: [{ userId: "alice", userName: "Alice McDonald", avgHours: 10.2, n: 1 }] }, seen);
+    expect(document.body.textContent).toContain("10.2 hours · 1 task");
+    const pick = document.querySelector<HTMLSelectElement>(".cardhead .windowpick")!;
+    pick.value = "90";
+    pick.dispatchEvent(new Event("change"));
+    await vi.waitFor(() => expect(seen.some((u) => u.startsWith("/api/workload/cycle-time") && u.includes("days=90"))).toBe(true));
+    await vi.waitFor(() => expect(document.querySelector<HTMLSelectElement>(".windowpick")?.value).toBe("90"));
+    document.querySelector<HTMLElement>(".barlist-row.clickable")!.click();
+    const q = await documentsAsked(seen);
+    expect([q.get("handledBy"), q.get("handledDays")]).toEqual(["alice", "90"]);
   });
 });

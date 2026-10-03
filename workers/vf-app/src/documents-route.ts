@@ -1,3 +1,4 @@
+import { windowDays } from "./workload-handling-time-route.js";
 import type { RouteResult } from "./examples-route.js";
 import { mondayOfThisWeek } from "./dates.js";
 import { POSSIBLE_DUPLICATE_THRESHOLD } from "./invoice-history.js";
@@ -336,6 +337,8 @@ export async function handleListDocuments(
    */
   const handledBy = params.get("handledBy") || null;
   const handledStage = handledBy ? params.get("handledStage") || null : null;
+  // Decision 0617: the window the card was showing, 7, 30 or 90 days, or all time.
+  const handledDays = handledBy ? windowDays(params.get("handledDays")) : null;
 
   /**
    * The sender and recipient come from the email that brought it —
@@ -455,6 +458,7 @@ export async function handleListDocuments(
                AND ht.claimed_at IS NOT NULL
                AND ht.completed_by = ?23
                AND (?24 IS NULL OR ht.stage_id = ?24)
+               AND (?25 IS NULL OR julianday('now') - julianday(ht.completed_at) < ?25)
            )
          )
          AND (
@@ -529,7 +533,7 @@ export async function handleListDocuments(
     searchPattern,
   ] as const;
   // Decision 0611: ?17 is the page's offset (below); the two new filters come after it.
-  const filterBinds = [doneBy, team, openFor, openStage, openTeam, handledBy, handledStage] as const;
+  const filterBinds = [doneBy, team, openFor, openStage, openTeam, handledBy, handledStage, handledDays] as const;
 
   /**
    * **`total`, only when a page was actually asked for.** A second,

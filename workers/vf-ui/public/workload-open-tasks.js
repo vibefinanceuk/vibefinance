@@ -68,6 +68,9 @@ function colourFor(stageId) {
  */
 const RING_SIZE = 120;
 
+/** More people than this, and the drop-down gets a search — decision 0617. */
+const SEARCH_FROM = 8;
+
 /**
  * **The ring opens Documents** — decision 0614. A slice, or its row in
  * the key, opens the invoices with a task open for the chosen person at
@@ -135,22 +138,53 @@ export function renderCard() {
   }
   show(chosen);
 
-  const picker = el(
-    "select",
-    {
-      class: "opentasks-user",
-      "aria-label": t("workload.opentasksuser"),
-      onchange: (e) => {
-        chosen = e.target.value;
-        show(chosen);
-      },
+  const picker = el("select", {
+    class: "opentasks-user",
+    "aria-label": t("workload.opentasksuser"),
+    onchange: (e) => {
+      if (!e.target.value) return;
+      chosen = e.target.value;
+      show(chosen);
     },
-    byName.map((u) => {
-      const option = el("option", { value: u.userId, text: `${u.userName} (${u.openCount})` });
-      if (u.userId === chosen) option.selected = true;
-      return option;
-    })
-  );
+  });
+
+  /** The people offered, narrowed to those whose name holds `find`. */
+  function offer(find = "") {
+    const wanted = find.trim().toLocaleLowerCase();
+    const matching = byName.filter((u) => u.userName.toLocaleLowerCase().includes(wanted));
+    if (matching.length === 0) {
+      picker.replaceChildren(el("option", { value: "", text: t("workload.opentasksnomatch"), disabled: "" }));
+      return;
+    }
+    if (!matching.some((u) => u.userId === chosen)) {
+      chosen = matching[0].userId;
+      show(chosen);
+    }
+    picker.replaceChildren(
+      ...matching.map((u) => {
+        const option = el("option", { value: u.userId, text: `${u.userName} (${u.openCount})` });
+        if (u.userId === chosen) option.selected = true;
+        return option;
+      })
+    );
+  }
+  offer();
+
+  /**
+   * **A search, where the list is long — decision 0617.** Past eight
+   * people a drop-down is a scroll; typing part of a name narrows it, and
+   * the first match is shown at once. Below that, the drop-down alone.
+   */
+  const find =
+    byName.length > SEARCH_FROM
+      ? el("input", {
+          type: "search",
+          class: "opentasks-find",
+          placeholder: t("workload.opentasksfind"),
+          "aria-label": t("workload.opentasksfind"),
+          oninput: (e) => offer(e.target.value),
+        })
+      : null;
 
   return el("div", { class: "panel card-graphic" }, [
     ...head,
@@ -163,7 +197,7 @@ export function renderCard() {
     el("div", { class: "opentasks-body" }, [
       el("div", { class: "opentasks-layout" }, [
         el("div", { class: "opentasks-left" }, [
-          el("label", { class: "opentasks-pick" }, [el("span", { class: "muted", text: t("workload.opentasksuser") }), picker]),
+          el("label", { class: "opentasks-pick" }, [el("span", { class: "muted", text: t("workload.opentasksuser") }), find, picker].filter(Boolean)),
           keySlot,
         ]),
         ringSlot,

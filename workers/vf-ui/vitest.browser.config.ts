@@ -100,6 +100,7 @@ export default defineConfig({
       "/workload.js": resolve(__dirname, "public/workload.js"),
       "/workload-open-tasks.js": resolve(__dirname, "public/workload-open-tasks.js"),
       "/workload-handling-time.js": resolve(__dirname, "public/workload-handling-time.js"),
+      "/window-picker.js": resolve(__dirname, "public/window-picker.js"),
       "/workload-cycle-time.js": resolve(__dirname, "public/workload-cycle-time.js"),
       "/workload-pending.js": resolve(__dirname, "public/workload-pending.js"),
       "/workload-queue-depth.js": resolve(__dirname, "public/workload-queue-depth.js"),

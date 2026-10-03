@@ -1217,6 +1217,8 @@
     gap: 8px;
   }
   .cardhead > h3 { margin-bottom: 0; }
+  /* A card's period, beside its title — decision 0617. */
+  .cardhead > .windowpick { flex: 0 0 auto; font-size: var(--text-sm); padding: 2px 6px; max-width: 50%; }
   /*
     Pulled up and out, so the button's own padding does not push the
     title's baseline down — the row should be the height of the title,
@@ -2245,6 +2247,7 @@
   .opentasks-left { flex: 1 1 auto; min-width: 0; max-width: 300px; display: flex; flex-direction: column; gap: 10px; }
   .opentasks-pick { display: flex; flex-direction: column; gap: 4px; font-size: var(--text-sm); }
   .opentasks-user { width: 100%; }
+  .opentasks-find { width: 100%; font-size: var(--text-sm); }
   .opentasks-key .donutkey > span:nth-child(2) { overflow-wrap: anywhere; }
   .opentasks-ring { flex: 0 0 auto; }
   .opentasks-ring .donutwrap { margin-top: 0; }

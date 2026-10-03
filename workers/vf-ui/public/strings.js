@@ -63,6 +63,16 @@ export function t(key) {
   return strings[key] ?? key;
 }
 
+/**
+ * **A count, in the singular where there is one — decision 0617.** Uses
+ * `<key>.one` for exactly 1 where the strings have it ("1 task"), and the
+ * key itself otherwise ("3 tasks"); `{n}` filled in either way.
+ */
+export function tCount(key, n) {
+  const one = `${key}.one`;
+  return t(n === 1 && strings[one] !== undefined ? one : key).replace("{n}", String(n));
+}
+
 export function currentLocale() {
   return locale;
 }

@@ -44,7 +44,7 @@ async function process(id: string, stages: { id: string; name: string; sequence:
 let seq = 0;
 
 /** A completed task, optionally claimed some hours before it was completed. */
-async function completedTask(opts: { completedBy: string; stage: string; processId: string; claimedHoursBefore?: number | null }) {
+async function completedTask(opts: { completedBy: string; stage: string; processId: string; claimedHoursBefore?: number | null; completedDaysAgo?: number }) {
   const n = seq++;
   const invoiceId = `inv-${n}`;
   const piId = `pi-${n}`;
@@ -62,11 +62,12 @@ async function completedTask(opts: { completedBy: string; stage: string; process
     .run();
 
   const wasClaimed = opts.claimedHoursBefore !== undefined && opts.claimedHoursBefore !== null;
-  const claimedAtExpr = wasClaimed ? `datetime('now', '-${opts.claimedHoursBefore} hours')` : "NULL";
+  const ago = opts.completedDaysAgo ?? 0;
+  const claimedAtExpr = wasClaimed ? `datetime('now', '-${ago} days', '-${opts.claimedHoursBefore} hours')` : "NULL";
 
   await env.DB.prepare(
     `INSERT INTO tasks (id, stage_id, stage_visit_id, owner_user_id, required_permission, status, claimed_by, claimed_at, completed_by, completed_at)
-     VALUES (?, ?, ?, ?, 'AP.Validate', 'completed', ?, ${claimedAtExpr}, ?, datetime('now'))`
+     VALUES (?, ?, ?, ?, 'AP.Validate', 'completed', ?, ${claimedAtExpr}, ?, datetime('now', '-${ago} days'))`
   )
     .bind(`t-${n}`, opts.stage, visitId, opts.completedBy, wasClaimed ? opts.completedBy : null, opts.completedBy)
     .run();
@@ -151,5 +152,27 @@ describe("claim-to-complete, grouped by stage and user", () => {
     await person("alice", ["AP.Analysis"], null);
     const body = (await handleWorkloadHandlingTime(env.DB, null, "alice")).body as WorkloadHandlingTimeReport;
     expect(body.rows).toEqual([]);
+  });
+});
+
+describe("a window, where the card asks for one (decision 0617)", () => {
+  it("averages only tasks completed within the last 7, 30 or 90 days, and all time otherwise", async () => {
+    await process("ap", [{ id: "validation", name: "Validation", sequence: 1 }]);
+    await person("alice", ["AP.Analysis"], null);
+    await person("dana", [], null);
+    await completedTask({ completedBy: "dana", stage: "validation", processId: "ap", claimedHoursBefore: 2, completedDaysAgo: 3 });
+    await completedTask({ completedBy: "dana", stage: "validation", processId: "ap", claimedHoursBefore: 10, completedDaysAgo: 20 });
+    await completedTask({ completedBy: "dana", stage: "validation", processId: "ap", claimedHoursBefore: 30, completedDaysAgo: 200 });
+
+    const rows = async (days: number | null) => ((await handleWorkloadHandlingTime(env.DB, null, "alice", days)).body as WorkloadHandlingTimeReport).rows;
+    expect((await rows(7))[0]).toMatchObject({ n: 1 });
+    expect((await rows(7))[0].avgHours).toBeCloseTo(2, 1);
+    expect((await rows(30))[0]).toMatchObject({ n: 2 });
+    expect((await rows(null))[0]).toMatchObject({ n: 3 });
+  });
+
+  it("takes the window from the address, and only 7, 30 or 90", async () => {
+    const { windowDays } = await import("../src/workload-handling-time-route.js");
+    expect([windowDays("7"), windowDays("30"), windowDays("90"), windowDays("365"), windowDays(null), windowDays("abc")]).toEqual([7, 30, 90, null, null, null]);
   });
 });

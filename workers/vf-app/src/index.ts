@@ -10,7 +10,7 @@ import {
 } from "./dashboard-route.js";
 import { handleWorkloadThroughput } from "./workload-route.js";
 import { handleWorkloadOpenTasks } from "./workload-open-tasks-route.js";
-import { handleWorkloadHandlingTime } from "./workload-handling-time-route.js";
+import { handleWorkloadHandlingTime, windowDays } from "./workload-handling-time-route.js";
 import { handleWorkloadCycleTime } from "./workload-cycle-time-route.js";
 import { handleWorkloadPending } from "./workload-pending-route.js";
 import { handleWorkloadQueueDepth } from "./workload-queue-depth-route.js";
@@ -1591,7 +1591,7 @@ export default {
       if (!(await hasPermission(db, auth.user.id, "AP.Analysis"))) {
         return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
       }
-      const result = await handleWorkloadHandlingTime(db, url.searchParams.get("org"), auth.user.id);
+      const result = await handleWorkloadHandlingTime(db, url.searchParams.get("org"), auth.user.id, windowDays(url.searchParams.get("days")));
       return json(result.body, result.status);
     }
 
@@ -1602,7 +1602,7 @@ export default {
       if (!(await hasPermission(db, auth.user.id, "AP.Analysis"))) {
         return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
       }
-      const result = await handleWorkloadCycleTime(db, url.searchParams.get("org"), auth.user.id);
+      const result = await handleWorkloadCycleTime(db, url.searchParams.get("org"), auth.user.id, windowDays(url.searchParams.get("days")));
       return json(result.body, result.status);
     }
 

@@ -1,6 +1,7 @@
-import { t } from "/strings.js";
+import { t, tCount } from "/strings.js";
 import { el } from "/tasks.js";
 import { currentOrgId } from "/orgs.js";
+import { windowPicker, workloadQuery } from "/window-picker.js";
 import { barList } from "/charts.js";
 
 /**
@@ -15,11 +16,12 @@ import { barList } from "/charts.js";
 
 let data = { rows: [] };
 
+/** The period chosen in the card's heading — decision 0617. All time until one is chosen. */
+let days = null;
+
 export async function load() {
   try {
-    const org = currentOrgId();
-    const query = org ? `?org=${encodeURIComponent(org)}` : "";
-    const response = await fetch(`/api/workload/handling-time${query}`);
+    const response = await fetch(`/api/workload/handling-time${workloadQuery(currentOrgId(), days)}`);
     if (!response.ok) return false;
     data = await response.json();
   } catch {
@@ -58,7 +60,7 @@ function byPerson() {
 
 async function openHandled(person, stage = null) {
   const { openDocumentsHandledBy } = await import("/documents.js");
-  openDocumentsHandledBy(person.userId, person.userName, stage);
+  openDocumentsHandledBy(person.userId, person.userName, stage, days);
 }
 
 function personGroup(person, max) {
@@ -84,7 +86,7 @@ function personGroup(person, max) {
       label: r.stageName,
       value: r.avgHours,
       display: hours(r.avgHours),
-      note: t("workload.taskcountnote").replace("{n}", String(r.n)),
+      note: tCount("workload.taskcountnote", r.n),
       selectable: r.n > 0,
       stage: { id: r.stageId, name: r.stageName },
     })),
@@ -94,17 +96,35 @@ function personGroup(person, max) {
   return el("div", { class: "teamgroup handlinggroup" }, [head, bars]);
 }
 
+/**
+ * The heading, with the period beside it — decision 0617. Choosing one
+ * fetches again and redraws this card in place.
+ */
+function cardHead() {
+  return el("div", { class: "cardhead" }, [
+    el("h3", { text: t("workload.handlingtime") }),
+    windowPicker(days, async (chosen, picker) => {
+      days = chosen;
+      const card = picker.closest(".panel");
+      if (!(await load())) return;
+      const next = renderCard();
+      card?.replaceWith(next);
+      next.querySelector(".windowpick")?.focus();
+    }),
+  ]);
+}
+
 /** The card itself, built from whatever `load()` last fetched. Callers own the topbar, frame and tab shell around it. */
 export function renderCard() {
   if (data.rows.length === 0) {
     return el("div", { class: "panel card-graphic" }, [
-      el("div", { class: "cardhead" }, [el("h3", { text: t("workload.handlingtime") })]),
-      el("div", { class: "muted", text: t("workload.nohandlingtime") }),
+      cardHead(),
+      el("div", { class: "muted", text: days ? t("workload.window.none") : t("workload.nohandlingtime") }),
     ]);
   }
   const max = Math.max(...data.rows.map((r) => r.avgHours), 0);
   return el("div", { class: "panel card-graphic" }, [
-    el("div", { class: "cardhead" }, [el("h3", { text: t("workload.handlingtime") })]),
+    cardHead(),
     el("div", { class: "sub", text: t("workload.handlingtimesub") }),
     ...byPerson().map((p) => personGroup(p, max)),
   ]);

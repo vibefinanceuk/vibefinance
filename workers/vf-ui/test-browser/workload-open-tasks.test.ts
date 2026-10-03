@@ -14,6 +14,8 @@ const STRINGS = {
     "workload.noopentasks": "No open tasks right now",
     "workload.opentasksavailable": "{n} unclaimed",
     "workload.opentasksuser": "User",
+    "workload.opentasksfind": "Find a person",
+    "workload.opentasksnomatch": "No one matches",
     "workload.opentasksopenall": "Open all of {name}'s open tasks in Documents",
     "documents.showing.openfor": "Showing what is open for {name}",
     "documents.showing.openforstage": "Showing what is open for {name} at {stage}",
@@ -266,5 +268,47 @@ describe("the ring opens Documents (decision 0614)", () => {
     expect(asked.get("openFor")).toBe("wei");
     expect(asked.has("openStage")).toBe(false);
     await vi.waitFor(() => expect(document.querySelector(".alertbanner")?.textContent).toContain("Showing what is open for Wei C."));
+  });
+});
+
+describe("a search, where the list is long (decision 0617)", () => {
+  const people = (names: string[]) => ({
+    users: names.map((name, i) => ({
+      userId: name.toLowerCase().replace(/ /g, "-"),
+      userName: name,
+      openCount: names.length - i,
+      stages: [{ stageId: "validation", stageName: "Validation", n: names.length - i }],
+    })),
+    stages: [{ stageId: "validation", stageName: "Validation" }],
+    available: 0,
+  });
+  const NINE = ["Zoe Adams", "Bo Lind", "Cara Diaz", "Dev Patel", "Eli Shaw", "Fay Wong", "Gus Holt", "Hana Ito", "Ivo Kral"];
+
+  it("is not offered for eight people or fewer", async () => {
+    await renderOpenTasks(people(NINE.slice(0, 8)));
+    expect(document.querySelector(".opentasks-find")).toBeNull();
+  });
+
+  it("narrows the drop-down to names holding what is typed, and shows the first match at once", async () => {
+    await renderOpenTasks(people(NINE));
+    const find = document.querySelector<HTMLInputElement>(".opentasks-find")!;
+    const picker = document.querySelector<HTMLSelectElement>(".opentasks-user")!;
+    expect(picker.options).toHaveLength(9);
+    expect(picker.value).toBe("zoe-adams");
+
+    find.value = "li";
+    find.dispatchEvent(new Event("input"));
+    expect([...picker.options].map((o) => o.textContent)).toEqual(["Bo Lind (8)", "Eli Shaw (5)"]);
+    expect(picker.value).toBe("bo-lind");
+    expect(document.querySelector(".opentasks-key")?.textContent).toContain("8");
+
+    find.value = "xyz";
+    find.dispatchEvent(new Event("input"));
+    expect([...picker.options].map((o) => o.textContent)).toEqual(["No one matches"]);
+
+    find.value = "";
+    find.dispatchEvent(new Event("input"));
+    expect(picker.options).toHaveLength(9);
+    expect(picker.value).toBe("bo-lind");
   });
 });

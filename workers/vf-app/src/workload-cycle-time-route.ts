@@ -1,5 +1,6 @@
 import { unitsWherePermitted, scopedToChosenOrg, unitClause } from "./enforce.js";
 import type { RouteResult } from "./org-route.js";
+export { windowDays } from "./workload-handling-time-route.js";
 
 /**
  * Claim-to-complete cycle time — decision 0428, the fourth of
@@ -47,7 +48,8 @@ export interface WorkloadCycleTimeReport {
 export async function handleWorkloadCycleTime(
   db: D1Database,
   currentOrg: string | null = null,
-  userId?: string
+  userId?: string,
+  days: number | null = null
 ): Promise<RouteResult> {
   const visible = userId ? await unitsWherePermitted(db, userId, "AP.Analysis") : null;
   const scopedUnits = await scopedToChosenOrg(db, visible, currentOrg);
@@ -65,9 +67,10 @@ export async function handleWorkloadCycleTime(
        WHERE t.status = 'completed'
          AND t.claimed_at IS NOT NULL
          AND t.completed_by IS NOT NULL
-         ${clause.sql}`
+         ${clause.sql}
+         AND (? IS NULL OR julianday('now') - julianday(t.completed_at) < ?)`
     )
-    .bind(...clause.binds)
+    .bind(...clause.binds, days, days)
     .all<CycleTimeRow>();
 
   const byUser = new Map<string, { userName: string; total: number; n: number }>();

@@ -1242,3 +1242,31 @@ describe("filtering documents by what a person claimed and completed (decision 0
     expect((await list("handledStage=payment&page=1&pageSize=25")).total).toBe(5);
   });
 });
+
+describe("what a person claimed and completed, within the card's window (decision 0617)", () => {
+  async function doneDaysAgo(docId: string, days: number) {
+    await env.DB.prepare("INSERT OR IGNORE INTO org_users (id, email, name) VALUES ('mo', 'mo@acme.com', 'mo')").run();
+    await env.DB.prepare("INSERT INTO invoice_headers (id, facts_json) VALUES (?, '{}')").bind(docId).run();
+    await env.DB.prepare("INSERT INTO process_instances (id, process_id, subject_type, subject_id, current_stage_id, status) VALUES (?, 'ap', 'invoice', ?, 'validation', 'in_progress')")
+      .bind(`pi-${docId}`, docId)
+      .run();
+    await env.DB.prepare("INSERT INTO stage_visits (id, process_instance_id, stage_id, outcome) VALUES (?, ?, 'validation', 'matched')").bind(`v-${docId}`, `pi-${docId}`).run();
+    await env.DB.prepare(
+      `INSERT INTO tasks (id, stage_id, stage_visit_id, required_permission, status, claimed_by, claimed_at, completed_by, completed_at)
+       VALUES (?, 'validation', ?, 'AP.Validate', 'completed', 'mo', datetime('now', ?, '-2 hours'), 'mo', datetime('now', ?))`
+    )
+      .bind(`t-${docId}`, `v-${docId}`, `-${days} days`, `-${days} days`)
+      .run();
+  }
+
+  it("keeps to 7, 30 or 90 days where asked, and all time otherwise", async () => {
+    await doneDaysAgo("inv-1", 3);
+    await doneDaysAgo("inv-2", 20);
+    await doneDaysAgo("inv-3", 200);
+    const ids = async (q: string) => (await list(`handledBy=mo${q}&page=1&pageSize=25`)).documents.map((d) => d.id).sort();
+    expect(await ids("&handledDays=7")).toEqual(["inv-1"]);
+    expect(await ids("&handledDays=30")).toEqual(["inv-1", "inv-2"]);
+    expect(await ids("")).toEqual(["inv-1", "inv-2", "inv-3"]);
+    expect(await ids("&handledDays=12")).toEqual(["inv-1", "inv-2", "inv-3"]);
+  });
+});

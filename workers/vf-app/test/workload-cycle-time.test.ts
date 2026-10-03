@@ -34,7 +34,7 @@ async function person(id: string, permissions: string[], unit: string | null) {
 
 let seq = 0;
 
-async function completedTask(opts: { completedBy: string; claimedHoursBefore?: number | null }) {
+async function completedTask(opts: { completedBy: string; claimedHoursBefore?: number | null; completedDaysAgo?: number }) {
   const n = seq++;
   const invoiceId = `inv-${n}`;
   const piId = `pi-${n}`;
@@ -54,11 +54,12 @@ async function completedTask(opts: { completedBy: string; claimedHoursBefore?: n
     .run();
 
   const wasClaimed = opts.claimedHoursBefore !== undefined && opts.claimedHoursBefore !== null;
-  const claimedAtExpr = wasClaimed ? `datetime('now', '-${opts.claimedHoursBefore} hours')` : "NULL";
+  const ago = opts.completedDaysAgo ?? 0;
+  const claimedAtExpr = wasClaimed ? `datetime('now', '-${ago} days', '-${opts.claimedHoursBefore} hours')` : "NULL";
 
   await env.DB.prepare(
     `INSERT INTO tasks (id, stage_id, stage_visit_id, owner_user_id, required_permission, status, claimed_by, claimed_at, completed_by, completed_at)
-     VALUES (?, 'validation', ?, ?, 'AP.Validate', 'completed', ?, ${claimedAtExpr}, ?, datetime('now'))`
+     VALUES (?, 'validation', ?, ?, 'AP.Validate', 'completed', ?, ${claimedAtExpr}, ?, datetime('now', '-${ago} days'))`
   )
     .bind(`t-${n}`, visitId, opts.completedBy, wasClaimed ? opts.completedBy : null, opts.completedBy)
     .run();
@@ -125,5 +126,19 @@ describe("one average per user, not broken out by stage", () => {
     await person("alice", ["AP.Analysis"], null);
     const body = (await handleWorkloadCycleTime(env.DB, null, "alice")).body as WorkloadCycleTimeReport;
     expect(body.users).toEqual([]);
+  });
+});
+
+describe("a window, where the card asks for one (decision 0617)", () => {
+  it("averages only tasks completed within the window", async () => {
+    await person("alice", ["AP.Analysis"], null);
+    await person("dana", [], null);
+    await completedTask({ completedBy: "dana", claimedHoursBefore: 2, completedDaysAgo: 3 });
+    await completedTask({ completedBy: "dana", claimedHoursBefore: 30, completedDaysAgo: 60 });
+    const users = async (days: number | null) => ((await handleWorkloadCycleTime(env.DB, null, "alice", days)).body as { users: Array<{ n: number; avgHours: number }> }).users;
+    expect((await users(30))[0].n).toBe(1);
+    expect((await users(30))[0].avgHours).toBeCloseTo(2, 1);
+    expect((await users(90))[0].n).toBe(2);
+    expect((await users(null))[0].n).toBe(2);
   });
 });

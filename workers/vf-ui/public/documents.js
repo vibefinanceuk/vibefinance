@@ -99,7 +99,8 @@ let openForFilter = null;
 /**
  * **What a person claimed and completed, at a stage or all — decision
  * 0616**, from *Average handling time* and *Claim-to-complete cycle
- * time*. `{ userId, name, stage: { id, name } | null }`.
+ * time*. `{ userId, name, stage: { id, name } | null, days }`, `days` the
+ * card's period (decision 0617), or null for all time.
  */
 let handledFilter = null;
 
@@ -233,6 +234,7 @@ async function load() {
   if (handledFilter) {
     params.set("handledBy", handledFilter.userId);
     if (handledFilter.stage) params.set("handledStage", handledFilter.stage.id);
+    if (handledFilter.days) params.set("handledDays", String(handledFilter.days));
   }
   if (agingFilter) {
     params.set("agingMinDays", String(agingFilter.minDays));
@@ -490,10 +492,12 @@ function bannerText() {
   if (agingFilter) return t("documents.showing.aging").replace("{bucket}", agingFilter.label);
   if (personFilter) return t("documents.showing.doneby").replace("{name}", personFilter.name);
   if (teamFilter) return t("documents.showing.team").replace("{team}", teamFilter.name);
-  if (handledFilter?.stage) {
-    return t("documents.showing.handledbystage").replace("{name}", handledFilter.name).replace("{stage}", handledFilter.stage.name);
+  if (handledFilter) {
+    const said = handledFilter.stage
+      ? t("documents.showing.handledbystage").replace("{name}", handledFilter.name).replace("{stage}", handledFilter.stage.name)
+      : t("documents.showing.handledby").replace("{name}", handledFilter.name);
+    return handledFilter.days ? `${said} ${t("documents.showing.lastdays").replace("{n}", String(handledFilter.days))}` : said;
   }
-  if (handledFilter) return t("documents.showing.handledby").replace("{name}", handledFilter.name);
   if (openForFilter?.team) {
     return t("documents.showing.openforteam").replace("{name}", openForFilter.name).replace("{team}", openForFilter.team.name);
   }
@@ -872,12 +876,12 @@ export async function openDocumentsOpenFor(userId, name, stage = null, team = nu
  * decision 0616, from the handling and cycle time cards: at one stage,
  * or all of it. Another person's needs AP.Analysis, as the cards do.
  */
-export async function openDocumentsHandledBy(userId, name, stage = null) {
+export async function openDocumentsHandledBy(userId, name, stage = null, days = null) {
   query = "";
   unit = "";
   page = 1;
   clearFilters();
-  handledFilter = { userId, name, stage };
+  handledFilter = { userId, name, stage, days };
   setCurrentScreen("documents");
   await loadUnits();
   if (!(await load())) return;

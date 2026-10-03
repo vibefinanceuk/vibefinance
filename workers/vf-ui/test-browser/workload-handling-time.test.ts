@@ -18,6 +18,12 @@ const STRINGS = {
     "workload.taskcount": "Tasks",
     "workload.hourscount": "{n} hours",
     "workload.taskcountnote": "{n} tasks",
+    "workload.taskcountnote.one": "{n} task",
+    "workload.window": "Period",
+    "workload.window.all": "All time",
+    "workload.window.days": "Last {n} days",
+    "workload.window.none": "Nothing claimed and completed in this period",
+    "documents.showing.lastdays": "in the last {n} days",
     "documents.showing.handledby": "Showing where {name} claimed and completed a task",
     "documents.showing.handledbystage": "Showing where {name} claimed and completed a task at {stage}",
   },
@@ -105,7 +111,7 @@ describe("a group per person, a bar per stage (decision 0616)", () => {
     expect([...alice.querySelectorAll(".barlist-head .muted")].map((n) => n.textContent)).toEqual([
       "21.5 hours · 4 tasks",
       "2.8 hours · 3 tasks",
-      "0 hours · 1 tasks",
+      "0 hours · 1 task",
     ]);
     expect(parseFloat((wei.querySelector(".barlist-fill") as HTMLElement).style.width)).toBeCloseTo(50, 1);
   });
@@ -155,5 +161,56 @@ describe("it stays inside a card three to a row (decision 0616)", () => {
     } finally {
       style.remove();
     }
+  });
+});
+
+describe("a period to average over, and \"1 task\" (decision 0617)", () => {
+  const ROWS = { rows: [{ stageId: "v", stageName: "Validation", userId: "alice", userName: "Alice McDonald", avgHours: 2, n: 1 }] };
+
+  it("offers all time, 90, 30 and 7 days, all time first, and asks the route for no period", async () => {
+    const seen: string[] = [];
+    await renderHandlingTime(ROWS, seen);
+    const pick = document.querySelector<HTMLSelectElement>(".cardhead .windowpick")!;
+    expect([...pick.options].map((o) => o.textContent)).toEqual(["All time", "Last 90 days", "Last 30 days", "Last 7 days"]);
+    expect(pick.value).toBe("");
+    expect(seen.find((u) => u.startsWith("/api/workload/handling-time"))).not.toContain("days=");
+    expect(document.body.textContent).toContain("1 task");
+    expect(document.body.textContent).not.toContain("1 tasks");
+  });
+
+  it("fetches again for the period chosen, redraws in place, and Documents keeps the period", async () => {
+    const seen: string[] = [];
+    await renderHandlingTime(ROWS, seen);
+    const pick = document.querySelector<HTMLSelectElement>(".windowpick")!;
+    pick.value = "30";
+    pick.dispatchEvent(new Event("change"));
+    await vi.waitFor(() => expect(seen.some((u) => u.startsWith("/api/workload/handling-time") && u.includes("days=30"))).toBe(true));
+    await vi.waitFor(() => expect(document.querySelector<HTMLSelectElement>(".windowpick")?.value).toBe("30"));
+    expect(document.querySelectorAll("#card-under-test .panel")).toHaveLength(1);
+
+    document.querySelector<HTMLElement>(".handlinggroup .barlist-row")!.click();
+    const q = await documentsAsked(seen);
+    expect([q.get("handledBy"), q.get("handledStage"), q.get("handledDays")]).toEqual(["alice", "v", "30"]);
+    await vi.waitFor(() =>
+      expect(document.querySelector(".alertbanner")?.textContent).toContain("claimed and completed a task at Validation in the last 30 days")
+    );
+  });
+
+  it("says nothing was completed in the period, and keeps the choice to go back", async () => {
+    let calls = 0;
+    const seen: string[] = [];
+    await renderHandlingTime(ROWS, seen);
+    vi.mocked(fetch).mockImplementation((async (url: string) => {
+      const path = String(url);
+      seen.push(path);
+      calls += 1;
+      return { ok: true, json: async () => ({ rows: [] }) } as Response;
+    }) as unknown as typeof fetch);
+    const pick = document.querySelector<HTMLSelectElement>(".windowpick")!;
+    pick.value = "7";
+    pick.dispatchEvent(new Event("change"));
+    await vi.waitFor(() => expect(document.body.textContent).toContain("Nothing claimed and completed in this period"));
+    expect(calls).toBe(1);
+    expect(document.querySelector(".windowpick")).not.toBeNull();
   });
 });

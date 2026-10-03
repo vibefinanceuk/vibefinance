@@ -34,6 +34,17 @@ import type { RouteResult } from "./org-route.js";
 
 const TOP_N = 15;
 
+/**
+ * **A window, where the card asks for one — decision 0617.** Dan: the
+ * handling and cycle time cards averaged all time. `days` is 7, 30 or 90
+ * (anything else is all time), counted back from now by when the task
+ * was completed, as Documents' `handledDays` counts it.
+ */
+export function windowDays(raw: string | null | undefined): number | null {
+  const n = Number(raw);
+  return n === 7 || n === 30 || n === 90 ? n : null;
+}
+
 interface HandlingTimeRow {
   stage_id: string;
   stage_name: string;
@@ -58,7 +69,8 @@ export interface WorkloadHandlingTimeReport {
 export async function handleWorkloadHandlingTime(
   db: D1Database,
   currentOrg: string | null = null,
-  userId?: string
+  userId?: string,
+  days: number | null = null
 ): Promise<RouteResult> {
   const visible = userId ? await unitsWherePermitted(db, userId, "AP.Analysis") : null;
   const scopedUnits = await scopedToChosenOrg(db, visible, currentOrg);
@@ -78,9 +90,10 @@ export async function handleWorkloadHandlingTime(
        WHERE t.status = 'completed'
          AND t.claimed_at IS NOT NULL
          AND t.completed_by IS NOT NULL
-         ${clause.sql}`
+         ${clause.sql}
+         AND (? IS NULL OR julianday('now') - julianday(t.completed_at) < ?)`
     )
-    .bind(...clause.binds)
+    .bind(...clause.binds, days, days)
     .all<HandlingTimeRow>();
 
   const grouped = new Map<string, { stageName: string; userName: string; total: number; n: number }>();

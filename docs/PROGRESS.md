@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 3 October 2026 (decision 0616). A living document: what
+Last updated 3 October 2026 (decision 0617). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,13 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### AP Analytics follow-ups (0617)
+
+"1 task" in the singular; a period (all time, or the last 90, 30 or 7
+days) on the handling and cycle time cards, carried through to
+Documents; and a search in Open tasks by user's drop-down once more than
+eight people have open work.
 
 ### Handling and cycle time open Documents (0616)
 
