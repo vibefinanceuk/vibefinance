@@ -2111,8 +2111,12 @@
     made and for the same reason — an honest, separately-named class
     rather than a currency class doing double duty.
   */
-  .teamgroup { margin-top: 14px; }
+  .teamgroup { margin-top: 12px; }
   .teamgroup:first-of-type { margin-top: 0; }
+  /* Decision 0615: a team's bar with its members' key tucked beneath. */
+  .teamgroup .chartlegend { margin-top: 2px; gap: 2px 14px; }
+  .teamgroup .chartkey { font-size: var(--text-sm); }
+  .balancequiet { margin-top: 12px; font-size: var(--text-sm); }
   .teamgrouphead {
     display: flex;
     justify-content: space-between;
@@ -2215,6 +2219,11 @@
     border-radius: 6px;
   }
   .stackrow.clickable:hover, .stackrow.clickable:focus-visible { background: var(--surface-1); }
+  /* A segment, or a key row, that leads somewhere of its own — decision 0615. */
+  .stackrow-seg.clickable { cursor: pointer; }
+  .stackrow-seg.clickable:hover { opacity: 0.8; }
+  .chartkey.clickable { cursor: pointer; margin: 0 -6px; padding: 1px 6px; border-radius: 6px; }
+  .chartkey.clickable:hover, .chartkey.clickable:focus-visible { background: var(--surface-1); }
 
   /*
     **A person chosen on the left, their ring on the right** — decision

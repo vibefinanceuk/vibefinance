@@ -319,6 +319,13 @@ export async function handleListDocuments(
    */
   const openFor = params.get("openFor") || null;
   const openStage = openFor ? params.get("openStage") || null : null;
+  /**
+   * **…in one team's queue — decision 0615**, from *Workload balance*: a
+   * member's section of a team's bar is that person's open tasks the
+   * team owns, as the card counts them. Like `openStage`, only with
+   * `openFor`.
+   */
+  const openTeam = openFor ? params.get("openTeam") || null : null;
 
   /**
    * The sender and recipient come from the email that brought it —
@@ -425,6 +432,7 @@ export async function handleListDocuments(
                AND ot.status = 'open'
                AND COALESCE(ot.owner_user_id, ot.claimed_by) = ?20
                AND (?21 IS NULL OR ot.stage_id = ?21)
+               AND (?22 IS NULL OR ot.owner_team_id = ?22)
            )
          )
          AND (
@@ -499,7 +507,7 @@ export async function handleListDocuments(
     searchPattern,
   ] as const;
   // Decision 0611: ?17 is the page's offset (below); the two new filters come after it.
-  const filterBinds = [doneBy, team, openFor, openStage] as const;
+  const filterBinds = [doneBy, team, openFor, openStage, openTeam] as const;
 
   /**
    * **`total`, only when a page was actually asked for.** A second,

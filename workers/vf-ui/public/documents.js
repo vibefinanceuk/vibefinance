@@ -91,6 +91,8 @@ let teamFilter = null;
 /**
  * **A person's open tasks, at a stage or all — decision 0614**, from
  * *Open tasks by user*'s ring. `{ userId, name, stage: { id, name } | null }`.
+ * `team: { id, name }`, from *Workload balance* (decision 0615): their open
+ * tasks in that team's queue.
  */
 let openForFilter = null;
 
@@ -218,6 +220,7 @@ async function load() {
   if (openForFilter) {
     params.set("openFor", openForFilter.userId);
     if (openForFilter.stage) params.set("openStage", openForFilter.stage.id);
+    if (openForFilter.team) params.set("openTeam", openForFilter.team.id);
   }
   if (agingFilter) {
     params.set("agingMinDays", String(agingFilter.minDays));
@@ -475,6 +478,9 @@ function bannerText() {
   if (agingFilter) return t("documents.showing.aging").replace("{bucket}", agingFilter.label);
   if (personFilter) return t("documents.showing.doneby").replace("{name}", personFilter.name);
   if (teamFilter) return t("documents.showing.team").replace("{team}", teamFilter.name);
+  if (openForFilter?.team) {
+    return t("documents.showing.openforteam").replace("{name}", openForFilter.name).replace("{team}", openForFilter.team.name);
+  }
   if (openForFilter?.stage) {
     return t("documents.showing.openforstage").replace("{name}", openForFilter.name).replace("{stage}", openForFilter.stage.name);
   }
@@ -833,12 +839,12 @@ export async function openDocumentsForTeam(teamId, name) {
  * all of them (the rest of the ring). Another person's needs
  * AP.Analysis, as the card does.
  */
-export async function openDocumentsOpenFor(userId, name, stage = null) {
+export async function openDocumentsOpenFor(userId, name, stage = null, team = null) {
   query = "";
   unit = "";
   page = 1;
   clearFilters();
-  openForFilter = { userId, name, stage };
+  openForFilter = { userId, name, stage, team };
   setCurrentScreen("documents");
   await loadUnits();
   if (!(await load())) return;

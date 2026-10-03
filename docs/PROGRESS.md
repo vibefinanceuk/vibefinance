@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 3 October 2026 (decision 0614). A living document: what
+Last updated 3 October 2026 (decision 0615). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,13 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Workload balance, one bar per team (0615)
+
+Dan found the card hard to read: every team listed, a full bar per
+person and ±0 for every team of one. Now each team with open work is one
+bar split by who has it, with every member named beneath, quiet teams
+left out, and a click opening that person's or that team's work.
 
 ### Open tasks by user opens Documents (0614)
 

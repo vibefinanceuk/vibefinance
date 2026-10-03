@@ -569,8 +569,10 @@ export function donutChart(segments, { size = 150, legend = true, onSelect = nul
  * `segments` left to right. A segment with no value is skipped rather
  * than drawn as a sliver; its `label` is its tooltip.
  */
-export function stackedBarRows(rows, { onSelect = null } = {}) {
-  const hi = Math.max(...rows.map((r) => r.total), 1);
+export function stackedBarRows(rows, { onSelect = null, onSegment = null, max = null } = {}) {
+  // `max`: the total a full bar stands for, where rows drawn apart must
+  // share one scale (decision 0615's one-team-at-a-time rows).
+  const hi = Math.max(max ?? 0, ...rows.map((r) => r.total), 1);
   const wrap = document.createElement("div");
   wrap.className = "stackrows";
 
@@ -591,6 +593,19 @@ export function stackedBarRows(rows, { onSelect = null } = {}) {
       part.style.width = `${(seg.value / hi) * 100}%`;
       part.style.background = seg.colour;
       if (seg.label) part.title = `${seg.label}: ${seg.value}`;
+      /**
+       * **A segment that leads somewhere of its own** — decision 0615,
+       * *Workload balance*: one person's share of a team's bar opens
+       * that person's work there, not the whole row's. A segment marked
+       * `rest` (the folded "others") does not.
+       */
+      if (onSegment && !seg.rest) {
+        part.classList.add("clickable");
+        part.addEventListener("click", (e) => {
+          e.stopPropagation();
+          onSegment(row, seg);
+        });
+      }
       track.append(part);
     }
 
@@ -628,7 +643,7 @@ export function stackedBarRows(rows, { onSelect = null } = {}) {
  *
  * @param items `[{ label, value, colour }]`
  */
-export function chartLegend(items) {
+export function chartLegend(items, { onSelect = null } = {}) {
   const wrap = document.createElement("div");
   wrap.className = "chartlegend";
 
@@ -648,6 +663,25 @@ export function chartLegend(items) {
     value.textContent = String(item.value);
 
     row.append(dot, name, value);
+
+    /**
+     * **A key row that leads somewhere** — decision 0615, as
+     * `donutChart`'s own (0264, 0614): where there is something to show
+     * and the item is not a folded rest; by mouse or keyboard.
+     */
+    if (onSelect && Number(item.value) > 0 && !item.rest) {
+      row.classList.add("clickable");
+      row.tabIndex = 0;
+      row.setAttribute("role", "button");
+      row.onclick = () => onSelect(item);
+      row.onkeydown = (e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onSelect(item);
+        }
+      };
+    }
+
     wrap.append(row);
   }
 

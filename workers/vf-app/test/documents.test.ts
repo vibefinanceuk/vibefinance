@@ -1167,3 +1167,31 @@ describe("filtering documents by a person's open tasks (decision 0614)", () => {
     expect((await list("openStage=payment&page=1&pageSize=25")).total).toBe(5);
   });
 });
+
+describe("filtering documents by a person's open tasks in one team (decision 0615)", () => {
+  async function teamTask(docId: string, team: string, claimedBy: string) {
+    await env.DB.prepare("INSERT OR IGNORE INTO org_units (id, name) VALUES ('ou-1', 'Acme UK')").run();
+    await env.DB.prepare("INSERT OR IGNORE INTO org_users (id, email, name) VALUES (?, ?, ?)").bind(claimedBy, `${claimedBy}@acme.com`, claimedBy).run();
+    await env.DB.prepare("INSERT OR IGNORE INTO org_teams (id, name, unit_id) VALUES (?, ?, 'ou-1')").bind(team, team).run();
+    await env.DB.prepare("INSERT INTO invoice_headers (id, facts_json) VALUES (?, '{}')").bind(docId).run();
+    await env.DB.prepare("INSERT INTO process_instances (id, process_id, subject_type, subject_id, current_stage_id, status) VALUES (?, 'ap', 'invoice', ?, 'validation', 'in_progress')")
+      .bind(`pi-${docId}`, docId)
+      .run();
+    await env.DB.prepare("INSERT INTO stage_visits (id, process_instance_id, stage_id, outcome) VALUES (?, ?, 'validation', 'matched')").bind(`v-${docId}`, `pi-${docId}`).run();
+    await env.DB.prepare(
+      "INSERT INTO tasks (id, stage_id, stage_visit_id, required_permission, status, owner_team_id, claimed_by) VALUES (?, 'validation', ?, 'AP.Validate', 'open', ?, ?)"
+    )
+      .bind(`t-${docId}`, `v-${docId}`, team, claimedBy)
+      .run();
+  }
+
+  it("shows a person's open tasks that one team owns, not their other teams'", async () => {
+    await teamTask("inv-1", "ap-team", "mo");
+    await teamTask("inv-2", "coding", "mo");
+    await teamTask("inv-3", "ap-team", "alice");
+    expect((await list("openFor=mo&openTeam=ap-team&page=1&pageSize=25")).documents.map((d) => d.id)).toEqual(["inv-1"]);
+    expect((await list("openFor=mo&page=1&pageSize=25")).total).toBe(2);
+    // A team without a person is ignored, as a stage is.
+    expect((await list("openTeam=ap-team&page=1&pageSize=25")).total).toBe(3);
+  });
+});
