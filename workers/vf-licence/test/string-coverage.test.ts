@@ -1681,6 +1681,7 @@ const KEYS_THE_INTERFACE_USES = [
   "help.screen.mapping.34",
   "mapping.retire",
   "mapping.retiretitle",
+  "workload.opentasksuser",
   "documents.showing.doneby",
   "documents.showing.team",
   "mapping.fn.present_as",

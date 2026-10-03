@@ -2213,6 +2213,19 @@
   .stackrow.clickable:hover, .stackrow.clickable:focus-visible { background: var(--surface-1); }
 
   /*
+    **A person chosen on the left, their ring on the right** — decision
+    0612, Open tasks by user. Stacked on a narrow card.
+  */
+  .opentasks-body { display: flex; gap: 20px; align-items: flex-start; margin-top: 10px; }
+  .opentasks-pick { display: flex; flex-direction: column; gap: 4px; flex: 0 0 34%; min-width: 0; font-size: var(--text-sm); }
+  .opentasks-user { width: 100%; }
+  .opentasks-ring { flex: 1 1 auto; min-width: 0; }
+  @media (max-width: 560px) {
+    .opentasks-body { flex-direction: column; }
+    .opentasks-pick { flex-basis: auto; width: 100%; }
+  }
+
+  /*
     **A bar that leads somewhere** — decision 0411. Unlike a donut's
     arc, a bar is wide and tall enough to be its own click target, so
     this sits on the SVG group itself rather than needing an HTML

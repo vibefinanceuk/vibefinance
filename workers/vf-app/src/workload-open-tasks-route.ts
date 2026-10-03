@@ -8,6 +8,15 @@ import type { RouteResult } from "./org-route.js";
  * task count by user, split by ownership (mine / available / locked,
  * the same model task-list-route.ts already computes)."*
  *
+ * **Each user's open tasks by stage — decision 0611's follow-on, 0612.**
+ * The card became a choice of one user and a ring of where their open
+ * tasks sit, because a bar per user grows without limit. Each user
+ * carries `stages`, a count per real stage (not 0415's colour buckets:
+ * one person's ring rarely holds more than five, and `donutChart` folds
+ * the rest if it does), and `stages` at the top lists every stage any
+ * user has open work at, in process order, so the card can give a stage
+ * the same colour whoever is chosen.
+ *
  * **"Mine" and "available," not a third "locked" column.**
  * `task-list-route.ts`'s own `ownershipOf` is relative to whoever is
  * asking — "locked" means "claimed, but not by me," which only means
@@ -37,16 +46,28 @@ interface OpenTaskRow {
   owner_team_id: string | null;
   user_id: string | null;
   user_name: string | null;
+  stage_id: string;
+  stage_name: string;
+  process_id: string;
+  sequence: number;
+}
+
+export interface WorkloadOpenTaskStage {
+  stageId: string;
+  stageName: string;
+  n: number;
 }
 
 export interface WorkloadOpenTaskUser {
   userId: string;
   userName: string;
   openCount: number;
+  stages: WorkloadOpenTaskStage[];
 }
 
 export interface WorkloadOpenTasksReport {
   users: WorkloadOpenTaskUser[];
+  stages: Array<{ stageId: string; stageName: string }>;
   available: number;
 }
 
@@ -62,8 +83,10 @@ export async function handleWorkloadOpenTasks(
   const rows = await db
     .prepare(
       `SELECT t.owner_user_id AS owner_user_id, t.claimed_by AS claimed_by, t.owner_team_id AS owner_team_id,
-              COALESCE(t.owner_user_id, t.claimed_by) AS user_id, u.name AS user_name
+              COALESCE(t.owner_user_id, t.claimed_by) AS user_id, u.name AS user_name,
+              s.id AS stage_id, s.name AS stage_name, s.process_id AS process_id, s.sequence AS sequence
        FROM tasks t
+       JOIN process_stages s ON s.id = t.stage_id
        LEFT JOIN org_users u ON u.id = COALESCE(t.owner_user_id, t.claimed_by)
        LEFT JOIN stage_visits v ON v.id = t.stage_visit_id
        LEFT JOIN process_instances pi ON pi.id = v.process_instance_id
@@ -73,23 +96,40 @@ export async function handleWorkloadOpenTasks(
     .bind(...clause.binds)
     .all<OpenTaskRow>();
 
-  const byUser = new Map<string, { userName: string; n: number }>();
+  const byUser = new Map<string, { userName: string; n: number; stages: Map<string, number> }>();
+  const stageInfo = new Map<string, { stageName: string; processId: string; sequence: number }>();
   let available = 0;
 
   for (const row of rows.results) {
     const owner = row.owner_user_id ?? row.claimed_by;
     if (owner) {
-      const existing = byUser.get(owner);
-      if (existing) existing.n += 1;
-      else byUser.set(owner, { userName: row.user_name ?? owner, n: 1 });
+      if (!byUser.has(owner)) byUser.set(owner, { userName: row.user_name ?? owner, n: 0, stages: new Map() });
+      const user = byUser.get(owner)!;
+      user.n += 1;
+      user.stages.set(row.stage_id, (user.stages.get(row.stage_id) ?? 0) + 1);
+      stageInfo.set(row.stage_id, { stageName: row.stage_name, processId: row.process_id, sequence: row.sequence });
     } else {
       available += 1;
     }
   }
 
+  /** Process order: by process, then where the stage falls in it. */
+  const stageOrder = [...stageInfo.entries()]
+    .sort(([, a], [, b]) => a.processId.localeCompare(b.processId) || a.sequence - b.sequence)
+    .map(([stageId]) => stageId);
+
   const users: WorkloadOpenTaskUser[] = [...byUser.entries()]
-    .map(([id, u]) => ({ userId: id, userName: u.userName, openCount: u.n }))
+    .map(([id, u]) => ({
+      userId: id,
+      userName: u.userName,
+      openCount: u.n,
+      stages: stageOrder
+        .filter((stageId) => u.stages.has(stageId))
+        .map((stageId) => ({ stageId, stageName: stageInfo.get(stageId)!.stageName, n: u.stages.get(stageId)! })),
+    }))
     .sort((a, b) => b.openCount - a.openCount);
 
-  return { status: 200, body: { users, available } satisfies WorkloadOpenTasksReport };
+  const stages = stageOrder.map((stageId) => ({ stageId, stageName: stageInfo.get(stageId)!.stageName }));
+
+  return { status: 200, body: { users, stages, available } satisfies WorkloadOpenTasksReport };
 }

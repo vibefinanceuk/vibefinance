@@ -13,6 +13,7 @@ const STRINGS = {
     "workload.opentaskssub": "Who currently owns or has claimed what, and how much sits unclaimed",
     "workload.noopentasks": "No open tasks right now",
     "workload.opentasksavailable": "{n} unclaimed",
+    "workload.opentasksuser": "User",
   },
 };
 
@@ -56,7 +57,7 @@ describe("the card the route returned", () => {
   it("says no open tasks rather than drawing an empty list", async () => {
     await renderOpenTasks({ users: [], available: 0 });
     expect(document.body.textContent).toContain("No open tasks right now");
-    expect(document.querySelector(".barlist-row")).toBeNull();
+    expect(document.querySelector("select")).toBeNull();
   });
 
   it("asks the route for the chosen org", async () => {
@@ -66,30 +67,77 @@ describe("the card the route returned", () => {
   });
 });
 
-describe("the list the route's data draws", () => {
+describe("a person chosen on the left, their open tasks by stage on the right (decision 0612)", () => {
   const DATA = {
     users: [
-      { userId: "dana", userName: "Dana R.", openCount: 5 },
-      { userId: "wei", userName: "Wei C.", openCount: 2 },
+      {
+        userId: "wei",
+        userName: "Wei C.",
+        openCount: 5,
+        stages: [
+          { stageId: "validation", stageName: "Validation", n: 1 },
+          { stageId: "approval", stageName: "Approval", n: 4 },
+        ],
+      },
+      { userId: "dana", userName: "Dana R.", openCount: 2, stages: [{ stageId: "coding", stageName: "Coding", n: 2 }] },
+    ],
+    stages: [
+      { stageId: "validation", stageName: "Validation" },
+      { stageId: "coding", stageName: "Coding" },
+      { stageId: "approval", stageName: "Approval" },
     ],
     available: 3,
   };
 
-  it("draws one bar row per user", async () => {
+  it("offers only the people with open tasks, by name, with their counts, the busiest chosen first", async () => {
     await renderOpenTasks(DATA);
-    expect(document.querySelectorAll(".barlist-row")).toHaveLength(2);
-    const names = [...document.querySelectorAll(".barlist-head span:first-child")].map((n) => n.textContent);
-    expect(names).toEqual(["Dana R.", "Wei C."]);
+    expect(document.querySelector(".barlist-row")).toBeNull();
+    const picker = document.querySelector<HTMLSelectElement>(".opentasks-pick select")!;
+    expect([...picker.options].map((o) => o.textContent)).toEqual(["Dana R. (2)", "Wei C. (5)"]);
+    expect(picker.value).toBe("wei");
+    expect(picker.getAttribute("aria-label")).toBe("User");
+    // The picker comes before (left of) the ring.
+    const body = document.querySelector(".opentasks-body")!;
+    expect([...body.children].map((c) => c.className)).toEqual(["opentasks-pick", "opentasks-ring"]);
   });
 
-  it("shows the unclaimed total as its own note line, not a bar of its own", async () => {
+  it("draws a slice per stage the chosen person has open work at, with the total in the middle", async () => {
+    await renderOpenTasks(DATA);
+    const ring = document.querySelector(".opentasks-ring")!;
+    expect(ring.querySelectorAll("svg circle")).toHaveLength(2);
+    expect([...ring.querySelectorAll(".donutkey")].map((k) => k.textContent)).toEqual(["Validation1", "Approval4"]);
+    expect([...ring.querySelectorAll("svg text")].map((n) => n.textContent)).toContain("5");
+  });
+
+  it("redraws the ring for whoever is chosen, a stage keeping its colour from one person to the next", async () => {
+    await renderOpenTasks(DATA);
+    const ringColours = () =>
+      Object.fromEntries(
+        [...document.querySelectorAll(".opentasks-ring .donutkey")].map((k) => [
+          k.querySelector("span:nth-child(2)")?.textContent,
+          (k.querySelector(".donutdot") as HTMLElement).style.background,
+        ])
+      );
+    expect(ringColours()).toEqual({ Validation: "var(--chart-1)", Approval: "var(--chart-3)" });
+
+    const picker = document.querySelector<HTMLSelectElement>(".opentasks-pick select")!;
+    picker.value = "dana";
+    picker.dispatchEvent(new Event("change"));
+    expect([...document.querySelectorAll(".opentasks-ring .donutkey")].map((k) => k.textContent)).toEqual(["Coding2"]);
+    // Coding is the second stage anyone has work at, whoever's ring it is in.
+    expect(ringColours()).toEqual({ Coding: "var(--chart-2)" });
+  });
+
+  it("shows the unclaimed total as its own note line, not a slice or a person", async () => {
     await renderOpenTasks(DATA);
     expect(document.body.textContent).toContain("3 unclaimed");
+    expect(document.body.textContent).not.toContain("Unclaimed (");
   });
 
-  it("still shows the unclaimed note even when every user's own count is zero but tasks sit unclaimed", async () => {
-    await renderOpenTasks({ users: [], available: 4 });
+  it("still shows the unclaimed note, with no picker, when only unclaimed tasks are open", async () => {
+    await renderOpenTasks({ users: [], stages: [], available: 4 });
     expect(document.body.textContent).toContain("4 unclaimed");
     expect(document.body.textContent).not.toContain("No open tasks right now");
+    expect(document.querySelector("select")).toBeNull();
   });
 });

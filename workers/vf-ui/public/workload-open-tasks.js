@@ -1,7 +1,7 @@
 import { t } from "/strings.js";
 import { el } from "/tasks.js";
 import { currentOrgId } from "/orgs.js";
-import { barList } from "/charts.js";
+import { donutChart } from "/charts.js";
 
 /**
  * Open task count by user, split by ownership — decision 0428, the
@@ -13,9 +13,20 @@ import { barList } from "/charts.js";
  * aggregate table. The "available" total is shown as the card's own
  * note line, not a bar of its own — it belongs to nobody, so it isn't
  * a user to rank.
+ *
+ * **A chosen user and a ring, not a bar per user** — decision 0612.
+ * Dan: a bar per user *"could get pretty big depending on the number of
+ * users"*. The card now offers a drop-down on the left of the people
+ * with open tasks (nobody without, as the route only returns those, for
+ * the org chosen at the top of the page), and on the right a ring of
+ * where the chosen person's open tasks sit, a slice per stage. The
+ * busiest person is chosen first; a choice is kept while the screen is
+ * open, and falls back to the busiest when the org changes and they are
+ * not in it.
  */
 
-let data = { users: [], available: 0 };
+let data = { users: [], stages: [], available: 0 };
+let chosen = null;
 
 export async function load() {
   try {
@@ -34,17 +45,67 @@ function availableNote() {
   return t("workload.opentasksavailable").replace("{n}", String(data.available));
 }
 
+/**
+ * **A stage keeps its colour whoever is chosen** — while five or fewer
+ * stages hold anyone's open work, the palette's limit (decision 0242).
+ * With more, the ring colours by position, as every other ring does,
+ * and its legend still names each slice.
+ */
+function colourFor(stageId) {
+  const stages = data.stages ?? [];
+  if (stages.length > 5) return undefined;
+  const i = stages.findIndex((s) => s.stageId === stageId);
+  return i < 0 ? undefined : `var(--chart-${i + 1})`;
+}
+
+function ringFor(user) {
+  return donutChart(
+    (user?.stages ?? []).map((s) => ({ label: s.stageName, value: s.n, colour: colourFor(s.stageId) }))
+  );
+}
+
 /** The card itself, built from whatever `load()` last fetched. Callers own the topbar, frame and tab shell around it. */
 export function renderCard() {
-  return data.users.length === 0 && data.available === 0
-    ? el("div", { class: "panel card-graphic" }, [
-        el("div", { class: "cardhead" }, [el("h3", { text: t("workload.opentasks") })]),
-        el("div", { class: "muted", text: t("workload.noopentasks") }),
-      ])
-    : el("div", { class: "panel card-graphic" }, [
-        el("div", { class: "cardhead" }, [el("h3", { text: t("workload.opentasks") })]),
-        el("div", { class: "sub", text: t("workload.opentaskssub") }),
-        el("div", { class: "muted", text: availableNote() }),
-        barList(data.users.map((u) => ({ label: u.userName, value: u.openCount }))),
-      ]);
+  if (data.users.length === 0 && data.available === 0) {
+    return el("div", { class: "panel card-graphic" }, [
+      el("div", { class: "cardhead" }, [el("h3", { text: t("workload.opentasks") })]),
+      el("div", { class: "muted", text: t("workload.noopentasks") }),
+    ]);
+  }
+
+  const head = [
+    el("div", { class: "cardhead" }, [el("h3", { text: t("workload.opentasks") })]),
+    el("div", { class: "sub", text: t("workload.opentaskssub") }),
+    el("div", { class: "muted", text: availableNote() }),
+  ];
+  if (data.users.length === 0) return el("div", { class: "panel card-graphic" }, head);
+
+  if (!data.users.some((u) => u.userId === chosen)) chosen = data.users[0].userId;
+  const byName = [...data.users].sort((a, b) => a.userName.localeCompare(b.userName));
+
+  const ringSlot = el("div", { class: "opentasks-ring" }, [ringFor(data.users.find((u) => u.userId === chosen))]);
+  const picker = el(
+    "select",
+    {
+      class: "opentasks-user",
+      "aria-label": t("workload.opentasksuser"),
+      onchange: (e) => {
+        chosen = e.target.value;
+        ringSlot.replaceChildren(ringFor(data.users.find((u) => u.userId === chosen)));
+      },
+    },
+    byName.map((u) => {
+      const option = el("option", { value: u.userId, text: `${u.userName} (${u.openCount})` });
+      if (u.userId === chosen) option.selected = true;
+      return option;
+    })
+  );
+
+  return el("div", { class: "panel card-graphic" }, [
+    ...head,
+    el("div", { class: "opentasks-body" }, [
+      el("label", { class: "opentasks-pick" }, [el("span", { class: "muted", text: t("workload.opentasksuser") }), picker]),
+      ringSlot,
+    ]),
+  ]);
 }

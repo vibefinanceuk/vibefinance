@@ -422,7 +422,13 @@ export function donutChart(segments, { size = 150, legend = true, onSelect = nul
   let offset = 0;
   shown.forEach((segment, i) => {
     const length = (segment.value / total) * circumference;
-    const colour = segment.rest ? "var(--text-muted)" : `var(--chart-${(i % 5) + 1})`;
+    /**
+     * **A colour may be given** — decision 0612: a ring redrawn for
+     * whichever person is chosen keeps a stage's colour from one person
+     * to the next, rather than taking it from where the stage falls in
+     * this one ring.
+     */
+    const colour = segment.rest ? "var(--text-muted)" : segment.colour ?? `var(--chart-${(i % 5) + 1})`;
 
     node.append(
       el("circle", {

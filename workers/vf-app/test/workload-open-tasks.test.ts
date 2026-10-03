@@ -40,7 +40,8 @@ async function person(id: string, permissions: string[], unit: string | null) {
 let seq = 0;
 
 /** An open task, either named-user-owned or team-owned-and-optionally-claimed, against an invoice in a given unit. */
-async function openTask(opts: { owner?: string | null; team?: string | null; claimedBy?: string | null; unit?: string | null }) {
+async function openTask(opts: { owner?: string | null; team?: string | null; claimedBy?: string | null; unit?: string | null; stage?: string }) {
+  const stage = opts.stage ?? "validation";
   const n = seq++;
   const invoiceId = `inv-${n}`;
   const piId = `pi-${n}`;
@@ -48,6 +49,8 @@ async function openTask(opts: { owner?: string | null; team?: string | null; cla
 
   await env.DB.prepare("INSERT OR IGNORE INTO processes (id, name) VALUES ('ap', 'ap')").run();
   await env.DB.prepare("INSERT OR IGNORE INTO process_stages (id, process_id, name, sequence) VALUES ('validation', 'ap', 'Validation', 1)").run();
+  await env.DB.prepare("INSERT OR IGNORE INTO process_stages (id, process_id, name, sequence) VALUES ('coding', 'ap', 'Coding', 2)").run();
+  await env.DB.prepare("INSERT OR IGNORE INTO process_stages (id, process_id, name, sequence) VALUES ('approval', 'ap', 'Approval', 3)").run();
   await env.DB.prepare("INSERT INTO invoice_headers (id, facts_json, org_unit_id) VALUES (?, '{}', ?)").bind(invoiceId, opts.unit ?? null).run();
   await env.DB.prepare(
     `INSERT INTO process_instances (id, process_id, subject_type, subject_id, current_stage_id, status)
@@ -55,14 +58,14 @@ async function openTask(opts: { owner?: string | null; team?: string | null; cla
   )
     .bind(piId, invoiceId)
     .run();
-  await env.DB.prepare("INSERT INTO stage_visits (id, process_instance_id, stage_id, outcome) VALUES (?, ?, 'validation', 'matched')")
-    .bind(visitId, piId)
+  await env.DB.prepare("INSERT INTO stage_visits (id, process_instance_id, stage_id, outcome) VALUES (?, ?, ?, 'matched')")
+    .bind(visitId, piId, stage)
     .run();
   await env.DB.prepare(
     `INSERT INTO tasks (id, stage_id, stage_visit_id, owner_user_id, owner_team_id, claimed_by, required_permission, status)
-     VALUES (?, 'validation', ?, ?, ?, ?, 'AP.Validate', 'open')`
+     VALUES (?, ?, ?, ?, ?, ?, 'AP.Validate', 'open')`
   )
-    .bind(`t-${n}`, visitId, opts.owner ?? null, opts.team ?? null, opts.claimedBy ?? null)
+    .bind(`t-${n}`, stage, visitId, opts.owner ?? null, opts.team ?? null, opts.claimedBy ?? null)
     .run();
 }
 
@@ -101,7 +104,7 @@ describe("per-user counts, not a per-viewer relative status", () => {
     await openTask({ owner: "dana" });
 
     const body = (await handleWorkloadOpenTasks(env.DB, null, "alice")).body as WorkloadOpenTasksReport;
-    expect(body.users).toEqual([{ userId: "dana", userName: "dana", openCount: 1 }]);
+    expect(body.users).toEqual([{ userId: "dana", userName: "dana", openCount: 1, stages: [{ stageId: "validation", stageName: "Validation", n: 1 }] }]);
     expect(body.available).toBe(0);
   });
 
@@ -113,7 +116,7 @@ describe("per-user counts, not a per-viewer relative status", () => {
     await openTask({ team: "t1", claimedBy: "dana" });
 
     const body = (await handleWorkloadOpenTasks(env.DB, null, "alice")).body as WorkloadOpenTasksReport;
-    expect(body.users).toEqual([{ userId: "dana", userName: "dana", openCount: 1 }]);
+    expect(body.users).toEqual([{ userId: "dana", userName: "dana", openCount: 1, stages: [{ stageId: "validation", stageName: "Validation", n: 1 }] }]);
   });
 
   it("counts an unclaimed team task as available, not credited to anyone", async () => {
@@ -158,5 +161,36 @@ describe("scoped by the task's own invoice, the same as every other Workload rou
     const body = (await handleWorkloadOpenTasks(env.DB, null, "alice")).body as WorkloadOpenTasksReport;
     expect(body.users).toEqual([]);
     expect(body.available).toBe(0);
+  });
+});
+
+describe("each user's open tasks by stage (decision 0612)", () => {
+  it("counts each user's open tasks at each stage, in process order, and lists every stage anyone has open work at", async () => {
+    await person("dana", [], null);
+    await person("wei", [], null);
+    await units();
+    await team("ap-team", "acme-fr");
+    await openTask({ owner: "dana", stage: "approval" });
+    await openTask({ owner: "dana", stage: "validation" });
+    await openTask({ owner: "dana", stage: "approval" });
+    await openTask({ team: "ap-team", claimedBy: "wei", stage: "coding" });
+    await openTask({ team: "ap-team", stage: "validation" });
+
+    const body = (await handleWorkloadOpenTasks(env.DB)).body as WorkloadOpenTasksReport;
+    expect(body.users).toEqual([
+      {
+        userId: "dana",
+        userName: "dana",
+        openCount: 3,
+        stages: [
+          { stageId: "validation", stageName: "Validation", n: 1 },
+          { stageId: "approval", stageName: "Approval", n: 2 },
+        ],
+      },
+      { userId: "wei", userName: "wei", openCount: 1, stages: [{ stageId: "coding", stageName: "Coding", n: 1 }] },
+    ]);
+    // The unclaimed one counts as available, and its stage is no one's.
+    expect(body.available).toBe(1);
+    expect(body.stages.map((s) => s.stageId)).toEqual(["validation", "coding", "approval"]);
   });
 });
