@@ -318,7 +318,7 @@ export function donut(percent, { label = "", colour = "var(--chart-2)" } = {}) {
  * `value > 0` (decision 0161's rule), the same shape `donutChart`'s
  * own legend rows already use.
  */
-export function barList(rows, { colour = "var(--chart-1)", onSelect = null } = {}) {
+export function barList(rows, { colour = "var(--chart-1)", onSelect = null, max = null } = {}) {
   /**
    * **One row is not a proportion** — decision 0245.
    *
@@ -326,7 +326,8 @@ export function barList(rows, { colour = "var(--chart-1)", onSelect = null } = {
    * means nothing. The caller shows a figure instead; this guards the
    * case anyway, because a list that shrinks to one is a list that will.
    */
-  const hi = Math.max(...rows.map((r) => r.value), 1);
+  // `max`, decision 0616: one scale shared by lists drawn apart.
+  const hi = max && max > 0 ? max : Math.max(...rows.map((r) => r.value), 1);
   const wrap = document.createElement("div");
 
   for (const row of rows) {
@@ -367,9 +368,22 @@ export function barList(rows, { colour = "var(--chart-1)", onSelect = null } = {
     track.append(fill);
     line.append(head, track);
 
-    if (onSelect && row.value > 0) {
+    /**
+     * **`selectable`, decision 0616** — where a row with a value of 0
+     * still has something behind it: an average of 0 hours is tasks
+     * finished the moment they were claimed, not an empty row.
+     */
+    if (onSelect && (row.selectable ?? row.value > 0)) {
       line.classList.add("clickable");
+      line.tabIndex = 0;
+      line.setAttribute("role", "button");
       line.onclick = () => onSelect(row);
+      line.onkeydown = (e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onSelect(row);
+        }
+      };
     }
 
     wrap.append(line);

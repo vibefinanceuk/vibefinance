@@ -44,7 +44,20 @@ export function renderCard() {
             value: u.avgHours,
             display: t("workload.hourscount").replace("{n}", String(Math.round(u.avgHours * 10) / 10)),
             note: hoursNote(u),
-          }))
+            userId: u.userId,
+            selectable: u.n > 0,
+          })),
+          {
+            /**
+             * **A person's bar opens what they claimed and completed** —
+             * decision 0616: the invoices behind the tasks this average
+             * is taken over.
+             */
+            onSelect: async (row) => {
+              const { openDocumentsHandledBy } = await import("/documents.js");
+              openDocumentsHandledBy(row.userId, row.label);
+            },
+          }
         ),
       ]);
 }

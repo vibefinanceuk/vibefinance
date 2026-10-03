@@ -1681,6 +1681,8 @@ const KEYS_THE_INTERFACE_USES = [
   "help.screen.mapping.34",
   "mapping.retire",
   "mapping.retiretitle",
+  "documents.showing.handledby",
+  "documents.showing.handledbystage",
   "workload.balancequiet",
   "workload.balanceothers",
   "documents.showing.openforteam",

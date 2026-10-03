@@ -45,3 +45,13 @@ describe("who may see whose open tasks in Documents — decision 0614", () => {
     expect((await ask(analyst, "openFor=rev&openStage=validation&page=1&pageSize=25")).status).toBe(200);
   });
 });
+
+describe("who may see what others handled in Documents — decision 0616", () => {
+  it("shows a reviewer their own, refuses them someone else's, and lets an analyst see anyone's", async () => {
+    const reviewer = await person("rev", ["AP.Review"]);
+    const analyst = await person("ana", ["AP.Review", "AP.Analysis"]);
+    expect((await ask(reviewer, "handledBy=rev&page=1&pageSize=25")).status).toBe(200);
+    expect((await ask(reviewer, "handledBy=ana&handledStage=validation&page=1&pageSize=25")).status).toBe(403);
+    expect((await ask(analyst, "handledBy=rev&page=1&pageSize=25")).status).toBe(200);
+  });
+});

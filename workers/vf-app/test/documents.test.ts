@@ -1195,3 +1195,50 @@ describe("filtering documents by a person's open tasks in one team (decision 061
     expect((await list("openTeam=ap-team&page=1&pageSize=25")).total).toBe(3);
   });
 });
+
+describe("filtering documents by what a person claimed and completed (decision 0616)", () => {
+  async function doneTask(docId: string, stage: "validation" | "payment", who: string, opts: { claimed?: boolean; status?: string } = {}) {
+    await env.DB.prepare("INSERT OR IGNORE INTO org_users (id, email, name) VALUES (?, ?, ?)").bind(who, `${who}@acme.com`, who).run();
+    await env.DB.prepare("INSERT INTO invoice_headers (id, facts_json) VALUES (?, '{}')").bind(docId).run();
+    await env.DB.prepare("INSERT INTO process_instances (id, process_id, subject_type, subject_id, current_stage_id, status) VALUES (?, 'ap', 'invoice', ?, ?, 'in_progress')")
+      .bind(`pi-${docId}`, docId, stage)
+      .run();
+    await env.DB.prepare("INSERT INTO stage_visits (id, process_instance_id, stage_id, outcome) VALUES (?, ?, ?, 'matched')").bind(`v-${docId}`, `pi-${docId}`, stage).run();
+    const status = opts.status ?? "completed";
+    await env.DB.prepare(
+      `INSERT INTO tasks (id, stage_id, stage_visit_id, required_permission, status, owner_user_id, claimed_by, claimed_at, completed_by, completed_at)
+       VALUES (?, ?, ?, 'AP.Validate', ?, ?, ?, ?, ?, ?)`
+    )
+      .bind(
+        `t-${docId}`,
+        stage,
+        `v-${docId}`,
+        status,
+        opts.claimed === false ? who : null,
+        opts.claimed === false ? null : who,
+        opts.claimed === false ? null : "2025-01-01 09:00:00",
+        status === "completed" ? who : null,
+        status === "completed" ? "2025-01-01 12:00:00" : null
+      )
+      .run();
+  }
+
+  beforeEach(async () => {
+    await doneTask("inv-1", "validation", "mo");
+    await doneTask("inv-2", "payment", "mo");
+    await doneTask("inv-3", "validation", "mo", { claimed: false });
+    await doneTask("inv-4", "validation", "mo", { status: "open" });
+    await doneTask("inv-5", "validation", "alice");
+  });
+
+  it("shows the invoices with a task the person claimed and completed, over all time, as the cards average", async () => {
+    const paged = await list("handledBy=mo&page=1&pageSize=25");
+    expect(paged.documents.map((d) => d.id).sort()).toEqual(["inv-1", "inv-2"]);
+    expect(paged.total).toBe(2);
+  });
+
+  it("narrows to one stage, and ignores a stage without a person", async () => {
+    expect((await list("handledBy=mo&handledStage=payment&page=1&pageSize=25")).documents.map((d) => d.id)).toEqual(["inv-2"]);
+    expect((await list("handledStage=payment&page=1&pageSize=25")).total).toBe(5);
+  });
+});

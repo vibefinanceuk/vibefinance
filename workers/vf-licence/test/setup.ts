@@ -246,6 +246,7 @@ import analyticsDrilldownSql from "../migrations/0255_analytics_drilldown_string
 import openTasksPickerSql from "../migrations/0256_open_tasks_picker_strings.sql?raw";
 import openTasksDrilldownSql from "../migrations/0257_open_tasks_drilldown_strings.sql?raw";
 import workloadBalanceSql from "../migrations/0258_workload_balance_strings.sql?raw";
+import handlingDrilldownSql from "../migrations/0259_handling_drilldown_strings.sql?raw";
 
 function stripSqlComments(sql: string): string {
   return sql
@@ -525,5 +526,6 @@ export async function applyTestSchema(): Promise<void> {
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(openTasksPickerSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(openTasksDrilldownSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(workloadBalanceSql)));
+  await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(handlingDrilldownSql)));
 
 }

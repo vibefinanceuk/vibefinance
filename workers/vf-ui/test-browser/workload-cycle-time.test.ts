@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 /** Claim-to-complete cycle time — decision 0428. */
 
 function mountShell() {
-  document.body.innerHTML = `<div id="card-under-test"></div>`;
+  document.body.innerHTML = `<div id="card-under-test"></div><main id="shell"></main><main id="viewer" hidden></main>`;
 }
 
 const STRINGS = {
@@ -14,6 +14,7 @@ const STRINGS = {
     "workload.nocycletime": "No completed, claimed tasks yet",
     "workload.taskcountnote": "{n} tasks",
     "workload.hourscount": "{n} hours",
+    "documents.showing.handledby": "Showing where {name} claimed and completed a task",
   },
 };
 
@@ -25,6 +26,8 @@ function stubCycleTime(data: unknown, seen: string[] = []) {
       seen.push(path);
       if (path.startsWith("/api/ui-strings")) return { ok: true, json: async () => STRINGS } as Response;
       if (path.startsWith("/api/workload/cycle-time")) return { ok: true, json: async () => data } as Response;
+      if (path.startsWith("/api/org/units")) return { ok: true, json: async () => ({ units: [] }) } as Response;
+      if (path.startsWith("/api/documents")) return { ok: true, json: async () => ({ documents: [], searched: 0 }) } as Response;
       throw new Error(`no stub for ${path}`);
     })
   );
@@ -86,5 +89,26 @@ describe("the list the route's data draws", () => {
     await renderCycleTime(DATA);
     expect(document.body.textContent).toContain("6.5 hours");
     expect(document.body.textContent).toContain("9 tasks");
+  });
+});
+
+async function documentsAsked(seen: string[]) {
+  await vi.waitFor(() => expect(seen.some((u) => u.startsWith("/api/documents"))).toBe(true));
+  return new URL(seen.find((u) => u.startsWith("/api/documents"))!, "http://x").searchParams;
+}
+
+describe("a person's bar opens Documents (decision 0616)", () => {
+  it("asks for what that person claimed and completed, and says so", async () => {
+    const seen: string[] = [];
+    await renderCycleTime({ users: [{ userId: "alice", userName: "Alice McDonald", avgHours: 10.2, n: 9 }] }, seen);
+    document.querySelector<HTMLElement>(".barlist-row.clickable")!.click();
+    const q = await documentsAsked(seen);
+    expect(q.get("handledBy")).toBe("alice");
+    await vi.waitFor(() => expect(document.querySelector(".alertbanner")?.textContent).toContain("Showing where Alice McDonald claimed and completed a task"));
+  });
+
+  it("offers it at 0 hours too, where there were tasks", async () => {
+    await renderCycleTime({ users: [{ userId: "bo", userName: "Bo", avgHours: 0, n: 2 }] });
+    expect(document.querySelectorAll(".barlist-row.clickable")).toHaveLength(1);
   });
 });

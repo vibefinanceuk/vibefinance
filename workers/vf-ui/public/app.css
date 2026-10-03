@@ -2191,7 +2191,10 @@
     padding: 2px 6px;
     border-radius: 6px;
   }
-  .barlist-row.clickable:hover { background: var(--surface-1); }
+  .barlist-row.clickable:hover, .barlist-row.clickable:focus-visible { background: var(--surface-1); }
+  /* A person's name that opens their work — decision 0616, handling time. */
+  .teamgrouphead.clickable { cursor: pointer; margin: 0 -6px 6px; padding: 2px 6px; border-radius: 6px; }
+  .teamgrouphead.clickable:hover, .teamgrouphead.clickable:focus-visible { background: var(--surface-1); }
 
   /*
     **Stacked bars lying down, the name on the left** — decision 0611.

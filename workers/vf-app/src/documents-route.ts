@@ -326,6 +326,16 @@ export async function handleListDocuments(
    * `openFor`.
    */
   const openTeam = openFor ? params.get("openTeam") || null : null;
+  /**
+   * **What a person claimed and completed, at a stage or all — decision
+   * 0616**, from *Average handling time* and *Claim-to-complete cycle
+   * time*: the invoices with a task the person claimed and then
+   * completed, the tasks those two cards average (a named-user task,
+   * never claimed, has no handling time and is not one). Like the cards,
+   * over all time. `handledStage` only with `handledBy`.
+   */
+  const handledBy = params.get("handledBy") || null;
+  const handledStage = handledBy ? params.get("handledStage") || null : null;
 
   /**
    * The sender and recipient come from the email that brought it —
@@ -436,6 +446,18 @@ export async function handleListDocuments(
            )
          )
          AND (
+           ?23 IS NULL
+           OR EXISTS (
+             SELECT 1 FROM tasks ht
+             JOIN stage_visits hv ON hv.id = ht.stage_visit_id
+             WHERE hv.process_instance_id = i.id
+               AND ht.status = 'completed'
+               AND ht.claimed_at IS NOT NULL
+               AND ht.completed_by = ?23
+               AND (?24 IS NULL OR ht.stage_id = ?24)
+           )
+         )
+         AND (
            ?16 IS NULL
            OR (
              h.invoice_number LIKE ?16 ESCAPE '\\'
@@ -507,7 +529,7 @@ export async function handleListDocuments(
     searchPattern,
   ] as const;
   // Decision 0611: ?17 is the page's offset (below); the two new filters come after it.
-  const filterBinds = [doneBy, team, openFor, openStage, openTeam] as const;
+  const filterBinds = [doneBy, team, openFor, openStage, openTeam, handledBy, handledStage] as const;
 
   /**
    * **`total`, only when a page was actually asked for.** A second,

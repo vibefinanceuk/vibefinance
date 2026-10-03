@@ -96,6 +96,13 @@ let teamFilter = null;
  */
 let openForFilter = null;
 
+/**
+ * **What a person claimed and completed, at a stage or all — decision
+ * 0616**, from *Average handling time* and *Claim-to-complete cycle
+ * time*. `{ userId, name, stage: { id, name } | null }`.
+ */
+let handledFilter = null;
+
 /** Every filter a card can open this screen with, cleared together. */
 function clearFilters() {
   alertFilter = null;
@@ -105,6 +112,7 @@ function clearFilters() {
   personFilter = null;
   teamFilter = null;
   openForFilter = null;
+  handledFilter = null;
 }
 
 /**
@@ -221,6 +229,10 @@ async function load() {
     params.set("openFor", openForFilter.userId);
     if (openForFilter.stage) params.set("openStage", openForFilter.stage.id);
     if (openForFilter.team) params.set("openTeam", openForFilter.team.id);
+  }
+  if (handledFilter) {
+    params.set("handledBy", handledFilter.userId);
+    if (handledFilter.stage) params.set("handledStage", handledFilter.stage.id);
   }
   if (agingFilter) {
     params.set("agingMinDays", String(agingFilter.minDays));
@@ -478,6 +490,10 @@ function bannerText() {
   if (agingFilter) return t("documents.showing.aging").replace("{bucket}", agingFilter.label);
   if (personFilter) return t("documents.showing.doneby").replace("{name}", personFilter.name);
   if (teamFilter) return t("documents.showing.team").replace("{team}", teamFilter.name);
+  if (handledFilter?.stage) {
+    return t("documents.showing.handledbystage").replace("{name}", handledFilter.name).replace("{stage}", handledFilter.stage.name);
+  }
+  if (handledFilter) return t("documents.showing.handledby").replace("{name}", handledFilter.name);
   if (openForFilter?.team) {
     return t("documents.showing.openforteam").replace("{name}", openForFilter.name).replace("{team}", openForFilter.team.name);
   }
@@ -614,7 +630,7 @@ function render() {
          * one — decision 0256 fixed exactly this shape of confusion for
          * a dropdown that quietly filtered without saying so.
          */
-        alertFilter || stageFilter || supplierFilter || agingFilter || personFilter || teamFilter || openForFilter
+        alertFilter || stageFilter || supplierFilter || agingFilter || personFilter || teamFilter || openForFilter || handledFilter
           ? el("div", { class: "panel alertbanner" }, [
               el("span", { text: bannerText() }),
               el("button", {
@@ -845,6 +861,23 @@ export async function openDocumentsOpenFor(userId, name, stage = null, team = nu
   page = 1;
   clearFilters();
   openForFilter = { userId, name, stage, team };
+  setCurrentScreen("documents");
+  await loadUnits();
+  if (!(await load())) return;
+  render();
+}
+
+/**
+ * Open the documents screen at what one person claimed and completed —
+ * decision 0616, from the handling and cycle time cards: at one stage,
+ * or all of it. Another person's needs AP.Analysis, as the cards do.
+ */
+export async function openDocumentsHandledBy(userId, name, stage = null) {
+  query = "";
+  unit = "";
+  page = 1;
+  clearFilters();
+  handledFilter = { userId, name, stage };
   setCurrentScreen("documents");
   await loadUnits();
   if (!(await load())) return;
