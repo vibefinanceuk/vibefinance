@@ -1,7 +1,7 @@
 import { t } from "/strings.js";
 import { el } from "/tasks.js";
 import { currentOrgId } from "/orgs.js";
-import { TOP, invoiceRow, listHead, listCard, openTheseInvoices } from "/fraud-list.js";
+import { TOP, invoiceRow, listHead, listCard, openTheseInvoices, supplierCell } from "/fraud-list.js";
 
 /**
  * Unapproved-supplier invoices — decision 0422, the Fraud Prevention
@@ -57,7 +57,7 @@ function reasonLabel(reason) {
 function unapprovedRow(invoice) {
   return invoiceRow(invoice.id, [
     el("td", { text: invoice.invoiceNumber ?? "—" }),
-    el("td", { text: invoice.supplierName ?? invoice.supplierVatId ?? "—" }),
+    supplierCell(invoice.supplierName ?? invoice.supplierVatId, invoice.supplierId),
     el("td", { class: "num", text: money(invoice.totalWithVat, invoice.currency) }),
     el("td", { text: invoice.issueDate ?? "—" }),
     el(

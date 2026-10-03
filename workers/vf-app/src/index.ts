@@ -2396,7 +2396,8 @@ export default {
         url.searchParams.get("search"),
         url.searchParams.get("page"),
         url.searchParams.get("pageSize"),
-        url.searchParams.get("status")
+        url.searchParams.get("status"),
+        url.searchParams.get("id")
       );
       return json(
         {

@@ -2203,6 +2203,8 @@
   .fraudshowall { flex: 0 0 auto; margin-left: auto; }
   .fraudlist { scroll-margin-top: 12px; }
   .fraudtabs { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+  /* A supplier's name that opens it — decision 0619: a link, at the table's own size. */
+  .linklike.suppliername { font-size: inherit; font-weight: inherit; text-align: left; }
 
   .barlist-row { margin-bottom: 9px; }
   .barlist-head { display: flex; justify-content: space-between; font-size: var(--text-sm); gap: 10px; }

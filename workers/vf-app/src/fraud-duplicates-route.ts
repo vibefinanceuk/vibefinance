@@ -60,6 +60,7 @@ interface DuplicateRow {
   currency: string | null;
   issue_date: string | null;
   duplicate_confidence: number;
+  supplier_id: string | null;
 }
 
 export interface DuplicateInvoice {
@@ -71,6 +72,8 @@ export interface DuplicateInvoice {
   currency: string | null;
   issueDate: string | null;
   duplicateConfidence: number;
+  /** The matched supplier, to open it on the Suppliers screen — decision 0619. Null when none is matched. */
+  supplierId: string | null;
 }
 
 export interface PossibleDuplicatesReport {
@@ -88,7 +91,7 @@ export async function handlePossibleDuplicates(
 
   const rows = await db
     .prepare(
-      `SELECT h.id AS id, h.invoice_number AS invoice_number, h.supplier_vat_id AS supplier_vat_id,
+      `SELECT h.id AS id, h.invoice_number AS invoice_number, h.supplier_vat_id AS supplier_vat_id, h.supplier_id AS supplier_id,
               h.total_with_vat AS total_with_vat, h.currency AS currency, h.issue_date AS issue_date,
               h.duplicate_confidence AS duplicate_confidence,
               COALESCE(sup.name, json_extract(h.facts_json, '$."BT-27"')) AS supplier_name
@@ -104,6 +107,7 @@ export async function handlePossibleDuplicates(
     id: row.id,
     invoiceNumber: row.invoice_number,
     supplierName: row.supplier_name,
+    supplierId: row.supplier_id,
     supplierVatId: row.supplier_vat_id,
     totalWithVat: row.total_with_vat,
     currency: row.currency,

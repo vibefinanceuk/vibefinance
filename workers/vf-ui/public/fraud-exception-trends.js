@@ -2,7 +2,7 @@ import { t } from "/strings.js";
 import { el } from "/tasks.js";
 import { currentOrgId } from "/orgs.js";
 import { sparkline } from "/charts.js";
-import { listCard, makeClickable } from "/fraud-list.js";
+import { listCard, makeClickable, supplierCell } from "/fraud-list.js";
 
 /**
  * Exceptions by type, by user, by supplier — trended — decision 0423,
@@ -76,7 +76,7 @@ async function openEntry(entry) {
 function entryRow(entry) {
   return makeClickable(
     el("tr", {}, [
-      el("td", { text: nameOf(entry) }),
+      view === "supplier" ? supplierCell(nameOf(entry), entry.supplierId) : el("td", { text: nameOf(entry) }),
       el("td", { class: "num", text: String(entry.total) }),
       el("td", { class: "trend" }, [sparkline(entry.weeklyCounts, { height: 28 })]),
     ]),

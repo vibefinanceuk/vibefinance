@@ -294,3 +294,13 @@ describe("scoped the same way as every other analysis query (decision 0420)", ()
     expect(body.invoices).toEqual([]);
   });
 });
+
+describe("the matched supplier's id, to open it — decision 0619", () => {
+  it("is given where a supplier is matched, and null where none is", async () => {
+    const supplierId = await supplier("Acme Supplies");
+    await invoice({ confidence: 0.9, supplierId });
+    await invoice({ confidence: 0.8, supplierNameFallback: "Printed Ltd" });
+    const body = (await handlePossibleDuplicates(env.DB)).body as PossibleDuplicatesReport;
+    expect(body.invoices.map((i) => i.supplierId)).toEqual([supplierId, null]);
+  });
+});

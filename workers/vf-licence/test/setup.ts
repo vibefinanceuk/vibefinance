@@ -249,6 +249,7 @@ import workloadBalanceSql from "../migrations/0258_workload_balance_strings.sql?
 import handlingDrilldownSql from "../migrations/0259_handling_drilldown_strings.sql?raw";
 import analyticsFollowupsSql from "../migrations/0260_analytics_followups_strings.sql?raw";
 import fraudDrilldownSql from "../migrations/0261_fraud_drilldown_strings.sql?raw";
+import openSupplierSql from "../migrations/0262_open_supplier_strings.sql?raw";
 
 function stripSqlComments(sql: string): string {
   return sql
@@ -531,5 +532,6 @@ export async function applyTestSchema(): Promise<void> {
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(handlingDrilldownSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(analyticsFollowupsSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(fraudDrilldownSql)));
+  await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(openSupplierSql)));
 
 }

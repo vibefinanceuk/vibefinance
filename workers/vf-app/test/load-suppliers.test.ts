@@ -2051,3 +2051,23 @@ describe("the status ring's own counts — decision 0378, mirroring decision 037
     expect(result.body).toEqual({ counts: { active: 0, onhold: 0, inactive: 0, awaitingerp: 0 } });
   });
 });
+
+describe("one supplier by id — decision 0619", () => {
+  it("returns just that supplier, in the list's own shape, whatever search or status is also asked", async () => {
+    await load("ERP ID,Name\n1,Northwind Logistics\n2,Bishopsgate Supplies");
+    const all = (await handleListSuppliers(env.DB, null)).body as { suppliers: { id: string; name: string }[] };
+    const bishopsgate = all.suppliers.find((s) => s.name === "Bishopsgate Supplies")!;
+    const one = (await handleListSuppliers(env.DB, null, undefined, "Northwind", null, null, "inactive", bishopsgate.id)).body as {
+      suppliers: { id: string; name: string }[];
+      total: number;
+    };
+    expect(one.suppliers.map((s) => s.name)).toEqual(["Bishopsgate Supplies"]);
+    expect(one.total).toBe(1);
+  });
+
+  it("finds nothing for an id that is not there", async () => {
+    await load("ERP ID,Name\n1,Northwind Logistics");
+    const none = (await handleListSuppliers(env.DB, null, undefined, null, null, null, null, "no-such")).body as { suppliers: unknown[] };
+    expect(none.suppliers).toEqual([]);
+  });
+});

@@ -1016,3 +1016,31 @@ export async function openSuppliersAwaitingErp() {
   await loadStatusCounts();
   render();
 }
+
+/**
+ * **Open one supplier — decision 0619.** From anywhere that names a
+ * supplier it knows the id of (a Fraud Prevention list, first): the
+ * Suppliers screen opens as usual, and that supplier's card opens over
+ * it, with everything it offers (details, hold, release, deactivate),
+ * as clicking its row would. The supplier is asked for by id, in the
+ * person's own scope and the org chosen at the top: one outside them
+ * is not opened, and the screen says so.
+ */
+export async function openSupplierById(id, name = "") {
+  await open();
+  try {
+    const params = new URLSearchParams({ id });
+    const org = currentOrgId();
+    if (org) params.set("org", org);
+    const response = await fetch(`/api/suppliers?${params.toString()}`);
+    const body = response.ok ? await response.json() : null;
+    const found = body?.suppliers?.[0];
+    if (found) {
+      openSupplier(found);
+      return;
+    }
+  } catch {
+    // Said below, as for a supplier not found.
+  }
+  note(t("suppliers.notvisible").replace("{name}", name || id));
+}

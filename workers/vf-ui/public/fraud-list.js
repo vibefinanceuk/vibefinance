@@ -1,6 +1,7 @@
 import { t } from "/strings.js";
 import { el } from "/tasks.js";
 import { sparkline } from "/charts.js";
+import { hasMyPermission } from "/tasks.js";
 
 /**
  * **Fraud Prevention, a summary on top and a short list per check** —
@@ -110,4 +111,35 @@ export function fraudTiles(summaries) {
       )
     )
   );
+}
+
+/**
+ * **A supplier's name that opens the supplier — decision 0619.** Where
+ * the check knows which supplier it is (`supplierId`) and the person may
+ * see suppliers (`AP.Supplier`), the name is a link to its card on the
+ * Suppliers screen; the rest of the row still opens the invoice. Without
+ * either, the name is plain text.
+ */
+export function supplierCell(name, supplierId, attrs = {}) {
+  const shown = name ?? "—";
+  if (!supplierId || !hasMyPermission("AP.Supplier")) return el("td", { ...attrs, text: shown });
+  const link = el("button", {
+    class: "linklike suppliername",
+    text: shown,
+    title: t("fraudprevention.opensupplier"),
+  });
+  const go = async (e) => {
+    e.stopPropagation();
+    const { openSupplierById } = await import("/suppliers.js");
+    openSupplierById(supplierId, shown);
+  };
+  link.addEventListener("click", go);
+  link.addEventListener("keydown", (e) => {
+    // Enter on the link opens the supplier, not the row's invoice.
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      go(e);
+    }
+  });
+  return el("td", attrs, [link]);
 }

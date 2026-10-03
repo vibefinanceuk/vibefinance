@@ -755,7 +755,8 @@ export async function handleListSuppliers(
   search: string | null = null,
   pageParam: string | null = null,
   pageSizeParam: string | null = null,
-  statusParam: string | null = null
+  statusParam: string | null = null,
+  idParam: string | null = null
 ): Promise<RouteResult> {
   /**
    * **Real, permission-based scoping — decision 0358.** Reported
@@ -787,8 +788,14 @@ export async function handleListSuppliers(
   const visible = userId ? await unitsWherePermitted(db, userId, "AP.Supplier") : null;
   const scopedUnits = await scopedToChosenOrg(db, visible, currentOrg);
   const clause = unitClause({ units: scopedUnits }, "s.org_unit_id");
-  const search_ = supplierSearchClause(search);
-  const status_ = supplierStatusClause(statusParam);
+  /**
+   * **One supplier, by id — decision 0619**, so a supplier named
+   * elsewhere (a Fraud Prevention list, say) can be opened on its own.
+   * The same list, scope and shape, narrowed to that one; a supplier
+   * outside what the person may see is simply not in it.
+   */
+  const search_ = idParam ? { sql: " AND s.id = ?", binds: [idParam] as unknown[] } : supplierSearchClause(search);
+  const status_ = supplierStatusClause(idParam ? null : statusParam);
   const page = normalizeSupplierPage(pageParam);
   const pageSize = normalizeSupplierPageSize(pageSizeParam);
   const offset = (page - 1) * pageSize;

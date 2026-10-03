@@ -259,3 +259,13 @@ describe("scoped the same way as fraud-duplicates (decision 0422)", () => {
     expect(body.invoices).toEqual([]);
   });
 });
+
+describe("the matched supplier's id, to open it — decision 0619", () => {
+  it("is given for a supplier on hold, and null for one not on file", async () => {
+    const held = await supplier({ name: "Held Ltd", onHold: true, holdReason: "Bank details changed" });
+    await invoice({ supplierId: held });
+    await invoice({ supplierNameFallback: "Nobody We Know" });
+    const body = (await handleUnapprovedSuppliers(env.DB)).body as UnapprovedSuppliersReport;
+    expect(body.invoices.map((i) => [i.reason, i.supplierId]).sort()).toEqual([["notonfile", null], ["onhold", held]].sort());
+  });
+});

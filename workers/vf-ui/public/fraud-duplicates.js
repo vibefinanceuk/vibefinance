@@ -1,7 +1,7 @@
 import { t } from "/strings.js";
 import { el } from "/tasks.js";
 import { currentOrgId } from "/orgs.js";
-import { TOP, invoiceRow, listHead, listCard } from "/fraud-list.js";
+import { TOP, invoiceRow, listHead, listCard, supplierCell } from "/fraud-list.js";
 
 /**
  * Potential duplicate invoices — decision 0420, the first real card in
@@ -53,7 +53,7 @@ function confidencePercent(confidence) {
 function duplicateRow(invoice) {
   return invoiceRow(invoice.id, [
     el("td", { text: invoice.invoiceNumber ?? "—" }),
-    el("td", { text: invoice.supplierName ?? invoice.supplierVatId ?? "—" }),
+    supplierCell(invoice.supplierName ?? invoice.supplierVatId, invoice.supplierId),
     el("td", { class: "num", text: money(invoice.totalWithVat, invoice.currency) }),
     el("td", { text: invoice.issueDate ?? "—" }),
     el("td", { class: "num", text: confidencePercent(invoice.duplicateConfidence) }),

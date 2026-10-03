@@ -68,6 +68,7 @@ interface UnapprovedRow {
   issue_date: string | null;
   on_hold: number | null;
   hold_reason: string | null;
+  supplier_id: string | null;
 }
 
 export interface UnapprovedSupplierInvoice {
@@ -80,6 +81,8 @@ export interface UnapprovedSupplierInvoice {
   issueDate: string | null;
   reason: "notonfile" | "onhold";
   holdReason: string | null;
+  /** The matched supplier, to open it on the Suppliers screen — decision 0619. Null when none is matched. */
+  supplierId: string | null;
 }
 
 export interface UnapprovedSuppliersReport {
@@ -97,7 +100,7 @@ export async function handleUnapprovedSuppliers(
 
   const rows = await db
     .prepare(
-      `SELECT h.id AS id, h.invoice_number AS invoice_number, h.supplier_vat_id AS supplier_vat_id,
+      `SELECT h.id AS id, h.invoice_number AS invoice_number, h.supplier_vat_id AS supplier_vat_id, h.supplier_id AS supplier_id,
               h.total_with_vat AS total_with_vat, h.currency AS currency, h.issue_date AS issue_date,
               COALESCE(sup.name, json_extract(h.facts_json, '$."BT-27"')) AS supplier_name,
               sup.on_hold AS on_hold, sup.hold_reason AS hold_reason
@@ -113,6 +116,7 @@ export async function handleUnapprovedSuppliers(
     id: row.id,
     invoiceNumber: row.invoice_number,
     supplierName: row.supplier_name,
+    supplierId: row.supplier_id,
     supplierVatId: row.supplier_vat_id,
     totalWithVat: row.total_with_vat,
     currency: row.currency,
