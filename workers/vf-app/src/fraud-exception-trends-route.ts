@@ -133,6 +133,9 @@ export interface TypeExceptionTrend {
 
 export interface FraudExceptionTrendsReport {
   weekStartDates: string[];
+  /** Every failed validation each week, and in all — decision 0618's tile. */
+  weeklyTotals: number[];
+  total: number;
   bySupplier: SupplierExceptionTrend[];
   byUser: UserExceptionTrend[];
   byType: TypeExceptionTrend[];
@@ -188,9 +191,11 @@ export async function handleFraudExceptionTrends(
 
   const bySupplier = new Map<string, { name: string | null; weeklyCounts: number[] }>();
   const byType = new Map<string, number[]>();
+  let weeklyTotals: number[] = new Array(TREND_WEEKS).fill(0);
 
   for (const row of exceptionRows.results) {
     const idx = weekIndexFor(row.created_at.slice(0, 10), starts);
+    weeklyTotals = bump(weeklyTotals, idx);
     const supplierKey = row.supplier_id ?? "__unmatched__";
     const existing = bySupplier.get(supplierKey);
     if (existing) {
@@ -249,6 +254,8 @@ export async function handleFraudExceptionTrends(
     status: 200,
     body: {
       weekStartDates: starts,
+      weeklyTotals,
+      total: total(weeklyTotals),
       bySupplier: supplierEntries,
       byUser: userEntries,
       byType: typeEntries,

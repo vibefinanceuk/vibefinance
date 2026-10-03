@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 3 October 2026 (decision 0617). A living document: what
+Last updated 3 October 2026 (decision 0618). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,13 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Fraud Prevention: tiles, short lists and drill-down (0618)
+
+The tab's five narrow, ever-lengthening tables are now a row of tiles
+with each check's count, then each check full width with its first five
+and Show all. A row opens its invoice; exception trends has tabs, and
+its rows open the invoices behind them in Documents.
 
 ### AP Analytics follow-ups (0617)
 

@@ -1,6 +1,7 @@
 import { t } from "/strings.js";
 import { el } from "/tasks.js";
 import { currentOrgId } from "/orgs.js";
+import { TOP, invoiceRow, listHead, listCard, openTheseInvoices } from "/fraud-list.js";
 
 /**
  * Segregation-of-duties flags — decision 0424, the Fraud Prevention
@@ -41,7 +42,7 @@ function stagesLabel(stages) {
 }
 
 function flagRow(invoice) {
-  return el("tr", {}, [
+  return invoiceRow(invoice.invoiceId, [
     el("td", { text: invoice.invoiceNumber ?? "—" }),
     el("td", { text: invoice.userName ?? invoice.userId }),
     el("td", { class: "warn", text: stagesLabel(invoice.stages) }),
@@ -58,21 +59,26 @@ function flagsTable() {
           el("th", { text: t("fraudprevention.stagescompleted") }),
         ]),
       ]),
-      el("tbody", {}, data.invoices.map(flagRow)),
+      el("tbody", {}, data.invoices.slice(0, TOP).map(flagRow)),
     ]),
   ]);
 }
 
 /** The card itself, built from whatever `load()` last fetched. Callers own the topbar, frame and tab shell around it. */
+/** The tile's count — decision 0618: flags, one per invoice and person. */
+export function summary() {
+  return { key: "sod", label: t("fraudprevention.segregationofduties"), count: data.invoices.length };
+}
+
 export function renderCard() {
-  return data.invoices.length === 0
-    ? el("div", { class: "panel card-graphic" }, [
-        el("div", { class: "cardhead" }, [el("h3", { text: t("fraudprevention.segregationofduties") })]),
-        el("div", { class: "muted", text: t("fraudprevention.nosegregationofduties") }),
-      ])
-    : el("div", { class: "panel card-graphic" }, [
-        el("div", { class: "cardhead" }, [el("h3", { text: t("fraudprevention.segregationofduties") })]),
-        el("div", { class: "sub", text: t("fraudprevention.segregationofdutiessub") }),
-        flagsTable(),
-      ]);
+  const total = data.invoices.length;
+  return listCard("sod", [
+    listHead(t("fraudprevention.segregationofduties"), total, () =>
+      openTheseInvoices([...new Set(data.invoices.map((i) => i.invoiceId))], t("fraudprevention.segregationofduties"))
+    ),
+    total === 0
+      ? el("div", { class: "muted", text: t("fraudprevention.nosegregationofduties") })
+      : el("div", { class: "sub", text: t("fraudprevention.segregationofdutiessub") }),
+    total === 0 ? null : flagsTable(),
+  ]);
 }

@@ -2177,6 +2177,33 @@
   tr.clickable:hover { background: var(--surface-1); }
   .panel.clickable:hover { border-color: var(--text-accent); }
 
+  /*
+    **Fraud Prevention, tiles on top and a short list per check** —
+    decision 0618 (fraud-list.js). The tiles share one row and wrap on a
+    narrow screen; a flagged count is in the warning colour.
+  */
+  tr.clickable:focus-visible { background: var(--surface-1); }
+  .dashflow > .panel.fraudtiles, .panel.fraudtiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+  .fraudtile {
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 10px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
+  .fraudtile.clickable { cursor: pointer; }
+  .fraudtile.clickable:hover, .fraudtile.clickable:focus-visible { border-color: var(--text-accent); background: var(--surface-1); }
+  .fraudtilecount { font-size: var(--text-xl); font-weight: 600; color: var(--text-secondary); }
+  .fraudtile.flagged .fraudtilecount { color: var(--text-warning); }
+  .fraudtilelabel { font-size: var(--text-sm); color: var(--text-muted); overflow-wrap: anywhere; }
+  .cardhead.fraudhead { justify-content: flex-start; align-items: baseline; }
+  .fraudcount { font-size: var(--text-sm); color: var(--text-muted); font-weight: 400; }
+  .fraudshowall { flex: 0 0 auto; margin-left: auto; }
+  .fraudlist { scroll-margin-top: 12px; }
+  .fraudtabs { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+
   .barlist-row { margin-bottom: 9px; }
   .barlist-head { display: flex; justify-content: space-between; font-size: var(--text-sm); gap: 10px; }
   .barlist-track { height: 6px; background: var(--border); border-radius: 3px; margin-top: 3px; }

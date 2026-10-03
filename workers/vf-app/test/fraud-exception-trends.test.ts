@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { applyTestSchema } from "./setup.js";
 import { handleFraudExceptionTrends, type FraudExceptionTrendsReport } from "../src/fraud-exception-trends-route.js";
 import { generateApiKey, hashApiKey } from "../src/user-auth.js";
+import { handleListDocuments } from "../src/documents-route.js";
 
 /**
  * Exceptions by type, by user, by supplier — trended — decision 0423,
@@ -225,7 +226,7 @@ describe("the eight-week window (decision 0423)", () => {
 
   it("is empty, not an error, when nothing has been evaluated yet", async () => {
     const body = (await handleFraudExceptionTrends(env.DB, null, undefined, NOW)).body as FraudExceptionTrendsReport;
-    expect(body).toEqual({ weekStartDates: WEEK_STARTS, bySupplier: [], byUser: [], byType: [] });
+    expect(body).toEqual({ weekStartDates: WEEK_STARTS, weeklyTotals: [0, 0, 0, 0, 0, 0, 0, 0], total: 0, bySupplier: [], byUser: [], byType: [] });
   });
 });
 
@@ -378,5 +379,51 @@ describe("scoped the same way as fraud-duplicates and fraud-unapproved-suppliers
 
     const body = (await handleFraudExceptionTrends(env.DB, "acme-fr", "alice", NOW)).body as FraudExceptionTrendsReport;
     expect(body.bySupplier).toEqual([]);
+  });
+});
+
+/**
+ * **A row opens Documents at the invoices it counts — decision 0618.**
+ * Seeded once and asked of both the card's route and Documents, so the
+ * two cannot drift apart.
+ */
+describe("Documents at the invoices behind each row, and the tile's totals (decision 0618)", () => {
+  async function seed() {
+    await supplier("sup-1", "Lager Nord GmbH");
+    await reviewer("rev-1", "Rae");
+    const a = await visit({ supplierId: "sup-1", passed: false, failures: "amount_mismatch, duplicate_suspected", at: "2026-09-16 09:00:00" });
+    await task({ visitId: a, completedBy: "rev-1" });
+    await visit({ supplierId: "sup-1", passed: false, failures: "amount_mismatch", at: "2026-09-09 09:00:00" });
+    await visit({ supplierId: null, passed: false, failures: "duplicate_suspected", at: "2026-09-02 09:00:00" });
+    await visit({ supplierId: "sup-1", passed: false, failures: "amount_mismatch", at: "2026-06-01 09:00:00" }); // before the eight weeks
+    await visit({ supplierId: "sup-1", passed: true, at: "2026-09-16 09:00:00" }); // passed
+  }
+  const docs = async (q: string) =>
+    ((await handleListDocuments(env.DB, new URLSearchParams(`${q}&page=1&pageSize=25`), null, "rev-1")).body as { documents: Array<{ id: string }> }).documents
+      .map((d) => d.id)
+      .sort();
+
+  it("totals every failed validation by week, for the tile", async () => {
+    await seed();
+    const body = (await handleFraudExceptionTrends(env.DB, null, undefined, NOW)).body as FraudExceptionTrendsReport;
+    expect(body.weeklyTotals).toEqual([0, 0, 0, 0, 0, 1, 1, 1]);
+    expect(body.total).toBe(3);
+  });
+
+  it("finds the same invoices by supplier, unmatched supplier, person and type", async () => {
+    await seed();
+    const since = WEEK_STARTS[0];
+    expect(await docs(`exceptionsSince=${since}&exceptionSupplierId=sup-1`)).toEqual(["inv-0", "inv-1"]);
+    expect(await docs(`exceptionsSince=${since}&exceptionSupplierId=~none`)).toEqual(["inv-2"]);
+    expect(await docs(`exceptionsSince=${since}&exceptionUser=rev-1`)).toEqual(["inv-0"]);
+    expect(await docs(`exceptionsSince=${since}&exceptionType=duplicate_suspected`)).toEqual(["inv-0", "inv-2"]);
+    expect(await docs(`exceptionsSince=${since}&exceptionType=amount_mismatch`)).toEqual(["inv-0", "inv-1"]);
+    // A type naming only part of another is not that type.
+    expect(await docs(`exceptionsSince=${since}&exceptionType=amount`)).toEqual([]);
+  });
+
+  it("finds exactly the invoices listed, for a check's Show all", async () => {
+    await seed();
+    expect(await docs("ids=inv-1,inv-4")).toEqual(["inv-1", "inv-4"]);
   });
 });

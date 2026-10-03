@@ -104,6 +104,16 @@ let openForFilter = null;
  */
 let handledFilter = null;
 
+/**
+ * **From Fraud Prevention — decision 0618.** `idsFilter`: exactly the
+ * invoices a check listed, `{ ids, check }`, for a check worked out on
+ * its own card (outliers, say) rather than a filter Documents has.
+ * `exceptionsFilter`: the invoices behind a row of *Exception trends*,
+ * `{ since, supplierId?, userId?, type?, banner }`.
+ */
+let idsFilter = null;
+let exceptionsFilter = null;
+
 /** Every filter a card can open this screen with, cleared together. */
 function clearFilters() {
   alertFilter = null;
@@ -114,6 +124,8 @@ function clearFilters() {
   teamFilter = null;
   openForFilter = null;
   handledFilter = null;
+  idsFilter = null;
+  exceptionsFilter = null;
 }
 
 /**
@@ -230,6 +242,13 @@ async function load() {
     params.set("openFor", openForFilter.userId);
     if (openForFilter.stage) params.set("openStage", openForFilter.stage.id);
     if (openForFilter.team) params.set("openTeam", openForFilter.team.id);
+  }
+  if (idsFilter) params.set("ids", idsFilter.ids.join(","));
+  if (exceptionsFilter) {
+    params.set("exceptionsSince", exceptionsFilter.since);
+    if (exceptionsFilter.supplierId !== undefined) params.set("exceptionSupplierId", exceptionsFilter.supplierId || "~none");
+    if (exceptionsFilter.userId) params.set("exceptionUser", exceptionsFilter.userId);
+    if (exceptionsFilter.type) params.set("exceptionType", exceptionsFilter.type);
   }
   if (handledFilter) {
     params.set("handledBy", handledFilter.userId);
@@ -492,6 +511,8 @@ function bannerText() {
   if (agingFilter) return t("documents.showing.aging").replace("{bucket}", agingFilter.label);
   if (personFilter) return t("documents.showing.doneby").replace("{name}", personFilter.name);
   if (teamFilter) return t("documents.showing.team").replace("{team}", teamFilter.name);
+  if (idsFilter) return t("documents.showing.check").replace("{check}", idsFilter.check);
+  if (exceptionsFilter) return exceptionsFilter.banner;
   if (handledFilter) {
     const said = handledFilter.stage
       ? t("documents.showing.handledbystage").replace("{name}", handledFilter.name).replace("{stage}", handledFilter.stage.name)
@@ -634,7 +655,7 @@ function render() {
          * one — decision 0256 fixed exactly this shape of confusion for
          * a dropdown that quietly filtered without saying so.
          */
-        alertFilter || stageFilter || supplierFilter || agingFilter || personFilter || teamFilter || openForFilter || handledFilter
+        alertFilter || stageFilter || supplierFilter || agingFilter || personFilter || teamFilter || openForFilter || handledFilter || idsFilter || exceptionsFilter
           ? el("div", { class: "panel alertbanner" }, [
               el("span", { text: bannerText() }),
               el("button", {
@@ -882,6 +903,41 @@ export async function openDocumentsHandledBy(userId, name, stage = null, days = 
   page = 1;
   clearFilters();
   handledFilter = { userId, name, stage, days };
+  setCurrentScreen("documents");
+  await loadUnits();
+  if (!(await load())) return;
+  render();
+}
+
+/**
+ * Open the documents screen at exactly these invoices — decision 0618,
+ * *Show all* on a Fraud Prevention check. `check` is the check's own
+ * name, for the banner.
+ */
+export async function openDocumentsWithIds(ids, check) {
+  query = "";
+  unit = "";
+  page = 1;
+  clearFilters();
+  idsFilter = { ids, check };
+  setCurrentScreen("documents");
+  await loadUnits();
+  if (!(await load())) return;
+  render();
+}
+
+/**
+ * Open the documents screen at the invoices behind a row of *Exception
+ * trends* — decision 0618: failed validation since `since`, from one
+ * supplier (`supplierId`, "" for none matched), worked on by one person
+ * (`userId`), or failing one check (`type`).
+ */
+export async function openDocumentsWithExceptions(filter, banner) {
+  query = "";
+  unit = "";
+  page = 1;
+  clearFilters();
+  exceptionsFilter = { ...filter, banner };
   setCurrentScreen("documents");
   await loadUnits();
   if (!(await load())) return;

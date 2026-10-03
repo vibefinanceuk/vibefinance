@@ -4334,6 +4334,11 @@ export default {
       if (someoneElse && !(await hasPermission(db, auth.user.id, "AP.Analysis"))) {
         return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
       }
+      // Decision 0618: the people behind Fraud Prevention's exception trends are its to show.
+      const exceptionUser = url.searchParams.get("exceptionUser");
+      if (exceptionUser && exceptionUser !== auth.user.id && !(await hasPermission(db, auth.user.id, "AP.FraudReview"))) {
+        return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
+      }
 
       const result = await handleListDocuments(db, url.searchParams, scopedToOrg, auth.user.id);
       return json(result.body, result.status);

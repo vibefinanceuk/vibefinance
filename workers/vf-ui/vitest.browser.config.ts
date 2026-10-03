@@ -109,6 +109,7 @@ export default defineConfig({
       "/accruals.js": resolve(__dirname, "public/accruals.js"),
       "/spend-under-management.js": resolve(__dirname, "public/spend-under-management.js"),
       "/fraud-duplicates.js": resolve(__dirname, "public/fraud-duplicates.js"),
+      "/fraud-list.js": resolve(__dirname, "public/fraud-list.js"),
       "/fraud-unapproved-suppliers.js": resolve(__dirname, "public/fraud-unapproved-suppliers.js"),
       "/fraud-exception-trends.js": resolve(__dirname, "public/fraud-exception-trends.js"),
       "/fraud-statistical-outliers.js": resolve(__dirname, "public/fraud-statistical-outliers.js"),

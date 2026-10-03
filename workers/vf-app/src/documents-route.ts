@@ -341,6 +341,29 @@ export async function handleListDocuments(
   const handledDays = handledBy ? windowDays(params.get("handledDays")) : null;
 
   /**
+   * **From Fraud Prevention — decision 0618.**
+   *
+   * `ids`: exactly the invoices a check listed, for *Show all* on a check
+   * worked out on its own card rather than a filter here (outliers,
+   * unapproved suppliers, segregation of duties). At most 500.
+   *
+   * `exceptionsSince` (a date) with one of `exceptionSupplierId` (`~none`
+   * for invoices with no matched supplier), `exceptionUser` or
+   * `exceptionType`: the invoices behind a row of *Exception trends* —
+   * a stage visit that failed validation since that date, as the card
+   * counts (`fraud-exception-trends-route.ts`): from that supplier; with
+   * a task on that visit completed by that person; or naming that check
+   * among its failures.
+   */
+  const idsRaw = params.get("ids");
+  const ids = idsRaw ? JSON.stringify(idsRaw.split(",").map((x) => x.trim()).filter(Boolean).slice(0, 500)) : null;
+  const sinceRaw = params.get("exceptionsSince");
+  const exceptionsSince = sinceRaw && /^\d{4}-\d{2}-\d{2}$/.test(sinceRaw) ? sinceRaw : null;
+  const exceptionSupplierId = exceptionsSince ? params.get("exceptionSupplierId") || null : null;
+  const exceptionUser = exceptionsSince ? params.get("exceptionUser") || null : null;
+  const exceptionType = exceptionsSince ? params.get("exceptionType") || null : null;
+
+  /**
    * The sender and recipient come from the email that brought it —
    * decision 0147's log — because that is what a person searches by
    * when the supplier name was never extracted.
@@ -461,6 +484,30 @@ export async function handleListDocuments(
                AND (?25 IS NULL OR julianday('now') - julianday(ht.completed_at) < ?25)
            )
          )
+         AND (?26 IS NULL OR h.id IN (SELECT value FROM json_each(?26)))
+         AND (
+           ?27 IS NULL
+           OR (
+             (?28 IS NULL OR (?28 = '~none' AND h.supplier_id IS NULL) OR h.supplier_id = ?28)
+             AND EXISTS (
+               SELECT 1 FROM stage_visits xv
+               WHERE xv.process_instance_id = i.id
+                 AND xv.validation_passed = 0
+                 AND date(xv.created_at) >= ?27
+                 AND (
+                   ?30 IS NULL
+                   OR instr(',' || replace(COALESCE(xv.validation_failures, ''), ' ', '') || ',', ',' || replace(?30, ' ', '') || ',') > 0
+                 )
+                 AND (
+                   ?29 IS NULL
+                   OR EXISTS (
+                     SELECT 1 FROM tasks xt
+                     WHERE xt.stage_visit_id = xv.id AND xt.status = 'completed' AND xt.completed_by = ?29
+                   )
+                 )
+             )
+           )
+         )
          AND (
            ?16 IS NULL
            OR (
@@ -533,7 +580,10 @@ export async function handleListDocuments(
     searchPattern,
   ] as const;
   // Decision 0611: ?17 is the page's offset (below); the two new filters come after it.
-  const filterBinds = [doneBy, team, openFor, openStage, openTeam, handledBy, handledStage, handledDays] as const;
+  const filterBinds = [
+    doneBy, team, openFor, openStage, openTeam, handledBy, handledStage, handledDays,
+    ids, exceptionsSince, exceptionSupplierId, exceptionUser, exceptionType,
+  ] as const;
 
   /**
    * **`total`, only when a page was actually asked for.** A second,

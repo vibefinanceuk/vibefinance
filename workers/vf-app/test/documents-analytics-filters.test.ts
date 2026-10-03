@@ -55,3 +55,13 @@ describe("who may see what others handled in Documents — decision 0616", () =>
     expect((await ask(analyst, "handledBy=rev&page=1&pageSize=25")).status).toBe(200);
   });
 });
+
+describe("who may see the people behind exception trends in Documents — decision 0618", () => {
+  it("needs AP.FraudReview for someone else's, as the card does", async () => {
+    const reviewer = await person("rev", ["AP.Review"]);
+    const fraud = await person("fra", ["AP.Review", "AP.FraudReview"]);
+    expect((await ask(reviewer, "exceptionsSince=2026-08-01&exceptionUser=rev&page=1&pageSize=25")).status).toBe(200);
+    expect((await ask(reviewer, "exceptionsSince=2026-08-01&exceptionUser=fra&page=1&pageSize=25")).status).toBe(403);
+    expect((await ask(fraud, "exceptionsSince=2026-08-01&exceptionUser=rev&page=1&pageSize=25")).status).toBe(200);
+  });
+});

@@ -1,6 +1,7 @@
 import { t } from "/strings.js";
 import { el } from "/tasks.js";
 import { currentOrgId } from "/orgs.js";
+import { TOP, invoiceRow, listHead, listCard } from "/fraud-list.js";
 
 /**
  * Potential duplicate invoices — decision 0420, the first real card in
@@ -50,7 +51,7 @@ function confidencePercent(confidence) {
 }
 
 function duplicateRow(invoice) {
-  return el("tr", {}, [
+  return invoiceRow(invoice.id, [
     el("td", { text: invoice.invoiceNumber ?? "—" }),
     el("td", { text: invoice.supplierName ?? invoice.supplierVatId ?? "—" }),
     el("td", { class: "num", text: money(invoice.totalWithVat, invoice.currency) }),
@@ -71,21 +72,32 @@ function duplicatesTable() {
           el("th", { class: "num", text: t("fraudprevention.confidence") }),
         ]),
       ]),
-      el("tbody", {}, data.invoices.map(duplicateRow)),
+      el("tbody", {}, data.invoices.slice(0, TOP).map(duplicateRow)),
     ]),
   ]);
 }
 
 /** The card itself, built from whatever `load()` last fetched. Callers own the topbar, frame and tab shell around it. */
+/** The tile's count — decision 0618. */
+export function summary() {
+  return { key: "duplicates", label: t("fraudprevention.duplicates"), count: data.invoices.length };
+}
+
+/**
+ * **Show all opens Documents' own duplicates list** — decision 0618:
+ * the same `POSSIBLE_DUPLICATE_THRESHOLD` this card reads (0463), so the
+ * two always agree.
+ */
+async function showAll() {
+  const { openDocumentsFiltered } = await import("/documents.js");
+  openDocumentsFiltered("duplicates");
+}
+
 export function renderCard() {
-  return data.invoices.length === 0
-    ? el("div", { class: "panel card-graphic" }, [
-        el("div", { class: "cardhead" }, [el("h3", { text: t("fraudprevention.duplicates") })]),
-        el("div", { class: "muted", text: t("fraudprevention.noduplicates") }),
-      ])
-    : el("div", { class: "panel card-graphic" }, [
-        el("div", { class: "cardhead" }, [el("h3", { text: t("fraudprevention.duplicates") })]),
-        el("div", { class: "sub", text: t("fraudprevention.duplicatessub") }),
-        duplicatesTable(),
-      ]);
+  const total = data.invoices.length;
+  return listCard("duplicates", [
+    listHead(t("fraudprevention.duplicates"), total, showAll),
+    total === 0 ? el("div", { class: "muted", text: t("fraudprevention.noduplicates") }) : el("div", { class: "sub", text: t("fraudprevention.duplicatessub") }),
+    total === 0 ? null : duplicatesTable(),
+  ]);
 }

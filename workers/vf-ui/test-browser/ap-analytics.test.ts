@@ -633,12 +633,20 @@ describe("real tabs wire to the already-tested module behind them, placeholders 
 
     expect(document.querySelector(".tab.active")?.textContent).toBe("Fraud Prevention");
     const headings = [...document.querySelectorAll(".cardhead h3")].map((h) => h.textContent);
+    // Decision 0618: the tiles first, then each check full width, exception trends last.
     expect(headings).toEqual([
       "Potential duplicate invoices",
       "Unapproved-supplier invoices",
-      "Exceptions by type, by user, by supplier",
       "Statistical outliers",
       "Segregation-of-duties flags",
+      "Exceptions by type, by user, by supplier",
+    ]);
+    expect([...document.querySelectorAll(".fraudtile .fraudtilelabel")].map((n) => n.textContent)).toEqual([
+      "Potential duplicate invoices",
+      "Unapproved-supplier invoices",
+      "Statistical outliers",
+      "Segregation-of-duties flags",
+      "Exceptions by type, by user, by supplier",
     ]);
     expect(document.body.textContent).toContain("No potential duplicates right now");
     expect(document.body.textContent).toContain("No unapproved-supplier invoices right now");

@@ -1,6 +1,7 @@
 import { t } from "/strings.js";
 import { el } from "/tasks.js";
 import { currentOrgId } from "/orgs.js";
+import { TOP, invoiceRow, listHead, listCard, openTheseInvoices } from "/fraud-list.js";
 
 /**
  * Statistical outliers — decision 0424, the Fraud Prevention tab's
@@ -53,7 +54,7 @@ function deviationLabel(invoice) {
 }
 
 function outlierRow(invoice) {
-  return el("tr", {}, [
+  return invoiceRow(invoice.id, [
     el("td", { text: invoice.invoiceNumber ?? "—" }),
     el("td", { text: invoice.supplierName ?? "—" }),
     el("td", { class: "num", text: money(invoice.totalWithVat, invoice.currency) }),
@@ -76,21 +77,26 @@ function outlierTable() {
           el("th", { class: "num", text: t("fraudprevention.deviation") }),
         ]),
       ]),
-      el("tbody", {}, data.invoices.map(outlierRow)),
+      el("tbody", {}, data.invoices.slice(0, TOP).map(outlierRow)),
     ]),
   ]);
 }
 
 /** The card itself, built from whatever `load()` last fetched. Callers own the topbar, frame and tab shell around it. */
+/** The tile's count — decision 0618. */
+export function summary() {
+  return { key: "outliers", label: t("fraudprevention.statisticaloutliers"), count: data.invoices.length };
+}
+
 export function renderCard() {
-  return data.invoices.length === 0
-    ? el("div", { class: "panel card-graphic" }, [
-        el("div", { class: "cardhead" }, [el("h3", { text: t("fraudprevention.statisticaloutliers") })]),
-        el("div", { class: "muted", text: t("fraudprevention.nostatisticaloutliers") }),
-      ])
-    : el("div", { class: "panel card-graphic" }, [
-        el("div", { class: "cardhead" }, [el("h3", { text: t("fraudprevention.statisticaloutliers") })]),
-        el("div", { class: "sub", text: t("fraudprevention.statisticaloutlierssub") }),
-        outlierTable(),
-      ]);
+  const total = data.invoices.length;
+  return listCard("outliers", [
+    listHead(t("fraudprevention.statisticaloutliers"), total, () =>
+      openTheseInvoices(data.invoices.map((i) => i.id), t("fraudprevention.statisticaloutliers"))
+    ),
+    total === 0
+      ? el("div", { class: "muted", text: t("fraudprevention.nostatisticaloutliers") })
+      : el("div", { class: "sub", text: t("fraudprevention.statisticaloutlierssub") }),
+    total === 0 ? null : outlierTable(),
+  ]);
 }

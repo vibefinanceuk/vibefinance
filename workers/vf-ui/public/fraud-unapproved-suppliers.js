@@ -1,6 +1,7 @@
 import { t } from "/strings.js";
 import { el } from "/tasks.js";
 import { currentOrgId } from "/orgs.js";
+import { TOP, invoiceRow, listHead, listCard, openTheseInvoices } from "/fraud-list.js";
 
 /**
  * Unapproved-supplier invoices — decision 0422, the Fraud Prevention
@@ -54,7 +55,7 @@ function reasonLabel(reason) {
 }
 
 function unapprovedRow(invoice) {
-  return el("tr", {}, [
+  return invoiceRow(invoice.id, [
     el("td", { text: invoice.invoiceNumber ?? "—" }),
     el("td", { text: invoice.supplierName ?? invoice.supplierVatId ?? "—" }),
     el("td", { class: "num", text: money(invoice.totalWithVat, invoice.currency) }),
@@ -82,21 +83,26 @@ function unapprovedTable() {
           el("th", { text: t("fraudprevention.reason") }),
         ]),
       ]),
-      el("tbody", {}, data.invoices.map(unapprovedRow)),
+      el("tbody", {}, data.invoices.slice(0, TOP).map(unapprovedRow)),
     ]),
   ]);
 }
 
 /** The card itself, built from whatever `load()` last fetched. Callers own the topbar, frame and tab shell around it. */
+/** The tile's count — decision 0618. */
+export function summary() {
+  return { key: "unapproved", label: t("fraudprevention.unapprovedsuppliers"), count: data.invoices.length };
+}
+
 export function renderCard() {
-  return data.invoices.length === 0
-    ? el("div", { class: "panel card-graphic" }, [
-        el("div", { class: "cardhead" }, [el("h3", { text: t("fraudprevention.unapprovedsuppliers") })]),
-        el("div", { class: "muted", text: t("fraudprevention.nounapprovedsuppliers") }),
-      ])
-    : el("div", { class: "panel card-graphic" }, [
-        el("div", { class: "cardhead" }, [el("h3", { text: t("fraudprevention.unapprovedsuppliers") })]),
-        el("div", { class: "sub", text: t("fraudprevention.unapprovedsupplierssub") }),
-        unapprovedTable(),
-      ]);
+  const total = data.invoices.length;
+  return listCard("unapproved", [
+    listHead(t("fraudprevention.unapprovedsuppliers"), total, () =>
+      openTheseInvoices(data.invoices.map((i) => i.id), t("fraudprevention.unapprovedsuppliers"))
+    ),
+    total === 0
+      ? el("div", { class: "muted", text: t("fraudprevention.nounapprovedsuppliers") })
+      : el("div", { class: "sub", text: t("fraudprevention.unapprovedsupplierssub") }),
+    total === 0 ? null : unapprovedTable(),
+  ]);
 }

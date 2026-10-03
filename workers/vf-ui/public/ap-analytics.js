@@ -16,11 +16,12 @@ import { load as loadBalance, renderCard as balanceCard } from "/workload-balanc
 import { load as loadSupplierSpend, renderCard as supplierSpendCard } from "/supplier-performance.js";
 import { load as loadAccruals, renderCard as accrualsCard } from "/accruals.js";
 import { load as loadSpendUnderManagement, renderCard as spendUnderManagementCard } from "/spend-under-management.js";
-import { load as loadDuplicates, renderCard as duplicatesCard } from "/fraud-duplicates.js";
-import { load as loadUnapprovedSuppliers, renderCard as unapprovedSuppliersCard } from "/fraud-unapproved-suppliers.js";
-import { load as loadExceptionTrends, renderCard as exceptionTrendsCard } from "/fraud-exception-trends.js";
-import { load as loadStatisticalOutliers, renderCard as statisticalOutliersCard } from "/fraud-statistical-outliers.js";
-import { load as loadSegregationOfDuties, renderCard as segregationOfDutiesCard } from "/fraud-segregation-of-duties.js";
+import { load as loadDuplicates, renderCard as duplicatesCard, summary as duplicatesSummary } from "/fraud-duplicates.js";
+import { load as loadUnapprovedSuppliers, renderCard as unapprovedSuppliersCard, summary as unapprovedSummary } from "/fraud-unapproved-suppliers.js";
+import { load as loadExceptionTrends, renderCard as exceptionTrendsCard, summary as trendsSummary } from "/fraud-exception-trends.js";
+import { load as loadStatisticalOutliers, renderCard as statisticalOutliersCard, summary as outliersSummary } from "/fraud-statistical-outliers.js";
+import { load as loadSegregationOfDuties, renderCard as segregationOfDutiesCard, summary as segregationSummary } from "/fraud-segregation-of-duties.js";
+import { fraudTiles } from "/fraud-list.js";
 import { load as loadConsolidatedSpend, renderCard as consolidatedSpendCard } from "/executive-consolidated-spend.js";
 import { load as loadLiabilitiesByEntity, renderCard as liabilitiesByEntityCard } from "/executive-liabilities-by-entity.js";
 import { load as loadSupplierConcentration, renderCard as supplierConcentrationCard } from "/executive-supplier-concentration.js";
@@ -273,12 +274,27 @@ async function tabContent(key) {
       loadStatisticalOutliers(),
       loadSegregationOfDuties(),
     ]);
+    /**
+     * **A row of tiles first, then each check full width** — decision
+     * 0618 (`fraud-list.js`). A check that failed to load has no tile,
+     * and its error card stands where its list would be.
+     */
+    const tiles = fraudTiles(
+      [
+        duplicatesOk ? duplicatesSummary() : null,
+        unapprovedOk ? unapprovedSummary() : null,
+        outliersOk ? outliersSummary() : null,
+        segregationOk ? segregationSummary() : null,
+        trendsOk ? trendsSummary() : null,
+      ].filter(Boolean)
+    );
     return [
+      tiles,
       duplicatesOk ? duplicatesCard() : loadErrorCard(),
       unapprovedOk ? unapprovedSuppliersCard() : loadErrorCard(),
-      trendsOk ? exceptionTrendsCard() : loadErrorCard(),
       outliersOk ? statisticalOutliersCard() : loadErrorCard(),
       segregationOk ? segregationOfDutiesCard() : loadErrorCard(),
+      trendsOk ? exceptionTrendsCard() : loadErrorCard(),
     ];
   }
   if (key === "executiveiq") {
