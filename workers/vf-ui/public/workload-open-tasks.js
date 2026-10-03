@@ -58,10 +58,24 @@ function colourFor(stageId) {
   return i < 0 ? undefined : `var(--chart-${i + 1})`;
 }
 
-function ringFor(user) {
-  return donutChart(
-    (user?.stages ?? []).map((s) => ({ label: s.stageName, value: s.n, colour: colourFor(s.stageId) }))
+/**
+ * **The ring on the right, its key under the drop-down** — decision 0613,
+ * Dan's own suggestion. A card three to a row is about 290px wide: the
+ * picker, a ring and a key side by side did not fit, and the key spilled
+ * past the card's edge. The key is the ring's own (`donutChart` builds
+ * it, colours, counts, the folded rest and all), moved into the left
+ * column, so the two can never disagree.
+ */
+const RING_SIZE = 120;
+
+function ringAndKey(user) {
+  const wrap = donutChart(
+    (user?.stages ?? []).map((s) => ({ label: s.stageName, value: s.n, colour: colourFor(s.stageId) })),
+    { size: RING_SIZE }
   );
+  const key = wrap.querySelector(".donutlegend");
+  key?.remove();
+  return { ring: wrap, key: key ?? document.createElement("div") };
 }
 
 /** The card itself, built from whatever `load()` last fetched. Callers own the topbar, frame and tab shell around it. */
@@ -83,7 +97,15 @@ export function renderCard() {
   if (!data.users.some((u) => u.userId === chosen)) chosen = data.users[0].userId;
   const byName = [...data.users].sort((a, b) => a.userName.localeCompare(b.userName));
 
-  const ringSlot = el("div", { class: "opentasks-ring" }, [ringFor(data.users.find((u) => u.userId === chosen))]);
+  const ringSlot = el("div", { class: "opentasks-ring" });
+  const keySlot = el("div", { class: "opentasks-key" });
+  function show(userId) {
+    const { ring, key } = ringAndKey(data.users.find((u) => u.userId === userId));
+    ringSlot.replaceChildren(ring);
+    keySlot.replaceChildren(key);
+  }
+  show(chosen);
+
   const picker = el(
     "select",
     {
@@ -91,7 +113,7 @@ export function renderCard() {
       "aria-label": t("workload.opentasksuser"),
       onchange: (e) => {
         chosen = e.target.value;
-        ringSlot.replaceChildren(ringFor(data.users.find((u) => u.userId === chosen)));
+        show(chosen);
       },
     },
     byName.map((u) => {
@@ -103,9 +125,20 @@ export function renderCard() {
 
   return el("div", { class: "panel card-graphic" }, [
     ...head,
+    /**
+     * **Two boxes, so the outer one can be measured** — decision 0613.
+     * The layout follows the card's own width (a CSS container query on
+     * `.opentasks-body`), and a container cannot restyle itself, only
+     * what is inside it.
+     */
     el("div", { class: "opentasks-body" }, [
-      el("label", { class: "opentasks-pick" }, [el("span", { class: "muted", text: t("workload.opentasksuser") }), picker]),
-      ringSlot,
+      el("div", { class: "opentasks-layout" }, [
+        el("div", { class: "opentasks-left" }, [
+          el("label", { class: "opentasks-pick" }, [el("span", { class: "muted", text: t("workload.opentasksuser") }), picker]),
+          keySlot,
+        ]),
+        ringSlot,
+      ]),
     ]),
   ]);
 }

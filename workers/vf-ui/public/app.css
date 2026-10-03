@@ -2214,15 +2214,27 @@
 
   /*
     **A person chosen on the left, their ring on the right** — decision
-    0612, Open tasks by user. Stacked on a narrow card.
+    0612, Open tasks by user.
+
+    **The key under the drop-down** — decision 0613. The first version
+    put the picker, the ring and its key side by side, and a card three
+    to a row (about 290px) squeezed the key to nothing and spilled it
+    past the card's edge. Now the left column holds the drop-down and
+    the key beneath it, and the right the ring, a little smaller. Laid
+    out by the card's own width, not the window's: where even that does
+    not fit, the ring goes under the key.
   */
-  .opentasks-body { display: flex; gap: 20px; align-items: flex-start; margin-top: 10px; }
-  .opentasks-pick { display: flex; flex-direction: column; gap: 4px; flex: 0 0 34%; min-width: 0; font-size: var(--text-sm); }
+  .opentasks-body { container: opentasks / inline-size; margin-top: 10px; }
+  .opentasks-layout { display: flex; align-items: flex-start; gap: 16px 28px; }
+  .opentasks-left { flex: 1 1 auto; min-width: 0; max-width: 300px; display: flex; flex-direction: column; gap: 10px; }
+  .opentasks-pick { display: flex; flex-direction: column; gap: 4px; font-size: var(--text-sm); }
   .opentasks-user { width: 100%; }
-  .opentasks-ring { flex: 1 1 auto; min-width: 0; }
-  @media (max-width: 560px) {
-    .opentasks-body { flex-direction: column; }
-    .opentasks-pick { flex-basis: auto; width: 100%; }
+  .opentasks-key .donutkey > span:nth-child(2) { overflow-wrap: anywhere; }
+  .opentasks-ring { flex: 0 0 auto; }
+  .opentasks-ring .donutwrap { margin-top: 0; }
+  @container opentasks (max-width: 250px) {
+    .opentasks-layout { flex-direction: column; align-items: stretch; }
+    .opentasks-ring { align-self: center; }
   }
 
   /*

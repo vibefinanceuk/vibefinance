@@ -96,16 +96,18 @@ describe("a person chosen on the left, their open tasks by stage on the right (d
     expect([...picker.options].map((o) => o.textContent)).toEqual(["Dana R. (2)", "Wei C. (5)"]);
     expect(picker.value).toBe("wei");
     expect(picker.getAttribute("aria-label")).toBe("User");
-    // The picker comes before (left of) the ring.
-    const body = document.querySelector(".opentasks-body")!;
-    expect([...body.children].map((c) => c.className)).toEqual(["opentasks-pick", "opentasks-ring"]);
+    // The picker and the key on the left, the ring on the right (decision 0613).
+    const layout = document.querySelector(".opentasks-layout")!;
+    expect([...layout.children].map((c) => c.className)).toEqual(["opentasks-left", "opentasks-ring"]);
+    expect([...layout.querySelector(".opentasks-left")!.children].map((c) => c.className)).toEqual(["opentasks-pick", "opentasks-key"]);
   });
 
   it("draws a slice per stage the chosen person has open work at, with the total in the middle", async () => {
     await renderOpenTasks(DATA);
     const ring = document.querySelector(".opentasks-ring")!;
     expect(ring.querySelectorAll("svg circle")).toHaveLength(2);
-    expect([...ring.querySelectorAll(".donutkey")].map((k) => k.textContent)).toEqual(["Validation1", "Approval4"]);
+    expect(ring.querySelector(".donutkey")).toBeNull();
+    expect([...document.querySelectorAll(".opentasks-key .donutkey")].map((k) => k.textContent)).toEqual(["Validation1", "Approval4"]);
     expect([...ring.querySelectorAll("svg text")].map((n) => n.textContent)).toContain("5");
   });
 
@@ -113,7 +115,7 @@ describe("a person chosen on the left, their open tasks by stage on the right (d
     await renderOpenTasks(DATA);
     const ringColours = () =>
       Object.fromEntries(
-        [...document.querySelectorAll(".opentasks-ring .donutkey")].map((k) => [
+        [...document.querySelectorAll(".opentasks-key .donutkey")].map((k) => [
           k.querySelector("span:nth-child(2)")?.textContent,
           (k.querySelector(".donutdot") as HTMLElement).style.background,
         ])
@@ -123,7 +125,7 @@ describe("a person chosen on the left, their open tasks by stage on the right (d
     const picker = document.querySelector<HTMLSelectElement>(".opentasks-pick select")!;
     picker.value = "dana";
     picker.dispatchEvent(new Event("change"));
-    expect([...document.querySelectorAll(".opentasks-ring .donutkey")].map((k) => k.textContent)).toEqual(["Coding2"]);
+    expect([...document.querySelectorAll(".opentasks-key .donutkey")].map((k) => k.textContent)).toEqual(["Coding2"]);
     // Coding is the second stage anyone has work at, whoever's ring it is in.
     expect(ringColours()).toEqual({ Coding: "var(--chart-2)" });
   });
@@ -140,4 +142,63 @@ describe("a person chosen on the left, their open tasks by stage on the right (d
     expect(document.body.textContent).not.toContain("No open tasks right now");
     expect(document.querySelector("select")).toBeNull();
   });
+});
+
+describe("the key stays inside the card, however narrow (decision 0613)", () => {
+  /**
+   * Dan's screenshot: a card three to a row, about 290px, its key
+   * squeezed beside the ring and spilling past the card's edge. Laid
+   * out here with the real stylesheets, at that width and wider.
+   */
+  async function laidOutAt(width: number) {
+    const sheets = (await import("virtual:stylesheets")).default;
+    const style = document.createElement("style");
+    style.textContent = `${sheets["tokens.css"] ?? ""}\n${sheets["app.css"]}`;
+    document.head.append(style);
+    document.getElementById("card-under-test")!.style.width = `${width}px`;
+    await renderOpenTasks({
+      users: [
+        {
+          userId: "alice",
+          userName: "Alice McDonald",
+          openCount: 13,
+          stages: [
+            { stageId: "validation", stageName: "Validation", n: 8 },
+            { stageId: "matching", stageName: "Matching", n: 4 },
+            { stageId: "coding", stageName: "Coding", n: 1 },
+          ],
+        },
+      ],
+      stages: [
+        { stageId: "validation", stageName: "Validation" },
+        { stageId: "matching", stageName: "Matching" },
+        { stageId: "coding", stageName: "Coding" },
+      ],
+      available: 44,
+    });
+    const box = (sel: string) => document.querySelector(sel)!.getBoundingClientRect();
+    const card = box("#card-under-test .panel");
+    const result = { card, picker: box(".opentasks-pick"), key: box(".opentasks-key"), ring: box(".opentasks-ring svg"), style };
+    return result;
+  }
+
+  for (const width of [290, 640]) {
+    it(`puts the key under the drop-down and the ring beside them, all inside a ${width}px card`, async () => {
+      const { card, picker, key, ring, style } = await laidOutAt(width);
+      try {
+        expect(key.top).toBeGreaterThanOrEqual(picker.bottom);
+        expect(Math.abs(key.left - picker.left)).toBeLessThan(1);
+        expect(ring.left).toBeGreaterThanOrEqual(key.right);
+        for (const part of [picker, key, ring]) {
+          expect(part.left).toBeGreaterThanOrEqual(card.left);
+          expect(part.right).toBeLessThanOrEqual(card.right);
+        }
+        for (const row of document.querySelectorAll(".opentasks-key .donutkey")) {
+          expect(row.scrollWidth).toBeLessThanOrEqual(row.clientWidth + 1);
+        }
+      } finally {
+        style.remove();
+      }
+    });
+  }
 });
