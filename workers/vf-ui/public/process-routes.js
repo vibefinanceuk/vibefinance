@@ -2,7 +2,8 @@ import { t } from "/strings.js";
 import { el, frame, topbar, setCurrentScreen } from "/tasks.js";
 import { actionLink } from "/viewer.js";
 import { httpsSection } from "/https-keys.js";
-import { erpDeliveriesSection, httpsOutSection, unitsField, unitsSummary } from "/destinations.js";
+import { erpDeliveriesSection, httpsOutSection, sftpOutSection, unitsField, unitsSummary } from "/destinations.js";
+import { sftpInSection } from "/sftp-settings.js";
 import {
   setSourcesRefresh,
   loadUnits,
@@ -169,8 +170,8 @@ function flow() {
       d.status === "retired"
         ? // Decision 0597: retired, and nothing more.
           [pill("q", t("processroutes.status.retired"))]
-        : d.routeId === "https-out"
-        ? // Decision 0585: an HTTPS out Destination says whether it is sending, what failed and what waits.
+        : d.routeId === "https-out" || d.routeId === "sftp-out"
+        ? // Decision 0585 (and 0620, SFTP out): an HTTPS out Destination says whether it is sending, what failed and what waits.
           [
             !d.started
               ? pill("warn", t("httpsout.notstarted"))
@@ -259,6 +260,8 @@ function sourcePanel(s) {
     ]),
     // Decision 0578: an HTTPS source's address, keys, and how to send.
     s.mechanism === "https" ? httpsSection(s) : null,
+    // Decision 0620: an SFTP source's server, folder, and Check now.
+    s.mechanism === "sftp" && s.status !== "retired" ? sftpInSection(s) : null,
   ].filter(Boolean));
 }
 
@@ -416,7 +419,8 @@ function openDeleteDestination(d) {
 }
 
 function destinationPanel(d) {
-  const httpsOut = d.routeId === "https-out";
+  // Decision 0620: SFTP out sends on the same engine, started, paused and deleted the same way.
+  const httpsOut = d.routeId === "https-out" || d.routeId === "sftp-out";
   // Decision 0597: a retired Destination is only looked at.
   if (d.status === "retired") {
     return el("div", { class: "panel prdetail" }, [
@@ -485,7 +489,7 @@ function destinationPanel(d) {
     ]),
     httpsOut
       ? // Decision 0585: where it sends, how it signs in, a test, and what it has delivered.
-        httpsOutSection(d, async () => {
+        (d.routeId === "sftp-out" ? sftpOutSection : httpsOutSection)(d, async () => {
           await load();
           render();
         })

@@ -1,6 +1,7 @@
 import { t } from "/strings.js";
 import { el } from "/tasks.js";
 import { actionLink } from "/viewer.js";
+import { sftpSettingsCard } from "/sftp-settings.js";
 
 /**
  * **HTTPS out, on a Destination — decision 0585**, slice 1 of the
@@ -546,8 +547,17 @@ function submissionCard(destination) {
   return holder;
 }
 
+/**
+ * **SFTP out's section — decision 0620.** HTTPS out's own cards (start,
+ * try with a real invoice, deliveries) with SFTP's settings card in place
+ * of the address and sign-in: the delivery engine is the same.
+ */
+export function sftpOutSection(destination, onChanged) {
+  return httpsOutSection(destination, onChanged, true);
+}
+
 /** The HTTPS out section of a Destination panel. `onChanged` reloads the flow (its cards' counts). */
-export function httpsOutSection(destination, onChanged) {
+export function httpsOutSection(destination, onChanged, sftp = false) {
   const holder = el("div", { class: "httpsin", id: "httpsout" }, [el("div", { class: "muted", text: t("httpsout.loading") })]);
   const reload = async () => {
     const r = await call(`/api/route-instances/${encodeURIComponent(destination.id)}/connector`);
@@ -564,6 +574,18 @@ export function httpsOutSection(destination, onChanged) {
             actionLink("release", { primary: true, label: t("httpsout.start"), onclick: () => openStart(state, onChanged) }),
           ]),
         ];
+    if (sftp) {
+      holder.replaceChildren(
+        el("div", { class: "cardhead httpshead" }, [el("h4", { text: t("sftp.out.heading") })]),
+        el("p", { class: "muted sm", text: t("sftp.out.sub") }),
+        ...(state.connector ? [connectorLine(destination, state.connector, reload, state.lists ?? [])] : []),
+        ...startBlock,
+        sftpSettingsCard(destination.id, "out"),
+        tryCard(state, reload),
+        deliveriesCard(state, reload)
+      );
+      return;
+    }
     holder.replaceChildren(
       el("div", { class: "cardhead httpshead" }, [el("h4", { text: t("httpsout.heading") })]),
       ...(state.connector ? [connectorLine(destination, state.connector, reload, state.lists ?? [])] : []),

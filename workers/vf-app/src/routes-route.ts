@@ -422,7 +422,8 @@ export async function handleRetireDestination(db: D1Database, userId: string, id
 export async function handleDeleteDestination(db: D1Database, id: string): Promise<RouteResult> {
   const row = await destinationRow(db, id);
   if (isResultRow(row)) return row;
-  if (row.route_id !== "https-out") return { status: 409, body: { error: "only an HTTPS out Destination is deleted", reason: "not_https_out" } };
+  // Decision 0620: SFTP out too.
+  if (row.route_id !== "https-out" && row.route_id !== "sftp-out") return { status: 409, body: { error: "only an HTTPS or SFTP out Destination is deleted", reason: "not_https_out" } };
   const sent = await db
     .prepare(
       `SELECT (SELECT count(*) FROM route_messages WHERE destination_id = ?)

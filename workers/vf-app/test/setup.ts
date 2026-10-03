@@ -129,6 +129,7 @@ import instanceConnectorsSql from "../../../migrations/0122_instance_connectors.
 import outboundMappingsSql from "../../../migrations/0123_outbound_mappings.sql?raw";
 import destinationRetireSql from "../../../migrations/0124_destination_retire.sql?raw";
 import partnerConnectorCopiesSql from "../../../migrations/0125_partner_connector_copies.sql?raw";
+import sftpRoutesSql from "../../../migrations/0126_sftp_routes.sql?raw";
 
 // Another known divergence from production, on top of the one below:
 // D1's exec() splits its input by newline and executes each non-empty
@@ -454,6 +455,7 @@ export async function applyTestSchema(): Promise<void> {
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(outboundMappingsSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(destinationRetireSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(partnerConnectorCopiesSql)));
+  await env.DB.exec(toOneStatementPerLine(stripSqlComments(sftpRoutesSql)));
 }
 
 /**

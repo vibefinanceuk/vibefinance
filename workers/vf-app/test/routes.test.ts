@@ -36,10 +36,13 @@ describe("the standard routes", () => {
       ["edi-in", "source", "standard", false],
       ["email-in", "source", "standard", true],
       ["https-in", "source", "standard", true],
-      ["sftp-in", "source", "standard", false],
+      // Decision 0620: SFTP in is live, collecting.
+      ["sftp-in", "source", "standard", true],
       ["erp-csv", "destination", "standard", true],
       // Decision 0585.
       ["https-out", "destination", "standard", true],
+      // Decision 0620.
+      ["sftp-out", "destination", "standard", true],
     ]);
     expect(body.routes.find((r) => r.id === "email-in")?.current).toMatchObject({
       version: 1,
@@ -141,7 +144,8 @@ describe("one process as a flow", () => {
     expect(body.process).toMatchObject({ entryStageId: "ap-intake", exitStageId: "ap-eligible" });
     expect(body.sources.map((s) => [s.name, s.routeName, (s.route as { live: boolean }).live, s.receivedThisWeek, s.failedOpen])).toEqual([
       ["AP mailbox", "Email in", true, 2, 1],
-      ["Old SFTP drop", "SFTP in", false, 0, 0],
+      // Decision 0620: SFTP in is live.
+      ["Old SFTP drop", "SFTP in", true, 0, 0],
     ]);
     expect(body.sources[0]).toMatchObject({ emailAddress: "ap-mailbox.acme@vibefinance-ai.com", emailRouting: "active", mechanism: "email" });
     expect(body.destinations).toEqual([

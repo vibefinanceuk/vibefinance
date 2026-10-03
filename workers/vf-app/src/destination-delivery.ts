@@ -6,6 +6,7 @@ import { installMapping, listsNeeded, mappingForCustomer, partnerCopy } from "./
 import { loadLookups } from "./lookup-lists-route.js";
 import { applyOutboundMapping, listsInOutbound, type OutboundMapping, type OutboundProblem, type VfInvoice } from "@vibefinance/shared";
 import { NoSecretsKeyError, readSecret, secretsSet, setSecret } from "./connector-secrets.js";
+import { DEFAULT_SFTP_OUT, SFTP_OUT, SFTP_SECRET, fileNameFor, remotePath, sendFileBySftp, sftpSettingsOf, type SftpRun, type SftpSettings } from "./sftp.js";
 import {
   addRouteEvent,
   finishRouteMessage,
@@ -84,6 +85,18 @@ export interface DeliveryDeps {
   fetcher?: typeof fetch;
   onFinished?: (messageId: string) => Promise<void>;
   now?: () => Date;
+  /** Decision 0620: vf-sftp, for an SFTP out Destination. */
+  sftp?: SftpRun | null;
+}
+
+/**
+ * **An SFTP out Destination's settings in HTTPS out's shape — decision
+ * 0620**, for what building the file needs (its format) and what the
+ * Route monitor names (the server, as an address). Nothing else of
+ * HTTPS out's applies.
+ */
+function asDeliverySettings(sftp: SftpSettings): HttpsOutSettings {
+  return { ...DEFAULT_SETTINGS, format: sftp.format ?? "csv", url: `sftp://${sftp.host}${sftp.folder}`, method: "POST" };
 }
 
 interface InstanceRow {
@@ -384,7 +397,8 @@ export async function deliverOne(db: D1Database, instanceId: string, invoiceId: 
   const now = (deps.now ?? (() => new Date()))();
   const instance = await instanceOf(db, instanceId);
   if (!instance) return { status: "failed", httpStatus: null, reference: null, error: "the Destination no longer exists", messageId: null };
-  const settings = settingsOf(instance);
+  const sftpSettings = instance.route_id === SFTP_OUT ? sftpSettingsOf(instance) : null;
+  const settings = sftpSettings ? asDeliverySettings(sftpSettings) : settingsOf(instance);
   const existing = await db
     .prepare("SELECT attempts, message_id FROM destination_deliveries WHERE instance_id = ? AND invoice_id = ?")
     .bind(instanceId, invoiceId)
@@ -431,7 +445,7 @@ export async function deliverOne(db: D1Database, instanceId: string, invoiceId: 
       .run();
     if (messageId) {
       await addRouteEvent(db, messageId, "attempt", {
-        detail: `${attempt}: ${httpStatus ? `HTTP ${httpStatus}` : "no reply"}${error ? ` · ${error}` : ""}${status === "retrying" && next ? ` · next try ${next}` : ""}`,
+        detail: `${attempt}: ${httpStatus ? `HTTP ${httpStatus}` : sftpSettings ? (status === "delivered" ? "file written" : "file not written") : "no reply"}${error ? ` · ${error}` : ""}${status === "retrying" && next ? ` · next try ${next}` : ""}`,
         ...(actor ? { actor } : {}),
       });
       if (reference) await addRouteEvent(db, messageId, "reference", { detail: reference });
@@ -453,6 +467,40 @@ export async function deliverOne(db: D1Database, instanceId: string, invoiceId: 
   // Decision 0591: what the mapping cannot lay out is a fixable failure, never retried and never sent.
   if (built.problems.length > 0) {
     return record("failed", null, `the outbound mapping could not lay out this invoice: ${built.problems.map(problemWords).join("; ")}`, null, "outbound_mapping");
+  }
+
+  const keep = async (role: "sent" | "reply", filename: string, contentType: string, text: string) => {
+    if (!deps.bucket || !deps.customerId || !messageId) return;
+    // Every attempt's request and reply, numbered on after what the message holds (Send again adds to it).
+    const last = await db.prepare("SELECT COALESCE(MAX(seq), 0) AS n FROM route_message_parts WHERE message_id = ?").bind(messageId).first<{ n: number }>();
+    const seq = (last?.n ?? 0) + 1;
+    await storeRoutePart(deps.bucket, db, {
+      messageId,
+      seq,
+      role,
+      filename,
+      contentType,
+      bytes: new TextEncoder().encode(text),
+      key: routePartKey(deps.customerId, instanceId, messageId, now.toISOString(), seq, filename),
+    });
+  };
+
+  /**
+   * **SFTP out — decision 0620.** The same file HTTPS out would send,
+   * written by vf-sftp into the folder, whole and never over another; its
+   * path is the reference back. A server that cannot be reached is tried
+   * again as HTTPS out is; one that refuses the file, or shows another
+   * identity, needs a person.
+   */
+  if (sftpSettings) {
+    const fileExt = sftpSettings.format === "csv" ? "csv" : "json";
+    await keep("sent", `file-${attempt}.${fileExt}`, built.contentType, built.body);
+    const sent = await sendFileBySftp(db, instanceId, sftpSettings, { body: built.body, invoiceNumber: built.invoiceNumber, invoiceId }, deps);
+    if (sent.ok) return record("delivered", null, null, sent.path ?? null);
+    const said = sent.error?.message ?? "the file could not be written";
+    const code = `sftp_${sent.error?.code ?? "failed"}`;
+    if (sent.retry && attempt <= RETRY_MINUTES.length) return record("retrying", null, said, null, code);
+    return record("failed", null, said, null, code);
   }
 
   let auth: Record<string, string>;
@@ -491,21 +539,6 @@ export async function deliverOne(db: D1Database, instanceId: string, invoiceId: 
     auth = { ...auth, "x-csrf-token": token, ...(cookiesOf(tokenReply) ? { Cookie: cookiesOf(tokenReply) as string } : {}) };
   }
 
-  const keep = async (role: "sent" | "reply", filename: string, contentType: string, text: string) => {
-    if (!deps.bucket || !deps.customerId || !messageId) return;
-    // Every attempt's request and reply, numbered on after what the message holds (Send again adds to it).
-    const last = await db.prepare("SELECT COALESCE(MAX(seq), 0) AS n FROM route_message_parts WHERE message_id = ?").bind(messageId).first<{ n: number }>();
-    const seq = (last?.n ?? 0) + 1;
-    await storeRoutePart(deps.bucket, db, {
-      messageId,
-      seq,
-      role,
-      filename,
-      contentType,
-      bytes: new TextEncoder().encode(text),
-      key: routePartKey(deps.customerId, instanceId, messageId, now.toISOString(), seq, filename),
-    });
-  };
   const ext = settings.format === "csv" ? "csv" : "json";
   await keep("sent", `request-${attempt}.${ext}`, built.contentType, `${built.method} ${built.url}\n\n${built.body}`);
 
@@ -547,8 +580,8 @@ export async function runDeliveries(db: D1Database, deps: DeliveryDeps, limitPer
   const now = (deps.now ?? (() => new Date()))().toISOString();
   const instances = (
     await db
-      .prepare("SELECT id, process_id FROM route_instances WHERE route_id = ? AND status = 'active' AND started_at IS NOT NULL AND source_id IS NULL")
-      .bind(HTTPS_OUT)
+      .prepare("SELECT id, process_id FROM route_instances WHERE route_id IN (?, ?) AND status = 'active' AND started_at IS NOT NULL AND source_id IS NULL")
+      .bind(HTTPS_OUT, SFTP_OUT)
       .all<{ id: string; process_id: string }>()
   ).results;
   let queued = 0;
@@ -646,7 +679,7 @@ export async function handleCreateDestination(
   if (!connector || connector.direction !== "destination") {
     return { status: 400, body: { error: `there is no destination connector ${connectorId}`, reason: "unknown_connector" } };
   }
-  if (connector.status !== "available" || (connector.routeId !== HTTPS_OUT && connector.routeId !== "erp-csv")) {
+  if (connector.status !== "available" || (connector.routeId !== HTTPS_OUT && connector.routeId !== "erp-csv" && connector.routeId !== SFTP_OUT)) {
     return { status: 409, body: { error: `${connectorId} is not available yet`, reason: "not_available" } };
   }
   const process = await db.prepare("SELECT id FROM processes WHERE id = ?").bind(processId).first();
@@ -672,6 +705,17 @@ export async function handleCreateDestination(
       .run();
     return { status: 201, body: { id, name, routeId: "erp-csv", connectorId: connector.id, status: "active" } };
   }
+  if (connector.routeId === SFTP_OUT) {
+    // Decision 0620: its server, user and folder given next; paused until tested and started.
+    const sftpId = `dest-${crypto.randomUUID().slice(0, 8)}`;
+    await db
+      .prepare(
+        "INSERT INTO route_instances (id, route_id, process_id, name, status, settings_json, created_by, connector_id, connector_version) VALUES (?, ?, ?, ?, 'paused', ?, ?, ?, ?)"
+      )
+      .bind(sftpId, SFTP_OUT, processId, name, JSON.stringify(DEFAULT_SFTP_OUT), userId, connector.id, connector.version)
+      .run();
+    return { status: 201, body: { id: sftpId, name, routeId: SFTP_OUT, connectorId: connector.id, status: "paused", listsCreated: [] } };
+  }
   const id = `dest-${crypto.randomUUID().slice(0, 8)}`;
   await db
     .prepare(
@@ -695,6 +739,18 @@ async function httpsOutInstance(db: D1Database, id: string): Promise<InstanceRow
   const instance = await instanceOf(db, id);
   if (!instance || instance.route_id !== HTTPS_OUT) return { status: 404, body: { error: `there is no HTTPS out Destination ${id}` } };
   return instance;
+}
+
+/** HTTPS out or SFTP out — decision 0620: what both do (look, preview, send, start) is one code. */
+async function sendingInstance(db: D1Database, id: string): Promise<InstanceRow | RouteResult> {
+  const instance = await instanceOf(db, id);
+  if (!instance || (instance.route_id !== HTTPS_OUT && instance.route_id !== SFTP_OUT)) return { status: 404, body: { error: `there is no sending Destination ${id}` } };
+  return instance;
+}
+
+/** Whether a sending Destination has where to send: an address, or an SFTP server. */
+function hasTarget(instance: InstanceRow): boolean {
+  return instance.route_id === SFTP_OUT ? sftpSettingsOf(instance).host !== "" : settingsOf(instance).url !== "";
 }
 const isResult = (x: InstanceRow | RouteResult): x is RouteResult => "status" in x && "body" in x;
 
@@ -803,7 +859,7 @@ export async function mappingSummary(db: D1Database, instanceId: string): Promis
 }
 
 export async function handleGetConnector(db: D1Database, id: string, library: ConnectorDefinition[] = STANDARD_CONNECTORS): Promise<RouteResult> {
-  const instance = await httpsOutInstance(db, id);
+  const instance = await sendingInstance(db, id);
   if (isResult(instance)) return instance;
   const { deliveries: recent, counts } = await deliveriesOf(db, id);
   const payable = await destinationPayable(db, instance.id, instance.process_id);
@@ -815,8 +871,8 @@ export async function handleGetConnector(db: D1Database, id: string, library: Co
   return {
     status: 200,
     body: {
-      instance: { id: instance.id, name: instance.name, status: instance.status, processId: instance.process_id, startedAt: instance.started_at },
-      settings: settingsOf(instance),
+      instance: { id: instance.id, name: instance.name, status: instance.status, processId: instance.process_id, startedAt: instance.started_at, routeId: instance.route_id },
+      settings: instance.route_id === SFTP_OUT ? sftpSettingsOf(instance) : settingsOf(instance),
       connector: connectorView(instance, library),
       // Decision 0601: the look-up lists a partner's connector reads, and whether each is filled in.
       lists: await (async () => {
@@ -884,10 +940,34 @@ export async function handleSaveConnector(
 
 /** `POST /route-instances/:id/connector/preview` `{ invoiceId }` — exactly what would be sent, with sign-in shown but never its secret. Nothing is sent. */
 export async function handlePreviewDelivery(db: D1Database, id: string, body: unknown): Promise<RouteResult> {
-  const instance = await httpsOutInstance(db, id);
+  const instance = await sendingInstance(db, id);
   if (isResult(instance)) return instance;
   const invoiceId = (body as { invoiceId?: unknown } | null)?.invoiceId;
   if (typeof invoiceId !== "string") return { status: 400, body: { error: "name the invoice to preview" } };
+  if (instance.route_id === SFTP_OUT) {
+    // Decision 0620: the file, and where it would be written.
+    const sftp = sftpSettingsOf(instance);
+    if (!sftp.host) return { status: 409, body: { error: "give the server to write to first", reason: "no_url" } };
+    const built = await buildRequest(db, id, asDeliverySettings(sftp), invoiceId);
+    if (!built) return { status: 404, body: { error: `invoice ${invoiceId} could not be read` } };
+    const name = fileNameFor(sftp.filename ?? DEFAULT_SFTP_OUT.filename!, {
+      invoiceNumber: built.invoiceNumber,
+      invoiceId,
+      date: new Date().toISOString().slice(0, 10),
+      ext: sftp.format === "csv" ? "csv" : "json",
+    });
+    return {
+      status: 200,
+      body: {
+        method: "SFTP",
+        url: `sftp://${sftp.username}@${sftp.host}${sftp.port === 22 ? "" : `:${sftp.port}`}${remotePath(sftp.folder, name)}`,
+        headers: {},
+        body: built.body,
+        checks: built.checks,
+        problems: built.problems.map(problemWords),
+      },
+    };
+  }
   const settings = settingsOf(instance);
   if (!settings.url) return { status: 409, body: { error: "give the address to send to first", reason: "no_url" } };
   const built = await buildRequest(db, id, settings, invoiceId);
@@ -906,12 +986,12 @@ export async function handlePreviewDelivery(db: D1Database, id: string, body: un
 
 /** `POST /route-instances/:id/connector/send` `{ invoiceId }` — send this invoice now: a test, or Send again. */
 export async function handleSendNow(db: D1Database, userId: string, id: string, body: unknown, deps: DeliveryDeps): Promise<RouteResult> {
-  const instance = await httpsOutInstance(db, id);
+  const instance = await sendingInstance(db, id);
   if (isResult(instance)) return instance;
   if (instance.status === "retired") return { status: 409, body: { error: "the Destination is retired", reason: "retired" } };
   const invoiceId = (body as { invoiceId?: unknown } | null)?.invoiceId;
   if (typeof invoiceId !== "string") return { status: 400, body: { error: "name the invoice to send" } };
-  if (!settingsOf(instance).url) return { status: 409, body: { error: "give the address to send to first", reason: "no_url" } };
+  if (!hasTarget(instance)) return { status: 409, body: { error: "give the address to send to first", reason: "no_url" } };
   const exists = await db.prepare("SELECT id FROM invoice_headers WHERE id = ?").bind(invoiceId).first();
   if (!exists) return { status: 404, body: { error: `invoice ${invoiceId} does not exist` } };
   const current = await db
@@ -933,14 +1013,23 @@ export async function handleSendNow(db: D1Database, userId: string, id: string, 
  * says so; otherwise it is set aside (`skipped`), never sent by itself.
  */
 export async function handleStartDestination(db: D1Database, id: string, body: unknown): Promise<RouteResult> {
-  const instance = await httpsOutInstance(db, id);
+  const instance = await sendingInstance(db, id);
   if (isResult(instance)) return instance;
   if (instance.started_at) return { status: 409, body: { error: "the Destination has already started: resume it instead", reason: "already_started" } };
-  const settings = settingsOf(instance);
-  if (!settings.url) return { status: 409, body: { error: "give the address to send to first", reason: "no_url" } };
-  const secretName = SECRET_FOR[settings.auth.type];
-  if (secretName && !(await secretsSet(db, id))[secretName]) {
-    return { status: 409, body: { error: `set the ${secretName.replace("_", " ")} first`, reason: "secret_missing" } };
+  if (instance.route_id === SFTP_OUT) {
+    // Decision 0620: a server, its password or key, and its identity kept by a test.
+    const sftp = sftpSettingsOf(instance);
+    if (!sftp.host) return { status: 409, body: { error: "give the server to write to first", reason: "no_url" } };
+    const secretName = SFTP_SECRET[sftp.auth];
+    if (!(await secretsSet(db, id))[secretName]) return { status: 409, body: { error: `set the ${secretName.replace("_", " ")} first`, reason: "secret_missing" } };
+    if (!sftp.hostKey) return { status: 409, body: { error: "test the connection first, to confirm the server's identity", reason: "not_tested" } };
+  } else {
+    const settings = settingsOf(instance);
+    if (!settings.url) return { status: 409, body: { error: "give the address to send to first", reason: "no_url" } };
+    const secretName = SECRET_FOR[settings.auth.type];
+    if (secretName && !(await secretsSet(db, id))[secretName]) {
+      return { status: 409, body: { error: `set the ${secretName.replace("_", " ")} first`, reason: "secret_missing" } };
+    }
   }
   const includeWaiting = (body as { includeWaiting?: unknown } | null)?.includeWaiting === true;
   const now = new Date().toISOString();
@@ -975,7 +1064,7 @@ export async function handleSetDestinationUnits(db: D1Database, id: string, body
   const next = unitIds.length > 0 ? unitIds : null;
 
   let setAside = 0;
-  if (instance.route_id === HTTPS_OUT && instance.started_at) {
+  if ((instance.route_id === HTTPS_OUT || instance.route_id === SFTP_OUT) && instance.started_at) {
     const payable = await payableInvoiceIds(db, instance.process_id);
     const before = new Set(await coveredInvoices(db, unitIdsOf(instance), payable));
     const taken = new Set(

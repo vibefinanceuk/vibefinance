@@ -150,6 +150,14 @@
     {
       "binding": "LICENCE_SERVICE",
       "service": "vf-licence"
+    },
+    /*
+      **vf-sftp — decision 0620.** The fleet's SFTP runner, a Worker with
+      a container. Deploy vf-sftp before the first vf-app that binds it.
+    */
+    {
+      "binding": "SFTP_SERVICE",
+      "service": "vf-sftp"
     }
   ],
 

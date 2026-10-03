@@ -250,6 +250,8 @@ const PROXIED_TO_INSTANCE: RegExp[] = [
   // found" before reaching vf-app — decision 0598.
   /^\/route-instances\/[^/]+$/,
   /^\/route-instances\/[^/]+\/connector(\/(preview|send|start|upgrade))?$/,
+  // SFTP out and SFTP in: settings, test, forget the identity, collect (decision 0620).
+  /^\/route-instances\/[^/]+\/sftp(\/(test|collect|forget-identity))?$/,
   // Submit a Destination for review, from a partner's sandbox — decision 0595.
   /^\/route-instances\/[^/]+\/library-submission(\/withdraw)?$/,
   // A Destination's own outbound mapping — decision 0591.

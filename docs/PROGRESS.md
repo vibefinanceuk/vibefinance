@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 3 October 2026 (decision 0619). A living document: what
+Last updated 3 October 2026 (decision 0620). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,15 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### SFTP, the proof of concept (0620)
+
+A new Worker, vf-sftp, runs SFTP in a Cloudflare Container. SFTP out
+writes each invoice as a file into a folder on the customer's server;
+SFTP in collects files from a folder on someone else's server with Check
+now. The server's identity is confirmed by a first test before anything
+is sent or collected. A hosted SFTP server, for suppliers to upload to,
+waits on Cloudflare's inbound TCP, in private beta.
 
 ### Open one supplier (0619)
 

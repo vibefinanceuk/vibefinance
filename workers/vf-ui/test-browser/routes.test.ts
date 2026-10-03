@@ -24,6 +24,7 @@ import oracleStringsSql from "../../vf-licence/migrations/0249_oracle_connector_
 import sapStringsSql from "../../vf-licence/migrations/0250_sap_connector_strings.sql?raw";
 import intacctStringsSql from "../../vf-licence/migrations/0251_intacct_connector_strings.sql?raw";
 import neutralHintsSql from "../../vf-licence/migrations/0254_neutral_setting_hints.sql?raw";
+import sftpStringsSql from "../../vf-licence/migrations/0263_sftp_strings.sql?raw";
 
 /**
  * **Routes and Process routes — decision 0557.** The standard routes with
@@ -58,7 +59,7 @@ const strings: Record<string, string> = {
   "mechanism.file_import": "File import",
   "mechanism.edi": "EDI",
 };
-for (const sql of [stringsSql, destinationStringsSql, formatStringsSql, mappingStringsSql, csvStringsSql, httpsStringsSql, httpsStateStringsSql, replaceKeyStringsSql, mailboxStringsSql, renameStringsSql, httpsOutStringsSql, erpDeliveriesStringsSql, destUnitsStringsSql, libraryStringsSql, outboundStringsSql, submitStringsSql, submitFromCustomerSql, destRetireStringsSql, destDeleteStringsSql, reviewStringsSql, partnerLibraryStringsSql, oracleStringsSql, sapStringsSql, intacctStringsSql]) {
+for (const sql of [stringsSql, destinationStringsSql, formatStringsSql, mappingStringsSql, csvStringsSql, httpsStringsSql, httpsStateStringsSql, replaceKeyStringsSql, mailboxStringsSql, renameStringsSql, httpsOutStringsSql, erpDeliveriesStringsSql, destUnitsStringsSql, libraryStringsSql, outboundStringsSql, submitStringsSql, submitFromCustomerSql, destRetireStringsSql, destDeleteStringsSql, reviewStringsSql, partnerLibraryStringsSql, oracleStringsSql, sapStringsSql, intacctStringsSql, sftpStringsSql]) {
   for (const m of sql.matchAll(/\('([^']+)', 'en', '((?:[^']|'')*)'\)/g)) strings[m[1]] = m[2].replace(/''/g, "'");
 }
 // Decision 0610: 0254 rewords two hints by UPDATE.
@@ -1686,5 +1687,171 @@ describe("renaming and retiring a Destination — decision 0597", () => {
     await settle();
     expect(calls.some((c) => c.method === "DELETE" && c.path === "/api/route-instances/dest-1")).toBe(true);
     expect(document.querySelector("#dest-delete-pop")).toBeNull();
+  });
+});
+
+describe("SFTP — decision 0620", () => {
+  const IDENTITY = "SHA256:Q2xvdWRmbGFyZSBTRlRQIHRlc3Qgc2VydmVyIGtleQ";
+  const DROP = { id: "dest-s", name: "ERP drop", status: "paused", routeId: "sftp-out", routeName: "SFTP out", route: { live: true, ...V("process", "en16931", "vf_invoice_json_v1", "en16931", "sftp") }, waiting: 0, started: false, failedOpen: 0 };
+  const OUT = {
+    instance: { id: "dest-s", name: "ERP drop", routeId: "sftp-out", direction: "out", processId: "ap", status: "paused", startedAt: null },
+    settings: { host: "sftp.acme.example", port: 22, username: "vibefinance", auth: "password", folder: "/to-erp", hostKey: null, format: "csv", filename: "{invoiceNumber}.{ext}" },
+    secrets: { password: "2026-10-03T09:00:00Z" },
+  };
+  const OUT_CONNECTOR = {
+    instance: { id: "dest-s", name: "ERP drop", status: "paused", processId: "ap", startedAt: null, routeId: "sftp-out" },
+    settings: OUT.settings,
+    secrets: OUT.secrets,
+    waitingNotTaken: 1,
+    counts: {},
+    deliveries: [],
+    candidates: [{ id: "inv-9", number: "RE-4417", supplier: "Lager Nord GmbH", currency: "EUR", total: 357 }],
+  };
+  const IN = {
+    instance: { id: "old-drop", name: "Old SFTP drop", routeId: "sftp-in", direction: "in", processId: "ap", status: null, startedAt: null },
+    settings: { host: "sftp.bureau.example", port: 22, username: "acme", auth: "password", folder: "/inbox", hostKey: IDENTITY, pattern: "*.xml", doneFolder: "processed" },
+    doneFolder: "/inbox/processed",
+    secrets: { password: "2026-10-03T09:00:00Z" },
+  };
+
+  function stubSftp(calls: Call[], replies: Record<string, [number, unknown]> = {}) {
+    stub(calls, { "/api/process-routes": { ...FLOW, destinations: [...FLOW.destinations, DROP] } });
+    const inner = globalThis.fetch as unknown as (url: string, init?: RequestInit) => Promise<Response>;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        const path = String(url).split("?")[0];
+        const method = init?.method ?? "GET";
+        const reply = (status: number, body: unknown) => {
+          calls.push({ method, path, query: "", body: init?.body as string | undefined });
+          return { ok: status < 300, status, json: async () => body } as Response;
+        };
+        const key = `${method} ${path}`;
+        if (key in replies) return reply(...replies[key]);
+        if (path === "/api/route-instances/dest-s/connector") return reply(200, OUT_CONNECTOR);
+        if (path === "/api/route-instances/dest-s/sftp" && method === "GET") return reply(200, OUT);
+        if (path === "/api/route-instances/old-drop/sftp" && method === "GET") return reply(200, IN);
+        if (path.endsWith("/sftp") && method === "PUT") return reply(200, { settings: {}, secrets: {}, identityForgotten: false });
+        if (path === "/api/route-instances/dest-s/connector/preview")
+          return reply(200, { method: "SFTP", url: "sftp://vibefinance@sftp.acme.example/to-erp/RE-4417.csv", headers: {}, body: "invoice_number\nRE-4417", checks: [] });
+        return inner(url, init);
+      })
+    );
+  }
+  const button = (root: string, label: string) => [...document.querySelectorAll(`${root} button`)].find((b) => b.textContent === label) as HTMLElement;
+  async function openCard(name: string) {
+    await openScreen("/process-routes.js");
+    ([...document.querySelectorAll(".prcard")].find((c) => c.textContent?.includes(name)) as HTMLElement).click();
+    await settle();
+  }
+
+  it("shows an SFTP out Destination's server and folder, CSV or JSON, and saves what is typed", async () => {
+    const calls: Call[] = [];
+    stubSftp(calls);
+    await openCard("ERP drop");
+    expect(text("#httpsout .httpshead h4")).toBe("SFTP out");
+    expect(document.querySelector("#do-url")).toBeNull();
+    expect((document.querySelector("#sftp-host") as HTMLInputElement).value).toBe("sftp.acme.example");
+    expect((document.querySelector("#sftp-folder") as HTMLInputElement).value).toBe("/to-erp");
+    expect([...(document.querySelector("#sftp-format") as HTMLSelectElement).options].map((o) => o.value)).toEqual(["csv", "vf_json"]);
+    expect(text("#sftp-settings")).toContain("Leave empty to keep it.");
+    expect(text("#sftp-identity")).toContain("not confirmed yet");
+    // The same start and try cards HTTPS out has.
+    expect(text("#do-notstarted")).toContain("Not sending yet");
+    expect(document.querySelector("#do-try")).not.toBeNull();
+
+    (document.querySelector("#sftp-folder") as HTMLInputElement).value = "/to-erp/in";
+    (document.querySelector("#sftp-password") as HTMLInputElement).value = "n3w";
+    button("#sftp-settings", "Save").click();
+    await settle();
+    const put = calls.find((c) => c.method === "PUT" && c.path === "/api/route-instances/dest-s/sftp")!;
+    expect(JSON.parse(put.body!)).toEqual({
+      settings: { host: "sftp.acme.example", port: 22, username: "vibefinance", auth: "password", folder: "/to-erp/in", format: "csv", filename: "{invoiceNumber}.{ext}" },
+      secret: "n3w",
+    });
+  });
+
+  it("asks for a private key instead of a password when chosen", async () => {
+    const calls: Call[] = [];
+    stubSftp(calls);
+    await openCard("ERP drop");
+    const auth = document.querySelector("#sftp-auth") as HTMLSelectElement;
+    auth.value = "key";
+    auth.dispatchEvent(new Event("change"));
+    expect(document.querySelector("#sftp-password")).toBeNull();
+    (document.querySelector("#sftp-key") as HTMLTextAreaElement).value = "-----BEGIN OPENSSH PRIVATE KEY-----";
+    button("#sftp-settings", "Save").click();
+    await settle();
+    expect(JSON.parse(calls.find((c) => c.method === "PUT")!.body!)).toMatchObject({ settings: { auth: "key" }, secret: "-----BEGIN OPENSSH PRIVATE KEY-----" });
+  });
+
+  it("tests the connection, and says the server's identity it keeps", async () => {
+    const calls: Call[] = [];
+    stubSftp(calls, { "POST /api/route-instances/dest-s/sftp/test": [200, { ok: true, hostKey: IDENTITY, kept: true, folder: "/to-erp", files: 3 }] });
+    await openCard("ERP drop");
+    button("#sftp-settings", "Test connection").click();
+    await settle();
+    expect(text("#sftp-tested")).toContain("Signed in. /to-erp holds 3 files.");
+    expect(text("#sftp-tested")).toContain(`The server's identity is kept: ${IDENTITY}`);
+  });
+
+  it("says a server showing another identity, and how to decide what to do", async () => {
+    const calls: Call[] = [];
+    stubSftp(calls, {
+      "POST /api/route-instances/dest-s/sftp/test": [200, { ok: false, code: "host_key_changed", message: "sftp.acme.example showed a different identity", hostKey: "SHA256:other", trusted: IDENTITY }],
+    });
+    await openCard("ERP drop");
+    button("#sftp-settings", "Test connection").click();
+    await settle();
+    expect(text("#sftp-tested")).toContain("The server showed a different identity from the one kept. Nothing was sent.");
+    expect(text("#sftp-tested")).toContain("someone may be pretending to be the server");
+  });
+
+  it("previews the file and where it would be written", async () => {
+    const calls: Call[] = [];
+    stubSftp(calls);
+    await openCard("ERP drop");
+    button("#do-try", strings["httpsout.preview"]).click();
+    await settle();
+    expect(text("#do-preview")).toContain("SFTP sftp://vibefinance@sftp.acme.example/to-erp/RE-4417.csv");
+  });
+
+  it("shows an SFTP in Source's folder and identity, and collects with Check now", async () => {
+    const calls: Call[] = [];
+    stubSftp(calls, {
+      "POST /api/route-instances/old-drop/sftp/collect": [
+        200,
+        {
+          folder: "/inbox",
+          doneFolder: "/inbox/processed",
+          matching: 2,
+          left: 0,
+          collected: [
+            { file: "Rechnung_88240.xml", status: "collected", movedTo: "/inbox/processed/Rechnung_88240.xml", messageId: "MSG-1", invoiceIds: ["inv-1"] },
+            { file: "broken.xml", status: "unreadable", movedTo: "/inbox/processed/broken.xml", messageId: "MSG-2", reason: "the file could not be read as an invoice" },
+          ],
+        },
+      ],
+    });
+    await openCard("Old SFTP drop");
+    expect(text("#sftpin h4")).toContain("SFTP in");
+    expect((document.querySelector("#sftp-pattern") as HTMLInputElement).value).toBe("*.xml");
+    expect((document.querySelector("#sftp-done") as HTMLInputElement).value).toBe("processed");
+    expect(text("#sftp-identity")).toContain(IDENTITY);
+    button("#sftp-checkcard", "Check now").click();
+    await settle();
+    expect(text("#sftp-collected")).toContain("2 of 2 waiting files taken.");
+    const rows = [...document.querySelectorAll("#sftp-collected tr")].map((r) => r.textContent);
+    expect(rows[0]).toContain("Rechnung_88240.xmlCollectedMoved to /inbox/processed/Rechnung_88240.xml");
+    expect(rows[1]).toContain("broken.xmlNot read");
+  });
+
+  it("forgets the server's identity when asked", async () => {
+    const calls: Call[] = [];
+    stubSftp(calls, { "POST /api/route-instances/old-drop/sftp/forget-identity": [200, { hostKey: null }] });
+    await openCard("Old SFTP drop");
+    button("#sftp-identity", "Forget").click();
+    await settle();
+    expect(calls.some((c) => c.method === "POST" && c.path === "/api/route-instances/old-drop/sftp/forget-identity")).toBe(true);
   });
 });

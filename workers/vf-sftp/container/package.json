@@ -1,0 +1,10 @@
+{
+  "name": "vf-sftp-runner",
+  "private": true,
+  "type": "module",
+  "description": "The SFTP runner inside vf-sftp's container (decision 0620): an HTTP service on port 8080 that signs in to an SFTP server and lists, uploads, downloads and moves files.",
+  "main": "server.mjs",
+  "dependencies": {
+    "ssh2": "1.17.0"
+  }
+}

@@ -371,6 +371,12 @@ describe("the proxy carries every path a screen calls (decision 0131)", () => {
    */
   const CALLED_BY_A_SCREEN: [string, string][] = [
     ["GET", "/api/sources"],
+    // Decision 0620: SFTP out and in.
+    ["GET", "/api/route-instances/dest-1/sftp"],
+    ["PUT", "/api/route-instances/dest-1/sftp"],
+    ["POST", "/api/route-instances/dest-1/sftp/test"],
+    ["POST", "/api/route-instances/src-1/sftp/collect"],
+    ["POST", "/api/route-instances/dest-1/sftp/forget-identity"],
     ["GET", "/api/processes"],
     ["GET", "/api/field-visibility"],
     ["GET", "/api/code-lists"],

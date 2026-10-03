@@ -1,0 +1,48 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "vf-sftp",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-01",
+
+  /*
+    **Reached only by service binding — decision 0620.** No workers.dev
+    address and no route: each customer's vf-app binds to it as
+    SFTP_SERVICE, and nothing else can call it.
+  */
+  "workers_dev": false,
+
+  /*
+    The container: built from container/Dockerfile by `wrangler deploy`,
+    so Docker must be running where it is deployed from. "lite" is the
+    smallest size (1/16 vCPU, 256 MiB, 2 GB disk); SFTP is waiting on the
+    network, not computing.
+  */
+  "containers": [
+    {
+      "class_name": "SftpRunner",
+      "image": "./container/Dockerfile",
+      "instance_type": "lite",
+      "max_instances": 2
+    }
+  ],
+
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "SFTP_RUNNER",
+        "class_name": "SftpRunner"
+      }
+    ]
+  },
+
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["SftpRunner"]
+    }
+  ],
+
+  "observability": {
+    "enabled": true
+  }
+}

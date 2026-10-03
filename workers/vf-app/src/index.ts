@@ -1,4 +1,5 @@
 import { erpExportCsv, handleCreateErpExport, handleListErpExports, handleUndoErpExport } from "./erp-export-route.js";
+import { handleCollectNow, handleForgetSftpIdentity, handleGetSftp, handleSaveSftp, handleTestSftp, sftpRunnerFrom } from "./sftp.js";
 import { handleGetPoMatchView, handlePoCandidates, handleLinkPo, handlePairLine, PO_PANEL_PERMISSIONS } from "./po-match-panel-route.js";
 import { resolveTenant } from "@vibefinance/shared";
 import { searchOrgUnits, setInvoiceOrgUnit } from "./derive-org.js";
@@ -362,6 +363,13 @@ export interface Env {
    * secret is refused, never kept in the clear.
    */
   CONNECTOR_SECRETS_KEY?: string;
+  /**
+   * **vf-sftp — decision 0620.** The fleet's one SFTP runner (a Worker
+   * with a container), by service binding: SFTP out Destinations and
+   * SFTP in Sources ask it to sign in to a server and move files.
+   * Optional: without it, an SFTP route says SFTP is not set up here.
+   */
+  SFTP_SERVICE?: Fetcher;
   /**
    * The verified sending address — a plain var, not a secret (it is
    * not sensitive; it is printed on every email this deployment
@@ -4813,6 +4821,7 @@ export default {
         bucket: env.DOCUMENTS,
         customerId: env.CUSTOMER_ID,
         onFinished: (messageId: string) => notifyMessageFinished(db, alertTransport(env), messageId),
+        sftp: sftpRunnerFrom(env.SFTP_SERVICE),
       };
       let result;
       if (!action && request.method === "GET") result = await handleGetConnector(db, instanceId, await connectorLibrary(db));
@@ -4823,6 +4832,42 @@ export default {
       // Decision 0589.
       else if (action === "upgrade" && request.method === "POST") result = await handleUpgradeConnector(db, instanceId, await connectorLibrary(db), auth.user.id);
       else return json({ error: "method not allowed" }, 405);
+      return json(result.body, result.status);
+    }
+
+    /**
+     * **SFTP — decision 0620.** An SFTP out Destination's or SFTP in
+     * Source's settings, its connection test, forgetting the server's
+     * identity, and (in) *Check now*. Setting up is Admin.Configure;
+     * looking and checking now are the Route monitor's too.
+     */
+    const sftpMatch = pathname.match(/^\/route-instances\/([^/]+)\/sftp(?:\/(test|collect|forget-identity))?$/);
+    if (sftpMatch) {
+      const { db, documents } = resolveTenant(request, env);
+      const auth = await authenticatePerson(db, request, env);
+      if (!auth.user) return json({ error: auth.reason }, 401);
+      const instanceId = decodeURIComponent(sftpMatch[1]);
+      const action = sftpMatch[2];
+      const configure = await hasPermission(db, auth.user.id, "Admin.Configure");
+      const monitor = await hasPermission(db, auth.user.id, "Integration.Monitor");
+      const allowed = (!action && request.method === "GET") || action === "collect" ? configure || monitor : configure;
+      if (!allowed) return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
+      const sftp = sftpRunnerFrom(env.SFTP_SERVICE);
+      let result;
+      if (!action && request.method === "GET") result = await handleGetSftp(db, instanceId);
+      else if (!action && request.method === "PUT") result = await handleSaveSftp(db, auth.user.id, instanceId, await request.json().catch(() => ({})), env.CONNECTOR_SECRETS_KEY);
+      else if (action === "test" && request.method === "POST") result = await handleTestSftp(db, instanceId, { secretsKey: env.CONNECTOR_SECRETS_KEY, sftp });
+      else if (action === "forget-identity" && request.method === "POST") result = await handleForgetSftpIdentity(db, instanceId);
+      else if (action === "collect" && request.method === "POST") {
+        if (!env.AI) return json({ error: "the AI binding is not configured" }, 500);
+        result = await handleCollectNow(db, auth.user.id, instanceId, {
+          secretsKey: env.CONNECTOR_SECRETS_KEY,
+          sftp,
+          model: createWorkersAiExtractionModel(env.AI, env.EXTRACTION_MODEL_ID),
+          bucket: documents,
+          customerId: env.CUSTOMER_ID,
+        });
+      } else return json({ error: "method not allowed" }, 405);
       return json(result.body, result.status);
     }
 
@@ -6470,6 +6515,7 @@ export default {
           bucket: env.DOCUMENTS,
           customerId: env.CUSTOMER_ID,
           onFinished: (messageId) => notifyMessageFinished(db, alertTransport(env), messageId),
+          sftp: sftpRunnerFrom(env.SFTP_SERVICE),
         });
       } catch {
         // Deliberately silent.

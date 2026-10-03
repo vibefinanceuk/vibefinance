@@ -146,6 +146,7 @@ export default defineConfig({
       "/create.js": resolve(__dirname, "public/create.js"),
       "/https-keys.js": resolve(__dirname, "public/https-keys.js"),
       "/destinations.js": resolve(__dirname, "public/destinations.js"),
+      "/sftp-settings.js": resolve(__dirname, "public/sftp-settings.js"),
       "/route-library.js": resolve(__dirname, "public/route-library.js"),
       "/outbound-editor.js": resolve(__dirname, "public/outbound-editor.js"),
       "/welcome.js": resolve(__dirname, "public/welcome.js"),

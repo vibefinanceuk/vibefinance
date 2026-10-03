@@ -4834,8 +4834,8 @@ describe("routes and process routes, through the real router (decision 0557)", (
     const headers = { Authorization: `Bearer ${admin}` };
     const routes = await SELF.fetch("https://example.com/routes", { headers });
     expect(routes.status).toBe(200);
-    // Five sources, the ERP CSV file, and HTTPS out (decision 0585).
-    expect(((await routes.json()) as { routes: unknown[] }).routes).toHaveLength(7);
+    // Five sources, the ERP CSV file, HTTPS out (decision 0585) and SFTP out (0620).
+    expect(((await routes.json()) as { routes: unknown[] }).routes).toHaveLength(8);
     const flow = await SELF.fetch("https://example.com/process-routes", { headers });
     expect(flow.status).toBe(200);
   });
