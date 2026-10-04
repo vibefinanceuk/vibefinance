@@ -5,6 +5,8 @@ export interface UpsertLicenceBody {
   plan?: unknown;
   features?: unknown;
   volumeEntitlement?: unknown;
+  /** Decision 0622: how many agents the environment may have; null or absent for vf-app's default. */
+  agentLimit?: unknown;
   validFrom?: unknown;
   validTo?: unknown;
   status?: unknown;
@@ -44,6 +46,15 @@ export async function handleUpsertLicence(
     };
   }
 
+  if (
+    body.agentLimit !== undefined &&
+    body.agentLimit !== null &&
+    !(typeof body.agentLimit === "number" && Number.isInteger(body.agentLimit) && body.agentLimit >= 0)
+  ) {
+    return { status: 400, body: { error: "agentLimit must be a whole number, 0 or more, or null" } };
+  }
+  const agentLimit = typeof body.agentLimit === "number" ? body.agentLimit : null;
+
   const features = Array.isArray(body.features)
     ? body.features.filter((f): f is string => typeof f === "string")
     : [];
@@ -73,8 +84,8 @@ export async function handleUpsertLicence(
   await db
     .prepare(
       `INSERT INTO licences
-         (environment_id, plan, features_json, volume_entitlement, valid_from, valid_to, status, status_reason, status_effective_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+         (environment_id, plan, features_json, volume_entitlement, valid_from, valid_to, status, status_reason, status_effective_at, agent_limit, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
        ON CONFLICT(environment_id) DO UPDATE SET
          plan = excluded.plan,
          features_json = excluded.features_json,
@@ -84,6 +95,7 @@ export async function handleUpsertLicence(
          status = excluded.status,
          status_reason = excluded.status_reason,
          status_effective_at = excluded.status_effective_at,
+         agent_limit = excluded.agent_limit,
          updated_at = datetime('now')`
     )
     .bind(
@@ -95,12 +107,13 @@ export async function handleUpsertLicence(
       validTo,
       status,
       statusReason,
-      statusEffectiveAt
+      statusEffectiveAt,
+      agentLimit
     )
     .run();
 
   return {
     status: 200,
-    body: { environmentId, plan, features, volumeEntitlement, validFrom, validTo, status },
+    body: { environmentId, plan, features, volumeEntitlement, agentLimit, validFrom, validTo, status },
   };
 }

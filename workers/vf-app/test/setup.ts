@@ -130,6 +130,7 @@ import outboundMappingsSql from "../../../migrations/0123_outbound_mappings.sql?
 import destinationRetireSql from "../../../migrations/0124_destination_retire.sql?raw";
 import partnerConnectorCopiesSql from "../../../migrations/0125_partner_connector_copies.sql?raw";
 import sftpRoutesSql from "../../../migrations/0126_sftp_routes.sql?raw";
+import agentsSql from "../../../migrations/0127_agents.sql?raw";
 
 // Another known divergence from production, on top of the one below:
 // D1's exec() splits its input by newline and executes each non-empty
@@ -175,6 +176,8 @@ function toOneStatementPerLine(sql: string): string {
 // gets a genuinely clean schema regardless of what the pool does or
 // does not reset.
 const TABLES_IN_DROP_ORDER = [
+  // Agents (decision 0622): notes reference runs and agents, runs reference agents, agents reference people.
+  "agent_notes", "agent_runs", "agents",
   // Routes, slice 1 (decision 0555): invoice_documents now references
   // route_messages, so both go first, invoice_documents before it.
   "route_alert_log", "route_alerts",
@@ -456,6 +459,7 @@ export async function applyTestSchema(): Promise<void> {
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(destinationRetireSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(partnerConnectorCopiesSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(sftpRoutesSql)));
+  await env.DB.exec(toOneStatementPerLine(stripSqlComments(agentsSql)));
 }
 
 /**

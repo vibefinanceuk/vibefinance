@@ -250,6 +250,13 @@ const PROXIED_TO_INSTANCE: RegExp[] = [
   // found" before reaching vf-app — decision 0598.
   /^\/route-instances\/[^/]+$/,
   /^\/route-instances\/[^/]+\/connector(\/(preview|send|start|upgrade))?$/,
+  // Agents (decision 0622): the list, one agent, Run now, its runs; notes on the task list; the time zone.
+  /^\/agents$/,
+  /^\/agents\/[^/]+$/,
+  /^\/agents\/[^/]+\/(run|runs)$/,
+  /^\/agent-notes$/,
+  /^\/agent-notes\/[^/]+(\/done)?$/,
+  /^\/agent-settings$/,
   // SFTP out and SFTP in: settings, test, forget the identity, collect (decision 0620).
   /^\/route-instances\/[^/]+\/sftp(\/(test|collect|forget-identity))?$/,
   // Submit a Destination for review, from a partner's sandbox — decision 0595.

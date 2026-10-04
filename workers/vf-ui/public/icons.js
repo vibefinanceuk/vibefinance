@@ -391,6 +391,11 @@ ICONS.po_matching = '<path d="M4 6h7M4 12h7M4 18h7"/><path d="M15 6l5 6-5 6"/>';
 ICONS.po_link = ICONS.po_matching;
 // A saved line pairing (decision 0532) — the same shape, as it is the same panel's work.
 ICONS.po_pair = ICONS.po_matching;
+/**
+ * **Agents — decision 0622.** An alarm clock: an agent is a report that
+ * comes on its own, at the time somebody chose.
+ */
+ICONS.agents = '<circle cx="12" cy="13" r="7"/><path d="M12 9.5V13l2.5 1.5M5 4.5 3 6.5M19 4.5l2 2M8.5 20.5 7 22M15.5 20.5 17 22"/>';
 
 export function icon(name) {
   const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");

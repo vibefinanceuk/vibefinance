@@ -1,4 +1,17 @@
 import { erpExportCsv, handleCreateErpExport, handleListErpExports, handleUndoErpExport } from "./erp-export-route.js";
+import {
+  handleAgentNoteDone,
+  handleCreateAgent,
+  handleGetAgentNote,
+  handleListAgentNotes,
+  handleListAgentRuns,
+  handleListAgents,
+  handleRemoveAgent,
+  handleRunAgentNow,
+  handleSetAgentTimeZone,
+  handleUpdateAgent,
+  runDueAgents,
+} from "./agents.js";
 import { handleCollectNow, handleForgetSftpIdentity, handleGetSftp, handleSaveSftp, handleTestSftp, sftpRunnerFrom } from "./sftp.js";
 import { handleGetPoMatchView, handlePoCandidates, handleLinkPo, handlePairLine, PO_PANEL_PERMISSIONS } from "./po-match-panel-route.js";
 import { resolveTenant } from "@vibefinance/shared";
@@ -1719,6 +1732,84 @@ export default {
         return json(result.body, result.status);
       }
       return json({ error: "method not allowed" }, 405);
+    }
+
+    /**
+     * **Agents — decision 0622**, slice 1. `AP.Agents` makes and runs
+     * them; an administrator (`Admin.UserManagement`) may also list
+     * everyone's (`?all=1`), see their runs and remove them. Each handler
+     * checks the author itself. Notes are each person's own, so signing
+     * in is enough; the time zone needs `Admin.Configure`.
+     */
+    if (pathname === "/agents" || /^\/agents\/[^/]+(\/(run|runs))?$/.test(pathname)) {
+      const { db } = resolveTenant(request, env);
+      const auth = await authenticatePerson(db, request, env);
+      if (!auth.user) return json({ error: auth.reason }, 401);
+      const maker = await hasPermission(db, auth.user.id, "AP.Agents");
+      const admin = !maker && (await hasPermission(db, auth.user.id, "Admin.UserManagement"));
+      if (!maker && !admin) return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
+      if (pathname === "/agents" && request.method === "GET") {
+        const result = await handleListAgents(db, auth.user.id, { all: url.searchParams.get("all") === "1" });
+        return json(result.body, result.status);
+      }
+      if (pathname === "/agents" && request.method === "POST") {
+        if (!maker) return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
+        const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+        const result = await handleCreateAgent(db, auth.user.id, body);
+        return json(result.body, result.status);
+      }
+      const runMatch = pathname.match(/^\/agents\/([^/]+)\/run$/);
+      if (runMatch && request.method === "POST") {
+        const result = await handleRunAgentNow(db, auth.user.id, decodeURIComponent(runMatch[1]));
+        return json(result.body, result.status);
+      }
+      const runsMatch = pathname.match(/^\/agents\/([^/]+)\/runs$/);
+      if (runsMatch && request.method === "GET") {
+        const result = await handleListAgentRuns(db, auth.user.id, decodeURIComponent(runsMatch[1]));
+        return json(result.body, result.status);
+      }
+      const oneMatch = pathname.match(/^\/agents\/([^/]+)$/);
+      if (oneMatch && request.method === "PATCH") {
+        const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+        const result = await handleUpdateAgent(db, auth.user.id, decodeURIComponent(oneMatch[1]), body);
+        return json(result.body, result.status);
+      }
+      if (oneMatch && request.method === "DELETE") {
+        const result = await handleRemoveAgent(db, auth.user.id, decodeURIComponent(oneMatch[1]));
+        return json(result.body, result.status);
+      }
+      return json({ error: "method not allowed" }, 405);
+    }
+    if (pathname === "/agent-notes" || /^\/agent-notes\/[^/]+(\/done)?$/.test(pathname)) {
+      const { db } = resolveTenant(request, env);
+      const auth = await authenticatePerson(db, request, env);
+      if (!auth.user) return json({ error: auth.reason }, 401);
+      if (pathname === "/agent-notes" && request.method === "GET") {
+        const result = await handleListAgentNotes(db, auth.user.id);
+        return json(result.body, result.status);
+      }
+      const doneMatch = pathname.match(/^\/agent-notes\/([^/]+)\/done$/);
+      if (doneMatch && request.method === "POST") {
+        const result = await handleAgentNoteDone(db, auth.user.id, decodeURIComponent(doneMatch[1]));
+        return json(result.body, result.status);
+      }
+      const noteMatch = pathname.match(/^\/agent-notes\/([^/]+)$/);
+      if (noteMatch && request.method === "GET") {
+        const result = await handleGetAgentNote(db, auth.user.id, decodeURIComponent(noteMatch[1]));
+        return json(result.body, result.status);
+      }
+      return json({ error: "method not allowed" }, 405);
+    }
+    if (pathname === "/agent-settings" && request.method === "PUT") {
+      const { db } = resolveTenant(request, env);
+      const auth = await authenticatePerson(db, request, env);
+      if (!auth.user) return json({ error: auth.reason }, 401);
+      if (!(await hasPermission(db, auth.user.id, "Admin.Configure"))) {
+        return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
+      }
+      const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+      const result = await handleSetAgentTimeZone(db, body);
+      return json(result.body, result.status);
     }
 
     /**
@@ -6519,6 +6610,14 @@ export default {
         });
       } catch {
         // Deliberately silent.
+      }
+      // Decision 0622: agents due now, on the same tick and on their own,
+      // so a failing agent never holds up a delivery or the other way round.
+      try {
+        const { db } = resolveTenant(new Request("https://scheduled-trigger.internal/"), env);
+        await runDueAgents(db);
+      } catch {
+        // Deliberately silent: each run records its own failure.
       }
       return;
     }

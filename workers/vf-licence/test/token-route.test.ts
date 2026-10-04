@@ -147,3 +147,26 @@ describe("handleIssueToken — re-keyed to environmentId (decision 0036)", () =>
     expect(sandboxVerified.claims?.plan).toBe("trial");
   });
 });
+
+describe("the agent limit — decision 0622", () => {
+  it("is carried in the signed token only where the licence names one, and must be a whole number", async () => {
+    const base = { environmentId: "acme-production-eu", plan: "standard", volumeEntitlement: 1000, validFrom: "2026-01-01" };
+    await handleUpsertLicence(env.CONTROL_DB, base);
+    let verified = await verifyLicenceToken(((await handleIssueToken(env.CONTROL_DB, privateKeyJwk, "acme-production-eu")).body as { token: string }).token, publicKeyJwk);
+    expect(verified.ok).toBe(true);
+    expect(verified.claims).not.toHaveProperty("agentLimit");
+
+    expect((await handleUpsertLicence(env.CONTROL_DB, { ...base, agentLimit: 2.5 })).status).toBe(400);
+    expect((await handleUpsertLicence(env.CONTROL_DB, { ...base, agentLimit: -1 })).status).toBe(400);
+    const set = await handleUpsertLicence(env.CONTROL_DB, { ...base, agentLimit: 12 });
+    expect(set.body).toMatchObject({ agentLimit: 12 });
+    verified = await verifyLicenceToken(((await handleIssueToken(env.CONTROL_DB, privateKeyJwk, "acme-production-eu")).body as { token: string }).token, publicKeyJwk);
+    expect(verified.ok).toBe(true);
+    expect(verified.claims).toMatchObject({ agentLimit: 12 });
+
+    // Set back to none: the token says none again.
+    await handleUpsertLicence(env.CONTROL_DB, { ...base, agentLimit: null });
+    verified = await verifyLicenceToken(((await handleIssueToken(env.CONTROL_DB, privateKeyJwk, "acme-production-eu")).body as { token: string }).token, publicKeyJwk);
+    expect(verified.claims).not.toHaveProperty("agentLimit");
+  });
+});

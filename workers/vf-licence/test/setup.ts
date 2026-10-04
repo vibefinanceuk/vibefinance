@@ -251,6 +251,8 @@ import analyticsFollowupsSql from "../migrations/0260_analytics_followups_string
 import fraudDrilldownSql from "../migrations/0261_fraud_drilldown_strings.sql?raw";
 import openSupplierSql from "../migrations/0262_open_supplier_strings.sql?raw";
 import sftpStringsSql from "../migrations/0263_sftp_strings.sql?raw";
+import licenceAgentLimitSql from "../migrations/0264_licence_agent_limit.sql?raw";
+import agentsStringsSql from "../migrations/0265_agents_strings.sql?raw";
 
 function stripSqlComments(sql: string): string {
   return sql
@@ -535,5 +537,7 @@ export async function applyTestSchema(): Promise<void> {
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(fraudDrilldownSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(openSupplierSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(sftpStringsSql)));
+  await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(licenceAgentLimitSql)));
+  await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(agentsStringsSql)));
 
 }

@@ -181,6 +181,14 @@ const AP_PERMISSIONS = [
    * Granted by migration 0114 to every role that already validates.
    */
   "AP.Create",
+  /**
+   * **Decision 0622.** Make agents: reports set up once, for chosen
+   * organisations, run on a schedule and delivered to the task list. Its
+   * own permission, granted by migration 0127 to every role holding
+   * `AP.Manager` (Dan: "limited to AP Managers"). Each run still needs
+   * the report's own permission in each organisation.
+   */
+  "AP.Agents",
 ] as const;
 
 /**
@@ -384,6 +392,7 @@ export const PERMISSION_DESCRIPTIONS: Record<Permission, string> = {
   "AP.Create": "Bring invoices in by hand from the Create screen: upload PDFs, images, XML or CSV, each read into an invoice as email is (decision 0573)",
   "AP.Export": "Export payment-eligible invoices to the ERP as a CSV file, each once, and download past exports (decision 0552)",
   "AP.Assistant": "Ask the AP Analytics screen's Talk to an AP Expert tab a question — each answer still scoped by whatever else you hold",
+  "AP.Agents": "Make agents: reports run on a schedule for chosen organisations and delivered to your task list (decision 0622)",
   "AP.Manager": "Remove a collaborator from an invoice's conversation — decision 0476, deliberately narrower than the AP.Review that can add one",
 
   "AR.Validate": "Accounts Receivable — not yet built",

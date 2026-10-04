@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 3 October 2026 (decision 0621). A living document: what
+Last updated 4 October 2026 (decision 0622). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,17 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Agents, slice 1: the engine (0622)
+
+An AP Manager can set up an agent: a report (outstanding payables,
+past due, accruals, open tasks, possible duplicates) for organisations
+they choose, on a schedule in the environment's time zone. The
+five-minute cron runs each once when due, with the author's access
+checked again, and the report lands on their Tasks screen under From
+agents. The licence says how many agents an environment may have.
+Email, plain words and the AI summary are later slices of the six
+agreed in `claude/agents-design.md`.
 
 ### SFTP planned again (0621)
 

@@ -27,6 +27,14 @@ export interface LicenceClaims {
    * build step. */
   volumeEntitlement: number;
   /**
+   * **How many agents the environment may have — decision 0622.**
+   * Agents are included in every tier and capped by tier (Dan, 4 October
+   * 2026), set per environment on the control plane. Absent from tokens
+   * signed before it existed, and for a licence that names none: vf-app
+   * then uses its own default.
+   */
+  agentLimit?: number;
+  /**
    * The staged block, Blueprint: "notice in the product, then notice
    * with a date, then restriction." Only "blocked" actually restricts
    * anything today — "warned" is a product-surface concern (nothing in

@@ -33,7 +33,7 @@ export async function handleFleetOverview(db: D1Database): Promise<RouteResult> 
     await db
       .prepare(
         `SELECT e.id, e.customer_id, e.kind, e.region, e.instance_url, e.worker_name, e.d1_database_name, e.locale, e.created_at,
-                l.plan, l.status AS licence_status, l.status_reason, l.volume_entitlement, l.valid_from, l.valid_to, l.features_json,
+                l.plan, l.status AS licence_status, l.status_reason, l.volume_entitlement, l.valid_from, l.valid_to, l.features_json, l.agent_limit,
                 (SELECT count(*) FROM user_environment_access a WHERE a.environment_id = e.id) AS people
            FROM environments e LEFT JOIN licences l ON l.environment_id = e.id
           ORDER BY e.customer_id, e.kind, e.id`
@@ -55,6 +55,7 @@ export async function handleFleetOverview(db: D1Database): Promise<RouteResult> 
         valid_from: string | null;
         valid_to: string | null;
         features_json: string | null;
+        agent_limit: number | null;
         people: number;
       }>()
   ).results;
@@ -79,6 +80,7 @@ export async function handleFleetOverview(db: D1Database): Promise<RouteResult> 
               status: e.licence_status,
               statusReason: e.status_reason,
               volumeEntitlement: e.volume_entitlement,
+              agentLimit: e.agent_limit,
               validFrom: e.valid_from,
               validTo: e.valid_to,
               features: e.features_json ? (JSON.parse(e.features_json) as string[]) : [],

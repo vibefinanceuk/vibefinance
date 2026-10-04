@@ -760,6 +760,10 @@ async function go(screen) {
     // its panel on Process routes; this is the org switcher's relaunch.
     const { reopen } = await import("/outbound-editor.js");
     await reopen();
+  } else if (screen === "agents") {
+    // Agents — decision 0622.
+    const { open } = await import("/agents.js");
+    await open();
   } else if (screen === "create") {
     // Create → Upload documents — decision 0573.
     const { open } = await import("/create.js");
@@ -886,6 +890,8 @@ const NAV_PERMISSIONS = {
   routemonitor: "Integration.Monitor",
   // Create → Upload documents — decision 0573.
   create: "AP.Create",
+  // Agents — decision 0622: their makers, and administrators who may remove anyone's.
+  agents: ["AP.Agents", "Admin.UserManagement"],
   /**
    * **Either standing opens it, decision 0321** — extending decision
    * 0320's own `Admin.Configure` correction rather than reverting it:
@@ -952,6 +958,8 @@ const NAV_GROUPS = [
       ["tasks", "tasks"],
       // Create — decision 0573: the AP team's own way in, after Tasks.
       ["create", "create"],
+      // Agents — decision 0622, under Accounts payable.
+      ["agents", "agents"],
       ["documents", "documents"],
     ],
   },
@@ -1047,7 +1055,8 @@ export function frame(main) {
    * count and takes the fifth colour, which neither neighbour
    * (Tasks, third; Documents, fourth) has.
    */
-  const FIXED_HUES = new Map([["create", 5]]);
+  // Agents (decision 0622) likewise: between Create (fifth) and Documents (fourth), the first.
+  const FIXED_HUES = new Map([["create", 5], ["agents", 1]]);
   const HUES = new Map([
     ...NAV_GROUPS.flatMap(({ screens }) => screens)
       .filter(([screen]) => !FIXED_HUES.has(screen))
@@ -1293,6 +1302,8 @@ function render() {
     frame(
       el("div", {}, [
         topbar(t("nav.tasks"), `${me.name} · ${me.environmentId ?? ""}`),
+        // From agents — decision 0622: filled after rendering, hidden when empty.
+        el("div", { id: "agentnotes", hidden: "hidden" }),
 
         el("div", { class: "panel" }, [
           el("div", { class: "searchrow" }, searchAndPaginationRow()),
@@ -1356,6 +1367,10 @@ function render() {
       ])
     )
   );
+  // From agents — decision 0622. Never holds the task list up, and says nothing on failure.
+  import("/agent-notes.js")
+    .then((m) => m.fill(document.getElementById("agentnotes")))
+    .catch(() => {});
 }
 
 /**
@@ -1407,7 +1422,11 @@ async function openDefaultScreen() {
     if (!ok) problem(t("tasks.loadfailed"));
     return;
   }
-  const first = NAV_GROUPS.flatMap(({ screens }) => screens).map(([screen]) => screen).find(mayOpen);
+  // Agents (decision 0622) is offered to administrators so they can remove anyone's, but is
+  // nobody's first screen unless they make agents themselves.
+  const first = NAV_GROUPS.flatMap(({ screens }) => screens)
+    .map(([screen]) => screen)
+    .find((screen) => mayOpen(screen) && (screen !== "agents" || hasMyPermission("AP.Agents")));
   if (first) {
     await go(first);
     return;

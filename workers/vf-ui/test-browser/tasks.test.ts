@@ -990,7 +990,8 @@ describe("the flat nav, permission-filtered (decisions 0274 and 0276)", () => {
     await start();
 
     const labels = [...document.querySelectorAll(".navitem")].map((a) => a.textContent);
-    expect(labels).toEqual(["Access"]);
+    // Decision 0622: and Agents, where an administrator may remove anyone's (no string seeded here).
+    expect(labels).toEqual(["nav.agents", "Access"]);
   });
 });
 

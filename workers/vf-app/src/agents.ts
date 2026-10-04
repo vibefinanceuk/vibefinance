@@ -1,0 +1,782 @@
+import { hasPermission, unitsFor, unitsWherePermitted, scopedToChosenOrg, unitClause } from "./enforce.js";
+import type { Permission } from "./permissions.js";
+import type { RouteResult } from "./org-route.js";
+import { readLicenceState } from "./licence-cache.js";
+import { exitStageIds } from "./process-ends.js";
+import { handleAccruals } from "./accruals-route.js";
+import { handleOverdueBalance } from "./overdue-balance-route.js";
+import { handleWorkloadOpenTasks } from "./workload-open-tasks-route.js";
+import { handlePossibleDuplicates } from "./fraud-duplicates-route.js";
+import { checkSchedule, DEFAULT_TIME_ZONE, isTimeZone, nextRunAfter, type AgentSchedule } from "./agent-schedule.js";
+
+/**
+ * **Agents, slice 1: the engine — decision 0622.**
+ *
+ * An agent is a report an AP Manager sets up once, for organisations
+ * they choose, that runs on a schedule and lands on their task list.
+ * The design agreed with Dan on 4 October 2026 (the Agents page and
+ * `claude/agents-design.md`); this slice has no AI and no email:
+ *
+ * - **Made from a form**: a report from `AGENT_REPORTS`, organisations,
+ *   a schedule. Saved paused; started, paused, edited, removed.
+ * - **Run by the five-minute cron** (`runDueAgents`): each due agent is
+ *   claimed by moving its `next_run_at` on in one conditional UPDATE,
+ *   so two overlapping ticks cannot both run it. A run missed while
+ *   nothing ran (an outage) happens once, late, and says so.
+ * - **With its author's eyes**: every run checks again that the author
+ *   holds `AP.Agents` and the report's own permission in each chosen
+ *   organisation. An organisation no longer held is left out and named;
+ *   with none left, or without `AP.Agents`, the agent pauses itself.
+ * - **Delivered to the task list** as an `agent_notes` row, its own
+ *   table rather than a task: a note belongs to no stage, so it never
+ *   counts in workload, queue depth or handling time.
+ * - **Capped by the licence**: `agentLimit` in the signed licence
+ *   claims, set per environment on the control plane;
+ *   `DEFAULT_AGENT_LIMIT` where the licence does not say.
+ *
+ * The numbers come from the same permission-checked handlers the
+ * screens and the AP Expert (decision 0430) use, plus one new query,
+ * outstanding payables: payment-eligible and not yet delivered to the
+ * ERP (decision 0622, Dan: "payment-eligible is what we should track
+ * against", and delivered-to-ERP as where it stops).
+ */
+
+export const DEFAULT_AGENT_LIMIT = 5;
+/** At most this many agents are run in one five-minute tick; the rest wait for the next. */
+const AGENTS_PER_TICK = 20;
+/** A run this long after its time says it ran late. */
+const LATE_AFTER_MS = 15 * 60_000;
+const NAME_MAX = 80;
+
+// ---------------------------------------------------------------------------
+// Reports
+// ---------------------------------------------------------------------------
+
+export type ColumnKind = "text" | "money" | "count" | "date" | "days" | "percent";
+
+export interface ReportColumn {
+  key: string;
+  /** A string key; the interface says it in the reader's language. */
+  label: string;
+  kind: ColumnKind;
+}
+
+export interface ReportTotal {
+  currency: string | null;
+  total: number | null;
+  count: number;
+}
+
+export interface ReportTable {
+  report: string;
+  columns: ReportColumn[];
+  rows: Record<string, string | number | null>[];
+  totals: ReportTotal[];
+  /** Chosen organisations left out because the author no longer holds the report's permission there. */
+  skippedOrgs: string[];
+  asAt: string;
+}
+
+interface Org {
+  id: string;
+  name: string;
+}
+
+interface AgentReport {
+  id: string;
+  permission: Permission;
+  gather(db: D1Database, authorId: string, orgs: Org[], now: Date): Promise<Omit<ReportTable, "report" | "skippedOrgs" | "asAt">>;
+}
+
+function addTotal(totals: Map<string, ReportTotal>, currency: string | null, amount: number | null, count = 1) {
+  const key = currency ?? "";
+  const t = totals.get(key) ?? { currency, total: amount === null ? null : 0, count: 0 };
+  if (amount !== null) t.total = (t.total ?? 0) + amount;
+  t.count += count;
+  totals.set(key, t);
+}
+
+const round2 = (n: number) => Math.round(n * 100) / 100;
+
+function daysBetween(fromIso: string, to: Date): number {
+  const from = Date.parse(`${fromIso.slice(0, 10)}T00:00:00Z`);
+  const today = Date.parse(`${to.toISOString().slice(0, 10)}T00:00:00Z`);
+  return Math.round((today - from) / 86_400_000);
+}
+
+/**
+ * **Outstanding payables** — payment-eligible (process completed, or at
+ * its exit stage; never discarded or returned) and **not yet delivered to
+ * the ERP**: no Destination delivery (ERP CSV export included, since
+ * 0586) has succeeded for it. By organisation, supplier and currency,
+ * oldest due date first.
+ */
+async function gatherOutstanding(db: D1Database, authorId: string, orgs: Org[], now: Date) {
+  const visible = await unitsWherePermitted(db, authorId, "AP.Analysis");
+  const exits = await exitStageIds(db);
+  const exitSql = exits.length === 0 ? "0" : `pi.current_stage_id IN (${exits.map(() => "?").join(", ")})`;
+  const seen = new Set<string>();
+  const groups = new Map<string, { org: string; supplier: string | null; currency: string; count: number; total: number; oldestDue: string | null }>();
+  const totals = new Map<string, ReportTotal>();
+  for (const org of orgs) {
+    const units = await scopedToChosenOrg(db, visible, org.id);
+    const clause = unitClause({ units }, "h.org_unit_id");
+    const rows = await db
+      .prepare(
+        `SELECT DISTINCT h.id AS id, COALESCE(sup.name, json_extract(h.facts_json, '$."BT-27"')) AS supplier_name,
+                h.currency AS currency, h.total_with_vat AS total, json_extract(h.facts_json, '$."BT-9"') AS due_date
+         FROM invoice_headers h
+         JOIN process_instances pi ON pi.subject_type = 'invoice' AND pi.subject_id = h.id
+         LEFT JOIN suppliers sup ON sup.id = h.supplier_id
+         WHERE (pi.status = 'completed' OR (pi.status = 'in_progress' AND ${exitSql}))
+           AND NOT EXISTS (
+             SELECT 1 FROM process_instances other
+             WHERE other.subject_type = 'invoice' AND other.subject_id = h.id AND other.status IN ('archived', 'returned_manually')
+           )
+           AND NOT EXISTS (SELECT 1 FROM destination_deliveries d WHERE d.invoice_id = h.id AND d.status = 'delivered')
+           AND h.currency IS NOT NULL AND h.total_with_vat IS NOT NULL ${clause.sql}`
+      )
+      .bind(...exits, ...clause.binds)
+      .all<{ id: string; supplier_name: string | null; currency: string; total: number; due_date: string | null }>();
+    for (const r of rows.results) {
+      if (seen.has(r.id)) continue;
+      seen.add(r.id);
+      const key = `${org.id}::${r.supplier_name ?? ""}::${r.currency}`;
+      const g = groups.get(key) ?? { org: org.name, supplier: r.supplier_name, currency: r.currency, count: 0, total: 0, oldestDue: null };
+      g.count += 1;
+      g.total += r.total;
+      if (r.due_date && (!g.oldestDue || r.due_date < g.oldestDue)) g.oldestDue = r.due_date;
+      groups.set(key, g);
+      addTotal(totals, r.currency, r.total);
+    }
+  }
+  const rows = [...groups.values()]
+    .sort((a, b) => (a.oldestDue ?? "9999").localeCompare(b.oldestDue ?? "9999") || b.total - a.total)
+    .map((g) => ({
+      org: g.org,
+      supplier: g.supplier,
+      currency: g.currency,
+      invoices: g.count,
+      total: round2(g.total),
+      oldestDue: g.oldestDue,
+      daysPastDue: g.oldestDue ? Math.max(0, daysBetween(g.oldestDue, now)) : null,
+    }));
+  return {
+    columns: [
+      { key: "org", label: "agents.col.org", kind: "text" as const },
+      { key: "supplier", label: "agents.col.supplier", kind: "text" as const },
+      { key: "invoices", label: "agents.col.invoices", kind: "count" as const },
+      { key: "total", label: "agents.col.total", kind: "money" as const },
+      { key: "currency", label: "agents.col.currency", kind: "text" as const },
+      { key: "oldestDue", label: "agents.col.oldestdue", kind: "date" as const },
+      { key: "daysPastDue", label: "agents.col.dayspastdue", kind: "days" as const },
+    ],
+    rows,
+    totals: [...totals.values()].map((t) => ({ ...t, total: t.total === null ? null : round2(t.total) })),
+  };
+}
+
+async function gatherOverdue(db: D1Database, authorId: string, orgs: Org[], now: Date) {
+  const rows: Record<string, string | number | null>[] = [];
+  const totals = new Map<string, ReportTotal>();
+  for (const org of orgs) {
+    const body = (await handleOverdueBalance(db, org.id, authorId, now)).body as {
+      suppliers: { supplierName: string | null; currency: string; total: number; count: number }[];
+    };
+    for (const s of body.suppliers) {
+      rows.push({ org: org.name, supplier: s.supplierName, invoices: s.count, total: round2(s.total), currency: s.currency });
+      addTotal(totals, s.currency, s.total, s.count);
+    }
+  }
+  return {
+    columns: [
+      { key: "org", label: "agents.col.org", kind: "text" as const },
+      { key: "supplier", label: "agents.col.supplier", kind: "text" as const },
+      { key: "invoices", label: "agents.col.invoices", kind: "count" as const },
+      { key: "total", label: "agents.col.total", kind: "money" as const },
+      { key: "currency", label: "agents.col.currency", kind: "text" as const },
+    ],
+    rows,
+    totals: [...totals.values()].map((t) => ({ ...t, total: t.total === null ? null : round2(t.total) })),
+  };
+}
+
+async function gatherAccruals(db: D1Database, authorId: string, orgs: Org[]) {
+  const rows: Record<string, string | number | null>[] = [];
+  const totals = new Map<string, ReportTotal>();
+  for (const org of orgs) {
+    const body = (await handleAccruals(db, org.id, authorId)).body as {
+      currencies: { currency: string; stages: { stageName: string; total: number; count: number }[] }[];
+    };
+    for (const c of body.currencies) {
+      for (const s of c.stages) {
+        rows.push({ org: org.name, stage: s.stageName, invoices: s.count, total: round2(s.total), currency: c.currency });
+        addTotal(totals, c.currency, s.total, s.count);
+      }
+    }
+  }
+  return {
+    columns: [
+      { key: "org", label: "agents.col.org", kind: "text" as const },
+      { key: "stage", label: "agents.col.stage", kind: "text" as const },
+      { key: "invoices", label: "agents.col.invoices", kind: "count" as const },
+      { key: "total", label: "agents.col.total", kind: "money" as const },
+      { key: "currency", label: "agents.col.currency", kind: "text" as const },
+    ],
+    rows,
+    totals: [...totals.values()].map((t) => ({ ...t, total: t.total === null ? null : round2(t.total) })),
+  };
+}
+
+async function gatherOpenTasks(db: D1Database, authorId: string, orgs: Org[]) {
+  const rows: Record<string, string | number | null>[] = [];
+  let count = 0;
+  for (const org of orgs) {
+    const body = (await handleWorkloadOpenTasks(db, org.id, authorId)).body as {
+      users: { userName: string; openCount: number }[];
+      available: number;
+    };
+    for (const u of body.users) {
+      rows.push({ org: org.name, person: u.userName, open: u.openCount });
+      count += u.openCount;
+    }
+    if (body.available > 0) {
+      rows.push({ org: org.name, person: null, open: body.available });
+      count += body.available;
+    }
+  }
+  return {
+    columns: [
+      { key: "org", label: "agents.col.org", kind: "text" as const },
+      { key: "person", label: "agents.col.person", kind: "text" as const },
+      { key: "open", label: "agents.col.open", kind: "count" as const },
+    ],
+    rows,
+    totals: count > 0 ? [{ currency: null, total: null, count }] : [],
+  };
+}
+
+async function gatherDuplicates(db: D1Database, authorId: string, orgs: Org[]) {
+  const rows: Record<string, string | number | null>[] = [];
+  const totals = new Map<string, ReportTotal>();
+  const seen = new Set<string>();
+  for (const org of orgs) {
+    const body = (await handlePossibleDuplicates(db, org.id, authorId)).body as {
+      invoices: { id: string; invoiceNumber: string | null; supplierName: string | null; totalWithVat: number | null; currency: string | null; issueDate: string | null; duplicateConfidence: number }[];
+    };
+    for (const i of body.invoices) {
+      if (seen.has(i.id)) continue;
+      seen.add(i.id);
+      rows.push({
+        org: org.name,
+        invoiceId: i.id,
+        invoice: i.invoiceNumber,
+        supplier: i.supplierName,
+        issued: i.issueDate,
+        total: i.totalWithVat === null ? null : round2(i.totalWithVat),
+        currency: i.currency,
+        confidence: i.duplicateConfidence,
+      });
+      addTotal(totals, i.currency, i.totalWithVat);
+    }
+  }
+  return {
+    columns: [
+      { key: "org", label: "agents.col.org", kind: "text" as const },
+      { key: "invoice", label: "agents.col.invoice", kind: "text" as const },
+      { key: "supplier", label: "agents.col.supplier", kind: "text" as const },
+      { key: "issued", label: "agents.col.issued", kind: "date" as const },
+      { key: "total", label: "agents.col.total", kind: "money" as const },
+      { key: "currency", label: "agents.col.currency", kind: "text" as const },
+      { key: "confidence", label: "agents.col.confidence", kind: "percent" as const },
+    ],
+    rows,
+    totals: [...totals.values()].map((t) => ({ ...t, total: t.total === null ? null : round2(t.total) })),
+  };
+}
+
+/** The reports an agent can run, in the order the form offers them. */
+export const AGENT_REPORTS: AgentReport[] = [
+  { id: "outstanding_payables", permission: "AP.Analysis", gather: gatherOutstanding },
+  { id: "overdue_not_eligible", permission: "AP.Analysis", gather: gatherOverdue },
+  { id: "accruals", permission: "AP.Analysis", gather: (db, a, o) => gatherAccruals(db, a, o) },
+  { id: "open_tasks", permission: "AP.Analysis", gather: (db, a, o) => gatherOpenTasks(db, a, o) },
+  { id: "possible_duplicates", permission: "AP.FraudReview", gather: (db, a, o) => gatherDuplicates(db, a, o) },
+];
+
+export function reportById(id: unknown): AgentReport | null {
+  return AGENT_REPORTS.find((r) => r.id === id) ?? null;
+}
+
+// ---------------------------------------------------------------------------
+// Settings, licence, rows
+// ---------------------------------------------------------------------------
+
+export async function agentTimeZone(db: D1Database): Promise<string> {
+  const row = await db.prepare("SELECT time_zone FROM org_settings WHERE id = 1").first<{ time_zone: string | null }>();
+  return row?.time_zone && isTimeZone(row.time_zone) ? row.time_zone : DEFAULT_TIME_ZONE;
+}
+
+export async function agentLimit(db: D1Database): Promise<number> {
+  const state = await readLicenceState(db);
+  const limit = state.known ? (state.claims as { agentLimit?: unknown }).agentLimit : undefined;
+  return typeof limit === "number" && Number.isInteger(limit) && limit >= 0 ? limit : DEFAULT_AGENT_LIMIT;
+}
+
+interface AgentRow {
+  id: string;
+  name: string;
+  author_id: string;
+  report: string;
+  org_unit_ids_json: string;
+  schedule_json: string;
+  status: "active" | "paused" | "removed";
+  paused_reason: string | null;
+  next_run_at: string | null;
+  last_run_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+function parseIds(json: string): string[] {
+  try {
+    const v = JSON.parse(json);
+    return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+function parseSchedule(json: string): AgentSchedule | null {
+  try {
+    const checked = checkSchedule(JSON.parse(json));
+    return "schedule" in checked ? checked.schedule : null;
+  } catch {
+    return null;
+  }
+}
+
+async function orgsNamed(db: D1Database, ids: string[]): Promise<Org[]> {
+  if (ids.length === 0) return [];
+  const rows = await db
+    .prepare(`SELECT id, name FROM org_units WHERE id IN (${ids.map(() => "?").join(", ")})`)
+    .bind(...ids)
+    .all<Org>();
+  const byId = new Map(rows.results.map((o) => [o.id, o]));
+  return ids.map((id) => byId.get(id)).filter((o): o is Org => Boolean(o));
+}
+
+/** Whether a visible-units list (`unitsWherePermitted`) covers the organisation. */
+function covers(visible: string[] | null, orgId: string): boolean {
+  return visible === null || visible.includes(orgId);
+}
+
+async function lastRuns(db: D1Database, agentIds: string[]): Promise<Map<string, { status: string; startedAt: string; late: boolean; rowCount: number | null; error: string | null }>> {
+  const out = new Map<string, { status: string; startedAt: string; late: boolean; rowCount: number | null; error: string | null }>();
+  if (agentIds.length === 0) return out;
+  const rows = await db
+    .prepare(
+      `SELECT r.agent_id, r.status, r.started_at, r.late, r.row_count, r.error FROM agent_runs r
+       WHERE r.agent_id IN (${agentIds.map(() => "?").join(", ")})
+         AND r.started_at = (SELECT max(x.started_at) FROM agent_runs x WHERE x.agent_id = r.agent_id)`
+    )
+    .bind(...agentIds)
+    .all<{ agent_id: string; status: string; started_at: string; late: number; row_count: number | null; error: string | null }>();
+  for (const r of rows.results) {
+    out.set(r.agent_id, { status: r.status, startedAt: r.started_at, late: r.late === 1, rowCount: r.row_count, error: r.error });
+  }
+  return out;
+}
+
+async function toBody(db: D1Database, rows: AgentRow[]) {
+  const authors = new Map<string, string>();
+  const authorIds = [...new Set(rows.map((r) => r.author_id))];
+  if (authorIds.length > 0) {
+    const people = await db
+      .prepare(`SELECT id, name FROM org_users WHERE id IN (${authorIds.map(() => "?").join(", ")})`)
+      .bind(...authorIds)
+      .all<{ id: string; name: string | null }>();
+    for (const p of people.results) authors.set(p.id, p.name ?? p.id);
+  }
+  const last = await lastRuns(db, rows.map((r) => r.id));
+  const out = [];
+  for (const r of rows) {
+    out.push({
+      id: r.id,
+      name: r.name,
+      authorId: r.author_id,
+      authorName: authors.get(r.author_id) ?? r.author_id,
+      report: r.report,
+      orgs: await orgsNamed(db, parseIds(r.org_unit_ids_json)),
+      schedule: parseSchedule(r.schedule_json),
+      status: r.status,
+      pausedReason: r.paused_reason,
+      nextRunAt: r.next_run_at,
+      lastRun: last.get(r.id) ?? null,
+      createdAt: r.created_at,
+    });
+  }
+  return out;
+}
+
+async function loadAgent(db: D1Database, id: string): Promise<AgentRow | null> {
+  return db.prepare("SELECT * FROM agents WHERE id = ? AND status <> 'removed'").bind(id).first<AgentRow>();
+}
+
+// ---------------------------------------------------------------------------
+// Routes
+// ---------------------------------------------------------------------------
+
+/**
+ * `GET /agents` — the person's own agents (with `all`, an administrator
+ * holding `Admin.UserManagement` sees everyone's), the reports they may
+ * choose, their organisations, the licence's count and the time zone.
+ */
+export async function handleListAgents(db: D1Database, userId: string, opts: { all?: boolean } = {}): Promise<RouteResult> {
+  const canManageAll = await hasPermission(db, userId, "Admin.UserManagement");
+  const all = Boolean(opts.all) && canManageAll;
+  const rows = all
+    ? await db.prepare("SELECT * FROM agents WHERE status <> 'removed' ORDER BY created_at").all<AgentRow>()
+    : await db.prepare("SELECT * FROM agents WHERE status <> 'removed' AND author_id = ? ORDER BY created_at").bind(userId).all<AgentRow>();
+  const used = await db.prepare("SELECT count(*) AS n FROM agents WHERE status <> 'removed'").first<{ n: number }>();
+  const { units } = await unitsFor(db, userId);
+  const reports = [];
+  for (const r of AGENT_REPORTS) {
+    const visible = await unitsWherePermitted(db, userId, r.permission);
+    reports.push({ id: r.id, permission: r.permission, orgIds: units.filter((u) => covers(visible, u.id)).map((u) => u.id) });
+  }
+  return {
+    status: 200,
+    body: {
+      me: userId,
+      agents: await toBody(db, rows.results),
+      reports,
+      orgs: units,
+      limit: { used: used?.n ?? 0, max: await agentLimit(db) },
+      timeZone: await agentTimeZone(db),
+      canManageAll,
+      canSetTimeZone: await hasPermission(db, userId, "Admin.Configure"),
+    },
+  };
+}
+
+/** Checks a name, report, organisations and schedule against the author; the parts, or why not. */
+async function checkAgentInput(
+  db: D1Database,
+  userId: string,
+  input: Record<string, unknown>,
+  current?: AgentRow
+): Promise<{ name: string; report: AgentReport; orgIds: string[]; schedule: AgentSchedule } | { reason: string; message: string }> {
+  const name = typeof input.name === "string" ? input.name.trim() : current?.name ?? "";
+  if (!name) return { reason: "name_missing", message: "give the agent a name" };
+  if (name.length > NAME_MAX) return { reason: "name_too_long", message: `a name is at most ${NAME_MAX} characters` };
+  const report = reportById(input.report ?? current?.report);
+  if (!report) return { reason: "report_unknown", message: "choose one of the reports" };
+  const orgIds = Array.isArray(input.orgIds)
+    ? [...new Set(input.orgIds.filter((x): x is string => typeof x === "string"))]
+    : current ? parseIds(current.org_unit_ids_json) : [];
+  if (orgIds.length === 0) return { reason: "orgs_missing", message: "choose at least one organisation" };
+  const known = await orgsNamed(db, orgIds);
+  if (known.length !== orgIds.length) return { reason: "org_unknown", message: "an organisation chosen does not exist" };
+  const visible = await unitsWherePermitted(db, userId, report.permission);
+  const notHeld = known.filter((o) => !covers(visible, o.id));
+  if (notHeld.length > 0) {
+    return { reason: "org_not_permitted", message: `you cannot see this report for ${notHeld.map((o) => o.name).join(", ")}` };
+  }
+  const checked = checkSchedule(input.schedule ?? (current ? JSON.parse(current.schedule_json) : undefined));
+  if ("reason" in checked) return { reason: checked.reason, message: "the schedule is not complete" };
+  return { name, report, orgIds, schedule: checked.schedule };
+}
+
+/** `POST /agents` — made paused. Refused at the licence's count. */
+export async function handleCreateAgent(db: D1Database, userId: string, input: Record<string, unknown>, now = new Date()): Promise<RouteResult> {
+  const checked = await checkAgentInput(db, userId, input);
+  if ("reason" in checked) return { status: 422, body: { error: checked.message, reason: checked.reason } };
+  const used = await db.prepare("SELECT count(*) AS n FROM agents WHERE status <> 'removed'").first<{ n: number }>();
+  const max = await agentLimit(db);
+  if ((used?.n ?? 0) >= max) {
+    return { status: 409, body: { error: `this environment's licence allows ${max} agents`, reason: "limit_reached", max } };
+  }
+  const id = `agt-${crypto.randomUUID()}`;
+  const at = now.toISOString();
+  await db
+    .prepare(
+      `INSERT INTO agents (id, name, author_id, report, org_unit_ids_json, schedule_json, status, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, 'paused', ?, ?)`
+    )
+    .bind(id, checked.name, userId, checked.report.id, JSON.stringify(checked.orgIds), JSON.stringify(checked.schedule), at, at)
+    .run();
+  const row = (await loadAgent(db, id))!;
+  return { status: 201, body: (await toBody(db, [row]))[0] };
+}
+
+/**
+ * `PATCH /agents/:id` — the author changes it: name, report,
+ * organisations, schedule, and `status` active or paused. Starting works
+ * out the next run; a `once` already past is refused.
+ */
+export async function handleUpdateAgent(db: D1Database, userId: string, id: string, input: Record<string, unknown>, now = new Date()): Promise<RouteResult> {
+  const row = await loadAgent(db, id);
+  if (!row) return { status: 404, body: { error: `agent ${id} does not exist`, reason: "not_found" } };
+  if (row.author_id !== userId) return { status: 403, body: { error: "only its author can change an agent", reason: "not_author" } };
+  // Pausing alone always works, even where the rest would no longer pass.
+  if (input.status === "paused" && Object.keys(input).every((k) => k === "status")) {
+    await db.prepare("UPDATE agents SET status = 'paused', paused_reason = NULL, next_run_at = NULL, updated_at = ? WHERE id = ?").bind(now.toISOString(), id).run();
+    return { status: 200, body: (await toBody(db, [(await loadAgent(db, id))!]))[0] };
+  }
+  const checked = await checkAgentInput(db, userId, input, row);
+  if ("reason" in checked) return { status: 422, body: { error: checked.message, reason: checked.reason } };
+  const status = input.status === "active" || input.status === "paused" ? input.status : row.status;
+  let nextRunAt: string | null = null;
+  if (status === "active") {
+    nextRunAt = nextRunAfter(checked.schedule, await agentTimeZone(db), now);
+    if (!nextRunAt) return { status: 422, body: { error: "that time has already passed", reason: "once_past" } };
+  }
+  await db
+    .prepare(
+      `UPDATE agents SET name = ?, report = ?, org_unit_ids_json = ?, schedule_json = ?, status = ?, paused_reason = NULL,
+              next_run_at = ?, updated_at = ? WHERE id = ?`
+    )
+    .bind(checked.name, checked.report.id, JSON.stringify(checked.orgIds), JSON.stringify(checked.schedule), status, nextRunAt, now.toISOString(), id)
+    .run();
+  return { status: 200, body: (await toBody(db, [(await loadAgent(db, id))!]))[0] };
+}
+
+/** `DELETE /agents/:id` — its author, or an administrator (`Admin.UserManagement`, decision 0622). Its runs and notes stay. */
+export async function handleRemoveAgent(db: D1Database, userId: string, id: string, now = new Date()): Promise<RouteResult> {
+  const row = await loadAgent(db, id);
+  if (!row) return { status: 404, body: { error: `agent ${id} does not exist`, reason: "not_found" } };
+  if (row.author_id !== userId && !(await hasPermission(db, userId, "Admin.UserManagement"))) {
+    return { status: 403, body: { error: "only its author or an administrator can remove an agent", reason: "not_author" } };
+  }
+  await db
+    .prepare("UPDATE agents SET status = 'removed', next_run_at = NULL, removed_at = ?, removed_by = ?, updated_at = ? WHERE id = ?")
+    .bind(now.toISOString(), userId, now.toISOString(), id)
+    .run();
+  return { status: 200, body: { id, removed: true } };
+}
+
+/** `GET /agents/:id/runs` — the last 50, for its author or an administrator. */
+export async function handleListAgentRuns(db: D1Database, userId: string, id: string): Promise<RouteResult> {
+  const row = await db.prepare("SELECT * FROM agents WHERE id = ?").bind(id).first<AgentRow>();
+  if (!row) return { status: 404, body: { error: `agent ${id} does not exist`, reason: "not_found" } };
+  if (row.author_id !== userId && !(await hasPermission(db, userId, "Admin.UserManagement"))) {
+    return { status: 403, body: { error: "only its author or an administrator can see its runs", reason: "not_author" } };
+  }
+  const runs = await db
+    .prepare(
+      `SELECT id, trigger, scheduled_for, started_at, finished_at, status, late, row_count, totals_json, error
+       FROM agent_runs WHERE agent_id = ? ORDER BY started_at DESC LIMIT 50`
+    )
+    .bind(id)
+    .all<{ id: string; trigger: string; scheduled_for: string | null; started_at: string; finished_at: string | null; status: string; late: number; row_count: number | null; totals_json: string | null; error: string | null }>();
+  return {
+    status: 200,
+    body: {
+      runs: runs.results.map((r) => ({
+        id: r.id,
+        trigger: r.trigger,
+        scheduledFor: r.scheduled_for,
+        startedAt: r.started_at,
+        finishedAt: r.finished_at,
+        status: r.status,
+        late: r.late === 1,
+        rowCount: r.row_count,
+        totals: r.totals_json ? (JSON.parse(r.totals_json) as ReportTotal[]) : [],
+        error: r.error,
+      })),
+    },
+  };
+}
+
+/** `PUT /agent-settings` — the environment's time zone (Admin.Configure). Every active agent's next run is worked out again. */
+export async function handleSetAgentTimeZone(db: D1Database, input: Record<string, unknown>, now = new Date()): Promise<RouteResult> {
+  if (!isTimeZone(input.timeZone)) return { status: 422, body: { error: "that is not a time zone this system knows", reason: "time_zone_invalid" } };
+  const zone = input.timeZone;
+  await db.prepare("UPDATE org_settings SET time_zone = ?, updated_at = datetime('now') WHERE id = 1").bind(zone).run();
+  const active = await db.prepare("SELECT id, schedule_json FROM agents WHERE status = 'active'").all<{ id: string; schedule_json: string }>();
+  for (const a of active.results) {
+    const schedule = parseSchedule(a.schedule_json);
+    const next = schedule ? nextRunAfter(schedule, zone, now) : null;
+    if (next) {
+      await db.prepare("UPDATE agents SET next_run_at = ? WHERE id = ?").bind(next, a.id).run();
+    } else {
+      await db.prepare("UPDATE agents SET status = 'paused', paused_reason = 'finished', next_run_at = NULL WHERE id = ?").bind(a.id).run();
+    }
+  }
+  return { status: 200, body: { timeZone: zone } };
+}
+
+// ---------------------------------------------------------------------------
+// Running
+// ---------------------------------------------------------------------------
+
+async function pause(db: D1Database, id: string, reason: string, now: Date) {
+  await db
+    .prepare("UPDATE agents SET status = 'paused', paused_reason = ?, next_run_at = NULL, updated_at = ? WHERE id = ? AND status = 'active'")
+    .bind(reason, now.toISOString(), id)
+    .run();
+}
+
+/**
+ * One run: check the author, gather, deliver to the author's task list.
+ * Never throws; a failure is recorded on the run.
+ */
+export async function runAgent(
+  db: D1Database,
+  agent: AgentRow,
+  trigger: "schedule" | "now",
+  now: Date,
+  scheduledFor: string | null = null
+): Promise<{ runId: string; status: "delivered" | "nothing" | "failed"; error?: string }> {
+  const runId = `run-${crypto.randomUUID()}`;
+  const late = scheduledFor !== null && now.getTime() - Date.parse(scheduledFor) > LATE_AFTER_MS;
+  await db
+    .prepare("INSERT INTO agent_runs (id, agent_id, trigger, scheduled_for, started_at, status, late) VALUES (?, ?, ?, ?, ?, 'running', ?)")
+    .bind(runId, agent.id, trigger, scheduledFor, now.toISOString(), late ? 1 : 0)
+    .run();
+  const finish = async (status: "delivered" | "nothing" | "failed", rowCount: number | null, totals: ReportTotal[] | null, error: string | null) => {
+    await db
+      .prepare("UPDATE agent_runs SET status = ?, finished_at = ?, row_count = ?, totals_json = ?, error = ? WHERE id = ?")
+      .bind(status, new Date().toISOString(), rowCount, totals ? JSON.stringify(totals) : null, error, runId)
+      .run();
+  };
+
+  try {
+    const report = reportById(agent.report);
+    if (!report) {
+      await finish("failed", null, null, "report_unknown");
+      return { runId, status: "failed", error: "report_unknown" };
+    }
+    if (!(await hasPermission(db, agent.author_id, "AP.Agents"))) {
+      await finish("failed", null, null, "author_access");
+      await pause(db, agent.id, "author_access", now);
+      return { runId, status: "failed", error: "author_access" };
+    }
+    const chosen = await orgsNamed(db, parseIds(agent.org_unit_ids_json));
+    const visible = await unitsWherePermitted(db, agent.author_id, report.permission);
+    const orgs = chosen.filter((o) => covers(visible, o.id));
+    const skippedOrgs = chosen.filter((o) => !covers(visible, o.id)).map((o) => o.name);
+    if (orgs.length === 0) {
+      await finish("failed", null, null, "author_access");
+      await pause(db, agent.id, "author_access", now);
+      return { runId, status: "failed", error: "author_access" };
+    }
+    const gathered = await report.gather(db, agent.author_id, orgs, now);
+    const table: ReportTable = { report: report.id, ...gathered, skippedOrgs, asAt: now.toISOString() };
+    if (table.rows.length === 0) {
+      await finish("nothing", 0, [], null);
+      return { runId, status: "nothing" };
+    }
+    await db
+      .prepare("INSERT INTO agent_notes (id, agent_id, run_id, user_id, report_json, created_at) VALUES (?, ?, ?, ?, ?, ?)")
+      .bind(`note-${crypto.randomUUID()}`, agent.id, runId, agent.author_id, JSON.stringify(table), now.toISOString())
+      .run();
+    await finish("delivered", table.rows.length, table.totals, null);
+    return { runId, status: "delivered" };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    await finish("failed", null, null, message.slice(0, 500));
+    return { runId, status: "failed", error: message };
+  }
+}
+
+/** `POST /agents/:id/run` — Run now: once, to the author only, paused or not. The schedule is untouched. */
+export async function handleRunAgentNow(db: D1Database, userId: string, id: string, now = new Date()): Promise<RouteResult> {
+  const row = await loadAgent(db, id);
+  if (!row) return { status: 404, body: { error: `agent ${id} does not exist`, reason: "not_found" } };
+  if (row.author_id !== userId) return { status: 403, body: { error: "only its author can run an agent", reason: "not_author" } };
+  const result = await runAgent(db, row, "now", now);
+  return { status: 200, body: result };
+}
+
+/**
+ * The cron's part, every five minutes: each active agent whose time has
+ * come is **claimed** by moving `next_run_at` on to its next time in one
+ * conditional UPDATE. Only the claim that changes the row runs it, so an
+ * overlapping tick cannot run it twice; a run missed while nothing ran
+ * happens once, late, because the next time is worked out from now.
+ */
+export async function runDueAgents(db: D1Database, now = new Date()): Promise<{ ran: number }> {
+  const due = await db
+    .prepare("SELECT * FROM agents WHERE status = 'active' AND next_run_at IS NOT NULL AND next_run_at <= ? ORDER BY next_run_at LIMIT ?")
+    .bind(now.toISOString(), AGENTS_PER_TICK)
+    .all<AgentRow>();
+  if (due.results.length === 0) return { ran: 0 };
+  const zone = await agentTimeZone(db);
+  let ran = 0;
+  for (const agent of due.results) {
+    const schedule = parseSchedule(agent.schedule_json);
+    const next = schedule ? nextRunAfter(schedule, zone, now) : null;
+    const claim = next
+      ? await db
+          .prepare("UPDATE agents SET next_run_at = ?, last_run_at = ? WHERE id = ? AND status = 'active' AND next_run_at = ?")
+          .bind(next, now.toISOString(), agent.id, agent.next_run_at)
+          .run()
+      : await db
+          .prepare("UPDATE agents SET status = 'paused', paused_reason = 'finished', next_run_at = NULL, last_run_at = ? WHERE id = ? AND status = 'active' AND next_run_at = ?")
+          .bind(now.toISOString(), agent.id, agent.next_run_at)
+          .run();
+    if ((claim.meta?.changes ?? 0) !== 1) continue;
+    await runAgent(db, agent, "schedule", now, agent.next_run_at);
+    ran += 1;
+  }
+  return { ran };
+}
+
+// ---------------------------------------------------------------------------
+// Notes: what agents delivered to someone's task list
+// ---------------------------------------------------------------------------
+
+/** `GET /agent-notes` — the person's own notes not yet marked done, newest first. */
+export async function handleListAgentNotes(db: D1Database, userId: string): Promise<RouteResult> {
+  const rows = await db
+    .prepare(
+      `SELECT n.id, n.agent_id, a.name AS agent_name, a.report, n.created_at, r.late, r.row_count, r.totals_json
+       FROM agent_notes n JOIN agents a ON a.id = n.agent_id JOIN agent_runs r ON r.id = n.run_id
+       WHERE n.user_id = ? AND n.done_at IS NULL ORDER BY n.created_at DESC LIMIT 50`
+    )
+    .bind(userId)
+    .all<{ id: string; agent_id: string; agent_name: string; report: string; created_at: string; late: number; row_count: number | null; totals_json: string | null }>();
+  return {
+    status: 200,
+    body: {
+      notes: rows.results.map((n) => ({
+        id: n.id,
+        agentId: n.agent_id,
+        agentName: n.agent_name,
+        report: n.report,
+        createdAt: n.created_at,
+        late: n.late === 1,
+        rowCount: n.row_count,
+        totals: n.totals_json ? (JSON.parse(n.totals_json) as ReportTotal[]) : [],
+      })),
+    },
+  };
+}
+
+/** `GET /agent-notes/:id` — one note with its table; only its own recipient. */
+export async function handleGetAgentNote(db: D1Database, userId: string, id: string): Promise<RouteResult> {
+  const n = await db
+    .prepare(
+      `SELECT n.id, n.agent_id, a.name AS agent_name, n.user_id, n.report_json, n.created_at, n.done_at, r.late
+       FROM agent_notes n JOIN agents a ON a.id = n.agent_id JOIN agent_runs r ON r.id = n.run_id WHERE n.id = ?`
+    )
+    .bind(id)
+    .first<{ id: string; agent_id: string; agent_name: string; user_id: string; report_json: string; created_at: string; done_at: string | null; late: number }>();
+  if (!n || n.user_id !== userId) return { status: 404, body: { error: `note ${id} does not exist`, reason: "not_found" } };
+  return {
+    status: 200,
+    body: { id: n.id, agentId: n.agent_id, agentName: n.agent_name, createdAt: n.created_at, doneAt: n.done_at, late: n.late === 1, table: JSON.parse(n.report_json) as ReportTable },
+  };
+}
+
+/** `POST /agent-notes/:id/done` — off the task list. */
+export async function handleAgentNoteDone(db: D1Database, userId: string, id: string, now = new Date()): Promise<RouteResult> {
+  const result = await db
+    .prepare("UPDATE agent_notes SET done_at = ? WHERE id = ? AND user_id = ? AND done_at IS NULL")
+    .bind(now.toISOString(), id, userId)
+    .run();
+  if ((result.meta?.changes ?? 0) !== 1) return { status: 404, body: { error: `note ${id} does not exist`, reason: "not_found" } };
+  return { status: 200, body: { id, done: true } };
+}

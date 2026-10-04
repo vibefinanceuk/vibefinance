@@ -1045,7 +1045,7 @@ function licenceCell(e) {
   if (!l) return '<span class="outcome-refused">no licence</span>';
   const tone = l.status === "active" ? "outcome-recorded" : "outcome-refused";
   return `<div>${escapeHtml(l.plan)} · <span class="${tone}">${escapeHtml(l.status)}</span></div>
-    <div class="muted">${escapeHtml(l.volumeEntitlement)} invoices · ${escapeHtml(String(l.validFrom ?? "").slice(0, 10))} to ${escapeHtml(l.validTo ? String(l.validTo).slice(0, 10) : "open")}</div>
+    <div class="muted">${escapeHtml(l.volumeEntitlement)} invoices · ${l.agentLimit === null || l.agentLimit === undefined ? "default agents" : `${escapeHtml(l.agentLimit)} agents`} · ${escapeHtml(String(l.validFrom ?? "").slice(0, 10))} to ${escapeHtml(l.validTo ? String(l.validTo).slice(0, 10) : "open")}</div>
     ${l.statusReason ? `<div class="muted">${escapeHtml(l.statusReason)}</div>` : ""}`;
 }
 
@@ -1095,7 +1095,7 @@ function detailRow(tr, className) {
   return td;
 }
 
-/** Change a licence: the plan, volume, dates and state. Its features are kept. */
+/** Change a licence: the plan, volume, agents (0622), dates and state. Its features are kept. */
 function toggleLicence(tr, e) {
   const td = detailRow(tr, "licencerow");
   if (!td) return;
@@ -1108,6 +1108,10 @@ function toggleLicence(tr, e) {
   const input = (value, size, type = "text") => Object.assign(document.createElement("input"), { value: value ?? "", size, type });
   const plan = input(l.plan, 12);
   const volume = input(l.volumeEntitlement, 8, "number");
+  // Decision 0622: how many agents the environment may have; blank for vf-app's default (5).
+  const agents = input(l.agentLimit ?? "", 5, "number");
+  agents.min = "0";
+  agents.placeholder = "default";
   const from = input(String(l.validFrom ?? "").slice(0, 10), 11, "date");
   const to = input(l.validTo ? String(l.validTo).slice(0, 10) : "", 11, "date");
   const status = document.createElement("select");
@@ -1119,6 +1123,7 @@ function toggleLicence(tr, e) {
   form.append(
     field("Plan", plan),
     field("Invoices", volume),
+    field("Agents (blank: default)", agents),
     field("From", from),
     field("To (blank: open)", to),
     field("State", status),
@@ -1128,6 +1133,7 @@ function toggleLicence(tr, e) {
         environmentId: e.id,
         plan: plan.value.trim(),
         volumeEntitlement: Number(volume.value),
+        agentLimit: agents.value.trim() === "" ? null : Number(agents.value),
         validFrom: from.value,
         ...(to.value ? { validTo: to.value } : {}),
         status: status.value,

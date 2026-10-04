@@ -5186,3 +5186,32 @@
 .dolists { flex-basis: 100%; }
 .dolists .listempty { color: var(--text-warning); }
 .libpartner { color: var(--text-accent); }
+
+/* Agents — decision 0622. */
+.agenthead { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.agentzone { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; color: var(--text-secondary); }
+.agentzone .actionlink { flex-direction: row; padding: 2px 8px; gap: 4px; }
+.agentzone .actionlink svg { width: 14px; height: 14px; }
+.agenttable { width: 100%; border-collapse: collapse; }
+.agenttable th, .agenttable td { text-align: left; padding: 8px 8px 8px 0; vertical-align: top; border-bottom: 0.5px solid var(--border); }
+.agentname { font-weight: 700; color: var(--text-accent); }
+.agentbuttons { flex-wrap: wrap; justify-content: flex-end; }
+.agentconfirm { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.agentruns td { background: var(--surface-1); }
+.agentform .cardhead { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+.agentform h3 { margin: 0; }
+.agentorgs { display: flex; flex-wrap: wrap; gap: 6px 16px; }
+.agentorg { display: inline-flex; align-items: center; gap: 6px; }
+.agentwhen { display: flex; flex-wrap: wrap; gap: 0 16px; }
+.agentwhen .dofield { min-width: 160px; }
+#agents-note { margin: 10px 0; padding: 8px 12px; border-radius: 8px; background: var(--surface-1); border: 1px solid var(--border); }
+.agentnotes h3 { margin: 0 0 2px; }
+.agentnote { border-top: 0.5px solid var(--border); padding: 10px 0; }
+.agentnotehead { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; flex-wrap: wrap; }
+.agentnotename { font-weight: 700; margin-right: 8px; }
+.agentnotetag { font-size: var(--text-sm); }
+.agentnotedetail { margin-top: 8px; }
+.agentreportwrap { overflow-x: auto; }
+.agentreporttable { width: 100%; border-collapse: collapse; }
+.agentreporttable th, .agentreporttable td { text-align: left; padding: 5px 10px 5px 0; border-bottom: 0.5px solid var(--border); white-space: nowrap; }
+.agentreporttable .num { text-align: right; font-variant-numeric: tabular-nums; }
