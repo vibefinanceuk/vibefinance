@@ -102,6 +102,13 @@ function lastRunCell(agent) {
   ]);
 }
 
+/** Decision 0623: "Dan by email, Maya on the task list; Pat by email failed". */
+function deliveriesWords(list) {
+  return (list ?? [])
+    .map((d) => `${d.userName} ${t(`agents.channel.${d.channel}`)}${d.status === "failed" ? ` (${t("agents.run.failed")}${d.error ? `: ${words("agents.runerror", d.error)}` : ""})` : ""}`)
+    .join(", ");
+}
+
 function words(prefix, code) {
   const key = `${prefix}.${code}`;
   const w = t(key);
@@ -138,7 +145,7 @@ function runsRow(agent) {
                   el("td", { text: when(r.startedAt) }),
                   el("td", { text: t(`agents.trigger.${r.trigger}`) }),
                   el("td", {}, [el("span", { class: `rmpill ${r.status === "delivered" ? "ok" : r.status === "failed" ? "bad" : "q"}`, text: t(`agents.run.${r.status}`) })]),
-                  el("td", { class: "muted sm", text: [r.late ? t("agents.late") : "", r.rowCount !== null && r.rowCount !== undefined ? t("agents.rows").replace("{n}", String(r.rowCount)) : "", r.error ? words("agents.runerror", r.error) : ""].filter(Boolean).join(" · ") }),
+                  el("td", { class: "muted sm", text: [r.late ? t("agents.late") : "", r.rowCount !== null && r.rowCount !== undefined ? t("agents.rows").replace("{n}", String(r.rowCount)) : "", r.error ? words("agents.runerror", r.error) : "", deliveriesWords(r.deliveries)].filter(Boolean).join(" · ") }),
                 ])
               )
             ),
@@ -201,7 +208,7 @@ function agentRow(agent) {
         el("div", { class: "agentname", text: agent.name }),
         el("div", { class: "muted sm", text: `${reportName(agent.report)}${showAll ? ` · ${agent.authorName}` : ""}` }),
       ]),
-      el("td", { class: "sm", text: agent.orgs.map((o) => o.name).join(", ") }),
+      el("td", { class: "sm" }, [el("div", { text: agent.orgs.map((o) => o.name).join(", ") }), el("div", { class: "muted sm agentto", text: deliveryWords(agent) })]),
       el("td", {}, [el("div", { text: scheduleWords(agent.schedule) }), el("div", {}, [statusPill(agent)])]),
       lastRunCell(agent),
       el("td", { class: "sm", text: agent.status === "active" ? when(agent.nextRunAt) : "—" }),
@@ -225,6 +232,8 @@ function startNew() {
     report: first?.id ?? "",
     orgIds: first ? [...first.orgIds.slice(0, 1)] : [],
     schedule: { every: "week", time: "08:00", weekday: 1 },
+    deliver: { task: true, email: false },
+    recipients: [],
   };
   problem = "";
   render();
@@ -232,7 +241,14 @@ function startNew() {
 
 function startEdit(agent) {
   editing = agent;
-  draft = { name: agent.name, report: agent.report, orgIds: agent.orgs.map((o) => o.id), schedule: { ...agent.schedule } };
+  draft = {
+    name: agent.name,
+    report: agent.report,
+    orgIds: agent.orgs.map((o) => o.id),
+    schedule: { ...agent.schedule },
+    deliver: { ...(agent.deliver ?? { task: true, email: false }) },
+    recipients: (agent.recipients ?? []).filter((p) => p.id !== agent.authorId).map((p) => p.id),
+  };
   problem = "";
   render();
 }
@@ -321,7 +337,7 @@ function formPanel() {
     primary: true,
     label: editing === "new" ? t("agents.form.savepaused") : t("agents.form.save"),
     onclick: async () => {
-      const body = { name: draft.name, report: report?.id, orgIds: draft.orgIds, schedule: draft.schedule };
+      const body = { name: draft.name, report: report?.id, orgIds: draft.orgIds, schedule: draft.schedule, deliver: draft.deliver, recipients: draft.recipients };
       const r =
         editing === "new"
           ? await call("/api/agents", json("POST", body))
@@ -344,8 +360,55 @@ function formPanel() {
     el("div", { class: "dotwo" }, [field(t("agents.form.name"), name, null, "agent-name"), field(t("agents.form.report"), reportSelect, report ? t(`agents.reporthint.${report.id}`) : null, "agent-report")]),
     field(t("agents.form.orgs"), orgBoxes, t("agents.form.orgshint")),
     scheduleFields(),
-    el("p", { class: "muted sm", text: t("agents.form.delivery") }),
+    deliveryFields(),
   ]);
+}
+
+/**
+ * **How, and to whom — decision 0623.** The task list, email or both;
+ * its author always, and any AP Managers chosen. Each copy is filtered to
+ * what its reader may see, and is in their language.
+ */
+function deliveryFields() {
+  const box = (id, checked, onchange, disabled = false) => {
+    const node = el("input", { type: "checkbox", id, onchange: (e) => onchange(e.target.checked) });
+    node.checked = checked;
+    if (disabled) node.disabled = true;
+    return node;
+  };
+  const how = el("div", { class: "agentorgs", id: "agent-deliver" }, [
+    el("label", { class: "agentorg", for: "agent-deliver-task" }, [box("agent-deliver-task", draft.deliver.task, (v) => { draft.deliver.task = v; }), el("span", { text: t("agents.deliver.task") })]),
+    el("label", { class: "agentorg", for: "agent-deliver-email" }, [
+      box("agent-deliver-email", draft.deliver.email, (v) => { draft.deliver.email = v; }, !data.emailReady && !draft.deliver.email),
+      el("span", { text: t("agents.deliver.email") }),
+    ]),
+  ]);
+  const people = data.managers ?? [];
+  const who = people.length
+    ? el(
+        "div",
+        { class: "agentorgs", id: "agent-recipients" },
+        people.map((p) =>
+          el("label", { class: "agentorg", for: `agent-to-${p.id}` }, [
+            box(`agent-to-${p.id}`, draft.recipients.includes(p.id), (v) => {
+              draft.recipients = v ? [...new Set([...draft.recipients, p.id])] : draft.recipients.filter((id) => id !== p.id);
+            }),
+            el("span", { text: p.hasEmail ? p.name : `${p.name} (${t("agents.deliver.noemail")})` }),
+          ])
+        )
+      )
+    : el("p", { class: "muted sm", id: "agent-recipients", text: t("agents.deliver.nomanagers") });
+  return el("div", {}, [
+    field(t("agents.deliver.how"), how, data.emailReady ? t("agents.deliver.hint") : t("agents.deliver.noemailsetup")),
+    field(t("agents.deliver.who"), who, t("agents.deliver.whohint")),
+  ]);
+}
+
+/** Who it goes to, in a row: "Task list and email · Dan, Maya (stopped)". */
+function deliveryWords(agent) {
+  const how = agent.deliver?.task && agent.deliver?.email ? t("agents.deliver.both") : agent.deliver?.email ? t("agents.deliver.email") : t("agents.deliver.task");
+  const who = (agent.recipients ?? []).map((p) => (p.optedOut ? `${p.name} (${t("agents.deliver.stopped")})` : p.name)).join(", ");
+  return who ? `${how} · ${who}` : how;
 }
 
 // --- The time zone ------------------------------------------------------------

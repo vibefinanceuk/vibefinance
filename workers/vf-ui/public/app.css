@@ -5215,3 +5215,6 @@
 .agentreporttable { width: 100%; border-collapse: collapse; }
 .agentreporttable th, .agentreporttable td { text-align: left; padding: 5px 10px 5px 0; border-bottom: 0.5px solid var(--border); white-space: nowrap; }
 .agentreporttable .num { text-align: right; font-variant-numeric: tabular-nums; }
+/* Agents, email — decision 0623. */
+.agentto { margin-top: 2px; }
+.agentstopnotice { margin-bottom: 12px; }

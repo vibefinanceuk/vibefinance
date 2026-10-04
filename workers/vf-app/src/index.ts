@@ -9,8 +9,10 @@ import {
   handleRemoveAgent,
   handleRunAgentNow,
   handleSetAgentTimeZone,
+  handleStopAgent,
   handleUpdateAgent,
   runDueAgents,
+  type AgentDeps,
 } from "./agents.js";
 import { handleCollectNow, handleForgetSftpIdentity, handleGetSftp, handleSaveSftp, handleTestSftp, sftpRunnerFrom } from "./sftp.js";
 import { handleGetPoMatchView, handlePoCandidates, handleLinkPo, handlePairLine, PO_PANEL_PERMISSIONS } from "./po-match-panel-route.js";
@@ -926,6 +928,22 @@ async function followUpAfterTaskCompletion(
   }
 }
 
+/**
+ * **What an agent's run needs from the environment — decision 0623.**
+ * Resend where it is set up; the app's own address (the first allowed
+ * origin) for the links in an email; the documents bucket, which keeps
+ * each copy sent under `agents/`.
+ */
+function agentDeps(env: Env, documents: R2Bucket | null | undefined): AgentDeps {
+  const appUrl = (env.ALLOWED_ORIGINS ?? "").split(",").map((o) => o.trim()).find(Boolean) ?? null;
+  return {
+    email: env.RESEND_API_KEY && env.RESEND_FROM_ADDRESS ? { apiKey: env.RESEND_API_KEY, from: env.RESEND_FROM_ADDRESS } : null,
+    appUrl: appUrl ? appUrl.replace(/\/+$/, "") : null,
+    bucket: documents ?? null,
+    defaultLocale: env.LOCALE ?? null,
+  };
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     // Answered before anything else: a preflight carries no credentials
@@ -1741,15 +1759,24 @@ export default {
      * checks the author itself. Notes are each person's own, so signing
      * in is enough; the time zone needs `Admin.Configure`.
      */
-    if (pathname === "/agents" || /^\/agents\/[^/]+(\/(run|runs))?$/.test(pathname)) {
+    // Decision 0623: "Stop sending me this" — any recipient, signed in, whatever else they hold.
+    const stopMatch = pathname.match(/^\/agents\/([^/]+)\/stop$/);
+    if (stopMatch && request.method === "POST") {
       const { db } = resolveTenant(request, env);
+      const auth = await authenticatePerson(db, request, env);
+      if (!auth.user) return json({ error: auth.reason }, 401);
+      const result = await handleStopAgent(db, auth.user.id, decodeURIComponent(stopMatch[1]));
+      return json(result.body, result.status);
+    }
+    if (pathname === "/agents" || /^\/agents\/[^/]+(\/(run|runs))?$/.test(pathname)) {
+      const { db, documents } = resolveTenant(request, env);
       const auth = await authenticatePerson(db, request, env);
       if (!auth.user) return json({ error: auth.reason }, 401);
       const maker = await hasPermission(db, auth.user.id, "AP.Agents");
       const admin = !maker && (await hasPermission(db, auth.user.id, "Admin.UserManagement"));
       if (!maker && !admin) return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
       if (pathname === "/agents" && request.method === "GET") {
-        const result = await handleListAgents(db, auth.user.id, { all: url.searchParams.get("all") === "1" });
+        const result = await handleListAgents(db, auth.user.id, { all: url.searchParams.get("all") === "1", emailReady: Boolean(env.RESEND_API_KEY && env.RESEND_FROM_ADDRESS) });
         return json(result.body, result.status);
       }
       if (pathname === "/agents" && request.method === "POST") {
@@ -1760,7 +1787,7 @@ export default {
       }
       const runMatch = pathname.match(/^\/agents\/([^/]+)\/run$/);
       if (runMatch && request.method === "POST") {
-        const result = await handleRunAgentNow(db, auth.user.id, decodeURIComponent(runMatch[1]));
+        const result = await handleRunAgentNow(db, auth.user.id, decodeURIComponent(runMatch[1]), new Date(), agentDeps(env, documents));
         return json(result.body, result.status);
       }
       const runsMatch = pathname.match(/^\/agents\/([^/]+)\/runs$/);
@@ -6614,8 +6641,8 @@ export default {
       // Decision 0622: agents due now, on the same tick and on their own,
       // so a failing agent never holds up a delivery or the other way round.
       try {
-        const { db } = resolveTenant(new Request("https://scheduled-trigger.internal/"), env);
-        await runDueAgents(db);
+        const { db, documents } = resolveTenant(new Request("https://scheduled-trigger.internal/"), env);
+        await runDueAgents(db, new Date(), agentDeps(env, documents));
       } catch {
         // Deliberately silent: each run records its own failure.
       }

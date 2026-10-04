@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 4 October 2026 (decision 0622). A living document: what
+Last updated 4 October 2026 (decision 0623). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,14 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Agents, slice 2: email (0623)
+
+An agent now goes to its author and any AP Managers chosen, on the task
+list, by email, or both. Each person's copy covers only what they may
+see, in their own language, with the full report as a CSV. Anyone but the
+author can stop receiving it, from the note or the email. What was sent
+is kept for 13 months, then removed.
 
 ### Agents, slice 1: the engine (0622)
 

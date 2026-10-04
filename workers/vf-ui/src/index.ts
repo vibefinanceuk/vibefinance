@@ -253,7 +253,7 @@ const PROXIED_TO_INSTANCE: RegExp[] = [
   // Agents (decision 0622): the list, one agent, Run now, its runs; notes on the task list; the time zone.
   /^\/agents$/,
   /^\/agents\/[^/]+$/,
-  /^\/agents\/[^/]+\/(run|runs)$/,
+  /^\/agents\/[^/]+\/(run|runs|stop)$/,
   /^\/agent-notes$/,
   /^\/agent-notes\/[^/]+(\/done)?$/,
   /^\/agent-settings$/,

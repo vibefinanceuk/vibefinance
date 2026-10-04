@@ -85,7 +85,7 @@ export async function fill(holder) {
   const rowOf = (note) => {
     const detail = el("div", { class: "agentnotedetail" });
     detail.hidden = true;
-    const row = el("div", { class: "agentnote", "data-note": note.id }, [
+    const row = el("div", { class: "agentnote", "data-note": note.id, "data-agent": note.agentId }, [
       el("div", { class: "agentnotehead" }, [
         el("div", {}, [
           el("span", { class: "agentnotename", text: note.agentName }),
@@ -112,6 +112,21 @@ export async function fill(holder) {
               detail.hidden = false;
             },
           }),
+          // Decision 0623: anyone but its author may stop receiving it.
+          ...(note.canStop
+            ? [
+                actionLink("discard", {
+                  label: t("agents.notes.stop"),
+                  onclick: async () => {
+                    const r = await call(`/api/agents/${encodeURIComponent(note.agentId)}/stop`, { method: "POST" });
+                    if (r.ok) {
+                      holder.querySelectorAll(`.agentnote[data-agent="${note.agentId}"] .actionlink[title="${t("agents.notes.stop")}"]`).forEach((b) => b.remove());
+                      row.querySelector(".agentnotehead .muted")?.append(` · ${t("agents.notes.stopped")}`);
+                    }
+                  },
+                }),
+              ]
+            : []),
           actionLink("done", {
             label: t("agents.notes.done"),
             onclick: async () => {
@@ -136,4 +151,21 @@ export async function fill(holder) {
       ...notes.map(rowOf),
     ])
   );
+}
+
+/**
+ * **The link in an email — decision 0623.** `?stopagent=<id>` stops that
+ * agent for whoever is signed in, says so, and leaves the address clean.
+ */
+export async function stopFromLink(shell) {
+  const params = new URLSearchParams(location.search);
+  const id = params.get("stopagent");
+  if (!id) return;
+  params.delete("stopagent");
+  const rest = params.toString();
+  history.replaceState(null, "", `${location.pathname}${rest ? `?${rest}` : ""}${location.hash}`);
+  const r = await call(`/api/agents/${encodeURIComponent(id)}/stop`, { method: "POST" });
+  const text = r.ok ? t("agents.notes.stoppedlink").replace("{name}", r.body?.name ?? "") : t(r.body?.reason === "author_cannot_stop" ? "agents.error.author_cannot_stop" : "agents.notes.stopfailed");
+  const notice = el("div", { class: "panel agentstopnotice", id: "agent-stop-notice", role: "status", text });
+  shell?.prepend(notice);
 }

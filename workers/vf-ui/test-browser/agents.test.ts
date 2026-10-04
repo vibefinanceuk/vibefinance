@@ -33,6 +33,13 @@ const STRINGS = {
     "agents.col.supplier": "Supplier",
     "agents.col.total": "Total",
     "agents.col.person": "Person",
+    "agents.deliver.task": "On the task list",
+    "agents.deliver.email": "By email",
+    "agents.deliver.both": "Task list and email",
+    "agents.deliver.stopped": "stopped",
+    "agents.deliver.noemailsetup": "Email is not set up for this environment yet. Ask your administrator.",
+    "agents.notes.stop": "Stop sending me this",
+    "agents.notes.stoppedlink": "You will no longer get \u201c{name}\u201d.",
     "agents.col.open": "Open tasks",
     "agents.notes.skipped": "Left out, as the agent's author can no longer see them: {orgs}.",
   },
@@ -50,6 +57,11 @@ const AGENT = {
   pausedReason: null,
   nextRunAt: "2026-10-05T07:00:00.000Z",
   lastRun: { status: "delivered", startedAt: "2026-09-28T07:00:00.000Z", late: false, rowCount: 2, error: null },
+  deliver: { task: true, email: true },
+  recipients: [
+    { id: "u-dan", name: "Dan", optedOut: false },
+    { id: "u-maya", name: "Maya", optedOut: true },
+  ],
 };
 
 interface Call {
@@ -58,7 +70,7 @@ interface Call {
   body: Record<string, unknown> | null;
 }
 
-function stub(opts: { permissions: string[]; agents?: unknown[]; notes?: unknown[]; note?: unknown; createReply?: [number, unknown]; calls?: Call[] }) {
+function stub(opts: { permissions: string[]; agents?: unknown[]; notes?: unknown[]; note?: unknown; createReply?: [number, unknown]; calls?: Call[]; emailReady?: boolean }) {
   const calls = opts.calls ?? [];
   vi.stubGlobal(
     "fetch",
@@ -83,12 +95,15 @@ function stub(opts: { permissions: string[]; agents?: unknown[]; notes?: unknown
           timeZone: "Europe/London",
           canManageAll: opts.permissions.includes("Admin.UserManagement"),
           canSetTimeZone: false,
+          managers: [{ id: "u-maya", name: "Maya", hasEmail: true }, { id: "u-olu", name: "Olu", hasEmail: false }],
+          emailReady: opts.emailReady ?? true,
         });
       if (path === "/api/agents" && method === "POST") {
         const [status, body] = opts.createReply ?? [201, { ...AGENT, id: "agt-2", status: "paused" }];
         return reply(status, body);
       }
       if (path === "/api/agents/agt-1/run") return reply(200, { status: "delivered" });
+      if (path === "/api/agents/agt-1/stop") return reply(200, { stopped: true, name: "Weekly payables" });
       if (path.startsWith("/api/agents/agt-1")) return reply(200, { ...AGENT });
       if (path === "/api/agent-notes") return reply(200, { notes: opts.notes ?? [] });
       if (path === "/api/agent-notes/note-1/done") return reply(200, { done: true });
@@ -179,6 +194,8 @@ describe("the Agents screen", () => {
       report: "accruals",
       orgIds: ["acme-uk"],
       schedule: { every: "month", time: "08:00", day: "lastWorking" },
+      deliver: { task: true, email: false },
+      recipients: [],
     });
     await vi.waitFor(() => expect(document.getElementById("agents-note")?.textContent).toContain("Saved, paused."));
   });
@@ -274,5 +291,52 @@ describe("From agents, on the Tasks screen", () => {
     expect(cellText(1234.5, "money")).toBe((1234.5).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
     expect(cellText(0.873, "percent")).toBe("87%");
     expect(cellText(null, "date")).toBe("—");
+  });
+});
+
+describe("delivery and recipients — decision 0623", () => {
+  it("says how and to whom each agent goes, who stopped it included", async () => {
+    await openAgents({ permissions: ["AP.Agents"] });
+    expect(shell().querySelector('tr[data-agent="agt-1"] .agentto')?.textContent).toBe("Task list and email · Dan, Maya (stopped)");
+  });
+
+  it("chooses the task list, email, and AP Managers to send to, saying who has no address", async () => {
+    const calls = await openAgents({ permissions: ["AP.Agents"], agents: [] });
+    button("New agent")!.click();
+    expect(document.getElementById("agent-recipients")?.textContent).toContain("Olu (");
+    (document.getElementById("agent-deliver-email") as HTMLInputElement).click();
+    (document.getElementById("agent-to-u-maya") as HTMLInputElement).click();
+    const name = document.getElementById("agent-name") as HTMLInputElement;
+    name.value = "To Maya";
+    name.dispatchEvent(new Event("input"));
+    shell().querySelector<HTMLButtonElement>("#agent-form .actionlink.primary")!.click();
+    await vi.waitFor(() => expect(calls.some((c) => c.method === "POST" && c.path === "/api/agents")).toBe(true));
+    expect(calls.find((c) => c.method === "POST")!.body).toMatchObject({ deliver: { task: true, email: true }, recipients: ["u-maya"] });
+  });
+
+  it("offers no email where it is not set up, and says so", async () => {
+    await openAgents({ permissions: ["AP.Agents"], agents: [], emailReady: false });
+    button("New agent")!.click();
+    expect((document.getElementById("agent-deliver-email") as HTMLInputElement).disabled).toBe(true);
+    expect(document.getElementById("agent-form")?.textContent).toContain("Email is not set up for this environment yet.");
+  });
+
+  it("lets a recipient stop a note's agent, and not its author", async () => {
+    const note = { id: "note-1", agentId: "agt-1", agentName: "Weekly payables", report: "outstanding_payables", createdAt: "2026-10-05T07:00:00Z", late: false, rowCount: 2, totals: [] };
+    const calls = await signIn({ permissions: ["AP.TaskView"], notes: [{ ...note, canStop: true }, { ...note, id: "note-2", agentId: "agt-2", canStop: false }] });
+    await vi.waitFor(() => expect(document.getElementById("agentnotes")!.hidden).toBe(false));
+    const holder = document.getElementById("agentnotes")!;
+    expect(holder.querySelector('[data-note="note-2"] .actionlink[title="Stop sending me this"]')).toBeNull();
+    holder.querySelector<HTMLButtonElement>('[data-note="note-1"] .actionlink[title="Stop sending me this"]')!.click();
+    await vi.waitFor(() => expect(calls.some((c) => c.method === "POST" && c.path === "/api/agents/agt-1/stop")).toBe(true));
+    await vi.waitFor(() => expect(holder.querySelector('[data-note="note-1"] .actionlink[title="Stop sending me this"]')).toBeNull());
+  });
+
+  it("stops an agent from the link in its email, once signed in, and cleans the address", async () => {
+    history.replaceState(null, "", "/?stopagent=agt-1");
+    const calls = await signIn({ permissions: ["AP.TaskView"] });
+    await vi.waitFor(() => expect(document.getElementById("agent-stop-notice")?.textContent).toBe("You will no longer get \u201cWeekly payables\u201d."));
+    expect(calls.some((c) => c.method === "POST" && c.path === "/api/agents/agt-1/stop")).toBe(true);
+    expect(location.search).toBe("");
   });
 });

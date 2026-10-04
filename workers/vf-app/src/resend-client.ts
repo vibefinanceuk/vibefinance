@@ -22,6 +22,10 @@ export interface SendEmailInput {
   cc?: string | null;
   subject: string;
   text: string;
+  /** Decision 0622: an HTML body beside the text one, for a report's table. */
+  html?: string;
+  /** Decision 0622: files sent with it, as Resend takes them (content in base64). */
+  attachments?: { filename: string; content: string }[];
 }
 
 export type SendEmailResult = { ok: true; messageId: string } | { ok: false; error: string };
@@ -47,6 +51,8 @@ export async function sendEmailViaResend(apiKey: string, input: SendEmailInput):
         ...(input.cc ? { cc: [input.cc] } : {}),
         subject: input.subject,
         text: input.text,
+        ...(input.html ? { html: input.html } : {}),
+        ...(input.attachments?.length ? { attachments: input.attachments } : {}),
       }),
     });
   } catch (err) {

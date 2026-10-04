@@ -1442,6 +1442,12 @@ export async function start() {
   me = await response.json();
 
   await openDefaultScreen();
+  // Decision 0623: "Stop sending me this" from an agent's email.
+  if (new URLSearchParams(location.search).has("stopagent")) {
+    await import("/agent-notes.js")
+      .then((m) => m.stopFromLink(document.getElementById("main") ?? shell))
+      .catch(() => {});
+  }
 
   /**
    * **Centralised here, not left to each caller — decision 0361.**

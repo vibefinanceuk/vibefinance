@@ -8,6 +8,8 @@ import { handleOverdueBalance } from "./overdue-balance-route.js";
 import { handleWorkloadOpenTasks } from "./workload-open-tasks-route.js";
 import { handlePossibleDuplicates } from "./fraud-duplicates-route.js";
 import { checkSchedule, DEFAULT_TIME_ZONE, isTimeZone, nextRunAfter, type AgentSchedule } from "./agent-schedule.js";
+import { buildAgentEmail, emailLocale } from "./agent-email.js";
+import { sendEmailViaResend } from "./resend-client.js";
 
 /**
  * **Agents, slice 1: the engine — decision 0622.**
@@ -47,6 +49,26 @@ const AGENTS_PER_TICK = 20;
 /** A run this long after its time says it ran late. */
 const LATE_AFTER_MS = 15 * 60_000;
 const NAME_MAX = 80;
+/** Runs, deliveries, notes and the copies sent are kept 13 months (decision 0623), then removed. */
+export const KEEP_DAYS = 396;
+const PURGE_PER_TICK = 200;
+
+/**
+ * **What a run needs from outside — decision 0623.** Resend's key and
+ * sender (null where email is not set up), the app's own address for the
+ * links in an email, the R2 bucket that keeps each copy sent, and the
+ * language for a recipient who has not chosen one.
+ */
+export interface AgentDeps {
+  email: { apiKey: string; from: string } | null;
+  appUrl: string | null;
+  bucket: R2Bucket | null;
+  defaultLocale?: string | null;
+  /** Injected in tests; Resend otherwise. */
+  send?: typeof sendEmailViaResend;
+}
+
+export const NO_DEPS: AgentDeps = { email: null, appUrl: null, bucket: null };
 
 // ---------------------------------------------------------------------------
 // Reports
@@ -336,6 +358,37 @@ interface AgentRow {
   last_run_at: string | null;
   created_at: string;
   updated_at: string;
+  deliver_task: number;
+  deliver_email: number;
+}
+
+interface Person {
+  id: string;
+  name: string;
+  email: string | null;
+}
+
+/** People who hold AP.Manager anywhere: those an agent may also go to (decision 0623). */
+async function managers(db: D1Database): Promise<Person[]> {
+  const rows = await db
+    .prepare(
+      `SELECT DISTINCT u.id, COALESCE(u.name, u.email, u.id) AS name, u.email FROM org_users u
+       JOIN org_user_roles ur ON ur.user_id = u.id JOIN org_roles r ON r.id = ur.role_id
+       WHERE r.permissions_json LIKE '%"AP.Manager"%' ORDER BY name`
+    )
+    .all<Person>();
+  return rows.results;
+}
+
+async function recipientsOf(db: D1Database, agentId: string): Promise<{ id: string; name: string; email: string | null; optedOutAt: string | null }[]> {
+  const rows = await db
+    .prepare(
+      `SELECT u.id, COALESCE(u.name, u.email, u.id) AS name, u.email, r.opted_out_at FROM agent_recipients r
+       JOIN org_users u ON u.id = r.user_id WHERE r.agent_id = ? ORDER BY r.added_at, name`
+    )
+    .bind(agentId)
+    .all<{ id: string; name: string; email: string | null; opted_out_at: string | null }>();
+  return rows.results.map((r) => ({ id: r.id, name: r.name, email: r.email, optedOutAt: r.opted_out_at }));
 }
 
 function parseIds(json: string): string[] {
@@ -414,6 +467,8 @@ async function toBody(db: D1Database, rows: AgentRow[]) {
       nextRunAt: r.next_run_at,
       lastRun: last.get(r.id) ?? null,
       createdAt: r.created_at,
+      deliver: { task: r.deliver_task === 1, email: r.deliver_email === 1 },
+      recipients: (await recipientsOf(db, r.id)).map((p) => ({ id: p.id, name: p.name, optedOut: p.optedOutAt !== null })),
     });
   }
   return out;
@@ -432,7 +487,7 @@ async function loadAgent(db: D1Database, id: string): Promise<AgentRow | null> {
  * holding `Admin.UserManagement` sees everyone's), the reports they may
  * choose, their organisations, the licence's count and the time zone.
  */
-export async function handleListAgents(db: D1Database, userId: string, opts: { all?: boolean } = {}): Promise<RouteResult> {
+export async function handleListAgents(db: D1Database, userId: string, opts: { all?: boolean; emailReady?: boolean } = {}): Promise<RouteResult> {
   const canManageAll = await hasPermission(db, userId, "Admin.UserManagement");
   const all = Boolean(opts.all) && canManageAll;
   const rows = all
@@ -456,6 +511,9 @@ export async function handleListAgents(db: D1Database, userId: string, opts: { a
       timeZone: await agentTimeZone(db),
       canManageAll,
       canSetTimeZone: await hasPermission(db, userId, "Admin.Configure"),
+      // Decision 0623: who else an agent may go to, and whether email is set up here.
+      managers: (await managers(db)).filter((m) => m.id !== userId).map((m) => ({ id: m.id, name: m.name, hasEmail: Boolean(m.email) })),
+      emailReady: Boolean(opts.emailReady),
     },
   };
 }
@@ -466,7 +524,10 @@ async function checkAgentInput(
   userId: string,
   input: Record<string, unknown>,
   current?: AgentRow
-): Promise<{ name: string; report: AgentReport; orgIds: string[]; schedule: AgentSchedule } | { reason: string; message: string }> {
+): Promise<
+  | { name: string; report: AgentReport; orgIds: string[]; schedule: AgentSchedule; recipients: string[]; deliverTask: boolean; deliverEmail: boolean }
+  | { reason: string; message: string }
+> {
   const name = typeof input.name === "string" ? input.name.trim() : current?.name ?? "";
   if (!name) return { reason: "name_missing", message: "give the agent a name" };
   if (name.length > NAME_MAX) return { reason: "name_too_long", message: `a name is at most ${NAME_MAX} characters` };
@@ -485,7 +546,38 @@ async function checkAgentInput(
   }
   const checked = checkSchedule(input.schedule ?? (current ? JSON.parse(current.schedule_json) : undefined));
   if ("reason" in checked) return { reason: checked.reason, message: "the schedule is not complete" };
-  return { name, report, orgIds, schedule: checked.schedule };
+
+  // Decision 0623: how it is delivered, and to whom besides its author.
+  const deliver = (input.deliver ?? {}) as Record<string, unknown>;
+  const deliverTask = typeof deliver.task === "boolean" ? deliver.task : current ? current.deliver_task === 1 : true;
+  const deliverEmail = typeof deliver.email === "boolean" ? deliver.email : current ? current.deliver_email === 1 : false;
+  if (!deliverTask && !deliverEmail) return { reason: "deliver_missing", message: "choose the task list, email, or both" };
+  const authorId = current?.author_id ?? userId;
+  const recipients = Array.isArray(input.recipients)
+    ? [...new Set(input.recipients.filter((x): x is string => typeof x === "string" && x !== authorId))]
+    : current
+      ? (await recipientsOf(db, current.id)).map((p) => p.id).filter((id) => id !== authorId)
+      : [];
+  if (recipients.length > 0) {
+    const allowed = new Set((await managers(db)).map((m) => m.id));
+    if (recipients.some((id) => !allowed.has(id))) {
+      return { reason: "recipient_not_manager", message: "an agent goes only to its author and people with the AP Manager permission" };
+    }
+  }
+  return { name, report, orgIds, schedule: checked.schedule, recipients, deliverTask, deliverEmail };
+}
+
+/** Its author and the people chosen; anyone already there keeps whether they stopped it. */
+async function setRecipients(db: D1Database, agentId: string, authorId: string, others: string[], now: Date) {
+  const want = new Set([authorId, ...others]);
+  const have = await recipientsOf(db, agentId);
+  for (const p of have) {
+    if (!want.has(p.id)) await db.prepare("DELETE FROM agent_recipients WHERE agent_id = ? AND user_id = ?").bind(agentId, p.id).run();
+  }
+  const already = new Set(have.map((p) => p.id));
+  for (const id of want) {
+    if (!already.has(id)) await db.prepare("INSERT INTO agent_recipients (agent_id, user_id, added_at) VALUES (?, ?, ?)").bind(agentId, id, now.toISOString()).run();
+  }
 }
 
 /** `POST /agents` — made paused. Refused at the licence's count. */
@@ -501,11 +593,12 @@ export async function handleCreateAgent(db: D1Database, userId: string, input: R
   const at = now.toISOString();
   await db
     .prepare(
-      `INSERT INTO agents (id, name, author_id, report, org_unit_ids_json, schedule_json, status, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, 'paused', ?, ?)`
+      `INSERT INTO agents (id, name, author_id, report, org_unit_ids_json, schedule_json, status, created_at, updated_at, deliver_task, deliver_email)
+       VALUES (?, ?, ?, ?, ?, ?, 'paused', ?, ?, ?, ?)`
     )
-    .bind(id, checked.name, userId, checked.report.id, JSON.stringify(checked.orgIds), JSON.stringify(checked.schedule), at, at)
+    .bind(id, checked.name, userId, checked.report.id, JSON.stringify(checked.orgIds), JSON.stringify(checked.schedule), at, at, checked.deliverTask ? 1 : 0, checked.deliverEmail ? 1 : 0)
     .run();
+  await setRecipients(db, id, userId, checked.recipients, now);
   const row = (await loadAgent(db, id))!;
   return { status: 201, body: (await toBody(db, [row]))[0] };
 }
@@ -535,10 +628,11 @@ export async function handleUpdateAgent(db: D1Database, userId: string, id: stri
   await db
     .prepare(
       `UPDATE agents SET name = ?, report = ?, org_unit_ids_json = ?, schedule_json = ?, status = ?, paused_reason = NULL,
-              next_run_at = ?, updated_at = ? WHERE id = ?`
+              next_run_at = ?, updated_at = ?, deliver_task = ?, deliver_email = ? WHERE id = ?`
     )
-    .bind(checked.name, checked.report.id, JSON.stringify(checked.orgIds), JSON.stringify(checked.schedule), status, nextRunAt, now.toISOString(), id)
+    .bind(checked.name, checked.report.id, JSON.stringify(checked.orgIds), JSON.stringify(checked.schedule), status, nextRunAt, now.toISOString(), checked.deliverTask ? 1 : 0, checked.deliverEmail ? 1 : 0, id)
     .run();
+  await setRecipients(db, id, row.author_id, checked.recipients, now);
   return { status: 200, body: (await toBody(db, [(await loadAgent(db, id))!]))[0] };
 }
 
@@ -570,6 +664,18 @@ export async function handleListAgentRuns(db: D1Database, userId: string, id: st
     )
     .bind(id)
     .all<{ id: string; trigger: string; scheduled_for: string | null; started_at: string; finished_at: string | null; status: string; late: number; row_count: number | null; totals_json: string | null; error: string | null }>();
+  // Decision 0623: who each run went to, and how.
+  const deliveries = new Map<string, { user_name: string; channel: string; status: string; error: string | null }[]>();
+  if (runs.results.length > 0) {
+    const rows = await db
+      .prepare(
+        `SELECT d.run_id, COALESCE(u.name, u.email, d.user_id) AS user_name, d.channel, d.status, d.error FROM agent_deliveries d
+         JOIN org_users u ON u.id = d.user_id WHERE d.run_id IN (${runs.results.map(() => "?").join(", ")}) ORDER BY d.created_at`
+      )
+      .bind(...runs.results.map((r) => r.id))
+      .all<{ run_id: string; user_name: string; channel: string; status: string; error: string | null }>();
+    for (const d of rows.results) deliveries.set(d.run_id, [...(deliveries.get(d.run_id) ?? []), d]);
+  }
   return {
     status: 200,
     body: {
@@ -584,6 +690,7 @@ export async function handleListAgentRuns(db: D1Database, userId: string, id: st
         rowCount: r.row_count,
         totals: r.totals_json ? (JSON.parse(r.totals_json) as ReportTotal[]) : [],
         error: r.error,
+        deliveries: (deliveries.get(r.id) ?? []).map((d) => ({ userName: d.user_name, channel: d.channel, status: d.status, error: d.error })),
       })),
     },
   };
@@ -618,17 +725,33 @@ async function pause(db: D1Database, id: string, reason: string, now: Date) {
     .run();
 }
 
+function bytesToBase64(text: string): string {
+  const bytes = new TextEncoder().encode(text);
+  let binary = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(binary);
+}
+
 /**
- * One run: check the author, gather, deliver to the author's task list.
- * Never throws; a failure is recorded on the run.
+ * One run: check the author, then for each recipient (the author alone for
+ * Run now) gather what they may see and deliver it, on the task list, by
+ * email, or both. Never throws; a failure is recorded on the run, and each
+ * delivery on its own row.
+ *
+ * **Each copy is the recipient's own — decision 0623.** The organisations
+ * are the chosen ones the author can still see *and* the recipient can, and
+ * the report is gathered with the recipient's own access, so nobody is sent
+ * a number they could not see in the app. A recipient no longer holding
+ * AP.Manager (the author apart), or who stopped it, gets nothing.
  */
 export async function runAgent(
   db: D1Database,
   agent: AgentRow,
   trigger: "schedule" | "now",
   now: Date,
-  scheduledFor: string | null = null
-): Promise<{ runId: string; status: "delivered" | "nothing" | "failed"; error?: string }> {
+  scheduledFor: string | null = null,
+  deps: AgentDeps = NO_DEPS
+): Promise<{ runId: string; status: "delivered" | "nothing" | "failed"; error?: string; deliveries?: number }> {
   const runId = `run-${crypto.randomUUID()}`;
   const late = scheduledFor !== null && now.getTime() - Date.parse(scheduledFor) > LATE_AFTER_MS;
   await db
@@ -639,6 +762,14 @@ export async function runAgent(
     await db
       .prepare("UPDATE agent_runs SET status = ?, finished_at = ?, row_count = ?, totals_json = ?, error = ? WHERE id = ?")
       .bind(status, new Date().toISOString(), rowCount, totals ? JSON.stringify(totals) : null, error, runId)
+      .run();
+  };
+  const record = async (userId: string, channel: "task" | "email", status: "sent" | "failed", rowCount: number, extra: { messageId?: string | null; copyKey?: string | null; error?: string | null } = {}) => {
+    await db
+      .prepare(
+        "INSERT INTO agent_deliveries (id, run_id, agent_id, user_id, channel, status, row_count, message_id, copy_key, error, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+      )
+      .bind(`dlv-${crypto.randomUUID()}`, runId, agent.id, userId, channel, status, rowCount, extra.messageId ?? null, extra.copyKey ?? null, extra.error ?? null, now.toISOString())
       .run();
   };
 
@@ -654,26 +785,115 @@ export async function runAgent(
       return { runId, status: "failed", error: "author_access" };
     }
     const chosen = await orgsNamed(db, parseIds(agent.org_unit_ids_json));
-    const visible = await unitsWherePermitted(db, agent.author_id, report.permission);
-    const orgs = chosen.filter((o) => covers(visible, o.id));
-    const skippedOrgs = chosen.filter((o) => !covers(visible, o.id)).map((o) => o.name);
+    const authorVisible = await unitsWherePermitted(db, agent.author_id, report.permission);
+    const orgs = chosen.filter((o) => covers(authorVisible, o.id));
+    const skippedOrgs = chosen.filter((o) => !covers(authorVisible, o.id)).map((o) => o.name);
     if (orgs.length === 0) {
       await finish("failed", null, null, "author_access");
       await pause(db, agent.id, "author_access", now);
       return { runId, status: "failed", error: "author_access" };
     }
-    const gathered = await report.gather(db, agent.author_id, orgs, now);
-    const table: ReportTable = { report: report.id, ...gathered, skippedOrgs, asAt: now.toISOString() };
-    if (table.rows.length === 0) {
-      await finish("nothing", 0, [], null);
-      return { runId, status: "nothing" };
+
+    const everyone = await recipientsOf(db, agent.id);
+    const author = everyone.find((p) => p.id === agent.author_id) ?? (await db.prepare("SELECT id, COALESCE(name, email, id) AS name, email FROM org_users WHERE id = ?").bind(agent.author_id).first<Person>());
+    const authorName = author?.name ?? agent.author_id;
+    const list =
+      trigger === "now"
+        ? author
+          ? [{ id: author.id, name: author.name, email: author.email, optedOutAt: null }]
+          : []
+        : everyone.filter((p) => p.optedOutAt === null);
+    const zone = await agentTimeZone(db);
+    const send = deps.send ?? sendEmailViaResend;
+
+    let sent = 0;
+    let failed = 0;
+    let authorTable: ReportTable | null = null;
+    let anyTable: ReportTable | null = null;
+    let firstError: string | null = null;
+    for (const person of list) {
+      const isAuthor = person.id === agent.author_id;
+      if (!isAuthor && !(await hasPermission(db, person.id, "AP.Manager"))) continue;
+      const theirs = isAuthor ? null : await unitsWherePermitted(db, person.id, report.permission);
+      const theirOrgs = isAuthor ? orgs : orgs.filter((o) => covers(theirs, o.id));
+      if (theirOrgs.length === 0) continue;
+      const gathered = await report.gather(db, person.id, theirOrgs, now);
+      const table: ReportTable = { report: report.id, ...gathered, skippedOrgs, asAt: now.toISOString() };
+      if (table.rows.length === 0) continue;
+      if (isAuthor) authorTable = table;
+      anyTable = anyTable ?? table;
+
+      if (agent.deliver_task === 1) {
+        await db
+          .prepare("INSERT INTO agent_notes (id, agent_id, run_id, user_id, report_json, created_at) VALUES (?, ?, ?, ?, ?, ?)")
+          .bind(`note-${crypto.randomUUID()}`, agent.id, runId, person.id, JSON.stringify(table), now.toISOString())
+          .run();
+        await record(person.id, "task", "sent", table.rows.length);
+        sent += 1;
+      }
+
+      if (agent.deliver_email === 1) {
+        const fail = async (error: string) => {
+          await record(person.id, "email", "failed", table.rows.length, { error });
+          failed += 1;
+          firstError = firstError ?? error;
+        };
+        if (!deps.email) {
+          await fail("email_not_configured");
+          continue;
+        }
+        if (!person.email) {
+          await fail("no_email_address");
+          continue;
+        }
+        const localeRow = await db.prepare("SELECT locale FROM org_users WHERE id = ?").bind(person.id).first<{ locale: string | null }>();
+        const built = buildAgentEmail({
+          locale: emailLocale(localeRow?.locale ?? deps.defaultLocale),
+          agentName: agent.name,
+          authorName,
+          table,
+          timeZone: zone,
+          appUrl: deps.appUrl,
+          stopUrl: deps.appUrl && !isAuthor ? `${deps.appUrl}/?stopagent=${encodeURIComponent(agent.id)}` : null,
+          filtered: theirOrgs.length < orgs.length,
+        });
+        let copyKey: string | null = null;
+        if (deps.bucket) {
+          copyKey = `agents/${agent.id}/${runId}/${person.id}.json`;
+          await deps.bucket.put(copyKey, JSON.stringify({ to: person.email, subject: built.subject, text: built.text, html: built.html, csv: built.csv, sentAt: now.toISOString() }), {
+            httpMetadata: { contentType: "application/json" },
+          });
+        }
+        const result = await send(deps.email.apiKey, {
+          from: deps.email.from,
+          to: person.email,
+          subject: built.subject,
+          text: built.text,
+          html: built.html,
+          attachments: [{ filename: built.filename, content: bytesToBase64(built.csv) }],
+        });
+        if (result.ok) {
+          await record(person.id, "email", "sent", table.rows.length, { messageId: result.messageId, copyKey });
+          sent += 1;
+        } else {
+          await record(person.id, "email", "failed", table.rows.length, { copyKey, error: result.error.slice(0, 300) });
+          failed += 1;
+          firstError = firstError ?? result.error.slice(0, 300);
+        }
+      }
     }
-    await db
-      .prepare("INSERT INTO agent_notes (id, agent_id, run_id, user_id, report_json, created_at) VALUES (?, ?, ?, ?, ?, ?)")
-      .bind(`note-${crypto.randomUUID()}`, agent.id, runId, agent.author_id, JSON.stringify(table), now.toISOString())
-      .run();
-    await finish("delivered", table.rows.length, table.totals, null);
-    return { runId, status: "delivered" };
+
+    const shown = authorTable ?? anyTable;
+    if (sent === 0 && failed === 0) {
+      await finish("nothing", 0, [], null);
+      return { runId, status: "nothing", deliveries: 0 };
+    }
+    if (sent === 0) {
+      await finish("failed", shown?.rows.length ?? null, shown?.totals ?? null, firstError);
+      return { runId, status: "failed", error: firstError ?? "failed", deliveries: 0 };
+    }
+    await finish("delivered", shown?.rows.length ?? null, shown?.totals ?? null, failed > 0 ? firstError : null);
+    return { runId, status: "delivered", deliveries: sent };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     await finish("failed", null, null, message.slice(0, 500));
@@ -681,12 +901,33 @@ export async function runAgent(
   }
 }
 
+/**
+ * **Kept 13 months — decision 0623.** Older deliveries (and the copies they
+ * point to in R2), notes and runs are removed, a few at a time, on the
+ * five-minute tick.
+ */
+export async function purgeOldAgentRecords(db: D1Database, bucket: R2Bucket | null, now = new Date()): Promise<{ runs: number }> {
+  const before = new Date(now.getTime() - KEEP_DAYS * 86_400_000).toISOString();
+  const old = await db.prepare("SELECT id FROM agent_runs WHERE started_at < ? LIMIT ?").bind(before, PURGE_PER_TICK).all<{ id: string }>();
+  if (old.results.length === 0) return { runs: 0 };
+  const ids = old.results.map((r) => r.id);
+  const marks = ids.map(() => "?").join(", ");
+  if (bucket) {
+    const copies = await db.prepare(`SELECT copy_key FROM agent_deliveries WHERE run_id IN (${marks}) AND copy_key IS NOT NULL`).bind(...ids).all<{ copy_key: string }>();
+    if (copies.results.length > 0) await bucket.delete(copies.results.map((c) => c.copy_key));
+  }
+  await db.prepare(`DELETE FROM agent_deliveries WHERE run_id IN (${marks})`).bind(...ids).run();
+  await db.prepare(`DELETE FROM agent_notes WHERE run_id IN (${marks})`).bind(...ids).run();
+  await db.prepare(`DELETE FROM agent_runs WHERE id IN (${marks})`).bind(...ids).run();
+  return { runs: ids.length };
+}
+
 /** `POST /agents/:id/run` — Run now: once, to the author only, paused or not. The schedule is untouched. */
-export async function handleRunAgentNow(db: D1Database, userId: string, id: string, now = new Date()): Promise<RouteResult> {
+export async function handleRunAgentNow(db: D1Database, userId: string, id: string, now = new Date(), deps: AgentDeps = NO_DEPS): Promise<RouteResult> {
   const row = await loadAgent(db, id);
   if (!row) return { status: 404, body: { error: `agent ${id} does not exist`, reason: "not_found" } };
   if (row.author_id !== userId) return { status: 403, body: { error: "only its author can run an agent", reason: "not_author" } };
-  const result = await runAgent(db, row, "now", now);
+  const result = await runAgent(db, row, "now", now, null, deps);
   return { status: 200, body: result };
 }
 
@@ -697,7 +938,8 @@ export async function handleRunAgentNow(db: D1Database, userId: string, id: stri
  * overlapping tick cannot run it twice; a run missed while nothing ran
  * happens once, late, because the next time is worked out from now.
  */
-export async function runDueAgents(db: D1Database, now = new Date()): Promise<{ ran: number }> {
+export async function runDueAgents(db: D1Database, now = new Date(), deps: AgentDeps = NO_DEPS): Promise<{ ran: number }> {
+  await purgeOldAgentRecords(db, deps.bucket, now);
   const due = await db
     .prepare("SELECT * FROM agents WHERE status = 'active' AND next_run_at IS NOT NULL AND next_run_at <= ? ORDER BY next_run_at LIMIT ?")
     .bind(now.toISOString(), AGENTS_PER_TICK)
@@ -718,7 +960,7 @@ export async function runDueAgents(db: D1Database, now = new Date()): Promise<{ 
           .bind(now.toISOString(), agent.id, agent.next_run_at)
           .run();
     if ((claim.meta?.changes ?? 0) !== 1) continue;
-    await runAgent(db, agent, "schedule", now, agent.next_run_at);
+    await runAgent(db, agent, "schedule", now, agent.next_run_at, deps);
     ran += 1;
   }
   return { ran };
@@ -732,12 +974,12 @@ export async function runDueAgents(db: D1Database, now = new Date()): Promise<{ 
 export async function handleListAgentNotes(db: D1Database, userId: string): Promise<RouteResult> {
   const rows = await db
     .prepare(
-      `SELECT n.id, n.agent_id, a.name AS agent_name, a.report, n.created_at, r.late, r.row_count, r.totals_json
+      `SELECT n.id, n.agent_id, a.name AS agent_name, a.report, n.created_at, r.late, r.row_count, r.totals_json, a.author_id
        FROM agent_notes n JOIN agents a ON a.id = n.agent_id JOIN agent_runs r ON r.id = n.run_id
        WHERE n.user_id = ? AND n.done_at IS NULL ORDER BY n.created_at DESC LIMIT 50`
     )
     .bind(userId)
-    .all<{ id: string; agent_id: string; agent_name: string; report: string; created_at: string; late: number; row_count: number | null; totals_json: string | null }>();
+    .all<{ id: string; agent_id: string; agent_name: string; report: string; created_at: string; late: number; row_count: number | null; totals_json: string | null; author_id: string }>();
   return {
     status: 200,
     body: {
@@ -750,6 +992,8 @@ export async function handleListAgentNotes(db: D1Database, userId: string): Prom
         late: n.late === 1,
         rowCount: n.row_count,
         totals: n.totals_json ? (JSON.parse(n.totals_json) as ReportTotal[]) : [],
+        // Decision 0623: anyone but its author may stop receiving it.
+        canStop: n.author_id !== userId,
       })),
     },
   };
@@ -779,4 +1023,20 @@ export async function handleAgentNoteDone(db: D1Database, userId: string, id: st
     .run();
   if ((result.meta?.changes ?? 0) !== 1) return { status: 404, body: { error: `note ${id} does not exist`, reason: "not_found" } };
   return { status: 200, body: { id, done: true } };
+}
+
+/**
+ * `POST /agents/:id/stop` — "Stop sending me this", from a note or the
+ * link in an email (decision 0623). Its author pauses or removes it instead.
+ */
+export async function handleStopAgent(db: D1Database, userId: string, id: string, now = new Date()): Promise<RouteResult> {
+  const agent = await db.prepare("SELECT id, name, author_id FROM agents WHERE id = ?").bind(id).first<{ id: string; name: string; author_id: string }>();
+  if (!agent) return { status: 404, body: { error: `agent ${id} does not exist`, reason: "not_found" } };
+  if (agent.author_id === userId) return { status: 422, body: { error: "you made this agent: pause or remove it instead", reason: "author_cannot_stop" } };
+  const result = await db
+    .prepare("UPDATE agent_recipients SET opted_out_at = COALESCE(opted_out_at, ?) WHERE agent_id = ? AND user_id = ?")
+    .bind(now.toISOString(), id, userId)
+    .run();
+  if ((result.meta?.changes ?? 0) !== 1) return { status: 404, body: { error: "you do not receive this agent", reason: "not_recipient" } };
+  return { status: 200, body: { id, name: agent.name, stopped: true } };
 }
