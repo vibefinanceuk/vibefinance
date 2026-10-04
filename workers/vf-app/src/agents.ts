@@ -13,6 +13,7 @@ import { handleAccruals } from "./accruals-route.js";
 import { handleOverdueBalance } from "./overdue-balance-route.js";
 import { handleWorkloadOpenTasks } from "./workload-open-tasks-route.js";
 import { handlePossibleDuplicates } from "./fraud-duplicates-route.js";
+import { handleUnapprovedSuppliers } from "./fraud-unapproved-suppliers-route.js";
 import {
   checkSchedule,
   DEFAULT_TIME_ZONE,
@@ -148,6 +149,8 @@ export interface AgentOptions {
   highlightDays?: number;
   withinDays?: number;
   olderThanDays?: number;
+  /** Decision 0630: an invoice at one stage longer than this many days. Default 3. */
+  stageDays?: number;
 }
 
 const OPTION_RULES: Record<
@@ -162,18 +165,28 @@ const OPTION_RULES: Record<
     highlightDays: { min: 1, max: 365, default: 60 },
     withinDays: undefined,
     olderThanDays: undefined,
+    stageDays: undefined,
   },
   due_soon_not_eligible: {
     minTotal: undefined,
     highlightDays: undefined,
     withinDays: { min: 1, max: 90, default: 7 },
     olderThanDays: undefined,
+    stageDays: undefined,
   },
   stuck_work: {
     minTotal: undefined,
     highlightDays: undefined,
     withinDays: undefined,
     olderThanDays: { min: 1, max: 365, default: 5 },
+    stageDays: undefined,
+  },
+  event_stuck: {
+    minTotal: undefined,
+    highlightDays: undefined,
+    withinDays: undefined,
+    olderThanDays: undefined,
+    stageDays: { min: 1, max: 90, default: 3 },
   },
 };
 
@@ -221,6 +234,11 @@ interface Org {
 interface AgentReport {
   id: string;
   permission: Permission;
+  /**
+   * Decision 0630: started by an event. Looked at every hour; each person
+   * is sent only the rows (`_key`) they have not been sent before.
+   */
+  event?: boolean;
   gather(
     db: D1Database,
     authorId: string,
@@ -771,6 +789,224 @@ async function gatherDuplicates(db: D1Database, authorId: string, orgs: Org[]) {
 }
 
 /** The reports an agent can run, in the order the form offers them. */
+/**
+ * **An invoice stuck at a stage — decision 0630.** In progress, short of
+ * its exit stage, and at its current stage longer than `stageDays`
+ * (default 3). One row per invoice; each stay at a stage is told once.
+ */
+async function gatherStuckInvoices(
+  db: D1Database,
+  authorId: string,
+  orgs: Org[],
+  now: Date,
+  options: AgentOptions,
+) {
+  const visible = await unitsWherePermitted(db, authorId, "AP.Analysis");
+  const exits = await exitStageIds(db);
+  const notExit =
+    exits.length === 0
+      ? "1"
+      : `pi.current_stage_id NOT IN (${exits.map(() => "?").join(", ")})`;
+  const days = options.stageDays ?? 3;
+  const before = new Date(now.getTime() - days * 86_400_000)
+    .toISOString()
+    .replace("T", " ")
+    .slice(0, 19);
+  const seen = new Set<string>();
+  const out: Record<string, string | number | null>[] = [];
+  const totals = new Map<string, ReportTotal>();
+  for (const org of orgs) {
+    const units = await scopedToChosenOrg(db, visible, org.id);
+    const clause = unitClause({ units }, "h.org_unit_id");
+    const rows = await db
+      .prepare(
+        `SELECT h.id AS id, COALESCE(h.invoice_number, json_extract(h.facts_json, '$."BT-1"')) AS number,
+                COALESCE(sup.name, json_extract(h.facts_json, '$."BT-27"')) AS supplier_name, s.name AS stage_name,
+                h.currency AS currency, h.total_with_vat AS total, v.id AS visit_id, v.created_at AS entered_at
+         FROM invoice_headers h
+         JOIN process_instances pi ON pi.subject_type = 'invoice' AND pi.subject_id = h.id
+         JOIN process_stages s ON s.id = pi.current_stage_id
+         JOIN stage_visits v ON v.id = (
+           SELECT v2.id FROM stage_visits v2
+           WHERE v2.process_instance_id = pi.id AND v2.stage_id = pi.current_stage_id
+           ORDER BY v2.created_at DESC, v2.rowid DESC LIMIT 1)
+         LEFT JOIN suppliers sup ON sup.id = h.supplier_id
+         WHERE pi.status = 'in_progress' AND ${notExit}
+           AND replace(v.created_at, 'T', ' ') < ? ${clause.sql}`,
+      )
+      .bind(...exits, before, ...clause.binds)
+      .all<{
+        id: string;
+        number: string | null;
+        supplier_name: string | null;
+        stage_name: string;
+        currency: string | null;
+        total: number | null;
+        visit_id: string;
+        entered_at: string;
+      }>();
+    for (const r of rows.results) {
+      if (seen.has(r.id)) continue;
+      seen.add(r.id);
+      out.push({
+        org: org.name,
+        invoiceId: r.id,
+        invoice: r.number,
+        supplier: r.supplier_name,
+        stage: r.stage_name,
+        daysAtStage: daysBetween(r.entered_at.replace(" ", "T"), now),
+        total: r.total === null ? null : round2(r.total),
+        currency: r.currency,
+        _key: `stuck:${r.visit_id}`,
+      });
+      addTotal(totals, r.currency, r.total);
+    }
+  }
+  out.sort((a, b) => Number(b.daysAtStage) - Number(a.daysAtStage));
+  return {
+    columns: [
+      { key: "org", label: "agents.col.org", kind: "text" as const },
+      { key: "invoice", label: "agents.col.invoice", kind: "text" as const },
+      { key: "supplier", label: "agents.col.supplier", kind: "text" as const },
+      { key: "stage", label: "agents.col.stage", kind: "text" as const },
+      {
+        key: "daysAtStage",
+        label: "agents.col.daysatstage",
+        kind: "days" as const,
+      },
+      { key: "total", label: "agents.col.total", kind: "money" as const },
+      { key: "currency", label: "agents.col.currency", kind: "text" as const },
+    ],
+    rows: out,
+    totals: [...totals.values()].map((t) => ({
+      ...t,
+      total: t.total === null ? null : round2(t.total),
+    })),
+  };
+}
+
+/** **An invoice from a supplier not on file, or on hold — decision 0630**, as Fraud Prevention lists them. */
+async function gatherUnapproved(db: D1Database, authorId: string, orgs: Org[]) {
+  const out: Record<string, string | number | null>[] = [];
+  const totals = new Map<string, ReportTotal>();
+  const seen = new Set<string>();
+  for (const org of orgs) {
+    const body = (await handleUnapprovedSuppliers(db, org.id, authorId))
+      .body as {
+      invoices: {
+        id: string;
+        invoiceNumber: string | null;
+        supplierName: string | null;
+        totalWithVat: number | null;
+        currency: string | null;
+        issueDate: string | null;
+        reason: "notonfile" | "onhold";
+      }[];
+    };
+    for (const i of body.invoices) {
+      if (seen.has(i.id)) continue;
+      seen.add(i.id);
+      out.push({
+        org: org.name,
+        invoiceId: i.id,
+        invoice: i.invoiceNumber,
+        supplier: i.supplierName,
+        reason: i.reason,
+        issued: i.issueDate,
+        total: i.totalWithVat === null ? null : round2(i.totalWithVat),
+        currency: i.currency,
+        _key: `unapproved:${i.id}`,
+      });
+      addTotal(totals, i.currency, i.totalWithVat);
+    }
+  }
+  return {
+    columns: [
+      { key: "org", label: "agents.col.org", kind: "text" as const },
+      { key: "invoice", label: "agents.col.invoice", kind: "text" as const },
+      { key: "supplier", label: "agents.col.supplier", kind: "text" as const },
+      { key: "reason", label: "agents.col.reason", kind: "text" as const },
+      { key: "issued", label: "agents.col.issued", kind: "date" as const },
+      { key: "total", label: "agents.col.total", kind: "money" as const },
+      { key: "currency", label: "agents.col.currency", kind: "text" as const },
+    ],
+    rows: out,
+    totals: [...totals.values()].map((t) => ({
+      ...t,
+      total: t.total === null ? null : round2(t.total),
+    })),
+  };
+}
+
+/** Failed supplier files are looked for over this many days, the first time and after. */
+const FAILED_FILES_DAYS = 14;
+
+/**
+ * **A supplier's file that could not be read — decision 0630.** Messages
+ * received that failed, or were only partly read, as the Route monitor
+ * shows them. Not tied to an organisation: whoever holds
+ * Integration.Monitor sees them all.
+ */
+async function gatherFailedFiles(db: D1Database, now: Date) {
+  const since = new Date(
+    now.getTime() - FAILED_FILES_DAYS * 86_400_000,
+  ).toISOString();
+  const rows = await db
+    .prepare(
+      `SELECT id, received_at, counterparty, subject, status, failed_part, error_text FROM route_messages
+       WHERE direction = 'in' AND status IN ('failed', 'partial') AND received_at >= ?
+       ORDER BY received_at DESC LIMIT 500`,
+    )
+    .bind(since)
+    .all<{
+      id: string;
+      received_at: string;
+      counterparty: string | null;
+      subject: string | null;
+      status: string;
+      failed_part: string | null;
+      error_text: string | null;
+    }>();
+  const out = rows.results.map((m) => ({
+    received: m.received_at.slice(0, 10),
+    from: m.counterparty,
+    subject: m.subject,
+    problem: (m.error_text ?? m.failed_part ?? m.status).slice(0, 200),
+    messageId: m.id,
+    _key: `file:${m.id}`,
+  }));
+  return {
+    columns: [
+      { key: "received", label: "agents.col.received", kind: "date" as const },
+      { key: "from", label: "agents.col.from", kind: "text" as const },
+      { key: "subject", label: "agents.col.subject", kind: "text" as const },
+      { key: "problem", label: "agents.col.problem", kind: "text" as const },
+    ],
+    rows: out,
+    totals: out.length
+      ? [{ currency: null, total: null, count: out.length }]
+      : [],
+  };
+}
+
+/** The totals of the rows kept, by currency, or a count where rows have none. */
+function totalsOfRows(rows: Record<string, unknown>[]): ReportTotal[] {
+  const totals = new Map<string, ReportTotal>();
+  for (const r of rows) {
+    if (typeof r.currency === "string" || typeof r.total === "number")
+      addTotal(
+        totals,
+        typeof r.currency === "string" ? r.currency : null,
+        typeof r.total === "number" ? r.total : null,
+      );
+    else addTotal(totals, null, null);
+  }
+  return [...totals.values()].map((t) => ({
+    ...t,
+    total: t.total === null ? null : round2(t.total),
+  }));
+}
+
 export const AGENT_REPORTS: AgentReport[] = [
   {
     id: "outstanding_payables",
@@ -803,6 +1039,37 @@ export const AGENT_REPORTS: AgentReport[] = [
     id: "possible_duplicates",
     permission: "AP.FraudReview",
     gather: (db, a, o) => gatherDuplicates(db, a, o),
+  },
+  // Decision 0630: agents started by an event.
+  {
+    id: "event_stuck",
+    permission: "AP.Analysis",
+    event: true,
+    gather: gatherStuckInvoices,
+  },
+  {
+    id: "event_duplicate",
+    permission: "AP.FraudReview",
+    event: true,
+    gather: async (db, a, o) => {
+      const t = await gatherDuplicates(db, a, o);
+      return {
+        ...t,
+        rows: t.rows.map((r) => ({ ...r, _key: `dup:${r.invoiceId}` })),
+      };
+    },
+  },
+  {
+    id: "event_unapproved_supplier",
+    permission: "AP.FraudReview",
+    event: true,
+    gather: (db, a, o) => gatherUnapproved(db, a, o),
+  },
+  {
+    id: "event_file_failed",
+    permission: "Integration.Monitor",
+    event: true,
+    gather: (db, _a, _o, n) => gatherFailedFiles(db, n),
   },
 ];
 
@@ -933,7 +1200,9 @@ function parseOptions(row: {
 
 function parseSchedule(json: string): AgentSchedule | null {
   try {
-    const checked = checkSchedule(JSON.parse(json));
+    const raw = JSON.parse(json) as { every?: unknown };
+    if (raw?.every === "hour") return { every: "hour" };
+    const checked = checkSchedule(raw);
     return "schedule" in checked ? checked.schedule : null;
   } catch {
     return null;
@@ -1114,6 +1383,8 @@ export async function handleListAgents(
       optionKeys: Object.entries(OPTION_RULES[r.id] ?? {})
         .filter(([, rule]) => rule)
         .map(([k]) => k),
+      // Decision 0630: started by an event, looked at hourly.
+      event: Boolean(r.event),
     });
   }
   return {
@@ -1200,9 +1471,13 @@ async function checkAgentInput(
       message: `you cannot see this report for ${notHeld.map((o) => o.name).join(", ")}`,
     };
   }
-  const checked = checkSchedule(
-    input.schedule ?? (current ? JSON.parse(current.schedule_json) : undefined),
-  );
+  // Decision 0630: an event report is looked at every hour; it has no time of its own.
+  const checked: ReturnType<typeof checkSchedule> = report.event
+    ? { schedule: { every: "hour" } }
+    : checkSchedule(
+        input.schedule ??
+          (current ? JSON.parse(current.schedule_json) : undefined),
+      );
   if ("reason" in checked)
     return { reason: checked.reason, message: "the schedule is not complete" };
 
@@ -2158,7 +2433,39 @@ async function runAgentOnce(
         previous: last ? (JSON.parse(last.totals_json) as ReportTotal[]) : null,
         options,
       };
+      // Decision 0630: an event agent sends each person only what they have not been sent.
+      if (report.event) {
+        const keys = table.rows.map((r) => String(r._key ?? ""));
+        const already = keys.length
+          ? await db
+              .prepare(
+                "SELECT key FROM agent_seen WHERE agent_id = ? AND user_id = ? AND key IN (SELECT value FROM json_each(?))",
+              )
+              .bind(agent.id, person.id, JSON.stringify(keys))
+              .all<{ key: string }>()
+          : { results: [] };
+        const sentBefore = new Set(already.results.map((r) => r.key));
+        table.rows = table.rows.filter(
+          (r) => !sentBefore.has(String(r._key ?? "")),
+        );
+        table.totals = totalsOfRows(table.rows);
+        table.previous = null;
+      }
       if (table.rows.length === 0) continue;
+      const markSent = async () => {
+        if (!report.event) return;
+        const keys = table.rows
+          .map((r) => String(r._key ?? ""))
+          .filter(Boolean);
+        if (!keys.length) return;
+        await db
+          .prepare(
+            `INSERT OR IGNORE INTO agent_seen (agent_id, user_id, key, sent_at)
+             SELECT ?, ?, value, ? FROM json_each(?)`,
+          )
+          .bind(agent.id, person.id, now.toISOString(), JSON.stringify(keys))
+          .run();
+      };
       if (isAuthor) authorTable = table;
       anyTable = anyTable ?? table;
       const localeRow = await db
@@ -2187,6 +2494,7 @@ async function runAgentOnce(
           totals: table.totals,
           summary: summary.status,
         });
+        await markSent();
         sent += 1;
       }
 
@@ -2265,6 +2573,7 @@ async function runAgentOnce(
             id: deliveryId,
             invoiceIds,
           });
+          await markSent();
           sent += 1;
         } else {
           await record(person.id, "email", "failed", table.rows.length, {
@@ -2281,6 +2590,12 @@ async function runAgentOnce(
     const shown = authorTable ?? anyTable;
     if (sent === 0 && failed === 0) {
       await finish("nothing", 0, [], null);
+      // Decision 0630: an event agent looks every hour; an hour with nothing new leaves no run behind.
+      if (report.event)
+        await db
+          .prepare("DELETE FROM agent_runs WHERE id = ?")
+          .bind(runId)
+          .run();
       return { runId, status: "nothing", deliveries: 0 };
     }
     if (sent === 0) {
@@ -2322,6 +2637,13 @@ export async function purgeOldAgentRecords(
   now = new Date(),
 ): Promise<{ runs: number }> {
   const before = new Date(now.getTime() - KEEP_DAYS * 86_400_000).toISOString();
+  // Decision 0630: what an event agent sent each person, kept as long as the runs.
+  await db
+    .prepare(
+      "DELETE FROM agent_seen WHERE rowid IN (SELECT rowid FROM agent_seen WHERE sent_at < ? LIMIT ?)",
+    )
+    .bind(before, PURGE_PER_TICK)
+    .run();
   const old = await db
     .prepare("SELECT id FROM agent_runs WHERE started_at < ? LIMIT ?")
     .bind(before, PURGE_PER_TICK)

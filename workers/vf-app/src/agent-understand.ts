@@ -47,6 +47,15 @@ const REPORT_WORDS: Record<string, string> = {
     "Open tasks by person: how many open tasks each person has, and how many wait unclaimed (team workload).",
   possible_duplicates:
     "Possible duplicates: invoices that look like another already received (fraud watch).",
+  // Decision 0630: started by an event.
+  event_stuck:
+    "EVENT, when an invoice has been at one stage longer than a number of days (stuck invoices). Option: stageDays (1-90, default 3).",
+  event_duplicate:
+    "EVENT, when a new invoice looks like a duplicate of another.",
+  event_unapproved_supplier:
+    "EVENT, when an invoice arrives from a supplier not on file, or on hold.",
+  event_file_failed:
+    "EVENT, when a supplier's file could not be read (a failed or partly read file in the Route monitor).",
 };
 
 export type RefusalCode =
@@ -131,7 +140,7 @@ Schedules (times are HH:MM, 24-hour, in ${ctx.zone}):
 - {"every":"week","time":"08:00","weekday":1} (1 Monday ... 7 Sunday)
 - {"every":"month","time":"16:00","day":15} (day 1-28, or "last", or "lastWorking")
 - {"every":"once","time":"10:00","date":"YYYY-MM-DD"}
-Nothing runs more often than daily. Today is ${ctx.weekday} ${ctx.today}.
+Nothing runs more often than daily, except EVENT reports: they are looked at every hour by themselves and send only what is new, so for them use "schedule": null and do not refuse "as soon as" or "whenever". Today is ${ctx.weekday} ${ctx.today}.
 
 Organisations this person can choose: ${ctx.orgs.map((o) => JSON.stringify(o)).join(", ") || "none"}.
 People it may also go to (AP Managers): ${ctx.managers.map((m) => JSON.stringify(m)).join(", ") || "none"}. The person asking is ${JSON.stringify(ctx.me)}; "me" means them and is not a recipient.
@@ -333,7 +342,17 @@ export async function handleUnderstandAgent(
       refusals.push({ code: "unknown_person", words: said.slice(0, 80) });
   }
 
-  const scheduleChecked = checkSchedule(p.schedule);
+  // Decision 0630: an event report looks every hour by itself, whatever was said about when.
+  const isEvent = Boolean(
+    reportId && AGENT_REPORTS.find((r) => r.id === reportId)?.event,
+  );
+  if (isEvent) {
+    for (let i = refusals.length - 1; i >= 0; i--)
+      if (refusals[i].code === "too_often") refusals.splice(i, 1);
+  }
+  const scheduleChecked = isEvent
+    ? { schedule: { every: "hour" as const } }
+    : checkSchedule(p.schedule);
   const schedule =
     "schedule" in scheduleChecked ? scheduleChecked.schedule : null;
 

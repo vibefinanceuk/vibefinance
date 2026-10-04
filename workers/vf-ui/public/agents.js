@@ -95,6 +95,10 @@ export const EXAMPLES = [
     options: {},
     email: true,
   },
+  // Decision 0630: started by an event.
+  { id: "stuck_alert", report: "event_stuck", schedule: { every: "hour" }, options: { stageDays: 3 }, email: true },
+  { id: "duplicate_alert", report: "event_duplicate", schedule: { every: "hour" }, options: {}, email: true },
+  { id: "failed_files", report: "event_file_failed", schedule: { every: "hour" }, options: {}, email: true },
 ];
 
 function examplesOffered() {
@@ -240,6 +244,8 @@ export function scheduleWords(s) {
       return at("agents.when.month").replace("{day}", String(s.day));
     case "once":
       return at("agents.when.once").replace("{date}", s.date);
+    case "hour":
+      return t("agents.when.hour");
     default:
       return "—";
   }
@@ -694,6 +700,9 @@ function formPanel() {
       draft.report = v;
       // Decision 0624: a report's own options, from its defaults.
       draft.options = { ...(offered.find((r) => r.id === v)?.options ?? {}) };
+      // Decision 0630: an event report looks every hour; another needs a time again.
+      if (offered.find((r) => r.id === v)?.event) draft.schedule = { every: "hour" };
+      else if (draft.schedule?.every === "hour") draft.schedule = { every: "week", time: "08:00", weekday: 1 };
       const allowed = offered.find((r) => r.id === v)?.orgIds ?? [];
       draft.orgIds = draft.orgIds.filter((id) => allowed.includes(id));
       if (draft.orgIds.length === 0 && allowed.length > 0)
@@ -789,7 +798,7 @@ function formPanel() {
       ]),
       field(t("agents.form.orgs"), orgBoxes, t("agents.form.orgshint")),
       optionFields(report),
-      scheduleFields(),
+      report?.event ? eventField() : scheduleFields(),
       summaryField(),
       deliveryFields(),
     ],
@@ -1124,6 +1133,18 @@ function summaryField() {
     data.aiReady === false
       ? t("agents.summary.noai")
       : t("agents.summary.hint"),
+  );
+}
+
+/**
+ * **When, for an agent started by an event — decision 0630.** No time to
+ * choose: it looks every hour and sends only what is new to each person.
+ */
+function eventField() {
+  return field(
+    t("agents.form.every"),
+    el("p", { class: "sm", id: "agent-event-when", text: t("agents.when.hour") }),
+    t("agents.event.hint"),
   );
 }
 

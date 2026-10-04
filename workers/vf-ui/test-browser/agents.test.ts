@@ -44,6 +44,11 @@ const STRINGS = {
       "Email is not set up for this environment yet. Ask your administrator.",
     "agents.notes.stop": "Stop sending me this",
     "agents.understand": "Understand",
+    "agents.when.hour": "Every hour, when there is something new",
+    "agents.report.event_stuck": "When an invoice is stuck at a stage",
+    "agents.example.stuck_alert.name": "Tell me when an invoice is stuck",
+    "agents.example.stuck_alert.words": "As soon as an invoice has been at one stage for more than 3 days.",
+    "agents.reason.notonfile": "Supplier not on file",
     "agents.notes.opendocs": "Open in Documents",
     "agents.notes.rowhint": "or choose a row to see its own invoices.",
     "documents.showing.agent": "Showing the invoices in the agent report \u201c{name}\u201d",
@@ -222,6 +227,14 @@ function stub(opts: {
               permission: "AP.FraudReview",
               orgIds: [],
             },
+            {
+              id: "event_stuck",
+              permission: "AP.Analysis",
+              orgIds: ["acme-uk"],
+              optionKeys: ["stageDays"],
+              options: { stageDays: 3 },
+              event: true,
+            },
           ],
           orgs: [
             { id: "acme-uk", name: "Acme UK" },
@@ -352,6 +365,7 @@ describe("the Agents screen", () => {
       "outstanding_payables",
       "accruals",
       "stuck_work",
+      "event_stuck",
     ]);
     // Accruals is held in Acme UK only: Acme DE is not offered.
     report.value = "accruals";
@@ -1286,6 +1300,7 @@ describe("ready-made agents — decision 0628", () => {
       "weekly_payables",
       "stuck_digest",
       "month_end_accruals",
+      "stuck_alert",
     ]);
     expect(
       document.querySelector('[data-example="weekly_payables"]')!.textContent,
@@ -1435,5 +1450,61 @@ describe("Open in Documents — decision 0629", () => {
     await vi.waitFor(() => expect(calls.some((c) => c.path.startsWith("/api/documents?") && c.path.includes("agentDelivery=dlv-1"))).toBe(true));
     expect(location.search).toBe("");
     await vi.waitFor(() => expect(document.querySelector(".alertbanner")?.textContent).toContain("\u201cWeekly payables\u201d"));
+  });
+});
+
+describe("agents started by an event — decision 0630", () => {
+  it("asks no time for an event report, offers its days, and saves it hourly", async () => {
+    const calls = await openAgents({ permissions: ["AP.Agents"], agents: [] });
+    button("New agent")!.click();
+    const report = document.getElementById("agent-report") as HTMLSelectElement;
+    report.value = "event_stuck";
+    report.dispatchEvent(new Event("change"));
+    expect(document.getElementById("agent-every")).toBeNull();
+    expect(document.getElementById("agent-event-when")?.textContent).toBe("Every hour, when there is something new");
+    (document.getElementById("agent-name") as HTMLInputElement).value = "Stuck";
+    document.getElementById("agent-name")!.dispatchEvent(new Event("input"));
+    shell().querySelector<HTMLButtonElement>("#agent-form .cardhead .actionlink.primary")!.click();
+    await vi.waitFor(() => expect(calls.some((c) => c.method === "POST" && c.path === "/api/agents")).toBe(true));
+    expect(calls.find((c) => c.method === "POST" && c.path === "/api/agents")!.body).toMatchObject({
+      report: "event_stuck",
+      schedule: { every: "hour" },
+      options: { stageDays: 3 },
+    });
+  });
+
+  it("goes back to a time when the report is changed back", async () => {
+    await openAgents({ permissions: ["AP.Agents"], agents: [] });
+    button("New agent")!.click();
+    const report = () => document.getElementById("agent-report") as HTMLSelectElement;
+    report().value = "event_stuck";
+    report().dispatchEvent(new Event("change"));
+    report().value = "accruals";
+    report().dispatchEvent(new Event("change"));
+    expect(document.getElementById("agent-event-when")).toBeNull();
+    expect(document.getElementById("agent-every")).not.toBeNull();
+  });
+
+  it("is ready-made too, said in the plan as every hour", async () => {
+    await openAgents({ permissions: ["AP.Agents"], agents: [] });
+    button("Ready-made")!.click();
+    document.querySelector<HTMLButtonElement>('[data-example="stuck_alert"] .actionlink')!.click();
+    expect(document.querySelector('#agent-plan [data-step="when"]')?.textContent).toBe("WhenEvery hour, when there is something new (Europe/London)");
+  });
+
+  it("says why an invoice was flagged in words, on a note", async () => {
+    const { reportTable } = await import("/agent-notes.js");
+    const { loadStrings } = await import("/strings.js");
+    stub({ permissions: [] });
+    await loadStrings();
+    const node = reportTable({
+      report: "event_unapproved_supplier",
+      columns: [{ key: "reason", label: "agents.col.reason", kind: "text" }],
+      rows: [{ reason: "notonfile" }],
+      totals: [],
+      skippedOrgs: [],
+      asAt: "2026-10-05T07:00:00Z",
+    });
+    expect(node.querySelector("tbody td")?.textContent).toBe("Supplier not on file");
   });
 });

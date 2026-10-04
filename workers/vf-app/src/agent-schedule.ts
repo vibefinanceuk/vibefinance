@@ -21,7 +21,9 @@ export type AgentSchedule =
   | { every: "workday"; time: string }
   | { every: "week"; time: string; weekday: number }
   | { every: "month"; time: string; day: number | "last" | "lastWorking" }
-  | { every: "once"; time: string; date: string };
+  | { every: "once"; time: string; date: string }
+  // Decision 0630: an agent started by an event looks every hour. Never chosen; set for event reports.
+  | { every: "hour" };
 
 export const DEFAULT_TIME_ZONE = "Europe/London";
 
@@ -140,6 +142,8 @@ function runsOn(schedule: AgentSchedule, y: number, m: number, d: number): boole
       const [, yy, mm, dd] = DATE_RE.exec(schedule.date)!;
       return Number(yy) === y && Number(mm) === m && Number(dd) === d;
     }
+    case "hour":
+      return true;
   }
 }
 
@@ -148,6 +152,11 @@ function runsOn(schedule: AgentSchedule, y: number, m: number, d: number): boole
  * ISO string in UTC; null when there is none (a `once` already past).
  */
 export function nextRunAfter(schedule: AgentSchedule, zone: string, after: Date): string | null {
+  if (schedule.every === "hour") {
+    const at = new Date(after.getTime() + 3_600_000);
+    at.setUTCSeconds(0, 0);
+    return at.toISOString();
+  }
   const [h, mi] = schedule.time.split(":").map(Number);
   const start = partsIn(after.getTime(), zone);
   // A year and a little: enough for any monthly day, and a `once` within it.

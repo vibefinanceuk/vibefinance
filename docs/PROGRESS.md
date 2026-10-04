@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 4 October 2026 (decision 0629). A living document: what
+Last updated 4 October 2026 (decision 0630). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,14 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Agents phase 2, slice 3: agents started by an event (0630)
+
+Four reports start when something happens: an invoice stuck at a stage,
+a possible duplicate, an invoice from an unapproved supplier, and a
+supplier file that cannot be read. They are looked at every hour, and
+each person is sent only what they have not been sent, so a burst is one
+message and a quiet hour sends nothing. Ready-made too.
 
 ### Agents phase 2, slice 2: Open in Documents (0629)
 

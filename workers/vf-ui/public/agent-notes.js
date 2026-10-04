@@ -121,7 +121,12 @@ export function reportTable(table, opts = {}) {
               },
               table.columns.map((c) => {
                 const raw = row[c.key];
-                const value = c.key === "person" && (raw === null || raw === undefined) ? t("agents.notes.unclaimed") : cellText(raw, c.kind);
+                const value =
+                  c.key === "person" && (raw === null || raw === undefined)
+                    ? t("agents.notes.unclaimed")
+                    : c.key === "reason" && typeof raw === "string"
+                      ? t(`agents.reason.${raw}`)
+                      : cellText(raw, c.kind);
                 return el("td", { class: numeric.has(c.kind) ? "num" : "", text: value });
               })
             )

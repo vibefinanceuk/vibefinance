@@ -71,6 +71,18 @@ const WORDS: Record<EmailLocale, Record<string, string>> = {
     why: "You get this because {author} set up the agent “{name}”.",
     stop: "Stop sending me this",
     "summary.label": "Summary, written by AI from the table below",
+    "report.event_stuck": "Invoices stuck at a stage",
+    "report.event_duplicate": "New possible duplicates",
+    "report.event_unapproved_supplier": "Invoices from unapproved suppliers",
+    "report.event_file_failed": "Supplier files that could not be read",
+    "col.daysatstage": "Days at stage",
+    "col.reason": "Why",
+    "col.received": "Received",
+    "col.from": "From",
+    "col.subject": "Subject",
+    "col.problem": "What went wrong",
+    "reason.notonfile": "Supplier not on file",
+    "reason.onhold": "Supplier on hold",
     "summary.highlightedrow": "highlighted",
   },
   de: {
@@ -125,6 +137,18 @@ const WORDS: Record<EmailLocale, Record<string, string>> = {
     why: "Sie erhalten dies, weil {author} den Agenten „{name}“ eingerichtet hat.",
     stop: "Nicht mehr an mich senden",
     "summary.label": "Zusammenfassung, von KI aus der Tabelle unten geschrieben",
+    "report.event_stuck": "Rechnungen, die in einem Schritt festhängen",
+    "report.event_duplicate": "Neue mögliche Duplikate",
+    "report.event_unapproved_supplier": "Rechnungen von nicht freigegebenen Lieferanten",
+    "report.event_file_failed": "Lieferantendateien, die nicht gelesen werden konnten",
+    "col.daysatstage": "Tage im Schritt",
+    "col.reason": "Grund",
+    "col.received": "Eingegangen",
+    "col.from": "Von",
+    "col.subject": "Betreff",
+    "col.problem": "Was schiefging",
+    "reason.notonfile": "Lieferant nicht angelegt",
+    "reason.onhold": "Lieferant gesperrt",
     "summary.highlightedrow": "hervorgehoben",
   },
 };
@@ -154,6 +178,7 @@ const NUMERIC = new Set(["money", "count", "days", "percent"]);
 
 export function cell(locale: EmailLocale, value: string | number | null | undefined, kind: string, key: string): string {
   if (key === "person" && (value === null || value === undefined)) return w(locale, "unclaimed");
+  if (key === "reason" && typeof value === "string") return w(locale, `reason.${value}`);
   if (value === null || value === undefined || value === "") return "—";
   const tag = locale === "de" ? "de-DE" : "en-GB";
   if (kind === "money") return Number(value).toLocaleString(tag, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -175,6 +200,7 @@ export function reportCsv(locale: EmailLocale, table: ReportTable): string {
         .map((c) => {
           const v = row[c.key];
           if (c.key === "person" && (v === null || v === undefined)) return quote(w(locale, "unclaimed"));
+          if (c.key === "reason" && typeof v === "string") return quote(w(locale, `reason.${v}`));
           if (v === null || v === undefined) return "";
           return typeof v === "number" ? String(v) : quote(String(v));
         })
