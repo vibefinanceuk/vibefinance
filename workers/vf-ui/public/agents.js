@@ -34,6 +34,143 @@ let busy = false;
 // Decision 0627: the agent's own page, and the agent log.
 let page = null; // { id, body, runs, runId }
 let agentLog = null; // null, "loading", or events
+// Decision 0628: the library of ready-made agents, open or not.
+let showExamples = false;
+
+/**
+ * **Ready-made agents — decision 0628 (phase 2, slice 1).** The design's
+ * use cases, set up so one choice fills the form: report, options, when,
+ * how delivered, the AI summary, and the words it is described in. Only
+ * those whose report the person may use are offered; organisations are
+ * every one they can see it for. Nothing is saved until they save it,
+ * paused, as any new agent.
+ */
+export const EXAMPLES = [
+  {
+    id: "weekly_payables",
+    report: "outstanding_payables",
+    schedule: { every: "week", time: "08:00", weekday: 1 },
+    options: { highlightDays: 60 },
+    email: true,
+  },
+  {
+    id: "due_soon",
+    report: "due_soon_not_eligible",
+    schedule: { every: "workday", time: "07:30" },
+    options: { withinDays: 7 },
+    email: false,
+  },
+  {
+    id: "stuck_digest",
+    report: "stuck_work",
+    schedule: { every: "workday", time: "09:00" },
+    options: { olderThanDays: 5 },
+    email: false,
+  },
+  {
+    id: "past_due",
+    report: "overdue_not_eligible",
+    schedule: { every: "workday", time: "08:00" },
+    options: {},
+    email: false,
+  },
+  {
+    id: "month_end_accruals",
+    report: "accruals",
+    schedule: { every: "month", time: "16:00", day: "lastWorking" },
+    options: {},
+    email: true,
+  },
+  {
+    id: "team_workload",
+    report: "open_tasks",
+    schedule: { every: "week", time: "15:00", weekday: 5 },
+    options: {},
+    email: false,
+  },
+  {
+    id: "fraud_watch",
+    report: "possible_duplicates",
+    schedule: { every: "week", time: "08:00", weekday: 1 },
+    options: {},
+    email: true,
+  },
+];
+
+function examplesOffered() {
+  const offered = new Map(reportsOffered().map((r) => [r.id, r]));
+  return EXAMPLES.filter((x) => offered.has(x.report));
+}
+
+function startFromExample(x) {
+  const report = reportsOffered().find((r) => r.id === x.report);
+  if (!report) return;
+  showExamples = false;
+  editing = "new";
+  draft = {
+    name: t(`agents.example.${x.id}.name`),
+    report: report.id,
+    orgIds: [...report.orgIds],
+    schedule: { ...x.schedule },
+    // Email where it is set up and the example sends one; the task list otherwise.
+    deliver:
+      x.email && data.emailReady
+        ? { task: true, email: true }
+        : { task: true, email: false },
+    recipients: [],
+    options: { ...(report.options ?? {}), ...x.options },
+    description: t(`agents.example.${x.id}.words`),
+    summary: true,
+  };
+  understood = { refusals: [], missing: [] };
+  stepsOpen = false;
+  problem = "";
+  render();
+}
+
+function examplesPanel() {
+  const offered = examplesOffered();
+  return el("div", { class: "panel", id: "agents-examples" }, [
+    el("div", { class: "agenthead" }, [
+      el("div", {}, [
+        el("h3", { text: t("agents.examples.heading") }),
+        el("p", { class: "muted sm", text: t("agents.examples.sub") }),
+      ]),
+      el("div", { class: "dobuttons" }, [
+        actionLink("close", {
+          label: t("agents.cancel"),
+          onclick: () => {
+            showExamples = false;
+            render();
+          },
+        }),
+      ]),
+    ]),
+    offered.length === 0
+      ? el("p", { class: "muted sm", text: t("agents.examples.none") })
+      : el(
+          "div",
+          { class: "agentexamples" },
+          offered.map((x) =>
+            el("div", { class: "agentexample", "data-example": x.id }, [
+              el("div", { class: "agentexamplehead" }, [
+                el("b", { text: t(`agents.example.${x.id}.name`) }),
+                actionLink("addcard", {
+                  primary: true,
+                  label: t("agents.examples.use"),
+                  onclick: () => startFromExample(x),
+                }),
+              ]),
+              el("p", { class: "sm", text: t(`agents.example.${x.id}.words`) }),
+              el("p", {
+                class: "muted sm",
+                text: `${reportName(x.report)} · ${scheduleWords(x.schedule)}`,
+              }),
+            ]),
+          ),
+        ),
+  ]);
+}
 
 async function call(path, init) {
   try {
@@ -1102,6 +1239,16 @@ function render() {
   }
   if (canMake && !editing)
     right.push(
+      actionLink("library", {
+        label: t("agents.examples"),
+        onclick: () => {
+          showExamples = !showExamples;
+          render();
+        },
+      }),
+    );
+  if (canMake && !editing)
+    right.push(
       actionLink("addcard", {
         primary: true,
         label: t("agents.new"),
@@ -1148,6 +1295,7 @@ function render() {
         ...(problem
           ? [el("div", { class: "note", id: "agents-note", text: problem })]
           : []),
+        ...(showExamples && !editing ? [examplesPanel()] : []),
         ...(editing ? [formPanel()] : []),
         el("div", { class: "panel" }, [
           agents.length === 0
@@ -1190,6 +1338,7 @@ export async function open() {
   openRuns = new Map();
   page = null;
   agentLog = null;
+  showExamples = false;
   const ok = await load();
   if (!ok) data = null;
   render();

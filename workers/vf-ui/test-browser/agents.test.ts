@@ -44,6 +44,18 @@ const STRINGS = {
       "Email is not set up for this environment yet. Ask your administrator.",
     "agents.notes.stop": "Stop sending me this",
     "agents.understand": "Understand",
+    "agents.examples": "Ready-made",
+    "agents.examples.heading": "Ready-made agents",
+    "agents.examples.use": "Use this",
+    "agents.example.weekly_payables.name": "Weekly outstanding payables",
+    "agents.example.weekly_payables.words":
+      "Every Monday at 8am, outstanding payables by supplier.",
+    "agents.example.stuck_digest.name": "Stuck work",
+    "agents.example.stuck_digest.words":
+      "Every working day at 9am, tasks open more than 5 days.",
+    "agents.example.month_end_accruals.name": "Month-end accruals",
+    "agents.example.month_end_accruals.words":
+      "On the last working day of each month at 4pm, accruals.",
     "agents.page.back": "All agents",
     "agents.page.runs": "Runs",
     "agents.page.versions": "Plan versions",
@@ -1253,5 +1265,102 @@ describe("the agent's own page and the agent log — decision 0627", () => {
     await vi.waitFor(() =>
       expect(document.getElementById("agent-page")).not.toBeNull(),
     );
+  });
+});
+
+describe("ready-made agents — decision 0628", () => {
+  it("offers only those whose report the person may use", async () => {
+    await openAgents({ permissions: ["AP.Agents"], agents: [] });
+    button("Ready-made")!.click();
+    const offered = [
+      ...document.querySelectorAll("#agents-examples .agentexample"),
+    ].map((x) => x.getAttribute("data-example"));
+    // Possible duplicates needs fraud review here, which this person lacks.
+    expect(offered).toEqual([
+      "weekly_payables",
+      "stuck_digest",
+      "month_end_accruals",
+    ]);
+    expect(
+      document.querySelector('[data-example="weekly_payables"]')!.textContent,
+    ).toContain("Every Monday at 8am, outstanding payables by supplier.");
+  });
+
+  it("fills a new agent with everything chosen, every organisation, the plan in words, and saves it", async () => {
+    const calls = await openAgents({ permissions: ["AP.Agents"], agents: [] });
+    button("Ready-made")!.click();
+    document
+      .querySelector<HTMLButtonElement>(
+        '[data-example="weekly_payables"] .actionlink',
+      )!
+      .click();
+    expect(document.getElementById("agents-examples")).toBeNull();
+    expect(
+      (document.getElementById("agent-name") as HTMLInputElement).value,
+    ).toBe("Weekly outstanding payables");
+    expect(
+      (document.getElementById("agent-describe") as HTMLTextAreaElement).value,
+    ).toBe("Every Monday at 8am, outstanding payables by supplier.");
+    expect(
+      document.querySelector('#agent-plan [data-step="gather"]')?.textContent,
+    ).toBe("ReportOutstanding payables · Acme UK, Acme DE");
+    expect(
+      document.querySelector('#agent-plan [data-step="when"]')?.textContent,
+    ).toBe("WhenEvery Monday at 08:00 (Europe/London)");
+    shell()
+      .querySelector<HTMLButtonElement>(
+        "#agent-form .cardhead .actionlink.primary",
+      )!
+      .click();
+    await vi.waitFor(() =>
+      expect(
+        calls.some((c) => c.method === "POST" && c.path === "/api/agents"),
+      ).toBe(true),
+    );
+    expect(
+      calls.find((c) => c.method === "POST" && c.path === "/api/agents")!.body,
+    ).toMatchObject({
+      name: "Weekly outstanding payables",
+      report: "outstanding_payables",
+      orgIds: ["acme-uk", "acme-de"],
+      schedule: { every: "week", time: "08:00", weekday: 1 },
+      options: { highlightDays: 60 },
+      deliver: { task: true, email: true },
+      recipients: [],
+      description: "Every Monday at 8am, outstanding payables by supplier.",
+      summary: true,
+    });
+  });
+
+  it("sends to the task list alone where email is not set up", async () => {
+    const calls = await openAgents({
+      permissions: ["AP.Agents"],
+      agents: [],
+      emailReady: false,
+    });
+    button("Ready-made")!.click();
+    document
+      .querySelector<HTMLButtonElement>(
+        '[data-example="month_end_accruals"] .actionlink',
+      )!
+      .click();
+    shell()
+      .querySelector<HTMLButtonElement>(
+        "#agent-form .cardhead .actionlink.primary",
+      )!
+      .click();
+    await vi.waitFor(() =>
+      expect(
+        calls.some((c) => c.method === "POST" && c.path === "/api/agents"),
+      ).toBe(true),
+    );
+    expect(
+      calls.find((c) => c.method === "POST" && c.path === "/api/agents")!.body,
+    ).toMatchObject({
+      report: "accruals",
+      orgIds: ["acme-uk"],
+      schedule: { every: "month", time: "16:00", day: "lastWorking" },
+      deliver: { task: true, email: false },
+    });
   });
 });

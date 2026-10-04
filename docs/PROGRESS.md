@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 4 October 2026 (decision 0627). A living document: what
+Last updated 4 October 2026 (decision 0628). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,14 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Agents phase 2, slice 1: ready-made agents (0628)
+
+A Ready-made library on the Agents screen: seven agents for common
+needs (weekly outstanding payables, due soon, stuck work, past due,
+month-end accruals, team workload, fraud watch). Use this fills in a new
+agent with everything chosen, to check and save. Next in phase 2: links
+into Documents, then agents started by an event.
 
 ### Agents, slice 6: run history and care (0627)
 
