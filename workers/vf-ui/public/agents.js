@@ -161,6 +161,19 @@ function deliveriesWords(list) {
     .join(", ");
 }
 
+/**
+ * Decision 0626: what became of the summaries in a run, once per kind:
+ * "summary written", "no summary: a number did not match the table".
+ */
+export function summaryWords(list) {
+  const kinds = [
+    ...new Set(
+      (list ?? []).map((d) => d.summary).filter((k) => k && k !== "off"),
+    ),
+  ];
+  return kinds.map((k) => t(`agents.summary.run.${k}`)).join(" · ");
+}
+
 function words(prefix, code) {
   const key = `${prefix}.${code}`;
   const w = t(key);
@@ -217,6 +230,7 @@ function runsRow(agent) {
                           )
                         : "",
                       deliveriesWords(r.deliveries),
+                      summaryWords(r.deliveries),
                     ]
                       .filter(Boolean)
                       .join(" · "),
@@ -367,6 +381,7 @@ function startNew() {
     recipients: [],
     options: { ...(first?.options ?? {}) },
     description: "",
+    summary: true,
   };
   understood = null;
   stepsOpen = false;
@@ -387,6 +402,7 @@ function startEdit(agent) {
       .map((p) => p.id),
     options: { ...(agent.options ?? {}) },
     description: agent.description ?? "",
+    summary: agent.summary !== false,
   };
   understood = null;
   stepsOpen = !agent.description;
@@ -570,6 +586,7 @@ function formPanel() {
         recipients: draft.recipients,
         options: draft.options,
         description: draft.description || null,
+        summary: draft.summary,
       };
       const r =
         editing === "new"
@@ -623,6 +640,7 @@ function formPanel() {
       field(t("agents.form.orgs"), orgBoxes, t("agents.form.orgshint")),
       optionFields(report),
       scheduleFields(),
+      summaryField(),
       deliveryFields(),
     ],
   );
@@ -684,6 +702,7 @@ function describeField() {
         deliver: { ...d.deliver },
         recipients: [...(d.recipients ?? [])],
         description: r.body.text ?? draft.description,
+        summary: d.summary !== false,
       };
       understood = {
         refusals: r.body.refusals ?? [],
@@ -754,6 +773,13 @@ export function planLines(d, ctx) {
         : null,
     ],
     ["shape", shape.length ? shape.join(" · ") : t("agents.plan.shape.none")],
+    // Decision 0626: the AI summary on top, or none.
+    [
+      "summarise",
+      d.summary === false
+        ? t("agents.plan.summary.off")
+        : t("agents.plan.summary.on"),
+    ],
     ["deliver", `${how}, ${who}`],
   ];
 }
@@ -924,6 +950,33 @@ function deliveryFields() {
   ]);
 }
 
+/**
+ * **The AI summary — decision 0626.** On unless turned off: a few
+ * sentences by AI on top of each copy, in its reader's language, sent
+ * only when every number in it is in the table.
+ */
+function summaryField() {
+  const node = el("input", {
+    type: "checkbox",
+    id: "agent-summary",
+    onchange: (e) => {
+      draft.summary = e.target.checked;
+      render();
+    },
+  });
+  node.checked = draft.summary !== false;
+  return field(
+    t("agents.summary.label"),
+    el("label", { class: "agentorg", for: "agent-summary" }, [
+      node,
+      el("span", { text: t("agents.summary.on") }),
+    ]),
+    data.aiReady === false
+      ? t("agents.summary.noai")
+      : t("agents.summary.hint"),
+  );
+}
+
 /** Who it goes to, in a row: "Task list and email · Dan, Maya (stopped)". */
 function deliveryWords(agent) {
   const how =
@@ -937,7 +990,9 @@ function deliveryWords(agent) {
       p.optedOut ? `${p.name} (${t("agents.deliver.stopped")})` : p.name,
     )
     .join(", ");
-  return who ? `${how} · ${who}` : how;
+  const said =
+    agent.summary === false ? how : `${how} · ${t("agents.summary.short")}`;
+  return who ? `${said} · ${who}` : said;
 }
 
 // --- The time zone ------------------------------------------------------------
@@ -1058,6 +1113,18 @@ function render() {
                   id: "agents-runnow-hint",
                   text: t("agents.runnowhint"),
                 }),
+                // Decision 0626: today's AI summaries against the licence.
+                ...(data.summaries
+                  ? [
+                      el("p", {
+                        class: "muted sm",
+                        id: "agents-summaries",
+                        text: t("agents.summary.today")
+                          .replace("{used}", String(data.summaries.used))
+                          .replace("{max}", String(data.summaries.max)),
+                      }),
+                    ]
+                  : []),
               ]
             : []),
         ]),

@@ -109,6 +109,7 @@ describe("understanding a request", () => {
         options: { minTotal: 1000, highlightDays: 60 },
         deliver: { task: false, email: true },
         recipients: ["priya"],
+        summary: true,
       },
       refusals: [],
       missing: [],

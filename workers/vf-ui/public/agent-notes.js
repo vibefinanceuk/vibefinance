@@ -58,6 +58,15 @@ function totalsLine(totals, previous) {
 export function reportTable(table) {
   const numeric = new Set(["money", "count", "days", "percent"]);
   return el("div", { class: "agentreport" }, [
+    // Decision 0626: the AI summary, marked as the AI's, checked against this table before it was kept.
+    ...(table.summary
+      ? [
+          el("div", { class: "agentsummary", id: "agent-note-summary" }, [
+            el("span", { class: "agentsummarytag", text: t("agents.summary.notelabel") }),
+            el("p", { text: table.summary }),
+          ]),
+        ]
+      : []),
     ...(table.skippedOrgs?.length ? [el("p", { class: "muted sm", text: t("agents.notes.skipped").replace("{orgs}", table.skippedOrgs.join(", ")) })] : []),
     // Decision 0624: what narrowed it, and what a highlight means.
     ...(table.options?.minTotal !== undefined ? [el("p", { class: "muted sm", text: t("agents.notes.mintotal").replace("{n}", cellText(table.options.minTotal, "money")) })] : []),

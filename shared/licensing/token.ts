@@ -48,6 +48,7 @@ function isValidClaimsShape(value: unknown): value is LicenceClaims {
     c.features.every((f) => typeof f === "string") &&
     typeof c.volumeEntitlement === "number" &&
     (c.agentLimit === undefined || (typeof c.agentLimit === "number" && Number.isInteger(c.agentLimit) && c.agentLimit >= 0)) &&
+    (c.summaryLimit === undefined || (typeof c.summaryLimit === "number" && Number.isInteger(c.summaryLimit) && c.summaryLimit >= 0)) &&
     (c.status === "active" || c.status === "warned" || c.status === "blocked") &&
     typeof c.issuedAt === "string" &&
     typeof c.expiresAt === "string"

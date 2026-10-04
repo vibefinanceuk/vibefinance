@@ -69,6 +69,8 @@ const WORDS: Record<EmailLocale, Record<string, string>> = {
     open: "Open VibeFinance",
     why: "You get this because {author} set up the agent “{name}”.",
     stop: "Stop sending me this",
+    "summary.label": "Summary, written by AI from the table below",
+    "summary.highlightedrow": "highlighted",
   },
   de: {
     "report.outstanding_payables": "Offene Verbindlichkeiten",
@@ -120,6 +122,8 @@ const WORDS: Record<EmailLocale, Record<string, string>> = {
     open: "VibeFinance öffnen",
     why: "Sie erhalten dies, weil {author} den Agenten „{name}“ eingerichtet hat.",
     stop: "Nicht mehr an mich senden",
+    "summary.label": "Zusammenfassung, von KI aus der Tabelle unten geschrieben",
+    "summary.highlightedrow": "hervorgehoben",
   },
 };
 
@@ -127,12 +131,16 @@ export function emailLocale(raw: unknown): EmailLocale {
   return raw === "de" ? "de" : "en";
 }
 
+export function words(locale: EmailLocale, key: string): string {
+  return w(locale, key);
+}
+
 function w(locale: EmailLocale, key: string): string {
   return WORDS[locale][key] ?? WORDS.en[key] ?? key;
 }
 
 /** A column's label key (`agents.col.supplier`) in the language. */
-function label(locale: EmailLocale, key: string): string {
+export function label(locale: EmailLocale, key: string): string {
   return w(locale, key.replace(/^agents\./, ""));
 }
 
@@ -142,7 +150,7 @@ function esc(s: string): string {
 
 const NUMERIC = new Set(["money", "count", "days", "percent"]);
 
-function cell(locale: EmailLocale, value: string | number | null | undefined, kind: string, key: string): string {
+export function cell(locale: EmailLocale, value: string | number | null | undefined, kind: string, key: string): string {
   if (key === "person" && (value === null || value === undefined)) return w(locale, "unclaimed");
   if (value === null || value === undefined || value === "") return "—";
   const tag = locale === "de" ? "de-DE" : "en-GB";
@@ -184,6 +192,8 @@ export interface AgentEmailInput {
   stopUrl: string | null;
   /** Whether organisations were left out because this recipient may not see them. */
   filtered: boolean;
+  /** Decision 0626: the AI summary, already checked against the table; none when null. */
+  summary?: string | null;
 }
 
 /** "120.00 GBP (1 invoices), up 20.00 since the last report" — decision 0624's comparison. */
@@ -244,10 +254,12 @@ export function buildAgentEmail(input: AgentEmailInput): { subject: string; text
     table.columns.map((c, i) => pad(label(locale, c.label), widths[i], NUMERIC.has(c.kind))).join("  "),
     ...shown.map((r) => table.columns.map((c, i) => pad(cell(locale, r[c.key], c.kind, c.key), widths[i], NUMERIC.has(c.kind))).join("  ")),
   ];
+  const summary = input.summary ?? null;
   const text = [
     input.agentName,
     `${reportName} · ${w(locale, "asat").replace("{when}", asAt)}`,
     "",
+    ...(summary ? [`${w(locale, "summary.label")}:`, summary, ""] : []),
     ...notes,
     ...(notes.length ? [""] : []),
     ...textRows,
@@ -268,6 +280,7 @@ export function buildAgentEmail(input: AgentEmailInput): { subject: string; text
   const html = `<div style="font-family:Calibri,Carlito,'Segoe UI',Arial,sans-serif;color:#121a26;font-size:14px;line-height:1.45">
 <h2 style="margin:0 0 4px;color:#854f0b;font-size:20px">${esc(input.agentName)}</h2>
 <p style="margin:0 0 12px;color:#4a5768">${esc(reportName)} · ${esc(w(locale, "asat").replace("{when}", asAt))}</p>
+${summary ? `<div style="margin:0 0 14px;padding:10px 12px;border:1px dashed #378add;border-radius:6px;background:#e6f1fb"><div style="font-size:11px;text-transform:uppercase;letter-spacing:.08em;font-weight:700;color:#185fa5;margin-bottom:4px">${esc(w(locale, "summary.label"))}</div>${esc(summary)}</div>` : ""}
 ${notes.map((n) => `<p style="margin:0 0 8px;color:#4a5768">${esc(n)}</p>`).join("\n")}
 <table style="border-collapse:collapse;font-size:13px"><thead><tr>${table.columns.map(th).join("")}</tr></thead>
 <tbody>${shown.map((r) => `<tr>${table.columns.map((c) => td(r, c)).join("")}</tr>`).join("")}</tbody></table>

@@ -7,6 +7,7 @@ export interface UpsertLicenceBody {
   volumeEntitlement?: unknown;
   /** Decision 0622: how many agents the environment may have; null or absent for vf-app's default. */
   agentLimit?: unknown;
+  summaryLimit?: unknown;
   validFrom?: unknown;
   validTo?: unknown;
   status?: unknown;
@@ -54,6 +55,15 @@ export async function handleUpsertLicence(
     return { status: 400, body: { error: "agentLimit must be a whole number, 0 or more, or null" } };
   }
   const agentLimit = typeof body.agentLimit === "number" ? body.agentLimit : null;
+  // Decision 0626: AI summaries a day, the same way.
+  if (
+    body.summaryLimit !== undefined &&
+    body.summaryLimit !== null &&
+    !(typeof body.summaryLimit === "number" && Number.isInteger(body.summaryLimit) && body.summaryLimit >= 0)
+  ) {
+    return { status: 400, body: { error: "summaryLimit must be a whole number, 0 or more, or null" } };
+  }
+  const summaryLimit = typeof body.summaryLimit === "number" ? body.summaryLimit : null;
 
   const features = Array.isArray(body.features)
     ? body.features.filter((f): f is string => typeof f === "string")
@@ -84,8 +94,8 @@ export async function handleUpsertLicence(
   await db
     .prepare(
       `INSERT INTO licences
-         (environment_id, plan, features_json, volume_entitlement, valid_from, valid_to, status, status_reason, status_effective_at, agent_limit, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+         (environment_id, plan, features_json, volume_entitlement, valid_from, valid_to, status, status_reason, status_effective_at, agent_limit, summary_limit, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
        ON CONFLICT(environment_id) DO UPDATE SET
          plan = excluded.plan,
          features_json = excluded.features_json,
@@ -96,6 +106,7 @@ export async function handleUpsertLicence(
          status_reason = excluded.status_reason,
          status_effective_at = excluded.status_effective_at,
          agent_limit = excluded.agent_limit,
+         summary_limit = excluded.summary_limit,
          updated_at = datetime('now')`
     )
     .bind(
@@ -108,12 +119,13 @@ export async function handleUpsertLicence(
       status,
       statusReason,
       statusEffectiveAt,
-      agentLimit
+      agentLimit,
+      summaryLimit
     )
     .run();
 
   return {
     status: 200,
-    body: { environmentId, plan, features, volumeEntitlement, agentLimit, validFrom, validTo, status },
+    body: { environmentId, plan, features, volumeEntitlement, agentLimit, summaryLimit, validFrom, validTo, status },
   };
 }

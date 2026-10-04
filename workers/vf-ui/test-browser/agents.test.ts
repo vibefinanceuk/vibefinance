@@ -44,6 +44,22 @@ const STRINGS = {
       "Email is not set up for this environment yet. Ask your administrator.",
     "agents.notes.stop": "Stop sending me this",
     "agents.understand": "Understand",
+    "agents.summary.short": "AI summary",
+    "agents.summary.label": "AI summary",
+    "agents.summary.on": "Write a few sentences on top of each report",
+    "agents.summary.hint": "Written by AI from each reader's own copy.",
+    "agents.summary.noai":
+      "AI is not set up here, so reports go without a summary.",
+    "agents.summary.today":
+      "AI summaries today: {used} of {max}. Past that, reports go without one.",
+    "agents.summary.notelabel": "Summary, written by AI from the table below",
+    "agents.summary.run.written": "summary written",
+    "agents.summary.run.mismatch":
+      "no summary: a number did not match the table",
+    "agents.plan.summarise": "Summary",
+    "agents.plan.summary.on":
+      "A few sentences by AI on top, every number checked against the table",
+    "agents.plan.summary.off": "No summary, the table only",
     "agents.plan.when": "When",
     "agents.plan.gather": "Report",
     "agents.plan.shape": "Narrowed",
@@ -112,6 +128,7 @@ function stub(opts: {
   calls?: Call[];
   emailReady?: boolean;
   understandReply?: [number, unknown];
+  aiReady?: boolean;
 }) {
   const calls = opts.calls ?? [];
   vi.stubGlobal(
@@ -178,6 +195,8 @@ function stub(opts: {
             { id: "u-olu", name: "Olu", hasEmail: false },
           ],
           emailReady: opts.emailReady ?? true,
+          aiReady: opts.aiReady ?? true,
+          summaries: { used: 3, max: 100 },
         });
       if (path === "/api/agents" && method === "POST") {
         const [status, body] = opts.createReply ?? [
@@ -313,6 +332,7 @@ describe("the Agents screen", () => {
     expect(calls.find((c) => c.method === "POST")!.body).toEqual({
       name: "Month-end accruals",
       description: null,
+      summary: true,
       report: "accruals",
       orgIds: ["acme-uk"],
       schedule: { every: "month", time: "08:00", day: "lastWorking" },
@@ -525,7 +545,7 @@ describe("delivery and recipients — decision 0623", () => {
     await openAgents({ permissions: ["AP.Agents"] });
     expect(
       shell().querySelector('tr[data-agent="agt-1"] .agentto')?.textContent,
-    ).toBe("Task list and email · Dan, Maya (stopped)");
+    ).toBe("Task list and email · AI summary · Dan, Maya (stopped)");
   });
 
   it("chooses the task list, email, and AP Managers to send to, saying who has no address", async () => {
@@ -825,5 +845,130 @@ describe("plain words — decision 0625", () => {
       ),
     );
     expect(document.getElementById("agent-plan")?.hidden).toBe(true);
+  });
+});
+
+describe("the AI summary — decision 0626", () => {
+  it("is on for a new agent, said in the plan, can be turned off, and today's count is shown", async () => {
+    const calls = await openAgents({
+      permissions: ["AP.Agents"],
+      agents: [],
+      understandReply: [
+        200,
+        {
+          text: "Every Monday at 8am, outstanding payables for Acme UK",
+          draft: {
+            name: "Weekly",
+            report: "outstanding_payables",
+            orgIds: ["acme-uk"],
+            schedule: { every: "week", time: "08:00", weekday: 1 },
+            options: { highlightDays: 60 },
+            deliver: { task: true, email: false },
+            recipients: [],
+            summary: true,
+          },
+          refusals: [],
+          missing: [],
+        },
+      ],
+    });
+    expect(document.getElementById("agents-summaries")?.textContent).toBe(
+      "AI summaries today: 3 of 100. Past that, reports go without one.",
+    );
+    button("New agent")!.click();
+    const box = document.getElementById("agent-summary") as HTMLInputElement;
+    expect(box.checked).toBe(true);
+    const describe = document.getElementById(
+      "agent-describe",
+    ) as HTMLTextAreaElement;
+    describe.value = "Every Monday at 8am, outstanding payables for Acme UK";
+    describe.dispatchEvent(new Event("input"));
+    button("Understand")!.click();
+    await vi.waitFor(() =>
+      expect(
+        document.querySelector('#agent-plan [data-step="summarise"]')
+          ?.textContent,
+      ).toBe(
+        "SummaryA few sentences by AI on top, every number checked against the table",
+      ),
+    );
+    const off = document.getElementById("agent-summary") as HTMLInputElement;
+    off.checked = false;
+    off.dispatchEvent(new Event("change"));
+    expect(
+      document.querySelector('#agent-plan [data-step="summarise"]')
+        ?.textContent,
+    ).toBe("SummaryNo summary, the table only");
+    shell()
+      .querySelector<HTMLButtonElement>(
+        "#agent-form .cardhead .actionlink.primary",
+      )!
+      .click();
+    await vi.waitFor(() =>
+      expect(
+        calls.some((c) => c.method === "POST" && c.path === "/api/agents"),
+      ).toBe(true),
+    );
+    expect(
+      calls.find((c) => c.method === "POST" && c.path === "/api/agents")!.body,
+    ).toMatchObject({ summary: false });
+  });
+
+  it("says where AI is not set up", async () => {
+    await openAgents({
+      permissions: ["AP.Agents"],
+      agents: [],
+      aiReady: false,
+    });
+    button("New agent")!.click();
+    expect(
+      document.getElementById("agent-summary")?.closest(".field, label, div")
+        ?.parentElement?.textContent,
+    ).toContain("AI is not set up here, so reports go without a summary.");
+  });
+
+  it("says what became of the summaries in a run, once per kind, and nothing when off", async () => {
+    const { summaryWords } = await import("/agents.js");
+    const { loadStrings } = await import("/strings.js");
+    stub({ permissions: [] });
+    await loadStrings();
+    expect(
+      summaryWords([
+        { summary: "written" },
+        { summary: "written" },
+        { summary: "mismatch" },
+      ]),
+    ).toBe("summary written · no summary: a number did not match the table");
+    expect(summaryWords([{ summary: "off" }, { summary: null }])).toBe("");
+  });
+
+  it("puts the summary on top of a note's table, marked as the AI's", async () => {
+    const { reportTable } = await import("/agent-notes.js");
+    const { loadStrings } = await import("/strings.js");
+    stub({ permissions: [] });
+    await loadStrings();
+    const node = reportTable({
+      report: "stuck_work",
+      columns: [{ key: "stage", label: "agents.col.stage", kind: "text" }],
+      rows: [{ stage: "Approval" }],
+      totals: [],
+      skippedOrgs: [],
+      asAt: "2026-10-05T07:00:00Z",
+      summary: "1 task is stuck at Approval.",
+    });
+    const box = node.querySelector("#agent-note-summary")!;
+    expect(box.textContent).toBe(
+      "Summary, written by AI from the table below1 task is stuck at Approval.",
+    );
+    expect(
+      reportTable({
+        report: "stuck_work",
+        columns: [],
+        rows: [],
+        totals: [],
+        skippedOrgs: [],
+        asAt: "2026-10-05T07:00:00Z",
+      }).querySelector("#agent-note-summary"),
+    ).toBeNull();
   });
 });

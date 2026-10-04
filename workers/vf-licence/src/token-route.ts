@@ -23,6 +23,7 @@ interface LicenceRow {
   status_reason: string | null;
   status_effective_at: string | null;
   agent_limit: number | null;
+  summary_limit?: number | null;
 }
 
 /**
@@ -45,7 +46,7 @@ export async function handleIssueToken(
 ): Promise<RouteResult> {
   const row = await db
     .prepare(
-      `SELECT plan, features_json, volume_entitlement, valid_to, status, status_reason, status_effective_at, agent_limit
+      `SELECT plan, features_json, volume_entitlement, valid_to, status, status_reason, status_effective_at, agent_limit, summary_limit
        FROM licences WHERE environment_id = ?`
     )
     .bind(environmentId)
@@ -80,6 +81,7 @@ export async function handleIssueToken(
     volumeEntitlement: row.volume_entitlement,
     // Decision 0622: only when the licence names one, so tokens for older licences stay as they were.
     ...(row.agent_limit !== null && row.agent_limit !== undefined ? { agentLimit: row.agent_limit } : {}),
+    ...(row.summary_limit !== null && row.summary_limit !== undefined ? { summaryLimit: row.summary_limit } : {}),
     status: row.status as LicenceClaims["status"],
     statusReason: row.status_reason ?? undefined,
     statusEffectiveAt: row.status_effective_at ?? undefined,

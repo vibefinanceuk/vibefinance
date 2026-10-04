@@ -119,8 +119,8 @@ describe("who an agent goes to, and how", () => {
     expect(maya.note.canStop).toBe(true);
     const runs = ((await handleListAgentRuns(env.DB, "dan", id)).body as { runs: { deliveries: { userName: string; channel: string; status: string }[] }[] }).runs;
     expect(runs[0].deliveries).toEqual([
-      { userName: "Dan", channel: "task", status: "sent", error: null },
-      { userName: "Maya", channel: "task", status: "sent", error: null },
+      { userName: "Dan", channel: "task", status: "sent", error: null, summary: "no_ai" },
+      { userName: "Maya", channel: "task", status: "sent", error: null, summary: "no_ai" },
     ]);
   });
 
@@ -159,8 +159,8 @@ describe("who an agent goes to, and how", () => {
     expect((await handleRunAgentNow(env.DB, "dan", both, MONDAY)).body).toMatchObject({ status: "delivered", deliveries: 1 });
     const runs = ((await handleListAgentRuns(env.DB, "dan", both)).body as { runs: { error: string; deliveries: { channel: string; status: string; error: string | null }[] }[] }).runs;
     expect(runs[0].deliveries).toEqual([
-      { userName: "Dan", channel: "task", status: "sent", error: null },
-      { userName: "Dan", channel: "email", status: "failed", error: "email_not_configured" },
+      { userName: "Dan", channel: "task", status: "sent", error: null, summary: "no_ai" },
+      { userName: "Dan", channel: "email", status: "failed", error: "email_not_configured", summary: "no_ai" },
     ]);
   });
 

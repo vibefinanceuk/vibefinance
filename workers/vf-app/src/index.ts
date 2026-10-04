@@ -942,6 +942,8 @@ function agentDeps(env: Env, documents: R2Bucket | null | undefined): AgentDeps 
     appUrl: appUrl ? appUrl.replace(/\/+$/, "") : null,
     bucket: documents ?? null,
     defaultLocale: env.LOCALE ?? null,
+    // Decision 0626: the model that writes each copy's summary, where AI is bound.
+    model: env.AI ? createWorkersAiCompilerModel(env.AI) : null,
   };
 }
 
@@ -1788,7 +1790,7 @@ export default {
       const admin = !maker && (await hasPermission(db, auth.user.id, "Admin.UserManagement"));
       if (!maker && !admin) return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
       if (pathname === "/agents" && request.method === "GET") {
-        const result = await handleListAgents(db, auth.user.id, { all: url.searchParams.get("all") === "1", emailReady: Boolean(env.RESEND_API_KEY && env.RESEND_FROM_ADDRESS) });
+        const result = await handleListAgents(db, auth.user.id, { all: url.searchParams.get("all") === "1", emailReady: Boolean(env.RESEND_API_KEY && env.RESEND_FROM_ADDRESS), aiReady: Boolean(env.AI) });
         return json(result.body, result.status);
       }
       if (pathname === "/agents" && request.method === "POST") {

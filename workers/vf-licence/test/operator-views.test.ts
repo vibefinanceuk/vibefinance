@@ -50,7 +50,7 @@ describe("the operator console's screens — decision 0603", () => {
           deployed: true,
           workerName: "vf-app-acme",
           people: 1,
-          licence: { plan: "growth", status: "active", statusReason: null, volumeEntitlement: 5000, agentLimit: null, validFrom: "2026-01-01", validTo: "2026-12-31", features: ["ap"] },
+          licence: { plan: "growth", status: "active", statusReason: null, volumeEntitlement: 5000, agentLimit: null, summaryLimit: null, validFrom: "2026-01-01", validTo: "2026-12-31", features: ["ap"] },
         }),
         expect.objectContaining({ id: "acme-sbx", kind: "sandbox", deployed: false, people: 0, licence: null }),
       ],

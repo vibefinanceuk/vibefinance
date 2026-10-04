@@ -73,6 +73,8 @@ export interface UnderstoodDraft {
   options: AgentOptions;
   deliver: { task: boolean; email: boolean };
   recipients: string[];
+  /** Decision 0626: the AI summary; on unless the words turn it off. */
+  summary: boolean;
 }
 
 const EMAIL_RE = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g;
@@ -118,7 +120,7 @@ function promptFor(
 ): string {
   return `You set up a scheduled report ("agent") in an accounts payable system from a manager's request.
 Answer with ONE JSON object and nothing else, of this shape:
-{"name": short title, "report": one report id or null, "orgs": ["organisation name", ...] or "all", "schedule": schedule or null, "options": {...}, "deliver": {"task": true|false, "email": true|false}, "recipients": ["person name", ...], "refusals": [{"code": code, "words": "the words of the request it is about"}]}
+{"name": short title, "report": one report id or null, "orgs": ["organisation name", ...] or "all", "schedule": schedule or null, "options": {...}, "deliver": {"task": true|false, "email": true|false}, "recipients": ["person name", ...], "summary": true|false, "refusals": [{"code": code, "words": "the words of the request it is about"}]}
 
 Reports (use the id):
 ${AGENT_REPORTS.map((r) => `- ${r.id}: ${REPORT_WORDS[r.id] ?? r.id}`).join("\n")}
@@ -135,6 +137,7 @@ Organisations this person can choose: ${ctx.orgs.map((o) => JSON.stringify(o)).j
 People it may also go to (AP Managers): ${ctx.managers.map((m) => JSON.stringify(m)).join(", ") || "none"}. The person asking is ${JSON.stringify(ctx.me)}; "me" means them and is not a recipient.
 "deliver": "task" puts it on their task list, "email" emails it. If neither is said, use {"task": true, "email": false}.
 If no organisation is named, use "all".
+"summary": a few sentences written by AI on top of the report. true unless the request says no summary (or only the table).
 
 Refusal codes, for any part you cannot express:
 - "outside_address": an email address or anyone outside the lists above
@@ -370,6 +373,7 @@ export async function handleUnderstandAgent(
     options,
     deliver,
     recipients: [...new Set(recipients)],
+    summary: p.summary !== false,
   };
   return { status: 200, body: { draft, refusals, missing, text } };
 }

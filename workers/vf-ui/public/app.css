@@ -5207,6 +5207,10 @@
 #agents-note { margin: 10px 0; padding: 8px 12px; border-radius: 8px; background: var(--surface-1); border: 1px solid var(--border); }
 .agentnotes h3 { margin: 0 0 2px; }
 .agentnote { border-top: 0.5px solid var(--border); padding: 10px 0; }
+/* Decision 0626: the AI summary on a note, marked as the AI's. */
+.agentsummary { border: 1px dashed var(--border-accent, var(--border)); border-radius: 6px; background: var(--bg-accent, transparent); padding: 8px 12px; margin: 0 0 10px; }
+.agentsummary p { margin: 0; }
+.agentsummarytag { display: block; font-size: var(--text-sm); font-weight: 700; color: var(--text-accent, inherit); margin-bottom: 2px; }
 .agentnotehead { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; flex-wrap: wrap; }
 .agentnotename { font-weight: 700; margin-right: 8px; }
 .agentnotetag { font-size: var(--text-sm); }

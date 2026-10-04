@@ -170,3 +170,22 @@ describe("the agent limit — decision 0622", () => {
     expect(verified.claims).not.toHaveProperty("agentLimit");
   });
 });
+
+describe("the summary limit — decision 0626", () => {
+  it("is carried in the signed token only where the licence names one, and must be a whole number", async () => {
+    const base = { environmentId: "acme-production-eu", plan: "standard", volumeEntitlement: 1000, validFrom: "2026-01-01" };
+    await handleUpsertLicence(env.CONTROL_DB, base);
+    const claims = async () =>
+      (await verifyLicenceToken(((await handleIssueToken(env.CONTROL_DB, privateKeyJwk, "acme-production-eu")).body as { token: string }).token, publicKeyJwk)).claims;
+    expect(await claims()).not.toHaveProperty("summaryLimit");
+    expect((await handleUpsertLicence(env.CONTROL_DB, { ...base, summaryLimit: 1.5 })).status).toBe(400);
+    expect((await handleUpsertLicence(env.CONTROL_DB, { ...base, summaryLimit: -1 })).status).toBe(400);
+    expect((await handleUpsertLicence(env.CONTROL_DB, { ...base, agentLimit: 8, summaryLimit: 40 })).body).toMatchObject({ agentLimit: 8, summaryLimit: 40 });
+    expect(await claims()).toMatchObject({ agentLimit: 8, summaryLimit: 40 });
+    // Zero is a limit: no summaries at all.
+    await handleUpsertLicence(env.CONTROL_DB, { ...base, summaryLimit: 0 });
+    expect(await claims()).toMatchObject({ summaryLimit: 0 });
+    await handleUpsertLicence(env.CONTROL_DB, { ...base, summaryLimit: null });
+    expect(await claims()).not.toHaveProperty("summaryLimit");
+  });
+});

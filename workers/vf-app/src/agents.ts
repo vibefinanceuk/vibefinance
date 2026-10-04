@@ -20,7 +20,19 @@ import {
   nextRunAfter,
   type AgentSchedule,
 } from "./agent-schedule.js";
-import { buildAgentEmail, emailLocale } from "./agent-email.js";
+import {
+  buildAgentEmail,
+  emailLocale,
+  type EmailLocale,
+} from "./agent-email.js";
+import {
+  summariesToday,
+  summaryLimit,
+  takeSummary,
+  writeSummary,
+  type SummaryOutcome,
+} from "./agent-summary.js";
+import type { CompilerModel } from "@vibefinance/shared";
 import { sendEmailViaResend } from "./resend-client.js";
 
 /**
@@ -78,6 +90,8 @@ export interface AgentDeps {
   defaultLocale?: string | null;
   /** Injected in tests; Resend otherwise. */
   send?: typeof sendEmailViaResend;
+  /** Decision 0626: the model that writes summaries; none where AI is not bound. */
+  model?: CompilerModel | null;
 }
 
 export const NO_DEPS: AgentDeps = { email: null, appUrl: null, bucket: null };
@@ -114,6 +128,8 @@ export interface ReportTable {
   previous?: ReportTotal[] | null;
   /** Decision 0624: the options it ran with, so a reader is told (e.g. "at least 1,000.00"). */
   options?: AgentOptions;
+  /** Decision 0626: the AI summary on top, checked against this table. */
+  summary?: string | null;
 }
 
 /**
@@ -825,6 +841,8 @@ interface AgentRow {
   options_json: string;
   description: string | null;
   plan_version: number;
+  /** Decision 0626: 1 when each copy carries an AI summary. */
+  summary: number;
 }
 
 interface Person {
@@ -1018,6 +1036,8 @@ async function toBody(db: D1Database, rows: AgentRow[]) {
       // Decision 0625: the words it was described in, and which plan it is on.
       description: r.description ?? null,
       planVersion: r.plan_version ?? 1,
+      // Decision 0626: whether each copy carries an AI summary.
+      summary: r.summary !== 0,
       recipients: (await recipientsOf(db, r.id)).map((p) => ({
         id: p.id,
         name: p.name,
@@ -1047,7 +1067,12 @@ async function loadAgent(db: D1Database, id: string): Promise<AgentRow | null> {
 export async function handleListAgents(
   db: D1Database,
   userId: string,
-  opts: { all?: boolean; emailReady?: boolean } = {},
+  opts: {
+    all?: boolean;
+    emailReady?: boolean;
+    aiReady?: boolean;
+    now?: Date;
+  } = {},
 ): Promise<RouteResult> {
   const canManageAll = await hasPermission(db, userId, "Admin.UserManagement");
   const all = Boolean(opts.all) && canManageAll;
@@ -1097,6 +1122,9 @@ export async function handleListAgents(
         .filter((m) => m.id !== userId)
         .map((m) => ({ id: m.id, name: m.name, hasEmail: Boolean(m.email) })),
       emailReady: Boolean(opts.emailReady),
+      // Decision 0626: whether summaries can be written here, and today's against the licence.
+      aiReady: Boolean(opts.aiReady),
+      summaries: await summariesToday(db, opts.now ?? new Date()),
     },
   };
 }
@@ -1118,6 +1146,7 @@ async function checkAgentInput(
       deliverEmail: boolean;
       options: AgentOptions;
       description: string | null;
+      summary: boolean;
     }
   | { reason: string; message: string }
 > {
@@ -1226,6 +1255,13 @@ async function checkAgentInput(
       : input.description === null
         ? null
         : (current?.description ?? null);
+  // Decision 0626: the AI summary, on unless turned off.
+  const summary =
+    typeof input.summary === "boolean"
+      ? input.summary
+      : current
+        ? current.summary !== 0
+        : true;
   return {
     name,
     report,
@@ -1236,6 +1272,7 @@ async function checkAgentInput(
     deliverEmail,
     options: opts.options,
     description,
+    summary,
   };
 }
 
@@ -1253,6 +1290,8 @@ function planOf(c: Checked) {
     options: c.options,
     deliver: { task: c.deliverTask, email: c.deliverEmail },
     recipients: [...c.recipients].sort(),
+    // Decision 0626: said only when off, so plans kept before the summary existed (on) are unchanged.
+    ...(c.summary ? {} : { summary: false }),
   };
 }
 
@@ -1389,8 +1428,10 @@ export async function handleCreateAgent(
   await setRecipients(db, id, userId, checked.recipients, now);
   const version = await keepPlanVersion(db, id, userId, checked, now);
   await db
-    .prepare("UPDATE agents SET description = ?, plan_version = ? WHERE id = ?")
-    .bind(checked.description, version, id)
+    .prepare(
+      "UPDATE agents SET description = ?, plan_version = ?, summary = ? WHERE id = ?",
+    )
+    .bind(checked.description, version, checked.summary ? 1 : 0, id)
     .run();
   const row = (await loadAgent(db, id))!;
   return { status: 201, body: (await toBody(db, [row]))[0] };
@@ -1479,8 +1520,10 @@ export async function handleUpdateAgent(
   await setRecipients(db, id, row.author_id, checked.recipients, now);
   const version = await keepPlanVersion(db, id, userId, checked, now);
   await db
-    .prepare("UPDATE agents SET description = ?, plan_version = ? WHERE id = ?")
-    .bind(checked.description, version, id)
+    .prepare(
+      "UPDATE agents SET description = ?, plan_version = ?, summary = ? WHERE id = ?",
+    )
+    .bind(checked.description, version, checked.summary ? 1 : 0, id)
     .run();
   return {
     status: 200,
@@ -1576,12 +1619,13 @@ export async function handleListAgentRuns(
       channel: string;
       status: string;
       error: string | null;
+      summary: string | null;
     }[]
   >();
   if (runs.results.length > 0) {
     const rows = await db
       .prepare(
-        `SELECT d.run_id, COALESCE(u.name, u.email, d.user_id) AS user_name, d.channel, d.status, d.error FROM agent_deliveries d
+        `SELECT d.run_id, COALESCE(u.name, u.email, d.user_id) AS user_name, d.channel, d.status, d.error, d.summary FROM agent_deliveries d
          JOIN org_users u ON u.id = d.user_id WHERE d.run_id IN (${runs.results.map(() => "?").join(", ")}) ORDER BY d.created_at`,
       )
       .bind(...runs.results.map((r) => r.id))
@@ -1591,6 +1635,7 @@ export async function handleListAgentRuns(
         channel: string;
         status: string;
         error: string | null;
+        summary: string | null;
       }>();
     for (const d of rows.results)
       deliveries.set(d.run_id, [...(deliveries.get(d.run_id) ?? []), d]);
@@ -1617,6 +1662,8 @@ export async function handleListAgentRuns(
           channel: d.channel,
           status: d.status,
           error: d.error,
+          // Decision 0626: what became of the summary for this copy.
+          summary: d.summary,
         })),
       })),
     },
@@ -1761,11 +1808,12 @@ export async function runAgent(
       copyKey?: string | null;
       error?: string | null;
       totals?: ReportTotal[] | null;
+      summary?: string | null;
     } = {},
   ) => {
     await db
       .prepare(
-        "INSERT INTO agent_deliveries (id, run_id, agent_id, user_id, channel, status, row_count, message_id, copy_key, error, created_at, totals_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO agent_deliveries (id, run_id, agent_id, user_id, channel, status, row_count, message_id, copy_key, error, created_at, totals_json, summary) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
       )
       .bind(
         `dlv-${crypto.randomUUID()}`,
@@ -1780,6 +1828,7 @@ export async function runAgent(
         extra.error ?? null,
         now.toISOString(),
         extra.totals ? JSON.stringify(extra.totals) : null,
+        extra.summary ?? null,
       )
       .run();
   };
@@ -1837,6 +1886,26 @@ export async function runAgent(
     const zone = await agentTimeZone(db);
     const send = deps.send ?? sendEmailViaResend;
 
+    // Decision 0626: summaries, one per distinct copy and language; the same copy twice is written once.
+    const summaries = new Map<string, SummaryOutcome>();
+    let dayLimit: number | null = null;
+    const summarise = async (
+      table: ReportTable,
+      locale: EmailLocale,
+    ): Promise<SummaryOutcome> => {
+      if (agent.summary === 0) return { status: "off" };
+      if (!deps.model) return { status: "no_ai" };
+      const key = `${locale}|${JSON.stringify([table.rows, table.totals, table.previous])}`;
+      const known = summaries.get(key);
+      if (known) return known;
+      dayLimit = dayLimit ?? (await summaryLimit(db));
+      const outcome = (await takeSummary(db, dayLimit, now))
+        ? await writeSummary(deps.model, table, locale, agent.name)
+        : { status: "over_budget" as const };
+      summaries.set(key, outcome);
+      return outcome;
+    };
+
     let sent = 0;
     let failed = 0;
     let authorTable: ReportTable | null = null;
@@ -1879,6 +1948,13 @@ export async function runAgent(
       if (table.rows.length === 0) continue;
       if (isAuthor) authorTable = table;
       anyTable = anyTable ?? table;
+      const localeRow = await db
+        .prepare("SELECT locale FROM org_users WHERE id = ?")
+        .bind(person.id)
+        .first<{ locale: string | null }>();
+      const locale = emailLocale(localeRow?.locale ?? deps.defaultLocale);
+      const summary = await summarise(table, locale);
+      table.summary = summary.status === "written" ? summary.text : null;
 
       if (agent.deliver_task === 1) {
         await db
@@ -1896,6 +1972,7 @@ export async function runAgent(
           .run();
         await record(person.id, "task", "sent", table.rows.length, {
           totals: table.totals,
+          summary: summary.status,
         });
         sent += 1;
       }
@@ -1904,6 +1981,7 @@ export async function runAgent(
         const fail = async (error: string) => {
           await record(person.id, "email", "failed", table.rows.length, {
             error,
+            summary: summary.status,
           });
           failed += 1;
           firstError = firstError ?? error;
@@ -1916,12 +1994,9 @@ export async function runAgent(
           await fail("no_email_address");
           continue;
         }
-        const localeRow = await db
-          .prepare("SELECT locale FROM org_users WHERE id = ?")
-          .bind(person.id)
-          .first<{ locale: string | null }>();
         const built = buildAgentEmail({
-          locale: emailLocale(localeRow?.locale ?? deps.defaultLocale),
+          locale,
+          summary: table.summary,
           agentName: agent.name,
           authorName,
           table,
@@ -1966,12 +2041,14 @@ export async function runAgent(
             messageId: result.messageId,
             copyKey,
             totals: table.totals,
+            summary: summary.status,
           });
           sent += 1;
         } else {
           await record(person.id, "email", "failed", table.rows.length, {
             copyKey,
             error: result.error.slice(0, 300),
+            summary: summary.status,
           });
           failed += 1;
           firstError = firstError ?? result.error.slice(0, 300);

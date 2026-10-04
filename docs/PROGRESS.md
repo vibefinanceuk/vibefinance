@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 4 October 2026 (decision 0625). A living document: what
+Last updated 4 October 2026 (decision 0626). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2987,6 +2987,15 @@ section for the full reasoning and tests.
   untouched here.
 - Full reasoning and verification counts in decision 0469.
 
+### Agents, slice 5: the AI summary (0626)
+
+Each report can start with a few sentences written by AI from the
+reader's own copy, in their language. Every number in it is checked
+against the table, and a summary with any other number is left out; the
+report goes either way. On by default, with a switch per agent. The
+licence sets how many summaries can be written a day (default 100), and
+each run says whether a summary was written and, if not, why.
+
 ### Agents, slice 4: plain words (0625)
 
 Describe an agent in a sentence and press **Understand**: the AI fills a
@@ -2994,7 +3003,7 @@ draft from closed lists, and our own code checks every part, matches
 names, refuses outside addresses and anything that would pay or approve,
 and says what is missing. The plan is shown in words with **Edit steps**
 beneath. The words are kept, and a new plan version only when the plan
-changes; each run records its version. Not yet pushed (bundle `0924`).
+changes; each run records its version.
 
 ### Agents, slice 3: ageing and two new reports (0624)
 

@@ -134,6 +134,7 @@ import agentsSql from "../../../migrations/0127_agents.sql?raw";
 import agentEmailSql from "../../../migrations/0128_agent_email.sql?raw";
 import agentOptionsSql from "../../../migrations/0129_agent_options.sql?raw";
 import agentPlansSql from "../../../migrations/0130_agent_plans.sql?raw";
+import agentSummarySql from "../../../migrations/0131_agent_summary.sql?raw";
 
 // Another known divergence from production, on top of the one below:
 // D1's exec() splits its input by newline and executes each non-empty
@@ -180,7 +181,7 @@ function toOneStatementPerLine(sql: string): string {
 // does not reset.
 const TABLES_IN_DROP_ORDER = [
   // Agents (decision 0622): notes reference runs and agents, runs reference agents, agents reference people.
-  "agent_plan_versions", "agent_deliveries", "agent_recipients", "agent_notes", "agent_runs", "agents",
+  "agent_ai_days", "agent_plan_versions", "agent_deliveries", "agent_recipients", "agent_notes", "agent_runs", "agents",
   // Routes, slice 1 (decision 0555): invoice_documents now references
   // route_messages, so both go first, invoice_documents before it.
   "route_alert_log", "route_alerts",
@@ -466,6 +467,7 @@ export async function applyTestSchema(): Promise<void> {
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(agentEmailSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(agentOptionsSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(agentPlansSql)));
+  await env.DB.exec(toOneStatementPerLine(stripSqlComments(agentSummarySql)));
 }
 
 /**
