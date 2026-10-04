@@ -255,6 +255,7 @@ import licenceAgentLimitSql from "../migrations/0264_licence_agent_limit.sql?raw
 import agentsStringsSql from "../migrations/0265_agents_strings.sql?raw";
 import agentEmailStringsSql from "../migrations/0266_agent_email_strings.sql?raw";
 import agentOptionsStringsSql from "../migrations/0267_agent_options_strings.sql?raw";
+import agentPlainWordsStringsSql from "../migrations/0268_agent_plain_words_strings.sql?raw";
 
 function stripSqlComments(sql: string): string {
   return sql
@@ -543,5 +544,6 @@ export async function applyTestSchema(): Promise<void> {
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(agentsStringsSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(agentEmailStringsSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(agentOptionsStringsSql)));
+  await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(agentPlainWordsStringsSql)));
 
 }

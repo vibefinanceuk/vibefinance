@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 4 October 2026 (decision 0624). A living document: what
+Last updated 4 October 2026 (decision 0625). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,15 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Agents, slice 4: plain words (0625)
+
+Describe an agent in a sentence and press **Understand**: the AI fills a
+draft from closed lists, and our own code checks every part, matches
+names, refuses outside addresses and anything that would pay or approve,
+and says what is missing. The plan is shown in words with **Edit steps**
+beneath. The words are kept, and a new plan version only when the plan
+changes; each run records its version. Not yet pushed (bundle `0924`).
 
 ### Agents, slice 3: ageing and two new reports (0624)
 

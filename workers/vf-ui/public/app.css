@@ -5221,3 +5221,16 @@
 /* Agents, highlights — decision 0624. */
 .agentreporttable tr.agenthighlight td { color: var(--text-danger); font-weight: 700; }
 #agents-runnow-hint { margin: 6px 0 0; }
+/* Agents, plain words — decision 0625. */
+.agentdescribe { display: flex; flex-direction: column; gap: 6px; }
+.agentdescribe textarea { width: 100%; font: inherit; }
+.agentdescribe .dobuttons { justify-content: flex-start; }
+.agentplan { margin-top: 12px; border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; background: var(--surface-1); }
+.agentplan h4 { margin: 0 0 6px; }
+.agentplanrows { display: flex; flex-direction: column; gap: 4px; }
+.agentplanrow { display: grid; grid-template-columns: 90px minmax(0, 1fr); gap: 10px; }
+.agentplanrow.missing span:last-child { color: var(--text-warning); }
+.agentplantag { font-size: var(--text-sm); text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-accent); font-weight: 700; }
+.agentrefusals { margin: 8px 0 0; padding-left: 18px; color: var(--text-warning); }
+.agentsteps { margin-top: 12px; }
+.agentsteps > summary { cursor: pointer; font-weight: 700; }

@@ -14,6 +14,7 @@ import {
   runDueAgents,
   type AgentDeps,
 } from "./agents.js";
+import { handleUnderstandAgent } from "./agent-understand.js";
 import { handleCollectNow, handleForgetSftpIdentity, handleGetSftp, handleSaveSftp, handleTestSftp, sftpRunnerFrom } from "./sftp.js";
 import { handleGetPoMatchView, handlePoCandidates, handleLinkPo, handlePairLine, PO_PANEL_PERMISSIONS } from "./po-match-panel-route.js";
 import { resolveTenant } from "@vibefinance/shared";
@@ -1766,6 +1767,17 @@ export default {
       const auth = await authenticatePerson(db, request, env);
       if (!auth.user) return json({ error: auth.reason }, 401);
       const result = await handleStopAgent(db, auth.user.id, decodeURIComponent(stopMatch[1]));
+      return json(result.body, result.status);
+    }
+    // Decision 0625: plain words in, a draft plan out. Saves nothing.
+    if (pathname === "/agents/understand" && request.method === "POST") {
+      const { db } = resolveTenant(request, env);
+      const auth = await authenticatePerson(db, request, env);
+      if (!auth.user) return json({ error: auth.reason }, 401);
+      if (!(await hasPermission(db, auth.user.id, "AP.Agents"))) return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
+      if (!env.AI) return json({ error: "AI binding not configured", reason: "ai_unavailable" }, 503);
+      const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+      const result = await handleUnderstandAgent(db, createWorkersAiCompilerModel(env.AI), auth.user.id, body);
       return json(result.body, result.status);
     }
     if (pathname === "/agents" || /^\/agents\/[^/]+(\/(run|runs))?$/.test(pathname)) {

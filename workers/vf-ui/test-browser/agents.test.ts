@@ -13,7 +13,8 @@ const STRINGS = {
     "agents.zone": "Times in {zone}",
     "agents.new": "New agent",
     "agents.when.week": "Every {weekday} at {time}",
-    "agents.when.monthlastworking": "On the last working day of each month at {time}",
+    "agents.when.monthlastworking":
+      "On the last working day of each month at {time}",
     "agents.weekday.1": "Monday",
     "agents.status.active": "Started",
     "agents.status.paused": "Paused",
@@ -22,8 +23,10 @@ const STRINGS = {
     "agents.report.outstanding_payables": "Outstanding payables",
     "agents.report.accruals": "Accruals by stage",
     "agents.report.possible_duplicates": "Possible duplicates",
-    "agents.error.limit_reached": "Your licence allows {n} agents. Remove one, or ask about a larger plan.",
-    "agents.saved.new": "Saved, paused. Start it when you are ready, or try it with Run now.",
+    "agents.error.limit_reached":
+      "Your licence allows {n} agents. Remove one, or ask about a larger plan.",
+    "agents.saved.new":
+      "Saved, paused. Start it when you are ready, or try it with Run now.",
     "agents.ranow.delivered": "Done: it is on your task list.",
     "agents.removeconfirm": "Remove this agent? Its past runs stay.",
     "agents.showall": "Everyone's agents",
@@ -37,15 +40,32 @@ const STRINGS = {
     "agents.deliver.email": "By email",
     "agents.deliver.both": "Task list and email",
     "agents.deliver.stopped": "stopped",
-    "agents.deliver.noemailsetup": "Email is not set up for this environment yet. Ask your administrator.",
+    "agents.deliver.noemailsetup":
+      "Email is not set up for this environment yet. Ask your administrator.",
     "agents.notes.stop": "Stop sending me this",
-    "agents.runnowhint": "Run now sends only to you, to try an agent. Everyone else gets theirs on the schedule.",
+    "agents.understand": "Understand",
+    "agents.plan.when": "When",
+    "agents.plan.gather": "Report",
+    "agents.plan.shape": "Narrowed",
+    "agents.plan.deliver": "Delivered",
+    "agents.plan.mintotal": "only suppliers owing at least {n}",
+    "agents.plan.highlightdays": "highlighted past {n} days",
+    "agents.plan.toyouand": "to you and {names}",
+    "agents.plan.missing.schedule":
+      "Not understood yet: say when in Edit steps.",
+    "agents.refusal.outside_address":
+      "Left out \u201c{words}\u201d: agents go only to people in VibeFinance.",
+    "agents.error.ai_unavailable":
+      "The AI could not be reached just now. Try again, or use Edit steps.",
+    "agents.runnowhint":
+      "Run now sends only to you, to try an agent. Everyone else gets theirs on the schedule.",
     "agents.notes.up": "up {n} since the last report",
     "agents.notes.highlighted": "Highlighted: {why}.",
     "agents.notes.why.stuck_work": "open {n} days or more",
     "agents.notes.stoppedlink": "You will no longer get \u201c{name}\u201d.",
     "agents.col.open": "Open tasks",
-    "agents.notes.skipped": "Left out, as the agent's author can no longer see them: {orgs}.",
+    "agents.notes.skipped":
+      "Left out, as the agent's author can no longer see them: {orgs}.",
   },
 };
 
@@ -55,12 +75,21 @@ const AGENT = {
   authorId: "u-dan",
   authorName: "Dan",
   report: "outstanding_payables",
-  orgs: [{ id: "acme-uk", name: "Acme UK" }, { id: "acme-de", name: "Acme DE" }],
+  orgs: [
+    { id: "acme-uk", name: "Acme UK" },
+    { id: "acme-de", name: "Acme DE" },
+  ],
   schedule: { every: "week", time: "08:00", weekday: 1 },
   status: "active",
   pausedReason: null,
   nextRunAt: "2026-10-05T07:00:00.000Z",
-  lastRun: { status: "delivered", startedAt: "2026-09-28T07:00:00.000Z", late: false, rowCount: 2, error: null },
+  lastRun: {
+    status: "delivered",
+    startedAt: "2026-09-28T07:00:00.000Z",
+    late: false,
+    rowCount: 2,
+    error: null,
+  },
   deliver: { task: true, email: true },
   recipients: [
     { id: "u-dan", name: "Dan", optedOut: false },
@@ -74,48 +103,114 @@ interface Call {
   body: Record<string, unknown> | null;
 }
 
-function stub(opts: { permissions: string[]; agents?: unknown[]; notes?: unknown[]; note?: unknown; createReply?: [number, unknown]; calls?: Call[]; emailReady?: boolean }) {
+function stub(opts: {
+  permissions: string[];
+  agents?: unknown[];
+  notes?: unknown[];
+  note?: unknown;
+  createReply?: [number, unknown];
+  calls?: Call[];
+  emailReady?: boolean;
+  understandReply?: [number, unknown];
+}) {
   const calls = opts.calls ?? [];
   vi.stubGlobal(
     "fetch",
     vi.fn(async (url: string, init?: RequestInit) => {
       const [path, qs] = String(url).split("?");
       const method = init?.method ?? "GET";
-      calls.push({ method, path: qs ? `${path}?${qs}` : path, body: init?.body ? JSON.parse(String(init.body)) : null });
-      const reply = (status: number, body: unknown) => ({ ok: status < 400, status, json: async () => body }) as Response;
+      calls.push({
+        method,
+        path: qs ? `${path}?${qs}` : path,
+        body: init?.body ? JSON.parse(String(init.body)) : null,
+      });
+      const reply = (status: number, body: unknown) =>
+        ({ ok: status < 400, status, json: async () => body }) as Response;
       if (path === "/api/ui-strings") return reply(200, STRINGS);
-      if (path === "/api/whoami") return reply(200, { id: "u-dan", name: "Dan", permissions: opts.permissions });
+      if (path === "/api/whoami")
+        return reply(200, {
+          id: "u-dan",
+          name: "Dan",
+          permissions: opts.permissions,
+        });
       if (path === "/api/agents" && method === "GET")
         return reply(200, {
           me: "u-dan",
           agents: opts.agents ?? [AGENT],
           reports: [
-            { id: "outstanding_payables", permission: "AP.Analysis", orgIds: ["acme-uk", "acme-de"], optionKeys: ["minTotal", "highlightDays"], options: { highlightDays: 60 } },
-            { id: "accruals", permission: "AP.Analysis", orgIds: ["acme-uk"], optionKeys: [], options: {} },
-            { id: "stuck_work", permission: "AP.Analysis", orgIds: ["acme-uk"], optionKeys: ["olderThanDays"], options: { olderThanDays: 5 } },
-            { id: "possible_duplicates", permission: "AP.FraudReview", orgIds: [] },
+            {
+              id: "outstanding_payables",
+              permission: "AP.Analysis",
+              orgIds: ["acme-uk", "acme-de"],
+              optionKeys: ["minTotal", "highlightDays"],
+              options: { highlightDays: 60 },
+            },
+            {
+              id: "accruals",
+              permission: "AP.Analysis",
+              orgIds: ["acme-uk"],
+              optionKeys: [],
+              options: {},
+            },
+            {
+              id: "stuck_work",
+              permission: "AP.Analysis",
+              orgIds: ["acme-uk"],
+              optionKeys: ["olderThanDays"],
+              options: { olderThanDays: 5 },
+            },
+            {
+              id: "possible_duplicates",
+              permission: "AP.FraudReview",
+              orgIds: [],
+            },
           ],
-          orgs: [{ id: "acme-uk", name: "Acme UK" }, { id: "acme-de", name: "Acme DE" }],
+          orgs: [
+            { id: "acme-uk", name: "Acme UK" },
+            { id: "acme-de", name: "Acme DE" },
+          ],
           limit: { used: 1, max: 5 },
           timeZone: "Europe/London",
           canManageAll: opts.permissions.includes("Admin.UserManagement"),
           canSetTimeZone: false,
-          managers: [{ id: "u-maya", name: "Maya", hasEmail: true }, { id: "u-olu", name: "Olu", hasEmail: false }],
+          managers: [
+            { id: "u-maya", name: "Maya", hasEmail: true },
+            { id: "u-olu", name: "Olu", hasEmail: false },
+          ],
           emailReady: opts.emailReady ?? true,
         });
       if (path === "/api/agents" && method === "POST") {
-        const [status, body] = opts.createReply ?? [201, { ...AGENT, id: "agt-2", status: "paused" }];
+        const [status, body] = opts.createReply ?? [
+          201,
+          { ...AGENT, id: "agt-2", status: "paused" },
+        ];
         return reply(status, body);
       }
-      if (path === "/api/agents/agt-1/run") return reply(200, { status: "delivered" });
-      if (path === "/api/agents/agt-1/stop") return reply(200, { stopped: true, name: "Weekly payables" });
+      if (path === "/api/agents/understand")
+        return reply(
+          ...(opts.understandReply ?? [503, { reason: "ai_unavailable" }]),
+        );
+      if (path === "/api/agents/agt-1/run")
+        return reply(200, { status: "delivered" });
+      if (path === "/api/agents/agt-1/stop")
+        return reply(200, { stopped: true, name: "Weekly payables" });
       if (path.startsWith("/api/agents/agt-1")) return reply(200, { ...AGENT });
-      if (path === "/api/agent-notes") return reply(200, { notes: opts.notes ?? [] });
-      if (path === "/api/agent-notes/note-1/done") return reply(200, { done: true });
-      if (path === "/api/agent-notes/note-1") return reply(200, opts.note ?? {});
-      if (path === "/api/tasks") return reply(200, { tasks: [], total: 0, counts: {}, page: 1, pageSize: 25 });
+      if (path === "/api/agent-notes")
+        return reply(200, { notes: opts.notes ?? [] });
+      if (path === "/api/agent-notes/note-1/done")
+        return reply(200, { done: true });
+      if (path === "/api/agent-notes/note-1")
+        return reply(200, opts.note ?? {});
+      if (path === "/api/tasks")
+        return reply(200, {
+          tasks: [],
+          total: 0,
+          counts: {},
+          page: 1,
+          pageSize: 25,
+        });
       return reply(404, {});
-    })
+    }),
   );
   return calls;
 }
@@ -137,7 +232,10 @@ async function openAgents(opts: Parameters<typeof stub>[0]) {
 }
 
 const shell = () => document.getElementById("shell")!;
-const button = (label: string) => [...shell().querySelectorAll<HTMLButtonElement>("button")].find((b) => b.textContent?.trim() === label);
+const button = (label: string) =>
+  [...shell().querySelectorAll<HTMLButtonElement>("button")].find(
+    (b) => b.textContent?.trim() === label,
+  );
 
 beforeEach(() => {
   document.body.innerHTML = `<main id="shell"></main><main id="viewer" hidden></main>`;
@@ -151,16 +249,22 @@ afterEach(() => {
 describe("the Agents screen", () => {
   it("is in the menu for those who make agents, and not for others", async () => {
     await signIn({ permissions: ["AP.Agents", "AP.TaskView"] });
-    expect([...document.querySelectorAll(".navitem")].map((n) => n.textContent)).toContain("Agents");
+    expect(
+      [...document.querySelectorAll(".navitem")].map((n) => n.textContent),
+    ).toContain("Agents");
     document.body.innerHTML = `<main id="shell"></main><main id="viewer" hidden></main>`;
     vi.resetModules();
     await signIn({ permissions: ["AP.TaskView"] });
-    expect([...document.querySelectorAll(".navitem")].map((n) => n.textContent)).not.toContain("Agents");
+    expect(
+      [...document.querySelectorAll(".navitem")].map((n) => n.textContent),
+    ).not.toContain("Agents");
   });
 
   it("lists each agent: what, where, when in the environment's time zone, and how its last run went", async () => {
     await openAgents({ permissions: ["AP.Agents"] });
-    expect(document.getElementById("agent-zone-line")?.textContent).toContain("1 of 5 agents · Times in Europe/London");
+    expect(document.getElementById("agent-zone-line")?.textContent).toContain(
+      "1 of 5 agents · Times in Europe/London",
+    );
     const row = shell().querySelector('tr[data-agent="agt-1"]')!;
     expect(row.textContent).toContain("Weekly payables");
     expect(row.textContent).toContain("Outstanding payables");
@@ -176,11 +280,17 @@ describe("the Agents screen", () => {
     const calls = await openAgents({ permissions: ["AP.Agents"], agents: [] });
     button("New agent")!.click();
     const report = document.getElementById("agent-report") as HTMLSelectElement;
-    expect([...report.options].map((o) => o.value)).toEqual(["outstanding_payables", "accruals", "stuck_work"]);
+    expect([...report.options].map((o) => o.value)).toEqual([
+      "outstanding_payables",
+      "accruals",
+      "stuck_work",
+    ]);
     // Accruals is held in Acme UK only: Acme DE is not offered.
     report.value = "accruals";
     report.dispatchEvent(new Event("change"));
-    expect([...shell().querySelectorAll("#agent-orgs input")].map((i) => i.id)).toEqual(["agent-org-acme-uk"]);
+    expect(
+      [...shell().querySelectorAll("#agent-orgs input")].map((i) => i.id),
+    ).toEqual(["agent-org-acme-uk"]);
 
     const every = document.getElementById("agent-every") as HTMLSelectElement;
     every.value = "month";
@@ -191,11 +301,18 @@ describe("the Agents screen", () => {
     const name = document.getElementById("agent-name") as HTMLInputElement;
     name.value = "Month-end accruals";
     name.dispatchEvent(new Event("input"));
-    shell().querySelector<HTMLButtonElement>("#agent-form .actionlink.primary")!.click();
+    shell()
+      .querySelector<HTMLButtonElement>("#agent-form .actionlink.primary")!
+      .click();
 
-    await vi.waitFor(() => expect(calls.some((c) => c.method === "POST" && c.path === "/api/agents")).toBe(true));
+    await vi.waitFor(() =>
+      expect(
+        calls.some((c) => c.method === "POST" && c.path === "/api/agents"),
+      ).toBe(true),
+    );
     expect(calls.find((c) => c.method === "POST")!.body).toEqual({
       name: "Month-end accruals",
+      description: null,
       report: "accruals",
       orgIds: ["acme-uk"],
       schedule: { every: "month", time: "08:00", day: "lastWorking" },
@@ -203,51 +320,122 @@ describe("the Agents screen", () => {
       recipients: [],
       options: {},
     });
-    await vi.waitFor(() => expect(document.getElementById("agents-note")?.textContent).toContain("Saved, paused."));
+    await vi.waitFor(() =>
+      expect(document.getElementById("agents-note")?.textContent).toContain(
+        "Saved, paused.",
+      ),
+    );
   });
 
   it("says a refusal in words, the licence's count included", async () => {
-    await openAgents({ permissions: ["AP.Agents"], createReply: [409, { reason: "limit_reached", max: 5, error: "x" }] });
+    await openAgents({
+      permissions: ["AP.Agents"],
+      createReply: [409, { reason: "limit_reached", max: 5, error: "x" }],
+    });
     button("New agent")!.click();
-    shell().querySelector<HTMLButtonElement>("#agent-form .actionlink.primary")!.click();
-    await vi.waitFor(() => expect(document.getElementById("agents-note")?.textContent).toBe("Your licence allows 5 agents. Remove one, or ask about a larger plan."));
+    shell()
+      .querySelector<HTMLButtonElement>("#agent-form .actionlink.primary")!
+      .click();
+    await vi.waitFor(() =>
+      expect(document.getElementById("agents-note")?.textContent).toBe(
+        "Your licence allows 5 agents. Remove one, or ask about a larger plan.",
+      ),
+    );
   });
 
   it("pauses, runs now and removes, asking first", async () => {
     const calls = await openAgents({ permissions: ["AP.Agents"] });
-    const pause = shell().querySelector<HTMLButtonElement>('tr[data-agent="agt-1"] .actionlink[title="agents.pause"]')!;
+    const pause = shell().querySelector<HTMLButtonElement>(
+      'tr[data-agent="agt-1"] .actionlink[title="agents.pause"]',
+    )!;
     pause.click();
-    await vi.waitFor(() => expect(calls.some((c) => c.method === "PATCH" && c.body?.status === "paused")).toBe(true));
+    await vi.waitFor(() =>
+      expect(
+        calls.some((c) => c.method === "PATCH" && c.body?.status === "paused"),
+      ).toBe(true),
+    );
 
     // Drawn again once the list is read back.
     await vi.waitFor(() => expect(shell().contains(pause)).toBe(false));
-    shell().querySelector<HTMLButtonElement>('tr[data-agent="agt-1"] .actionlink[title="agents.runnow"]')!.click();
-    await vi.waitFor(() => expect(document.getElementById("agents-note")?.textContent).toBe("Done: it is on your task list."));
-    expect(calls.some((c) => c.method === "POST" && c.path === "/api/agents/agt-1/run")).toBe(true);
+    shell()
+      .querySelector<HTMLButtonElement>(
+        'tr[data-agent="agt-1"] .actionlink[title="agents.runnow"]',
+      )!
+      .click();
+    await vi.waitFor(() =>
+      expect(document.getElementById("agents-note")?.textContent).toBe(
+        "Done: it is on your task list.",
+      ),
+    );
+    expect(
+      calls.some(
+        (c) => c.method === "POST" && c.path === "/api/agents/agt-1/run",
+      ),
+    ).toBe(true);
 
-    shell().querySelector<HTMLButtonElement>('tr[data-agent="agt-1"] .actionlink[title="agents.remove"]')!.click();
-    expect(shell().textContent).toContain("Remove this agent? Its past runs stay.");
+    shell()
+      .querySelector<HTMLButtonElement>(
+        'tr[data-agent="agt-1"] .actionlink[title="agents.remove"]',
+      )!
+      .click();
+    expect(shell().textContent).toContain(
+      "Remove this agent? Its past runs stay.",
+    );
     expect(calls.some((c) => c.method === "DELETE")).toBe(false);
-    shell().querySelector<HTMLButtonElement>(".agentconfirm .actionlink[title='agents.remove']")!.click();
-    await vi.waitFor(() => expect(calls.some((c) => c.method === "DELETE" && c.path === "/api/agents/agt-1")).toBe(true));
+    shell()
+      .querySelector<HTMLButtonElement>(
+        ".agentconfirm .actionlink[title='agents.remove']",
+      )!
+      .click();
+    await vi.waitFor(() =>
+      expect(
+        calls.some(
+          (c) => c.method === "DELETE" && c.path === "/api/agents/agt-1",
+        ),
+      ).toBe(true),
+    );
   });
 
   it("lets an administrator see everyone's agents, without making any", async () => {
-    const calls = await openAgents({ permissions: ["Admin.UserManagement"], agents: [{ ...AGENT, authorId: "u-uma", authorName: "Uma" }] });
+    const calls = await openAgents({
+      permissions: ["Admin.UserManagement"],
+      agents: [{ ...AGENT, authorId: "u-uma", authorName: "Uma" }],
+    });
     expect(button("New agent")).toBeUndefined();
-    expect(shell().querySelector('tr[data-agent="agt-1"] .actionlink[title="agents.pause"]')).toBeNull();
+    expect(
+      shell().querySelector(
+        'tr[data-agent="agt-1"] .actionlink[title="agents.pause"]',
+      ),
+    ).toBeNull();
     button("Everyone's agents")!.click();
-    await vi.waitFor(() => expect(calls.some((c) => c.path === "/api/agents?all=1")).toBe(true));
-    await vi.waitFor(() => expect(shell().querySelector('tr[data-agent="agt-1"]')?.textContent).toContain("Uma"));
+    await vi.waitFor(() =>
+      expect(calls.some((c) => c.path === "/api/agents?all=1")).toBe(true),
+    );
+    await vi.waitFor(() =>
+      expect(
+        shell().querySelector('tr[data-agent="agt-1"]')?.textContent,
+      ).toContain("Uma"),
+    );
   });
 });
 
 describe("From agents, on the Tasks screen", () => {
-  const NOTE = { id: "note-1", agentId: "agt-1", agentName: "Weekly payables", report: "outstanding_payables", createdAt: "2026-10-05T07:00:00Z", late: false, rowCount: 2, totals: [] };
+  const NOTE = {
+    id: "note-1",
+    agentId: "agt-1",
+    agentName: "Weekly payables",
+    report: "outstanding_payables",
+    createdAt: "2026-10-05T07:00:00Z",
+    late: false,
+    rowCount: 2,
+    totals: [],
+  };
 
   it("is not there when nothing was delivered", async () => {
     await signIn({ permissions: ["AP.TaskView"] });
-    await vi.waitFor(() => expect(document.getElementById("agentnotes")).not.toBeNull());
+    await vi.waitFor(() =>
+      expect(document.getElementById("agentnotes")).not.toBeNull(),
+    );
     await new Promise((r) => setTimeout(r, 20));
     expect(document.getElementById("agentnotes")!.hidden).toBe(true);
   });
@@ -276,25 +464,57 @@ describe("From agents, on the Tasks screen", () => {
         },
       },
     });
-    await vi.waitFor(() => expect(document.getElementById("agentnotes")!.hidden).toBe(false));
+    await vi.waitFor(() =>
+      expect(document.getElementById("agentnotes")!.hidden).toBe(false),
+    );
     const holder = document.getElementById("agentnotes")!;
     expect(holder.textContent).toContain("From agents");
     expect(holder.textContent).toContain("Weekly payables");
 
-    holder.querySelector<HTMLButtonElement>('.actionlink[title="agents.notes.open"]')!.click();
-    await vi.waitFor(() => expect(holder.querySelector(".agentreporttable")).not.toBeNull());
-    expect([...holder.querySelectorAll(".agentreporttable th")].map((th) => th.textContent)).toEqual(["Organisation", "Person", "Open tasks"]);
-    expect([...holder.querySelectorAll(".agentreporttable tbody tr")][1].textContent).toContain("Unclaimed, waiting");
-    expect(holder.textContent).toContain("Left out, as the agent's author can no longer see them: Acme DE.");
+    holder
+      .querySelector<HTMLButtonElement>(
+        '.actionlink[title="agents.notes.open"]',
+      )!
+      .click();
+    await vi.waitFor(() =>
+      expect(holder.querySelector(".agentreporttable")).not.toBeNull(),
+    );
+    expect(
+      [...holder.querySelectorAll(".agentreporttable th")].map(
+        (th) => th.textContent,
+      ),
+    ).toEqual(["Organisation", "Person", "Open tasks"]);
+    expect(
+      [...holder.querySelectorAll(".agentreporttable tbody tr")][1].textContent,
+    ).toContain("Unclaimed, waiting");
+    expect(holder.textContent).toContain(
+      "Left out, as the agent's author can no longer see them: Acme DE.",
+    );
 
-    holder.querySelector<HTMLButtonElement>('.actionlink[title="agents.notes.done"]')!.click();
-    await vi.waitFor(() => expect(calls.some((c) => c.method === "POST" && c.path === "/api/agent-notes/note-1/done")).toBe(true));
+    holder
+      .querySelector<HTMLButtonElement>(
+        '.actionlink[title="agents.notes.done"]',
+      )!
+      .click();
+    await vi.waitFor(() =>
+      expect(
+        calls.some(
+          (c) =>
+            c.method === "POST" && c.path === "/api/agent-notes/note-1/done",
+        ),
+      ).toBe(true),
+    );
     await vi.waitFor(() => expect(holder.hidden).toBe(true));
   });
 
   it("formats money with two decimals", async () => {
     const { cellText } = await import("/agent-notes.js");
-    expect(cellText(1234.5, "money")).toBe((1234.5).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+    expect(cellText(1234.5, "money")).toBe(
+      (1234.5).toLocaleString(undefined, {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      }),
+    );
     expect(cellText(0.873, "percent")).toBe("87%");
     expect(cellText(null, "date")).toBe("—");
   });
@@ -303,46 +523,115 @@ describe("From agents, on the Tasks screen", () => {
 describe("delivery and recipients — decision 0623", () => {
   it("says how and to whom each agent goes, who stopped it included", async () => {
     await openAgents({ permissions: ["AP.Agents"] });
-    expect(shell().querySelector('tr[data-agent="agt-1"] .agentto')?.textContent).toBe("Task list and email · Dan, Maya (stopped)");
+    expect(
+      shell().querySelector('tr[data-agent="agt-1"] .agentto')?.textContent,
+    ).toBe("Task list and email · Dan, Maya (stopped)");
   });
 
   it("chooses the task list, email, and AP Managers to send to, saying who has no address", async () => {
     const calls = await openAgents({ permissions: ["AP.Agents"], agents: [] });
     button("New agent")!.click();
-    expect(document.getElementById("agent-recipients")?.textContent).toContain("Olu (");
-    (document.getElementById("agent-deliver-email") as HTMLInputElement).click();
+    expect(document.getElementById("agent-recipients")?.textContent).toContain(
+      "Olu (",
+    );
+    (
+      document.getElementById("agent-deliver-email") as HTMLInputElement
+    ).click();
     (document.getElementById("agent-to-u-maya") as HTMLInputElement).click();
     const name = document.getElementById("agent-name") as HTMLInputElement;
     name.value = "To Maya";
     name.dispatchEvent(new Event("input"));
-    shell().querySelector<HTMLButtonElement>("#agent-form .actionlink.primary")!.click();
-    await vi.waitFor(() => expect(calls.some((c) => c.method === "POST" && c.path === "/api/agents")).toBe(true));
-    expect(calls.find((c) => c.method === "POST")!.body).toMatchObject({ deliver: { task: true, email: true }, recipients: ["u-maya"] });
+    shell()
+      .querySelector<HTMLButtonElement>("#agent-form .actionlink.primary")!
+      .click();
+    await vi.waitFor(() =>
+      expect(
+        calls.some((c) => c.method === "POST" && c.path === "/api/agents"),
+      ).toBe(true),
+    );
+    expect(calls.find((c) => c.method === "POST")!.body).toMatchObject({
+      deliver: { task: true, email: true },
+      recipients: ["u-maya"],
+    });
   });
 
   it("offers no email where it is not set up, and says so", async () => {
-    await openAgents({ permissions: ["AP.Agents"], agents: [], emailReady: false });
+    await openAgents({
+      permissions: ["AP.Agents"],
+      agents: [],
+      emailReady: false,
+    });
     button("New agent")!.click();
-    expect((document.getElementById("agent-deliver-email") as HTMLInputElement).disabled).toBe(true);
-    expect(document.getElementById("agent-form")?.textContent).toContain("Email is not set up for this environment yet.");
+    expect(
+      (document.getElementById("agent-deliver-email") as HTMLInputElement)
+        .disabled,
+    ).toBe(true);
+    expect(document.getElementById("agent-form")?.textContent).toContain(
+      "Email is not set up for this environment yet.",
+    );
   });
 
   it("lets a recipient stop a note's agent, and not its author", async () => {
-    const note = { id: "note-1", agentId: "agt-1", agentName: "Weekly payables", report: "outstanding_payables", createdAt: "2026-10-05T07:00:00Z", late: false, rowCount: 2, totals: [] };
-    const calls = await signIn({ permissions: ["AP.TaskView"], notes: [{ ...note, canStop: true }, { ...note, id: "note-2", agentId: "agt-2", canStop: false }] });
-    await vi.waitFor(() => expect(document.getElementById("agentnotes")!.hidden).toBe(false));
+    const note = {
+      id: "note-1",
+      agentId: "agt-1",
+      agentName: "Weekly payables",
+      report: "outstanding_payables",
+      createdAt: "2026-10-05T07:00:00Z",
+      late: false,
+      rowCount: 2,
+      totals: [],
+    };
+    const calls = await signIn({
+      permissions: ["AP.TaskView"],
+      notes: [
+        { ...note, canStop: true },
+        { ...note, id: "note-2", agentId: "agt-2", canStop: false },
+      ],
+    });
+    await vi.waitFor(() =>
+      expect(document.getElementById("agentnotes")!.hidden).toBe(false),
+    );
     const holder = document.getElementById("agentnotes")!;
-    expect(holder.querySelector('[data-note="note-2"] .actionlink[title="Stop sending me this"]')).toBeNull();
-    holder.querySelector<HTMLButtonElement>('[data-note="note-1"] .actionlink[title="Stop sending me this"]')!.click();
-    await vi.waitFor(() => expect(calls.some((c) => c.method === "POST" && c.path === "/api/agents/agt-1/stop")).toBe(true));
-    await vi.waitFor(() => expect(holder.querySelector('[data-note="note-1"] .actionlink[title="Stop sending me this"]')).toBeNull());
+    expect(
+      holder.querySelector(
+        '[data-note="note-2"] .actionlink[title="Stop sending me this"]',
+      ),
+    ).toBeNull();
+    holder
+      .querySelector<HTMLButtonElement>(
+        '[data-note="note-1"] .actionlink[title="Stop sending me this"]',
+      )!
+      .click();
+    await vi.waitFor(() =>
+      expect(
+        calls.some(
+          (c) => c.method === "POST" && c.path === "/api/agents/agt-1/stop",
+        ),
+      ).toBe(true),
+    );
+    await vi.waitFor(() =>
+      expect(
+        holder.querySelector(
+          '[data-note="note-1"] .actionlink[title="Stop sending me this"]',
+        ),
+      ).toBeNull(),
+    );
   });
 
   it("stops an agent from the link in its email, once signed in, and cleans the address", async () => {
     history.replaceState(null, "", "/?stopagent=agt-1");
     const calls = await signIn({ permissions: ["AP.TaskView"] });
-    await vi.waitFor(() => expect(document.getElementById("agent-stop-notice")?.textContent).toBe("You will no longer get \u201cWeekly payables\u201d."));
-    expect(calls.some((c) => c.method === "POST" && c.path === "/api/agents/agt-1/stop")).toBe(true);
+    await vi.waitFor(() =>
+      expect(document.getElementById("agent-stop-notice")?.textContent).toBe(
+        "You will no longer get \u201cWeekly payables\u201d.",
+      ),
+    );
+    expect(
+      calls.some(
+        (c) => c.method === "POST" && c.path === "/api/agents/agt-1/stop",
+      ),
+    ).toBe(true);
     expect(location.search).toBe("");
   });
 });
@@ -350,25 +639,46 @@ describe("delivery and recipients — decision 0623", () => {
 describe("options, highlights and comparison — decision 0624", () => {
   it("offers each report's own options with its defaults, and sends them", async () => {
     const calls = await openAgents({ permissions: ["AP.Agents"], agents: [] });
-    expect(document.getElementById("agents-runnow-hint")?.textContent).toBe("Run now sends only to you, to try an agent. Everyone else gets theirs on the schedule.");
+    expect(document.getElementById("agents-runnow-hint")?.textContent).toBe(
+      "Run now sends only to you, to try an agent. Everyone else gets theirs on the schedule.",
+    );
     button("New agent")!.click();
-    expect((document.getElementById("agent-option-highlightDays") as HTMLInputElement).value).toBe("60");
-    const min = document.getElementById("agent-option-minTotal") as HTMLInputElement;
+    expect(
+      (
+        document.getElementById(
+          "agent-option-highlightDays",
+        ) as HTMLInputElement
+      ).value,
+    ).toBe("60");
+    const min = document.getElementById(
+      "agent-option-minTotal",
+    ) as HTMLInputElement;
     expect(min.value).toBe("");
     const report = document.getElementById("agent-report") as HTMLSelectElement;
     report.value = "stuck_work";
     report.dispatchEvent(new Event("change"));
     expect(document.getElementById("agent-option-minTotal")).toBeNull();
-    const older = document.getElementById("agent-option-olderThanDays") as HTMLInputElement;
+    const older = document.getElementById(
+      "agent-option-olderThanDays",
+    ) as HTMLInputElement;
     expect(older.value).toBe("5");
     older.value = "10";
     older.dispatchEvent(new Event("input"));
     const name = document.getElementById("agent-name") as HTMLInputElement;
     name.value = "Stuck";
     name.dispatchEvent(new Event("input"));
-    shell().querySelector<HTMLButtonElement>("#agent-form .actionlink.primary")!.click();
-    await vi.waitFor(() => expect(calls.some((c) => c.method === "POST" && c.path === "/api/agents")).toBe(true));
-    expect(calls.find((c) => c.method === "POST")!.body).toMatchObject({ report: "stuck_work", options: { olderThanDays: 10 } });
+    shell()
+      .querySelector<HTMLButtonElement>("#agent-form .actionlink.primary")!
+      .click();
+    await vi.waitFor(() =>
+      expect(
+        calls.some((c) => c.method === "POST" && c.path === "/api/agents"),
+      ).toBe(true),
+    );
+    expect(calls.find((c) => c.method === "POST")!.body).toMatchObject({
+      report: "stuck_work",
+      options: { olderThanDays: 10 },
+    });
   });
 
   it("highlights rows in a note's table, says why, and compares the totals with the last report", async () => {
@@ -397,5 +707,123 @@ describe("options, highlights and comparison — decision 0624", () => {
     expect(rows[1].classList.contains("agenthighlight")).toBe(false);
     expect(node.textContent).toContain("Highlighted: open 10 days or more.");
     expect(node.textContent).toContain("up 2 since the last report");
+  });
+});
+
+describe("plain words — decision 0625", () => {
+  const understood = {
+    text: "Every Monday at 8am send me and Maya outstanding payables over 1,000 for Acme UK by email, and accounts@kestrel.co.uk",
+    draft: {
+      name: "Weekly payables",
+      report: "outstanding_payables",
+      orgIds: ["acme-uk"],
+      schedule: { every: "week", time: "08:00", weekday: 1 },
+      options: { minTotal: 1000, highlightDays: 60 },
+      deliver: { task: false, email: true },
+      recipients: ["u-maya"],
+    },
+    refusals: [{ code: "outside_address", words: "accounts@kestrel.co.uk" }],
+    missing: [],
+  };
+
+  async function describeAndUnderstand(reply: [number, unknown]) {
+    const calls = await openAgents({
+      permissions: ["AP.Agents"],
+      agents: [],
+      understandReply: reply,
+    });
+    button("New agent")!.click();
+    const box = document.getElementById(
+      "agent-describe",
+    ) as HTMLTextAreaElement;
+    box.value = understood.text;
+    box.dispatchEvent(new Event("input"));
+    button("Understand")!.click();
+    await vi.waitFor(() =>
+      expect(calls.some((c) => c.path === "/api/agents/understand")).toBe(true),
+    );
+    return calls;
+  }
+
+  it("fills the plan from plain words, says it in words, and says what was left out", async () => {
+    const calls = await describeAndUnderstand([200, understood]);
+    expect(
+      calls.find((c) => c.path === "/api/agents/understand")!.body,
+    ).toEqual({ text: understood.text });
+    await vi.waitFor(() =>
+      expect(document.getElementById("agent-plan")?.hidden).toBe(false),
+    );
+    const rows = Object.fromEntries(
+      [...document.querySelectorAll("#agent-plan .agentplanrow")].map((r) => [
+        r.getAttribute("data-step"),
+        r.textContent,
+      ]),
+    );
+    expect(rows.when).toBe("WhenEvery Monday at 08:00 (Europe/London)");
+    expect(rows.gather).toBe("ReportOutstanding payables · Acme UK");
+    expect(rows.shape).toContain("only suppliers owing at least");
+    expect(rows.shape).toContain("highlighted past 60 days");
+    expect(rows.deliver).toBe("DeliveredBy email, to you and Maya");
+    expect(document.getElementById("agent-refusals")?.textContent).toBe(
+      "Left out \u201caccounts@kestrel.co.uk\u201d: agents go only to people in VibeFinance.",
+    );
+    // Edit steps holds the same, closed while nothing is missing.
+    expect(
+      (document.getElementById("agent-steps") as HTMLDetailsElement).open,
+    ).toBe(false);
+    expect(
+      (document.getElementById("agent-name") as HTMLInputElement).value,
+    ).toBe("Weekly payables");
+    shell()
+      .querySelector<HTMLButtonElement>(
+        "#agent-form .cardhead .actionlink.primary",
+      )!
+      .click();
+    await vi.waitFor(() =>
+      expect(
+        calls.some((c) => c.method === "POST" && c.path === "/api/agents"),
+      ).toBe(true),
+    );
+    expect(
+      calls.find((c) => c.method === "POST" && c.path === "/api/agents")!.body,
+    ).toMatchObject({
+      description: understood.text,
+      report: "outstanding_payables",
+      orgIds: ["acme-uk"],
+      options: { minTotal: 1000, highlightDays: 60 },
+      deliver: { task: false, email: true },
+      recipients: ["u-maya"],
+    });
+  });
+
+  it("opens Edit steps and says what is missing", async () => {
+    await describeAndUnderstand([
+      200,
+      {
+        ...understood,
+        draft: { ...understood.draft, schedule: null },
+        refusals: [],
+        missing: ["schedule"],
+      },
+    ]);
+    await vi.waitFor(() =>
+      expect(document.getElementById("agent-plan")?.hidden).toBe(false),
+    );
+    expect(
+      document.querySelector('#agent-plan [data-step="when"]')?.textContent,
+    ).toContain("Not understood yet: say when in Edit steps.");
+    expect(
+      (document.getElementById("agent-steps") as HTMLDetailsElement).open,
+    ).toBe(true);
+  });
+
+  it("says when the AI cannot be reached, and leaves the form to be filled by hand", async () => {
+    await describeAndUnderstand([503, { reason: "ai_unavailable" }]);
+    await vi.waitFor(() =>
+      expect(document.getElementById("agents-note")?.textContent).toBe(
+        "The AI could not be reached just now. Try again, or use Edit steps.",
+      ),
+    );
+    expect(document.getElementById("agent-plan")?.hidden).toBe(true);
   });
 });

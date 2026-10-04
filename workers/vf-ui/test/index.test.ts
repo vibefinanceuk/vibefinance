@@ -570,6 +570,7 @@ describe("the proxy carries every path a screen calls (decision 0131)", () => {
     ["POST", "/api/agents/agt-1/run"],
     ["GET", "/api/agents/agt-1/runs"],
     ["POST", "/api/agents/agt-1/stop"],
+    ["POST", "/api/agents/understand"],
     ["GET", "/api/agent-notes"],
     ["GET", "/api/agent-notes/note-1"],
     ["POST", "/api/agent-notes/note-1/done"],
