@@ -55,7 +55,19 @@ function totalsLine(totals, previous) {
 }
 
 /** The report a note carries, as a table. */
-export function reportTable(table) {
+/** Decision 0629: whether a row names the invoices behind it. */
+function rowHasInvoices(row) {
+  return Boolean((typeof row._ids === "string" && row._ids) || row.invoiceId);
+}
+
+/** What a row is about, for the Documents banner: its supplier, invoice, stage or person. */
+function rowLabel(row) {
+  return [row.org, row.supplier ?? row.invoice ?? row.stage, row.person].filter(Boolean).join(" · ");
+}
+
+export function reportTable(table, opts = {}) {
+  // Decision 0629: rows with invoices open Documents at them; all of them from the link above.
+  const openable = Boolean(opts.openRow) && table.rows.some(rowHasInvoices);
   const numeric = new Set(["money", "count", "days", "percent"]);
   return el("div", { class: "agentreport" }, [
     // Decision 0626: the AI summary, marked as the AI's, checked against this table before it was kept.
@@ -84,16 +96,29 @@ export function reportTable(table) {
           }),
         ]
       : []),
+    ...(openable && opts.openAll
+      ? [
+          el("div", { class: "agentreportopen" }, [
+            actionLink("expand", { label: t("agents.notes.opendocs"), onclick: () => opts.openAll() }),
+            el("span", { class: "muted sm", text: t("agents.notes.rowhint") }),
+          ]),
+        ]
+      : []),
     el("div", { class: "agentreportwrap" }, [
       el("table", { class: "agentreporttable" }, [
         el("thead", {}, [el("tr", {}, table.columns.map((c) => el("th", { class: numeric.has(c.kind) ? "num" : "", text: t(c.label) })))]),
         el(
           "tbody",
           {},
-          table.rows.map((row) =>
+          table.rows.map((row, i) =>
             el(
               "tr",
-              row._highlight ? { class: "agenthighlight" } : {},
+              {
+                ...(row._highlight || (openable && rowHasInvoices(row))
+                  ? { class: [row._highlight ? "agenthighlight" : "", openable && rowHasInvoices(row) ? "clickable" : ""].filter(Boolean).join(" ") }
+                  : {}),
+                ...(openable && rowHasInvoices(row) ? { "data-row": String(i), onclick: () => opts.openRow(i, rowLabel(row)) } : {}),
+              },
               table.columns.map((c) => {
                 const raw = row[c.key];
                 const value = c.key === "person" && (raw === null || raw === undefined) ? t("agents.notes.unclaimed") : cellText(raw, c.kind);
@@ -188,7 +213,18 @@ export async function fill(holder) {
                 opened.set(note.id, one.ok ? one.body : null);
               }
               const body = opened.get(note.id);
-              detail.replaceChildren(body ? reportTable(body.table) : el("p", { class: "muted sm", text: t("agents.failed") }));
+              const toDocuments = async (args) => {
+                const { openDocumentsFromAgent } = await import("/documents.js");
+                await openDocumentsFromAgent({ note: note.id, name: note.agentName, ...args });
+              };
+              detail.replaceChildren(
+                body
+                  ? reportTable(body.table, {
+                      openAll: () => toDocuments({}),
+                      openRow: (row, label) => toDocuments({ row, label }),
+                    })
+                  : el("p", { class: "muted sm", text: t("agents.failed") })
+              );
               detail.hidden = false;
             },
           }),

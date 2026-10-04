@@ -67,6 +67,7 @@ const WORDS: Record<EmailLocale, Record<string, string>> = {
     skipped: "Left out, as the agent's author can no longer see them: {orgs}.",
     filtered: "Filtered to the organisations you can see.",
     open: "Open VibeFinance",
+    opendocs: "Open these invoices in Documents",
     why: "You get this because {author} set up the agent “{name}”.",
     stop: "Stop sending me this",
     "summary.label": "Summary, written by AI from the table below",
@@ -120,6 +121,7 @@ const WORDS: Record<EmailLocale, Record<string, string>> = {
     skipped: "Ausgelassen, da der Autor des Agenten sie nicht mehr sehen darf: {orgs}.",
     filtered: "Auf die Organisationen beschränkt, die Sie sehen dürfen.",
     open: "VibeFinance öffnen",
+    opendocs: "Diese Rechnungen in Dokumente öffnen",
     why: "Sie erhalten dies, weil {author} den Agenten „{name}“ eingerichtet hat.",
     stop: "Nicht mehr an mich senden",
     "summary.label": "Zusammenfassung, von KI aus der Tabelle unten geschrieben",
@@ -194,6 +196,8 @@ export interface AgentEmailInput {
   filtered: boolean;
   /** Decision 0626: the AI summary, already checked against the table; none when null. */
   summary?: string | null;
+  /** Decision 0629: Documents at this copy's invoices; the app's own address when null. */
+  documentsUrl?: string | null;
 }
 
 /** "120.00 GBP (1 invoices), up 20.00 since the last report" — decision 0624's comparison. */
@@ -267,7 +271,11 @@ export function buildAgentEmail(input: AgentEmailInput): { subject: string; text
     ...(totals ? [totals] : []),
     ...(more > 0 ? [w(locale, "more").replace("{n}", String(more))] : []),
     "",
-    ...(input.appUrl ? [`${w(locale, "open")}: ${input.appUrl}`] : []),
+    ...(input.documentsUrl
+      ? [`${w(locale, "opendocs")}: ${input.documentsUrl}`]
+      : input.appUrl
+        ? [`${w(locale, "open")}: ${input.appUrl}`]
+        : []),
     "",
     why,
     ...(input.stopUrl ? [`${w(locale, "stop")}: ${input.stopUrl}`] : []),
@@ -286,7 +294,7 @@ ${notes.map((n) => `<p style="margin:0 0 8px;color:#4a5768">${esc(n)}</p>`).join
 <tbody>${shown.map((r) => `<tr>${table.columns.map((c) => td(r, c)).join("")}</tr>`).join("")}</tbody></table>
 ${totals ? `<p style="margin:10px 0 0">${esc(totals)}</p>` : ""}
 ${more > 0 ? `<p style="margin:6px 0 0;color:#4a5768">${esc(w(locale, "more").replace("{n}", String(more)))}</p>` : ""}
-${input.appUrl ? `<p style="margin:16px 0 0"><a href="${esc(input.appUrl)}" style="color:#185fa5">${esc(w(locale, "open"))}</a></p>` : ""}
+${input.documentsUrl ? `<p style="margin:16px 0 0"><a href="${esc(input.documentsUrl)}" style="color:#185fa5">${esc(w(locale, "opendocs"))}</a></p>` : input.appUrl ? `<p style="margin:16px 0 0"><a href="${esc(input.appUrl)}" style="color:#185fa5">${esc(w(locale, "open"))}</a></p>` : ""}
 <p style="margin:20px 0 0;color:#7b8798;font-size:12px">${esc(why)}${input.stopUrl ? ` <a href="${esc(input.stopUrl)}" style="color:#7b8798">${esc(w(locale, "stop"))}</a>` : ""}</p>
 </div>`;
 

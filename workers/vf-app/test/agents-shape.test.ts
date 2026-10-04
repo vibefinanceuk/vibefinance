@@ -103,8 +103,8 @@ describe("outstanding payables, aged", () => {
     const id = (await make({ report: "outstanding_payables" })).id;
     const table = await runTable(id);
     expect(table.rows).toEqual([
-      { org: "Acme UK", supplier: "Kingsway", currency: "GBP", invoices: 5, notDue: 100, d30: 200, d60: 300, d90: 400, d90plus: 500, total: 1500, daysPastDue: 157, _highlight: 1 },
-      { org: "Acme UK", supplier: "Brightwell", currency: "GBP", invoices: 1, notDue: 50, d30: 0, d60: 0, d90: 0, d90plus: 0, total: 50, daysPastDue: 0 },
+      { org: "Acme UK", supplier: "Kingsway", currency: "GBP", invoices: 5, notDue: 100, d30: 200, d60: 300, d90: 400, d90plus: 500, total: 1500, daysPastDue: 157, _ids: "a1,a2,a3,a4,a5", _highlight: 1 },
+      { org: "Acme UK", supplier: "Brightwell", currency: "GBP", invoices: 1, notDue: 50, d30: 0, d60: 0, d90: 0, d90plus: 0, total: 50, daysPastDue: 0, _ids: "b1" },
     ]);
     expect(table.totals).toEqual([{ currency: "GBP", total: 1550, count: 6 }]);
     expect(table.options).toEqual({ highlightDays: 60 });
@@ -151,8 +151,8 @@ describe("stuck work", () => {
     const id = (await make({ report: "stuck_work" })).id;
     const table = await runTable(id);
     expect(table.rows).toEqual([
-      { org: "Acme UK", stage: "Approval", person: "Maya", open: 2, oldestDays: 13, _highlight: 1 },
-      { org: "Acme UK", stage: "Approval", person: null, open: 1, oldestDays: 6 },
+      { org: "Acme UK", stage: "Approval", person: "Maya", open: 2, oldestDays: 13, _ids: "s1", _highlight: 1 },
+      { org: "Acme UK", stage: "Approval", person: null, open: 1, oldestDays: 6, _ids: "s1" },
     ]);
     expect(table.totals).toEqual([{ currency: null, total: null, count: 3 }]);
   });

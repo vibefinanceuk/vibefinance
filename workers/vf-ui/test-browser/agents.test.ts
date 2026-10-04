@@ -44,6 +44,10 @@ const STRINGS = {
       "Email is not set up for this environment yet. Ask your administrator.",
     "agents.notes.stop": "Stop sending me this",
     "agents.understand": "Understand",
+    "agents.notes.opendocs": "Open in Documents",
+    "agents.notes.rowhint": "or choose a row to see its own invoices.",
+    "documents.showing.agent": "Showing the invoices in the agent report \u201c{name}\u201d",
+    "documents.showing.agentrow": "Showing the invoices in the agent report \u201c{name}\u201d: {row}",
     "agents.examples": "Ready-made",
     "agents.examples.heading": "Ready-made agents",
     "agents.examples.use": "Use this",
@@ -254,6 +258,8 @@ function stub(opts: {
         return reply(200, { runs: opts.runs ?? [] });
       if (path === "/api/agents/agt-1" && method === "GET" && opts.page)
         return reply(200, opts.page);
+      if (path === "/api/documents")
+        return reply(200, { documents: [], total: 0, page: 1, pageSize: 25, agent: { name: "Weekly payables" } });
       if (path === "/api/agent-events")
         return reply(200, { events: opts.events ?? [] });
       if (path.startsWith("/api/agents/agt-1")) return reply(200, { ...AGENT });
@@ -1362,5 +1368,72 @@ describe("ready-made agents — decision 0628", () => {
       schedule: { every: "month", time: "16:00", day: "lastWorking" },
       deliver: { task: true, email: false },
     });
+  });
+});
+
+describe("Open in Documents — decision 0629", () => {
+  const NOTE = { id: "note-1", agentId: "agt-1", agentName: "Weekly payables", report: "outstanding_payables", createdAt: "2026-10-05T07:00:00Z", late: false, rowCount: 2, totals: [], canStop: false, kind: "report" };
+  const TABLE = {
+    report: "outstanding_payables",
+    columns: [
+      { key: "org", label: "agents.col.org", kind: "text" },
+      { key: "supplier", label: "agents.col.supplier", kind: "text" },
+      { key: "total", label: "agents.col.total", kind: "money" },
+    ],
+    rows: [
+      { org: "Acme DE", supplier: "Lager Nord GmbH", total: 200, _ids: "inv-b" },
+      { org: "Acme UK", supplier: "Kingsway", total: 150, _ids: "inv-a,inv-c" },
+    ],
+    totals: [],
+    skippedOrgs: [],
+    asAt: "2026-10-05T07:00:00Z",
+  };
+
+  async function openNote() {
+    const calls = await signIn({ permissions: ["AP.TaskView"], notes: [NOTE], note: { id: "note-1", agentName: "Weekly payables", table: TABLE } });
+    await vi.waitFor(() => expect(document.getElementById("agentnotes")!.hidden).toBe(false));
+    const holder = document.getElementById("agentnotes")!;
+    holder.querySelector<HTMLButtonElement>('.actionlink[title="agents.notes.open"]')!.click();
+    await vi.waitFor(() => expect(holder.querySelector(".agentreporttable")).not.toBeNull());
+    return { calls, holder };
+  }
+
+  it("opens every invoice in a note's report, the agent named on Documents", async () => {
+    const { calls, holder } = await openNote();
+    holder.querySelector<HTMLButtonElement>('.agentreportopen .actionlink[title="Open in Documents"]')!.click();
+    await vi.waitFor(() => expect(calls.some((c) => c.path.startsWith("/api/documents?"))).toBe(true));
+    const asked = new URLSearchParams(calls.find((c) => c.path.startsWith("/api/documents?"))!.path.split("?")[1]);
+    expect(asked.get("agentNote")).toBe("note-1");
+    expect(asked.has("agentRow")).toBe(false);
+    await vi.waitFor(() => expect(document.querySelector(".alertbanner")?.textContent).toContain("Showing the invoices in the agent report \u201cWeekly payables\u201d"));
+  });
+
+  it("opens one row's invoices when the row is chosen", async () => {
+    const { calls, holder } = await openNote();
+    const rows = holder.querySelectorAll<HTMLTableRowElement>(".agentreporttable tbody tr.clickable");
+    expect(rows).toHaveLength(2);
+    rows[1].click();
+    await vi.waitFor(() => expect(calls.some((c) => c.path.startsWith("/api/documents?"))).toBe(true));
+    const asked = new URLSearchParams(calls.find((c) => c.path.startsWith("/api/documents?"))!.path.split("?")[1]);
+    expect([asked.get("agentNote"), asked.get("agentRow")]).toEqual(["note-1", "1"]);
+    await vi.waitFor(() => expect(document.querySelector(".alertbanner")?.textContent).toContain("Weekly payables\u201d: Acme UK \u00b7 Kingsway"));
+  });
+
+  it("offers nothing to open for a report without invoices behind its rows", async () => {
+    const { reportTable } = await import("/agent-notes.js");
+    const { loadStrings } = await import("/strings.js");
+    stub({ permissions: [] });
+    await loadStrings();
+    const node = reportTable({ ...TABLE, rows: [{ org: "Acme UK", supplier: "Kingsway", total: 1 }] }, { openAll: () => {}, openRow: () => {} });
+    expect(node.querySelector(".agentreportopen")).toBeNull();
+    expect(node.querySelector("tr.clickable")).toBeNull();
+  });
+
+  it("opens Documents from the link in the email, and cleans the address", async () => {
+    history.replaceState(null, "", "/?agentdocs=dlv-1");
+    const calls = await signIn({ permissions: ["AP.TaskView"] });
+    await vi.waitFor(() => expect(calls.some((c) => c.path.startsWith("/api/documents?") && c.path.includes("agentDelivery=dlv-1"))).toBe(true));
+    expect(location.search).toBe("");
+    await vi.waitFor(() => expect(document.querySelector(".alertbanner")?.textContent).toContain("\u201cWeekly payables\u201d"));
   });
 });

@@ -1448,6 +1448,16 @@ export async function start() {
       .then((m) => m.stopFromLink(document.getElementById("main") ?? shell))
       .catch(() => {});
   }
+  // Decision 0629: "Open these invoices in Documents" from an agent's email.
+  const agentDocs = new URLSearchParams(location.search).get("agentdocs");
+  if (agentDocs) {
+    const clean = new URL(location.href);
+    clean.searchParams.delete("agentdocs");
+    history.replaceState(null, "", `${clean.pathname}${clean.search}${clean.hash}`);
+    await import("/documents.js")
+      .then((m) => m.openDocumentsFromAgent({ delivery: agentDocs }))
+      .catch(() => {});
+  }
 
   /**
    * **Centralised here, not left to each caller — decision 0361.**

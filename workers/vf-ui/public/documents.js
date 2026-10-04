@@ -113,6 +113,13 @@ let handledFilter = null;
  */
 let idsFilter = null;
 let exceptionsFilter = null;
+/**
+ * **From an agent's report — decision 0629.** `{ note, row?, delivery?,
+ * name }`: the invoices behind a note on the task list (all of it, or one
+ * row), or behind an email copy. Looked up on the server for the person
+ * it was sent to; the agent's name comes back for the banner.
+ */
+let agentFilter = null;
 
 /** Every filter a card can open this screen with, cleared together. */
 function clearFilters() {
@@ -126,6 +133,7 @@ function clearFilters() {
   handledFilter = null;
   idsFilter = null;
   exceptionsFilter = null;
+  agentFilter = null;
 }
 
 /**
@@ -244,6 +252,11 @@ async function load() {
     if (openForFilter.team) params.set("openTeam", openForFilter.team.id);
   }
   if (idsFilter) params.set("ids", idsFilter.ids.join(","));
+  if (agentFilter?.note) {
+    params.set("agentNote", agentFilter.note);
+    if (agentFilter.row !== null && agentFilter.row !== undefined) params.set("agentRow", String(agentFilter.row));
+  }
+  if (agentFilter?.delivery) params.set("agentDelivery", agentFilter.delivery);
   if (exceptionsFilter) {
     params.set("exceptionsSince", exceptionsFilter.since);
     if (exceptionsFilter.supplierId !== undefined) params.set("exceptionSupplierId", exceptionsFilter.supplierId || "~none");
@@ -275,6 +288,7 @@ async function load() {
 
   const body = await response.json();
   documents = body.documents ?? [];
+  if (agentFilter && !agentFilter.name && body.agent?.name) agentFilter.name = body.agent.name;
   /**
    * **`total` replaces the old "N of M looked through" honesty
    * message — decision 0448.** `documents-route.ts` now always
@@ -512,6 +526,10 @@ function bannerText() {
   if (personFilter) return t("documents.showing.doneby").replace("{name}", personFilter.name);
   if (teamFilter) return t("documents.showing.team").replace("{team}", teamFilter.name);
   if (idsFilter) return t("documents.showing.check").replace("{check}", idsFilter.check);
+  if (agentFilter)
+    return agentFilter.name
+      ? t(agentFilter.label ? "documents.showing.agentrow" : "documents.showing.agent").replace("{name}", agentFilter.name).replace("{row}", agentFilter.label ?? "")
+      : t("documents.showing.agentunnamed");
   if (exceptionsFilter) return exceptionsFilter.banner;
   if (handledFilter) {
     const said = handledFilter.stage
@@ -655,7 +673,7 @@ function render() {
          * one — decision 0256 fixed exactly this shape of confusion for
          * a dropdown that quietly filtered without saying so.
          */
-        alertFilter || stageFilter || supplierFilter || agingFilter || personFilter || teamFilter || openForFilter || handledFilter || idsFilter || exceptionsFilter
+        alertFilter || stageFilter || supplierFilter || agingFilter || personFilter || teamFilter || openForFilter || handledFilter || idsFilter || exceptionsFilter || agentFilter
           ? el("div", { class: "panel alertbanner" }, [
               el("span", { text: bannerText() }),
               el("button", {
@@ -938,6 +956,24 @@ export async function openDocumentsWithExceptions(filter, banner) {
   page = 1;
   clearFilters();
   exceptionsFilter = { ...filter, banner };
+  setCurrentScreen("documents");
+  await loadUnits();
+  if (!(await load())) return;
+  render();
+}
+
+/**
+ * Open the documents screen at the invoices behind an agent's report —
+ * decision 0629: a note on the task list (`note`, and `row` for one row,
+ * with `label` saying which), or an email copy (`delivery`, from the
+ * link in the email). Only the person it was sent to gets any.
+ */
+export async function openDocumentsFromAgent({ note = null, row = null, label = null, delivery = null, name = null }) {
+  query = "";
+  unit = "";
+  page = 1;
+  clearFilters();
+  agentFilter = { note, row, label, delivery, name };
   setCurrentScreen("documents");
   await loadUnits();
   if (!(await load())) return;

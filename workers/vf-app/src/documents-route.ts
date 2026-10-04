@@ -1,3 +1,4 @@
+import { agentDocumentIds } from "./agents.js";
 import { windowDays } from "./workload-handling-time-route.js";
 import type { RouteResult } from "./examples-route.js";
 import { mondayOfThisWeek } from "./dates.js";
@@ -356,7 +357,10 @@ export async function handleListDocuments(
    * among its failures.
    */
   const idsRaw = params.get("ids");
-  const ids = idsRaw ? JSON.stringify(idsRaw.split(",").map((x) => x.trim()).filter(Boolean).slice(0, 500)) : null;
+  let ids = idsRaw ? JSON.stringify(idsRaw.split(",").map((x) => x.trim()).filter(Boolean).slice(0, 500)) : null;
+  // Decision 0629: an agent's report, looked up for the person it was sent to; none for anyone else.
+  const fromAgent = await agentDocumentIds(db, params, userId);
+  if (fromAgent) ids = JSON.stringify(fromAgent.ids);
   const sinceRaw = params.get("exceptionsSince");
   const exceptionsSince = sinceRaw && /^\d{4}-\d{2}-\d{2}$/.test(sinceRaw) ? sinceRaw : null;
   const exceptionSupplierId = exceptionsSince ? params.get("exceptionSupplierId") || null : null;
@@ -693,6 +697,7 @@ export async function handleListDocuments(
     body: {
       documents,
       searched: documents.length,
+      ...(fromAgent ? { agent: { name: fromAgent.name } } : {}),
       // Only when a page was actually asked for — see `paginating` above.
       ...(paginating ? { total: totalRow?.n ?? 0, page, pageSize } : {}),
     },

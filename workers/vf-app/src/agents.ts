@@ -292,6 +292,7 @@ async function gatherOutstanding(
     d90: number;
     d90plus: number;
     oldest: number | null;
+    ids: string[];
   };
   const groups = new Map<string, Group>();
   for (const org of orgs) {
@@ -336,7 +337,9 @@ async function gatherOutstanding(
         d90: 0,
         d90plus: 0,
         oldest: null,
+        ids: [],
       };
+      g.ids.push(r.id);
       g.count += 1;
       g.total += r.total;
       const past = r.due_date ? daysBetween(r.due_date, now) : null;
@@ -369,6 +372,8 @@ async function gatherOutstanding(
       d90plus: round2(g.d90plus),
       total: round2(g.total),
       daysPastDue: g.oldest ?? 0,
+      // Decision 0629: the invoices behind the row, for Open in Documents.
+      _ids: g.ids.join(","),
       ...(options.highlightDays !== undefined &&
       (g.oldest ?? 0) > options.highlightDays
         ? { _highlight: 1 }
@@ -524,6 +529,7 @@ async function gatherStuck(
     person: string | null;
     count: number;
     oldest: number;
+    ids: Set<string>;
   };
   const groups = new Map<string, Group>();
   let count = 0;
@@ -532,7 +538,7 @@ async function gatherStuck(
     const clause = unitClause({ units }, "h.org_unit_id");
     const rows = await db
       .prepare(
-        `SELECT t.id AS id, t.created_at AS created_at, s.name AS stage_name, u.name AS user_name
+        `SELECT t.id AS id, t.created_at AS created_at, s.name AS stage_name, u.name AS user_name, h.id AS invoice_id
          FROM tasks t
          JOIN process_stages s ON s.id = t.stage_id
          LEFT JOIN org_users u ON u.id = COALESCE(t.owner_user_id, t.claimed_by)
@@ -547,6 +553,7 @@ async function gatherStuck(
         created_at: string;
         stage_name: string;
         user_name: string | null;
+        invoice_id: string | null;
       }>();
     for (const r of rows.results) {
       if (seen.has(r.id)) continue;
@@ -559,7 +566,9 @@ async function gatherStuck(
         person: r.user_name,
         count: 0,
         oldest: 0,
+        ids: new Set<string>(),
       };
+      if (r.invoice_id) g.ids.add(r.invoice_id);
       g.count += 1;
       g.oldest = Math.max(g.oldest, age);
       groups.set(key, g);
@@ -574,6 +583,7 @@ async function gatherStuck(
       person: g.person,
       open: g.count,
       oldestDays: g.oldest,
+      _ids: [...g.ids].join(","),
       ...(g.oldest >= older * 2 ? { _highlight: 1 } : {}),
     }));
   return {
@@ -2007,14 +2017,16 @@ async function runAgentOnce(
       error?: string | null;
       totals?: ReportTotal[] | null;
       summary?: string | null;
+      id?: string;
+      invoiceIds?: string[] | null;
     } = {},
   ) => {
     await db
       .prepare(
-        "INSERT INTO agent_deliveries (id, run_id, agent_id, user_id, channel, status, row_count, message_id, copy_key, error, created_at, totals_json, summary) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO agent_deliveries (id, run_id, agent_id, user_id, channel, status, row_count, message_id, copy_key, error, created_at, totals_json, summary, invoice_ids_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
       )
       .bind(
-        `dlv-${crypto.randomUUID()}`,
+        extra.id ?? `dlv-${crypto.randomUUID()}`,
         runId,
         agent.id,
         userId,
@@ -2027,6 +2039,9 @@ async function runAgentOnce(
         now.toISOString(),
         extra.totals ? JSON.stringify(extra.totals) : null,
         extra.summary ?? null,
+        extra.invoiceIds && extra.invoiceIds.length
+          ? JSON.stringify(extra.invoiceIds)
+          : null,
       )
       .run();
   };
@@ -2192,9 +2207,16 @@ async function runAgentOnce(
           await fail("no_email_address");
           continue;
         }
+        // Decision 0629: the email links to Documents at this copy's own invoices.
+        const deliveryId = `dlv-${crypto.randomUUID()}`;
+        const invoiceIds = tableInvoiceIds(table);
         const built = buildAgentEmail({
           locale,
           summary: table.summary,
+          documentsUrl:
+            deps.appUrl && invoiceIds.length
+              ? `${deps.appUrl}/?agentdocs=${encodeURIComponent(deliveryId)}`
+              : null,
           agentName: agent.name,
           authorName,
           table,
@@ -2240,6 +2262,8 @@ async function runAgentOnce(
             copyKey,
             totals: table.totals,
             summary: summary.status,
+            id: deliveryId,
+            invoiceIds,
           });
           sent += 1;
         } else {
@@ -2729,4 +2753,85 @@ export async function handleListAgentEvents(
     .prepare(`${EVENT_SELECT} ORDER BY e.at DESC, e.rowid DESC LIMIT 200`)
     .all<EventRow>();
   return { status: 200, body: { events: events.results.map(eventBody) } };
+}
+
+// ---------------------------------------------------------------------------
+// Open in Documents — decision 0629
+// ---------------------------------------------------------------------------
+
+/** The invoices behind one row of a report: its `_ids`, or its one `invoiceId`. */
+export function rowInvoiceIds(row: Record<string, unknown>): string[] {
+  if (typeof row._ids === "string" && row._ids)
+    return row._ids.split(",").filter(Boolean);
+  if (typeof row.invoiceId === "string" && row.invoiceId)
+    return [row.invoiceId];
+  return [];
+}
+
+/** Every invoice behind a report, once each. */
+export function tableInvoiceIds(table: {
+  rows: Record<string, unknown>[];
+}): string[] {
+  return [...new Set(table.rows.flatMap(rowInvoiceIds))];
+}
+
+const AGENT_DOCUMENTS_MAX = 5000;
+
+/**
+ * **Documents at an agent's report — decision 0629.** `agentNote` (with
+ * `agentRow` for one row) or `agentDelivery` (an email copy) name what a
+ * person was sent; the invoices behind it are looked up here, and only
+ * for that person: anyone else's gets none. Documents still applies the
+ * reader's own access on top. Null where neither was asked for.
+ */
+export async function agentDocumentIds(
+  db: D1Database,
+  params: URLSearchParams,
+  userId: string | null,
+): Promise<{ ids: string[]; name: string | null } | null> {
+  const noteId = params.get("agentNote");
+  const deliveryId = params.get("agentDelivery");
+  if (!noteId && !deliveryId) return null;
+  if (noteId) {
+    const n = await db
+      .prepare(
+        "SELECT n.user_id, n.report_json, n.kind, a.name FROM agent_notes n JOIN agents a ON a.id = n.agent_id WHERE n.id = ?",
+      )
+      .bind(noteId)
+      .first<{
+        user_id: string;
+        report_json: string;
+        kind: string;
+        name: string;
+      }>();
+    if (!n || n.user_id !== userId || n.kind === "failure")
+      return { ids: [], name: n && n.user_id === userId ? n.name : null };
+    const table = JSON.parse(n.report_json) as {
+      rows: Record<string, unknown>[];
+    };
+    const rowRaw = params.get("agentRow");
+    const row = rowRaw !== null && /^\d+$/.test(rowRaw) ? Number(rowRaw) : null;
+    const ids =
+      row === null
+        ? tableInvoiceIds(table)
+        : table.rows[row]
+          ? rowInvoiceIds(table.rows[row])
+          : [];
+    return { ids: ids.slice(0, AGENT_DOCUMENTS_MAX), name: n.name };
+  }
+  const d = await db
+    .prepare(
+      "SELECT d.user_id, d.invoice_ids_json, a.name FROM agent_deliveries d JOIN agents a ON a.id = d.agent_id WHERE d.id = ?",
+    )
+    .bind(deliveryId)
+    .first<{
+      user_id: string;
+      invoice_ids_json: string | null;
+      name: string;
+    }>();
+  if (!d || d.user_id !== userId) return { ids: [], name: null };
+  const ids = d.invoice_ids_json
+    ? (JSON.parse(d.invoice_ids_json) as string[])
+    : [];
+  return { ids: ids.slice(0, AGENT_DOCUMENTS_MAX), name: d.name };
 }
