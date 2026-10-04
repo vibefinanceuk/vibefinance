@@ -121,7 +121,48 @@ export async function fill(holder) {
   holder.hidden = false;
   const opened = new Map();
 
+  // Decision 0627: a failing agent, for its author: what went wrong, how often, and the way to it.
+  const failureRow = (note) => {
+    const f = note.failure ?? {};
+    const key = `agents.runerror.${f.error}`;
+    const said = t(key) === key ? f.error : t(key);
+    const row = el("div", { class: "agentnote failure", "data-note": note.id, "data-agent": note.agentId }, [
+      el("div", { class: "agentnotehead" }, [
+        el("div", {}, [
+          el("span", { class: "agentnotename", text: note.agentName }),
+          el("span", { class: "rmpill bad agentnotetag", text: t("agents.notes.failedtag") }),
+          el("div", { class: "agentnotewhy", text: `${t(f.partial ? "agents.notes.failure.partial" : "agents.notes.failure.failed")}: ${said}` }),
+          el("div", {
+            class: "muted sm",
+            text: (f.times ?? 1) > 1 ? t("agents.notes.failure.times").replace("{n}", String(f.times)).replace("{since}", stamp(f.firstAt)) : stamp(f.lastAt ?? note.createdAt),
+          }),
+        ]),
+        el("div", { class: "dobuttons" }, [
+          actionLink("expand", {
+            label: t("agents.notes.openagent"),
+            onclick: async () => {
+              const { openAgentById } = await import("/agents.js");
+              await openAgentById(note.agentId);
+            },
+          }),
+          actionLink("done", {
+            label: t("agents.notes.done"),
+            onclick: async () => {
+              const done = await call(`/api/agent-notes/${encodeURIComponent(note.id)}/done`, { method: "POST" });
+              if (done.ok) {
+                row.remove();
+                if (!holder.querySelector(".agentnote")) holder.hidden = true;
+              }
+            },
+          }),
+        ]),
+      ]),
+    ]);
+    return row;
+  };
+
   const rowOf = (note) => {
+    if (note.kind === "failure") return failureRow(note);
     const detail = el("div", { class: "agentnotedetail" });
     detail.hidden = true;
     const row = el("div", { class: "agentnote", "data-note": note.id, "data-agent": note.agentId }, [

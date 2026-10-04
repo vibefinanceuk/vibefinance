@@ -575,6 +575,8 @@ describe("the proxy carries every path a screen calls (decision 0131)", () => {
     ["GET", "/api/agent-notes/note-1"],
     ["POST", "/api/agent-notes/note-1/done"],
     ["PUT", "/api/agent-settings"],
+    ["GET", "/api/agents/agt-1"],
+    ["GET", "/api/agent-events"],
     ["GET", "/api/erp-exports"],
     ["POST", "/api/erp-exports"],
     ["GET", "/api/erp-exports/x-1/csv"],

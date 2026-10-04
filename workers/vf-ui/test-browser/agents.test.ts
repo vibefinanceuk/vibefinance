@@ -44,6 +44,28 @@ const STRINGS = {
       "Email is not set up for this environment yet. Ask your administrator.",
     "agents.notes.stop": "Stop sending me this",
     "agents.understand": "Understand",
+    "agents.page.back": "All agents",
+    "agents.page.runs": "Runs",
+    "agents.page.versions": "Plan versions",
+    "agents.page.current": "current",
+    "agents.page.changed": "Changed: {steps}",
+    "agents.page.author": "made it",
+    "agents.page.stoppedon": "stopped receiving it {when}",
+    "agents.page.step.gathered": "Gathered {n} rows",
+    "agents.page.step.sent": "sent",
+    "agents.event.byvibefinance": "VibeFinance",
+    "agents.event.created": "{by} made it (plan v{version})",
+    "agents.event.changed": "{by} changed the plan to v{version}",
+    "agents.event.paused_access":
+      "{by} paused it: its author can no longer see its report",
+    "agents.event.stopped_receiving": "{by} stopped receiving it",
+    "agents.log.show": "Show the log",
+    "agents.notes.failedtag": "Failing",
+    "agents.notes.failure.partial": "Some copies could not be sent",
+    "agents.notes.failure.times": "Failed {n} times since {since}",
+    "agents.notes.openagent": "Open the agent",
+    "agents.channel.email": "by email",
+    "agents.channel.task": "on the task list",
     "agents.summary.short": "AI summary",
     "agents.summary.label": "AI summary",
     "agents.summary.on": "Write a few sentences on top of each report",
@@ -129,6 +151,9 @@ function stub(opts: {
   emailReady?: boolean;
   understandReply?: [number, unknown];
   aiReady?: boolean;
+  page?: unknown;
+  runs?: unknown[];
+  events?: unknown[];
 }) {
   const calls = opts.calls ?? [];
   vi.stubGlobal(
@@ -213,6 +238,12 @@ function stub(opts: {
         return reply(200, { status: "delivered" });
       if (path === "/api/agents/agt-1/stop")
         return reply(200, { stopped: true, name: "Weekly payables" });
+      if (path === "/api/agents/agt-1/runs")
+        return reply(200, { runs: opts.runs ?? [] });
+      if (path === "/api/agents/agt-1" && method === "GET" && opts.page)
+        return reply(200, opts.page);
+      if (path === "/api/agent-events")
+        return reply(200, { events: opts.events ?? [] });
       if (path.startsWith("/api/agents/agt-1")) return reply(200, { ...AGENT });
       if (path === "/api/agent-notes")
         return reply(200, { notes: opts.notes ?? [] });
@@ -970,5 +1001,257 @@ describe("the AI summary — decision 0626", () => {
         asAt: "2026-10-05T07:00:00Z",
       }).querySelector("#agent-note-summary"),
     ).toBeNull();
+  });
+});
+
+describe("the agent's own page and the agent log — decision 0627", () => {
+  const RUNS = [
+    {
+      id: "run-2",
+      trigger: "schedule",
+      startedAt: "2026-10-05T07:00:00.000Z",
+      status: "delivered",
+      late: false,
+      rowCount: 2,
+      totals: [{ currency: "GBP", total: 120, count: 1 }],
+      error: null,
+      planVersion: 2,
+      deliveries: [
+        {
+          userName: "Dan",
+          channel: "task",
+          status: "sent",
+          error: null,
+          summary: "written",
+        },
+        {
+          userName: "Maya",
+          channel: "email",
+          status: "failed",
+          error: "no_email_address",
+          summary: "written",
+        },
+      ],
+    },
+    {
+      id: "run-1",
+      trigger: "now",
+      startedAt: "2026-10-03T12:00:00.000Z",
+      status: "delivered",
+      late: false,
+      rowCount: 1,
+      totals: [],
+      error: null,
+      planVersion: 1,
+      deliveries: [
+        {
+          userName: "Dan",
+          channel: "task",
+          status: "sent",
+          error: null,
+          summary: null,
+        },
+      ],
+    },
+  ];
+  const plan = (time: string) => ({
+    report: "outstanding_payables",
+    orgIds: ["acme-uk"],
+    schedule: { every: "week", time, weekday: 1 },
+    options: { highlightDays: 60 },
+    deliver: { task: true, email: true },
+    recipients: ["u-maya"],
+    orgs: [{ id: "acme-uk", name: "Acme UK" }],
+    people: [{ id: "u-maya", name: "Maya" }],
+  });
+  const PAGE = {
+    agent: { ...AGENT, planVersion: 2 },
+    versions: [
+      {
+        version: 2,
+        description: null,
+        createdAt: "2026-10-03T12:02:00.000Z",
+        createdBy: "Dan",
+        plan: plan("09:00"),
+      },
+      {
+        version: 1,
+        description: "Every Monday at 8am, payables for UK",
+        createdAt: "2026-10-03T12:00:00.000Z",
+        createdBy: "Dan",
+        plan: plan("08:00"),
+      },
+    ],
+    recipients: [
+      {
+        id: "u-dan",
+        name: "Dan",
+        author: true,
+        addedAt: "2026-10-03T12:00:00.000Z",
+        optedOutAt: null,
+      },
+      {
+        id: "u-maya",
+        name: "Maya",
+        author: false,
+        addedAt: "2026-10-03T12:00:00.000Z",
+        optedOutAt: "2026-10-04T09:00:00.000Z",
+      },
+    ],
+    events: [
+      {
+        id: "e2",
+        agentId: "agt-1",
+        agentName: "Weekly payables",
+        at: "2026-10-04T09:00:00.000Z",
+        by: { id: "u-maya", name: "Maya" },
+        kind: "stopped_receiving",
+        detail: {},
+      },
+      {
+        id: "e1",
+        agentId: "agt-1",
+        agentName: "Weekly payables",
+        at: "2026-10-03T12:00:00.000Z",
+        by: { id: "u-dan", name: "Dan" },
+        kind: "created",
+        detail: { version: 1 },
+      },
+    ],
+  };
+
+  it("opens from the agent's name: runs step by step, plan versions and what changed, who gets it, what was changed", async () => {
+    await openAgents({ permissions: ["AP.Agents"], page: PAGE, runs: RUNS });
+    shell()
+      .querySelector<HTMLButtonElement>('tr[data-agent="agt-1"] .agentopen')!
+      .click();
+    await vi.waitFor(() =>
+      expect(document.getElementById("agent-page")).not.toBeNull(),
+    );
+
+    // The latest run, opened.
+    const steps = () =>
+      [...document.querySelectorAll("#agent-page-run .agentsteps li")].map(
+        (li) => li.textContent,
+      );
+    const latest = steps();
+    expect(latest.slice(0, 3)).toEqual([
+      `Gathered 2 rows · ${(120).toLocaleString(undefined, { minimumFractionDigits: 2 })} GBP`,
+      "summary written",
+      "Dan on the task list: sent",
+    ]);
+    // A failed copy says so, and why.
+    expect(latest[3]).toMatch(/^Maya by email: .+ \(no_email_address\)$/);
+    expect(latest).toHaveLength(4);
+    document
+      .querySelector<HTMLButtonElement>('.agentrunpick[data-run="run-1"]')!
+      .click();
+    expect(steps()).toEqual(["Gathered 1 rows", "Dan on the task list: sent"]);
+
+    const v2 = document.querySelector('.agentversion[data-version="2"]')!;
+    expect(v2.classList.contains("current")).toBe(true);
+    expect(v2.querySelector(".agentversionchanged")?.textContent).toBe(
+      "Changed: When",
+    );
+    expect(v2.querySelector('[data-step="when"]')?.textContent).toContain(
+      "09:00",
+    );
+    const v1 = document.querySelector('.agentversion[data-version="1"]')!;
+    expect(v1.querySelector(".agentversionwords")?.textContent).toBe(
+      "\u201cEvery Monday at 8am, payables for UK\u201d",
+    );
+    expect(v1.querySelector('[data-step="deliver"]')?.textContent).toContain(
+      "Maya",
+    );
+
+    const people = [...document.querySelectorAll("#agent-page-people li")].map(
+      (li) => li.textContent,
+    );
+    expect(people[0]).toBe("Dan · made it");
+    expect(people[1]).toMatch(/^Maya · stopped receiving it /);
+    const history = [
+      ...document.querySelectorAll("#agent-page-history li"),
+    ].map((li) => li.textContent!.split(" · ").slice(1).join(" · "));
+    expect(history).toEqual([
+      "Maya stopped receiving it",
+      "Dan made it (plan v1)",
+    ]);
+
+    button("All agents")!.click();
+    expect(document.getElementById("agent-page")).toBeNull();
+    expect(shell().querySelector('tr[data-agent="agt-1"]')).not.toBeNull();
+  });
+
+  it("shows administrators the agent log of every change, by VibeFinance too", async () => {
+    const calls = await openAgents({
+      permissions: ["Admin.UserManagement"],
+      events: [
+        {
+          id: "e3",
+          agentId: "agt-1",
+          agentName: "Weekly payables",
+          at: "2026-10-05T07:00:00.000Z",
+          by: null,
+          kind: "paused_access",
+          detail: { reason: "author_access" },
+        },
+      ],
+    });
+    button("Show the log")!.click();
+    await vi.waitFor(() =>
+      expect(document.getElementById("agents-log")).not.toBeNull(),
+    );
+    expect(calls.some((c) => c.path === "/api/agent-events")).toBe(true);
+    expect(document.querySelector("#agents-log li")!.textContent).toMatch(
+      /Weekly payables: VibeFinance paused it: its author can no longer see its report$/,
+    );
+  });
+
+  it("puts a failing agent on its author's task list, with the way to it", async () => {
+    await signIn({
+      permissions: ["AP.TaskView", "AP.Agents"],
+      notes: [
+        {
+          id: "note-9",
+          agentId: "agt-1",
+          agentName: "Weekly payables",
+          report: "outstanding_payables",
+          createdAt: "2026-10-05T07:00:00Z",
+          late: false,
+          rowCount: 1,
+          totals: [],
+          canStop: false,
+          kind: "failure",
+          failure: {
+            error: "Resend said: domain not verified",
+            partial: true,
+            times: 2,
+            firstAt: "2026-10-05T07:00:00Z",
+            lastAt: "2026-10-12T07:00:00Z",
+          },
+        },
+      ],
+      page: PAGE,
+      runs: RUNS,
+    });
+    await vi.waitFor(() =>
+      expect(
+        document.querySelector('.agentnote.failure[data-note="note-9"]'),
+      ).not.toBeNull(),
+    );
+    const note = document.querySelector(
+      '.agentnote.failure[data-note="note-9"]',
+    )!;
+    expect(note.querySelector(".agentnotetag")?.textContent).toBe("Failing");
+    expect(note.querySelector(".agentnotewhy")?.textContent).toBe(
+      "Some copies could not be sent: Resend said: domain not verified",
+    );
+    expect(note.textContent).toContain("Failed 2 times since");
+    note
+      .querySelector<HTMLButtonElement>('.actionlink[title="Open the agent"]')!
+      .click();
+    await vi.waitFor(() =>
+      expect(document.getElementById("agent-page")).not.toBeNull(),
+    );
   });
 });

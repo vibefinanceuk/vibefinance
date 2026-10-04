@@ -5,6 +5,8 @@ import {
   handleGetAgentNote,
   handleListAgentNotes,
   handleListAgentRuns,
+  handleGetAgent,
+  handleListAgentEvents,
   handleListAgents,
   handleRemoveAgent,
   handleRunAgentNow,
@@ -1810,6 +1812,11 @@ export default {
         return json(result.body, result.status);
       }
       const oneMatch = pathname.match(/^\/agents\/([^/]+)$/);
+      // Decision 0627: the agent's own page.
+      if (oneMatch && request.method === "GET") {
+        const result = await handleGetAgent(db, auth.user.id, decodeURIComponent(oneMatch[1]));
+        return json(result.body, result.status);
+      }
       if (oneMatch && request.method === "PATCH") {
         const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
         const result = await handleUpdateAgent(db, auth.user.id, decodeURIComponent(oneMatch[1]), body);
@@ -1820,6 +1827,14 @@ export default {
         return json(result.body, result.status);
       }
       return json({ error: "method not allowed" }, 405);
+    }
+    // Decision 0627: the agent log, for administrators.
+    if (pathname === "/agent-events" && request.method === "GET") {
+      const { db } = resolveTenant(request, env);
+      const auth = await authenticatePerson(db, request, env);
+      if (!auth.user) return json({ error: auth.reason }, 401);
+      const result = await handleListAgentEvents(db, auth.user.id);
+      return json(result.body, result.status);
     }
     if (pathname === "/agent-notes" || /^\/agent-notes\/[^/]+(\/done)?$/.test(pathname)) {
       const { db } = resolveTenant(request, env);

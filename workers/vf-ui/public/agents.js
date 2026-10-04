@@ -31,6 +31,9 @@ let understood = null; // { refusals, missing }
 let understanding = false;
 let stepsOpen = false;
 let busy = false;
+// Decision 0627: the agent's own page, and the agent log.
+let page = null; // { id, body, runs, runId }
+let agentLog = null; // null, "loading", or events
 
 async function call(path, init) {
   try {
@@ -117,6 +120,11 @@ function reportName(id) {
 }
 
 function statusPill(agent) {
+  if (agent.status === "removed")
+    return el("span", {
+      class: "rmpill bad",
+      text: t("agents.status.removed"),
+    });
   if (agent.status === "active")
     return el("span", { class: "rmpill ok", text: t("agents.status.active") });
   const reason = agent.pausedReason
@@ -338,7 +346,12 @@ function agentRow(agent) {
   return [
     el("tr", { "data-agent": agent.id }, [
       el("td", {}, [
-        el("div", { class: "agentname", text: agent.name }),
+        el("button", {
+          type: "button",
+          class: "agentname agentopen",
+          text: agent.name,
+          onclick: () => openAgentPage(agent.id),
+        }),
         el("div", {
           class: "muted sm",
           text: `${reportName(agent.report)}${showAll ? ` · ${agent.authorName}` : ""}`,
@@ -1095,6 +1108,10 @@ function render() {
         onclick: startNew,
       }),
     );
+  if (page) {
+    shell.replaceChildren(frame(agentPage()));
+    return;
+  }
   const agents = data.agents ?? [];
   shell.replaceChildren(
     frame(
@@ -1159,6 +1176,7 @@ function render() {
                 ),
               ]),
         ]),
+        ...(data.canManageAll ? [logPanel()] : []),
       ]),
     ),
   );
@@ -1170,7 +1188,374 @@ export async function open() {
   draft = null;
   problem = "";
   openRuns = new Map();
+  page = null;
+  agentLog = null;
   const ok = await load();
   if (!ok) data = null;
   render();
+}
+
+// --- The agent's own page — decision 0627 -------------------------------------
+
+/** Opened from a note on the task list, or a link: the Agents screen at that agent. */
+export async function openAgentById(id) {
+  await open();
+  await openAgentPage(id);
+}
+
+async function openAgentPage(id) {
+  const [one, runs] = await Promise.all([
+    call(`/api/agents/${encodeURIComponent(id)}`),
+    call(`/api/agents/${encodeURIComponent(id)}/runs`),
+  ]);
+  if (!one.ok) {
+    problem = why(one.body);
+    page = null;
+    render();
+    return;
+  }
+  const list = runs.ok ? (runs.body?.runs ?? []) : [];
+  page = { id, body: one.body, runs: list, runId: list[0]?.id ?? null };
+  problem = "";
+  render();
+}
+
+function backToList() {
+  page = null;
+  render();
+}
+
+/** What a plan version changed from the one before, as the plan's step names. */
+export function changedSteps(plan, before) {
+  if (!before) return [];
+  const same = (a, b) =>
+    JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+  const steps = [];
+  if (!same(plan.schedule, before.schedule)) steps.push("when");
+  if (!same(plan.report, before.report) || !same(plan.orgIds, before.orgIds))
+    steps.push("gather");
+  if (!same(plan.options, before.options)) steps.push("shape");
+  if ((plan.summary !== false) !== (before.summary !== false))
+    steps.push("summarise");
+  if (
+    !same(plan.deliver, before.deliver) ||
+    !same(
+      [...(plan.recipients ?? [])].sort(),
+      [...(before.recipients ?? [])].sort(),
+    )
+  )
+    steps.push("deliver");
+  return steps;
+}
+
+/** One run, step by step, as in the design's mock-up 3. */
+export function runSteps(run) {
+  const steps = [];
+  if (run.late) steps.push(t("agents.page.step.late"));
+  if (run.rowCount !== null && run.rowCount !== undefined)
+    steps.push(
+      t("agents.page.step.gathered").replace("{n}", String(run.rowCount)) +
+        ((run.totals ?? []).length
+          ? ` · ${(run.totals ?? [])
+              .map((x) =>
+                x.currency
+                  ? `${Number(x.total ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${x.currency}`
+                  : String(x.count),
+              )
+              .join(" · ")}`
+          : ""),
+    );
+  else if (run.status === "nothing") steps.push(t("agents.page.step.nothing"));
+  const summaries = summaryWords(run.deliveries);
+  if (summaries) steps.push(summaries);
+  for (const d of run.deliveries ?? [])
+    steps.push(
+      `${d.userName} ${t(`agents.channel.${d.channel}`)}: ${d.status === "failed" ? `${t("agents.run.failed")}${d.error ? ` (${words("agents.runerror", d.error)})` : ""}` : t("agents.page.step.sent")}`,
+    );
+  if (run.status === "failed" && run.error && !(run.deliveries ?? []).length)
+    steps.push(
+      `${t("agents.run.failed")}: ${words("agents.runerror", run.error)}`,
+    );
+  return steps;
+}
+
+/** An event in the agent log, in words. */
+export function eventWords(e) {
+  const by = e.by?.name ?? t("agents.event.byvibefinance");
+  return t(`agents.event.${e.kind}`)
+    .replace("{by}", by)
+    .replace("{version}", String(e.detail?.version ?? ""))
+    .replace("{from}", String(e.detail?.from ?? ""))
+    .replace("{to}", String(e.detail?.to ?? ""));
+}
+
+function section(id, heading, children) {
+  return el("div", { class: "panel agentsection", id }, [
+    el("h3", { text: heading }),
+    ...children,
+  ]);
+}
+
+function agentPage() {
+  const { body, runs } = page;
+  const agent = { ...body.agent, isMine: body.agent.authorId === data?.me };
+  const removed = agent.status === "removed";
+  const run = runs.find((r) => r.id === page.runId) ?? null;
+  const zoneName = zone();
+  const buttons = [
+    actionLink("back", { label: t("agents.page.back"), onclick: backToList }),
+  ];
+  if (!removed && agent.isMine && hasMyPermission("AP.Agents"))
+    buttons.push(
+      actionLink("rename", {
+        label: t("agents.edit"),
+        onclick: () => {
+          page = null;
+          startEdit(agent);
+        },
+      }),
+    );
+
+  const runList = el(
+    "div",
+    { class: "agentrunlist", id: "agent-page-runs" },
+    runs.length === 0
+      ? [el("p", { class: "muted sm", text: t("agents.noruns") })]
+      : runs.map((r) =>
+          el(
+            "button",
+            {
+              type: "button",
+              class: `agentrunpick${r.id === page.runId ? " on" : ""}`,
+              "data-run": r.id,
+              onclick: () => {
+                page.runId = r.id;
+                render();
+              },
+            },
+            [
+              el("span", {
+                text: `${when(r.startedAt)}${r.trigger === "now" ? ` · ${t("agents.trigger.now")}` : ""}`,
+              }),
+              el("span", {
+                class: `rmpill ${r.status === "delivered" ? "ok" : r.status === "failed" ? "bad" : "q"}`,
+                text: t(`agents.run.${r.status}`),
+              }),
+            ],
+          ),
+        ),
+  );
+  const runDetail = run
+    ? el("div", { class: "agentrundetail", id: "agent-page-run" }, [
+        el("h4", {
+          text: [
+            when(run.startedAt),
+            run.planVersion
+              ? t("agents.planv").replace("{n}", String(run.planVersion))
+              : "",
+          ]
+            .filter(Boolean)
+            .join(" · "),
+        }),
+        el(
+          "ol",
+          { class: "agentsteps" },
+          runSteps(run).map((step) => el("li", { text: step })),
+        ),
+      ])
+    : el("div", {});
+
+  const versions = body.versions ?? [];
+  const versionCards = versions.map((v, i) => {
+    const before = versions[i + 1]?.plan ?? null;
+    const changed = changedSteps(v.plan, before);
+    const lines = planLines(
+      {
+        ...v.plan,
+        orgIds: v.plan.orgIds ?? [],
+        recipients: v.plan.recipients ?? [],
+      },
+      {
+        orgs: v.plan.orgs ?? [],
+        managers: v.plan.people ?? [],
+        zone: zoneName,
+      },
+    );
+    return el(
+      "div",
+      {
+        class: `agentversion${v.version === agent.planVersion ? " current" : ""}`,
+        "data-version": String(v.version),
+      },
+      [
+        el("div", { class: "agentversionhead" }, [
+          el("b", {
+            text: t("agents.planv").replace("{n}", String(v.version)),
+          }),
+          el("span", {
+            class: "muted sm",
+            text: ` · ${when(v.createdAt)} · ${v.createdBy}`,
+          }),
+          ...(v.version === agent.planVersion
+            ? [
+                el("span", {
+                  class: "rmpill ok",
+                  text: t("agents.page.current"),
+                }),
+              ]
+            : []),
+        ]),
+        ...(v.description
+          ? [
+              el("p", {
+                class: "agentversionwords",
+                text: `\u201c${v.description}\u201d`,
+              }),
+            ]
+          : []),
+        ...(changed.length
+          ? [
+              el("p", {
+                class: "muted sm agentversionchanged",
+                text: t("agents.page.changed").replace(
+                  "{steps}",
+                  changed.map((k) => t(`agents.plan.${k}`)).join(", "),
+                ),
+              }),
+            ]
+          : []),
+        el(
+          "div",
+          { class: "agentplanrows" },
+          lines.map(([key, text]) =>
+            el("div", { class: "agentplanrow", "data-step": key }, [
+              el("span", {
+                class: "agentplantag",
+                text: t(`agents.plan.${key}`),
+              }),
+              el("span", { text: text ?? "—" }),
+            ]),
+          ),
+        ),
+      ],
+    );
+  });
+
+  const recipients = el(
+    "ul",
+    { class: "agentpeople", id: "agent-page-people" },
+    (body.recipients ?? []).map((p) =>
+      el("li", {
+        text: [
+          p.name,
+          p.author ? t("agents.page.author") : "",
+          p.optedOutAt
+            ? t("agents.page.stoppedon").replace("{when}", when(p.optedOutAt))
+            : "",
+        ]
+          .filter(Boolean)
+          .join(" · "),
+      }),
+    ),
+  );
+
+  const history = el(
+    "ul",
+    { class: "agentevents", id: "agent-page-history" },
+    (body.events ?? []).map((e) =>
+      el("li", { "data-kind": e.kind }, [
+        el("span", { class: "muted sm", text: `${when(e.at)} · ` }),
+        el("span", { text: eventWords(e) }),
+      ]),
+    ),
+  );
+
+  return el("div", { id: "agent-page" }, [
+    topbar(agent.name, t("agents.page.subtitle")),
+    el("div", { class: "panel" }, [
+      el("div", { class: "agenthead" }, [
+        el("div", { class: "sm" }, [
+          el("div", {}, [
+            statusPill(agent),
+            el("span", {
+              text: ` ${removed ? "" : scheduleWords(agent.schedule)}`,
+            }),
+          ]),
+          el("div", {
+            class: "muted sm",
+            text: [
+              reportName(agent.report),
+              agent.orgs.map((o) => o.name).join(", "),
+              deliveryWords(agent),
+            ].join(" · "),
+          }),
+        ]),
+        el("div", { class: "dobuttons" }, buttons),
+      ]),
+    ]),
+    ...(problem
+      ? [el("div", { class: "note", id: "agents-note", text: problem })]
+      : []),
+    section("agent-page-runsection", t("agents.page.runs"), [
+      el("div", { class: "agentrunsgrid" }, [runList, runDetail]),
+    ]),
+    section("agent-page-versions", t("agents.page.versions"), versionCards),
+    section("agent-page-recipients", t("agents.page.recipients"), [recipients]),
+    section("agent-page-events", t("agents.page.history"), [history]),
+  ]);
+}
+
+// --- The agent log — decision 0627 ---------------------------------------------
+
+function logPanel() {
+  const show = actionLink("expand", {
+    label: agentLog ? t("agents.log.hide") : t("agents.log.show"),
+    onclick: async () => {
+      if (agentLog) {
+        agentLog = null;
+        render();
+        return;
+      }
+      agentLog = "loading";
+      render();
+      const r = await call("/api/agent-events");
+      agentLog = r.ok ? (r.body?.events ?? []) : [];
+      render();
+    },
+  });
+  const body =
+    agentLog === null
+      ? []
+      : agentLog === "loading"
+        ? [el("p", { class: "muted sm", text: t("agents.loading") })]
+        : agentLog.length === 0
+          ? [el("p", { class: "muted sm", text: t("agents.log.empty") })]
+          : [
+              el(
+                "ul",
+                { class: "agentevents", id: "agents-log" },
+                agentLog.map((e) =>
+                  el("li", { "data-kind": e.kind }, [
+                    el("span", { class: "muted sm", text: `${when(e.at)} · ` }),
+                    el("button", {
+                      type: "button",
+                      class: "agentopen",
+                      text: e.agentName,
+                      onclick: () => openAgentPage(e.agentId),
+                    }),
+                    el("span", { text: `: ${eventWords(e)}` }),
+                  ]),
+                ),
+              ),
+            ];
+  return el("div", { class: "panel", id: "agents-log-panel" }, [
+    el("div", { class: "agenthead" }, [
+      el("div", {}, [
+        el("h3", { text: t("agents.log.heading") }),
+        el("p", { class: "muted sm", text: t("agents.log.sub") }),
+      ]),
+      el("div", { class: "dobuttons" }, [show]),
+    ]),
+    ...body,
+  ]);
 }

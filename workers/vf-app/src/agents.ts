@@ -1433,6 +1433,7 @@ export async function handleCreateAgent(
     )
     .bind(checked.description, version, checked.summary ? 1 : 0, id)
     .run();
+  await logEvent(db, id, userId, "created", { version }, now);
   const row = (await loadAgent(db, id))!;
   return { status: 201, body: (await toBody(db, [row]))[0] };
 }
@@ -1474,6 +1475,8 @@ export async function handleUpdateAgent(
       )
       .bind(now.toISOString(), id)
       .run();
+    if (row.status === "active")
+      await logEvent(db, id, userId, "paused", {}, now);
     return {
       status: 200,
       body: (await toBody(db, [(await loadAgent(db, id))!]))[0],
@@ -1525,6 +1528,34 @@ export async function handleUpdateAgent(
     )
     .bind(checked.description, version, checked.summary ? 1 : 0, id)
     .run();
+  // Decision 0627: what changed, in the agent log.
+  if (checked.name !== row.name)
+    await logEvent(
+      db,
+      id,
+      userId,
+      "renamed",
+      { from: row.name, to: checked.name },
+      now,
+    );
+  if (version !== (row.plan_version ?? 1))
+    await logEvent(
+      db,
+      id,
+      userId,
+      "changed",
+      { version, from: row.plan_version ?? 1 },
+      now,
+    );
+  if (status !== row.status)
+    await logEvent(
+      db,
+      id,
+      userId,
+      status === "active" ? "started" : "paused",
+      {},
+      now,
+    );
   return {
     status: 200,
     body: (await toBody(db, [(await loadAgent(db, id))!]))[0],
@@ -1562,6 +1593,15 @@ export async function handleRemoveAgent(
     )
     .bind(now.toISOString(), userId, now.toISOString(), id)
     .run();
+  if (row.status !== "removed")
+    await logEvent(
+      db,
+      id,
+      userId,
+      "removed",
+      row.author_id === userId ? {} : { authorId: row.author_id },
+      now,
+    );
   return { status: 200, body: { id, removed: true } };
 }
 
@@ -1719,11 +1759,51 @@ export async function handleSetAgentTimeZone(
 // ---------------------------------------------------------------------------
 
 async function pause(db: D1Database, id: string, reason: string, now: Date) {
-  await db
+  const result = await db
     .prepare(
       "UPDATE agents SET status = 'paused', paused_reason = ?, next_run_at = NULL, updated_at = ? WHERE id = ? AND status = 'active'",
     )
     .bind(reason, now.toISOString(), id)
+    .run();
+  if ((result.meta?.changes ?? 0) > 0)
+    await logEvent(db, id, null, "paused_access", { reason }, now);
+}
+
+export type AgentEventKind =
+  | "created"
+  | "changed"
+  | "renamed"
+  | "started"
+  | "paused"
+  | "paused_access"
+  | "removed"
+  | "stopped_receiving";
+
+/**
+ * **The agent log — decision 0627.** What was changed on an agent, by
+ * whom (null: by VibeFinance) and when. Changes only; runs are on the
+ * agent's own page.
+ */
+async function logEvent(
+  db: D1Database,
+  agentId: string,
+  userId: string | null,
+  kind: AgentEventKind,
+  detail: Record<string, unknown>,
+  now: Date,
+) {
+  await db
+    .prepare(
+      "INSERT INTO agent_events (id, agent_id, at, user_id, kind, detail_json) VALUES (?, ?, ?, ?, ?, ?)",
+    )
+    .bind(
+      `evt-${crypto.randomUUID()}`,
+      agentId,
+      now.toISOString(),
+      userId,
+      kind,
+      JSON.stringify(detail),
+    )
     .run();
 }
 
@@ -1754,6 +1834,124 @@ export async function runAgent(
   now: Date,
   scheduledFor: string | null = null,
   deps: AgentDeps = NO_DEPS,
+): Promise<RunResult> {
+  const result = await runAgentOnce(
+    db,
+    agent,
+    trigger,
+    now,
+    scheduledFor,
+    deps,
+  );
+  try {
+    await careFor(db, agent, trigger, result, now);
+  } catch {
+    // The run is recorded either way; the task about it is a courtesy.
+  }
+  return result;
+}
+
+type RunResult = {
+  runId: string;
+  status: "delivered" | "nothing" | "failed";
+  error?: string;
+  deliveries?: number;
+};
+
+/**
+ * **A failure is a task for its author — decision 0627.** A scheduled
+ * run that failed, or delivered with some copies failing, puts one note
+ * on the author's task list saying what went wrong; while it keeps
+ * failing, the same note says how many times and when last. A run that
+ * succeeds again (Run now included) marks it done.
+ */
+async function careFor(
+  db: D1Database,
+  agent: AgentRow,
+  trigger: "schedule" | "now",
+  result: RunResult,
+  now: Date,
+) {
+  let error = result.status === "failed" ? (result.error ?? "failed") : null;
+  let failedCopies = 0;
+  if (result.status === "delivered") {
+    const f = await db
+      .prepare(
+        "SELECT count(*) AS n, MIN(error) AS error FROM agent_deliveries WHERE run_id = ? AND status = 'failed'",
+      )
+      .bind(result.runId)
+      .first<{ n: number; error: string | null }>();
+    failedCopies = f?.n ?? 0;
+    if (failedCopies > 0) error = f?.error ?? "failed";
+  }
+  const open = await db
+    .prepare(
+      "SELECT id, report_json FROM agent_notes WHERE agent_id = ? AND user_id = ? AND kind = 'failure' AND done_at IS NULL ORDER BY created_at DESC LIMIT 1",
+    )
+    .bind(agent.id, agent.author_id)
+    .first<{ id: string; report_json: string }>();
+  if (error === null) {
+    if (open)
+      await db
+        .prepare(
+          "UPDATE agent_notes SET done_at = ? WHERE agent_id = ? AND user_id = ? AND kind = 'failure' AND done_at IS NULL",
+        )
+        .bind(now.toISOString(), agent.id, agent.author_id)
+        .run();
+    return;
+  }
+  if (trigger !== "schedule") return;
+  const failure = {
+    error: error.slice(0, 300),
+    partial: result.status === "delivered",
+    failedCopies,
+    times: 1,
+    firstAt: now.toISOString(),
+    lastAt: now.toISOString(),
+  };
+  if (open) {
+    const was = JSON.parse(open.report_json) as {
+      times?: number;
+      firstAt?: string;
+    };
+    await db
+      .prepare(
+        "UPDATE agent_notes SET run_id = ?, report_json = ? WHERE id = ?",
+      )
+      .bind(
+        result.runId,
+        JSON.stringify({
+          ...failure,
+          times: (was.times ?? 1) + 1,
+          firstAt: was.firstAt ?? failure.firstAt,
+        }),
+        open.id,
+      )
+      .run();
+    return;
+  }
+  await db
+    .prepare(
+      "INSERT INTO agent_notes (id, agent_id, run_id, user_id, report_json, created_at, kind) VALUES (?, ?, ?, ?, ?, ?, 'failure')",
+    )
+    .bind(
+      `note-${crypto.randomUUID()}`,
+      agent.id,
+      result.runId,
+      agent.author_id,
+      JSON.stringify(failure),
+      now.toISOString(),
+    )
+    .run();
+}
+
+async function runAgentOnce(
+  db: D1Database,
+  agent: AgentRow,
+  trigger: "schedule" | "now",
+  now: Date,
+  scheduledFor: string | null,
+  deps: AgentDeps,
 ): Promise<{
   runId: string;
   status: "delivered" | "nothing" | "failed";
@@ -2211,7 +2409,8 @@ export async function handleListAgentNotes(
 ): Promise<RouteResult> {
   const rows = await db
     .prepare(
-      `SELECT n.id, n.agent_id, a.name AS agent_name, a.report, n.created_at, r.late, r.row_count, r.totals_json, a.author_id
+      `SELECT n.id, n.agent_id, a.name AS agent_name, a.report, n.created_at, r.late, r.row_count, r.totals_json, a.author_id,
+              n.kind, CASE n.kind WHEN 'failure' THEN n.report_json END AS failure_json
        FROM agent_notes n JOIN agents a ON a.id = n.agent_id JOIN agent_runs r ON r.id = n.run_id
        WHERE n.user_id = ? AND n.done_at IS NULL ORDER BY n.created_at DESC LIMIT 50`,
     )
@@ -2226,6 +2425,8 @@ export async function handleListAgentNotes(
       row_count: number | null;
       totals_json: string | null;
       author_id: string;
+      kind: string;
+      failure_json: string | null;
     }>();
   return {
     status: 200,
@@ -2242,7 +2443,10 @@ export async function handleListAgentNotes(
           ? (JSON.parse(n.totals_json) as ReportTotal[])
           : [],
         // Decision 0623: anyone but its author may stop receiving it.
-        canStop: n.author_id !== userId,
+        canStop: n.author_id !== userId && n.kind !== "failure",
+        // Decision 0627: a note about a failing agent, for its author.
+        kind: n.kind ?? "report",
+        failure: n.failure_json ? JSON.parse(n.failure_json) : null,
       })),
     },
   };
@@ -2337,6 +2541,12 @@ export async function handleStopAgent(
         reason: "author_cannot_stop",
       },
     };
+  const before = await db
+    .prepare(
+      "SELECT opted_out_at FROM agent_recipients WHERE agent_id = ? AND user_id = ?",
+    )
+    .bind(id, userId)
+    .first<{ opted_out_at: string | null }>();
   const result = await db
     .prepare(
       "UPDATE agent_recipients SET opted_out_at = COALESCE(opted_out_at, ?) WHERE agent_id = ? AND user_id = ?",
@@ -2348,5 +2558,175 @@ export async function handleStopAgent(
       status: 404,
       body: { error: "you do not receive this agent", reason: "not_recipient" },
     };
+  if (before && before.opted_out_at === null)
+    await logEvent(db, id, userId, "stopped_receiving", {}, now);
   return { status: 200, body: { id, name: agent.name, stopped: true } };
+}
+
+// ---------------------------------------------------------------------------
+// The agent's own page and the agent log — decision 0627
+// ---------------------------------------------------------------------------
+
+interface EventRow {
+  id: string;
+  agent_id: string;
+  agent_name: string;
+  at: string;
+  user_id: string | null;
+  user_name: string | null;
+  kind: AgentEventKind;
+  detail_json: string;
+}
+
+function eventBody(e: EventRow) {
+  return {
+    id: e.id,
+    agentId: e.agent_id,
+    agentName: e.agent_name,
+    at: e.at,
+    by: e.user_id ? { id: e.user_id, name: e.user_name ?? e.user_id } : null,
+    kind: e.kind,
+    detail: JSON.parse(e.detail_json || "{}") as Record<string, unknown>,
+  };
+}
+
+const EVENT_SELECT = `SELECT e.id, e.agent_id, a.name AS agent_name, e.at, e.user_id, COALESCE(u.name, u.email, e.user_id) AS user_name, e.kind, e.detail_json
+  FROM agent_events e JOIN agents a ON a.id = e.agent_id LEFT JOIN org_users u ON u.id = e.user_id`;
+
+/**
+ * `GET /agents/:id` — the agent's own page: the agent, every version of
+ * its plan (with the names it named), who gets it and who stopped it, and
+ * what was changed. For its author or an administrator, as its runs are.
+ */
+export async function handleGetAgent(
+  db: D1Database,
+  userId: string,
+  id: string,
+): Promise<RouteResult> {
+  // A removed agent's page stays readable: its history is the point.
+  const row = await db
+    .prepare("SELECT * FROM agents WHERE id = ?")
+    .bind(id)
+    .first<AgentRow>();
+  if (!row)
+    return {
+      status: 404,
+      body: { error: `agent ${id} does not exist`, reason: "not_found" },
+    };
+  if (
+    row.author_id !== userId &&
+    !(await hasPermission(db, userId, "Admin.UserManagement"))
+  )
+    return {
+      status: 403,
+      body: {
+        error: "only its author or an administrator can see this agent",
+        reason: "not_author",
+      },
+    };
+  const versions = await db
+    .prepare(
+      `SELECT v.version, v.description, v.plan_json, v.created_at, COALESCE(u.name, u.email, v.created_by) AS created_by
+       FROM agent_plan_versions v LEFT JOIN org_users u ON u.id = v.created_by WHERE v.agent_id = ? ORDER BY v.version DESC`,
+    )
+    .bind(id)
+    .all<{
+      version: number;
+      description: string | null;
+      plan_json: string;
+      created_at: string;
+      created_by: string;
+    }>();
+  const names = async (table: "org_units" | "org_users", ids: string[]) => {
+    if (ids.length === 0) return new Map<string, string>();
+    const col = table === "org_units" ? "name" : "COALESCE(name, email, id)";
+    const found = await db
+      .prepare(
+        `SELECT id, ${col} AS name FROM ${table} WHERE id IN (${ids.map(() => "?").join(", ")})`,
+      )
+      .bind(...ids)
+      .all<{ id: string; name: string }>();
+    return new Map(found.results.map((r) => [r.id, r.name]));
+  };
+  const plans = versions.results.map((v) => ({
+    ...v,
+    plan: JSON.parse(v.plan_json) as {
+      orgIds?: string[];
+      recipients?: string[];
+    } & Record<string, unknown>,
+  }));
+  const orgNames = await names("org_units", [
+    ...new Set(plans.flatMap((p) => p.plan.orgIds ?? [])),
+  ]);
+  const peopleNames = await names("org_users", [
+    ...new Set(plans.flatMap((p) => p.plan.recipients ?? [])),
+  ]);
+  const recipients = await db
+    .prepare(
+      `SELECT u.id, COALESCE(u.name, u.email, u.id) AS name, r.added_at, r.opted_out_at FROM agent_recipients r
+       JOIN org_users u ON u.id = r.user_id WHERE r.agent_id = ? ORDER BY r.added_at, name`,
+    )
+    .bind(id)
+    .all<{
+      id: string;
+      name: string;
+      added_at: string;
+      opted_out_at: string | null;
+    }>();
+  const events = await db
+    .prepare(
+      `${EVENT_SELECT} WHERE e.agent_id = ? ORDER BY e.at DESC, e.rowid DESC LIMIT 200`,
+    )
+    .bind(id)
+    .all<EventRow>();
+  return {
+    status: 200,
+    body: {
+      agent: (await toBody(db, [row]))[0],
+      versions: plans.map((p) => ({
+        version: p.version,
+        description: p.description,
+        createdAt: p.created_at,
+        createdBy: p.created_by,
+        plan: {
+          ...p.plan,
+          orgs: (p.plan.orgIds ?? []).map((o) => ({
+            id: o,
+            name: orgNames.get(o) ?? o,
+          })),
+          people: (p.plan.recipients ?? []).map((u) => ({
+            id: u,
+            name: peopleNames.get(u) ?? u,
+          })),
+        },
+      })),
+      recipients: recipients.results.map((r) => ({
+        id: r.id,
+        name: r.name,
+        author: r.id === row.author_id,
+        addedAt: r.added_at,
+        optedOutAt: r.opted_out_at,
+      })),
+      events: events.results.map(eventBody),
+    },
+  };
+}
+
+/** `GET /agent-events` — the agent log: every agent's changes, latest first, for an administrator. */
+export async function handleListAgentEvents(
+  db: D1Database,
+  userId: string,
+): Promise<RouteResult> {
+  if (!(await hasPermission(db, userId, "Admin.UserManagement")))
+    return {
+      status: 403,
+      body: {
+        error: "the agent log is for administrators",
+        reason: "not_permitted",
+      },
+    };
+  const events = await db
+    .prepare(`${EVENT_SELECT} ORDER BY e.at DESC, e.rowid DESC LIMIT 200`)
+    .all<EventRow>();
+  return { status: 200, body: { events: events.results.map(eventBody) } };
 }

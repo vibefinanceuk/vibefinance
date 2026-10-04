@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 4 October 2026 (decision 0626). A living document: what
+Last updated 4 October 2026 (decision 0627). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,15 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Agents, slice 6: run history and care (0627)
+
+Each agent has its own page: every run step by step, every version of
+its plan and what changed, who gets it and who stopped, and what was
+changed by whom. Administrators see the agent log of every change. A
+failing scheduled run puts one note on its author's task list, kept up
+to date while it fails and done by itself when a run succeeds. The six
+agreed slices are complete.
 
 ### Agents, slice 5: the AI summary (0626)
 

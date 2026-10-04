@@ -257,6 +257,8 @@ const PROXIED_TO_INSTANCE: RegExp[] = [
   /^\/agent-notes$/,
   /^\/agent-notes\/[^/]+(\/done)?$/,
   /^\/agent-settings$/,
+  // Decision 0627: the agent log, for administrators.
+  /^\/agent-events$/,
   // SFTP out and SFTP in: settings, test, forget the identity, collect (decision 0620).
   /^\/route-instances\/[^/]+\/sftp(\/(test|collect|forget-identity))?$/,
   // Submit a Destination for review, from a partner's sandbox — decision 0595.
