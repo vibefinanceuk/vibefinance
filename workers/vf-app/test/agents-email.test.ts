@@ -141,8 +141,8 @@ describe("who an agent goes to, and how", () => {
     expect(toMaya.text).toContain("Auf die Organisationen beschränkt, die Sie sehen dürfen.");
     expect(toMaya.html).toContain(`https://app.vibefinance-ai.com/?stopagent=${id}`);
     const csv = new TextDecoder().decode(Uint8Array.from(atob(toMaya.attachments![0].content), (c) => c.charCodeAt(0)));
-    expect(csv.split("\r\n")[0]).toBe("Organisation,Lieferant,Rechnungen,Summe,Währung,Älteste Fälligkeit,Tage überfällig");
-    expect(csv).toContain("Acme UK,Kingsway,1,120,GBP,2026-09-01,34");
+    expect(csv.split("\r\n")[0]).toBe("Organisation,Lieferant,Währung,Rechnungen,Noch nicht fällig,1–30 Tage,31–60 Tage,61–90 Tage,Über 90 Tage,Summe,Tage überfällig");
+    expect(csv).toContain("Acme UK,Kingsway,GBP,1,0,0,120,0,0,120,34");
     // Nothing on the task list: email only.
     expect(((await handleListAgentNotes(env.DB, "dan")).body as { notes: unknown[] }).notes).toEqual([]);
     // The copy sent is kept.

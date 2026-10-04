@@ -25,6 +25,26 @@ const WORDS: Record<EmailLocale, Record<string, string>> = {
     "report.accruals": "Accruals by stage",
     "report.open_tasks": "Open tasks by person",
     "report.possible_duplicates": "Possible duplicates",
+    "report.due_soon_not_eligible": "Due soon, not yet payment-eligible",
+    "report.stuck_work": "Stuck work",
+    "col.notdue": "Not yet due",
+    "col.d30": "1–30 days",
+    "col.d60": "31–60 days",
+    "col.d90": "61–90 days",
+    "col.d90plus": "Over 90 days",
+    "col.due": "Due",
+    "col.daystodue": "Days to due",
+    "col.stuck": "Open tasks",
+    "col.oldestdays": "Oldest, days",
+    up: "up {n} since the last report",
+    down: "down {n} since the last report",
+    same: "no change since the last report",
+    first: "the first report",
+    mintotal: "Only suppliers owing at least {n}.",
+    highlighted: "Highlighted: {why}.",
+    "why.outstanding_payables": "oldest more than {n} days past due",
+    "why.due_soon_not_eligible": "due within two days",
+    "why.stuck_work": "open {n} days or more",
     "col.org": "Organisation",
     "col.supplier": "Supplier",
     "col.invoices": "Invoices",
@@ -56,6 +76,26 @@ const WORDS: Record<EmailLocale, Record<string, string>> = {
     "report.accruals": "Abgrenzungen nach Stufe",
     "report.open_tasks": "Offene Aufgaben nach Person",
     "report.possible_duplicates": "Mögliche Duplikate",
+    "report.due_soon_not_eligible": "Bald fällig, noch nicht zahlungsbereit",
+    "report.stuck_work": "Festhängende Arbeit",
+    "col.notdue": "Noch nicht fällig",
+    "col.d30": "1–30 Tage",
+    "col.d60": "31–60 Tage",
+    "col.d90": "61–90 Tage",
+    "col.d90plus": "Über 90 Tage",
+    "col.due": "Fällig",
+    "col.daystodue": "Tage bis fällig",
+    "col.stuck": "Offene Aufgaben",
+    "col.oldestdays": "Älteste, Tage",
+    up: "{n} mehr als im letzten Bericht",
+    down: "{n} weniger als im letzten Bericht",
+    same: "unverändert seit dem letzten Bericht",
+    first: "der erste Bericht",
+    mintotal: "Nur Lieferanten mit offenen Beträgen ab {n}.",
+    highlighted: "Hervorgehoben: {why}.",
+    "why.outstanding_payables": "älteste mehr als {n} Tage überfällig",
+    "why.due_soon_not_eligible": "fällig innerhalb von zwei Tagen",
+    "why.stuck_work": "seit {n} Tagen oder länger offen",
     "col.org": "Organisation",
     "col.supplier": "Lieferant",
     "col.invoices": "Rechnungen",
@@ -146,14 +186,38 @@ export interface AgentEmailInput {
   filtered: boolean;
 }
 
+/** "120.00 GBP (1 invoices), up 20.00 since the last report" — decision 0624's comparison. */
+export function compareWith(locale: EmailLocale, t: ReportTable["totals"][number], previous: ReportTable["previous"]): string {
+  if (!previous) return "";
+  const before = previous.find((p) => (p.currency ?? null) === (t.currency ?? null));
+  const now = t.currency ? (t.total ?? 0) : t.count;
+  const then = before ? (t.currency ? (before.total ?? 0) : before.count) : 0;
+  const diff = Math.round((now - then) * 100) / 100;
+  if (diff === 0) return w(locale, "same");
+  const n = t.currency ? cell(locale, Math.abs(diff), "money", "total") : String(Math.abs(diff));
+  return w(locale, diff > 0 ? "up" : "down").replace("{n}", n);
+}
+
 function totalsLine(locale: EmailLocale, table: ReportTable): string {
   return table.totals
-    .map((t) =>
-      t.currency
+    .map((t) => {
+      const base = t.currency
         ? `${cell(locale, t.total, "money", "total")} ${t.currency} (${w(locale, "invoices").replace("{n}", String(t.count))})`
-        : w(locale, "items").replace("{n}", String(t.count))
-    )
+        : w(locale, "items").replace("{n}", String(t.count));
+      const change = compareWith(locale, t, table.previous);
+      return change ? `${base}, ${change}` : base;
+    })
     .join(" · ");
+}
+
+/** What narrowed it, and what a highlight means. */
+function optionLines(locale: EmailLocale, table: ReportTable): string[] {
+  const o = table.options ?? {};
+  const lines: string[] = [];
+  if (o.minTotal !== undefined) lines.push(w(locale, "mintotal").replace("{n}", cell(locale, o.minTotal, "money", "total")));
+  const n = table.report === "outstanding_payables" ? o.highlightDays : table.report === "stuck_work" ? (o.olderThanDays ?? 5) * 2 : undefined;
+  if (table.rows.some((r) => r._highlight)) lines.push(w(locale, "highlighted").replace("{why}", w(locale, `why.${table.report}`).replace("{n}", String(n ?? ""))));
+  return lines;
 }
 
 export function buildAgentEmail(input: AgentEmailInput): { subject: string; text: string; html: string; csv: string; filename: string } {
@@ -168,6 +232,7 @@ export function buildAgentEmail(input: AgentEmailInput): { subject: string; text
   const notes = [
     ...(table.skippedOrgs.length ? [w(locale, "skipped").replace("{orgs}", table.skippedOrgs.join(", "))] : []),
     ...(input.filtered ? [w(locale, "filtered")] : []),
+    ...optionLines(locale, table),
   ];
   const why = w(locale, "why").replace("{author}", input.authorName).replace("{name}", input.agentName);
   const totals = table.totals.length ? `${w(locale, "total")}: ${totalsLine(locale, table)}` : "";
@@ -199,7 +264,7 @@ export function buildAgentEmail(input: AgentEmailInput): { subject: string; text
   const th = (c: ReportTable["columns"][number]) =>
     `<th style="text-align:${NUMERIC.has(c.kind) ? "right" : "left"};padding:6px 10px;border-bottom:2px solid #c9d3e0;font-size:12px;color:#4a5768">${esc(label(locale, c.label))}</th>`;
   const td = (r: ReportTable["rows"][number], c: ReportTable["columns"][number]) =>
-    `<td style="text-align:${NUMERIC.has(c.kind) ? "right" : "left"};padding:6px 10px;border-bottom:1px solid #e3e9f1;white-space:nowrap">${esc(cell(locale, r[c.key], c.kind, c.key))}</td>`;
+    `<td style="text-align:${NUMERIC.has(c.kind) ? "right" : "left"};padding:6px 10px;border-bottom:1px solid #e3e9f1;white-space:nowrap${r._highlight ? ";color:#9c2b1f;font-weight:700" : ""}">${esc(cell(locale, r[c.key], c.kind, c.key))}</td>`;
   const html = `<div style="font-family:Calibri,Carlito,'Segoe UI',Arial,sans-serif;color:#121a26;font-size:14px;line-height:1.45">
 <h2 style="margin:0 0 4px;color:#854f0b;font-size:20px">${esc(input.agentName)}</h2>
 <p style="margin:0 0 12px;color:#4a5768">${esc(reportName)} · ${esc(w(locale, "asat").replace("{when}", asAt))}</p>

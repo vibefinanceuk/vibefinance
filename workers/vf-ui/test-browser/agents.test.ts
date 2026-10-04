@@ -39,6 +39,10 @@ const STRINGS = {
     "agents.deliver.stopped": "stopped",
     "agents.deliver.noemailsetup": "Email is not set up for this environment yet. Ask your administrator.",
     "agents.notes.stop": "Stop sending me this",
+    "agents.runnowhint": "Run now sends only to you, to try an agent. Everyone else gets theirs on the schedule.",
+    "agents.notes.up": "up {n} since the last report",
+    "agents.notes.highlighted": "Highlighted: {why}.",
+    "agents.notes.why.stuck_work": "open {n} days or more",
     "agents.notes.stoppedlink": "You will no longer get \u201c{name}\u201d.",
     "agents.col.open": "Open tasks",
     "agents.notes.skipped": "Left out, as the agent's author can no longer see them: {orgs}.",
@@ -86,8 +90,9 @@ function stub(opts: { permissions: string[]; agents?: unknown[]; notes?: unknown
           me: "u-dan",
           agents: opts.agents ?? [AGENT],
           reports: [
-            { id: "outstanding_payables", permission: "AP.Analysis", orgIds: ["acme-uk", "acme-de"] },
-            { id: "accruals", permission: "AP.Analysis", orgIds: ["acme-uk"] },
+            { id: "outstanding_payables", permission: "AP.Analysis", orgIds: ["acme-uk", "acme-de"], optionKeys: ["minTotal", "highlightDays"], options: { highlightDays: 60 } },
+            { id: "accruals", permission: "AP.Analysis", orgIds: ["acme-uk"], optionKeys: [], options: {} },
+            { id: "stuck_work", permission: "AP.Analysis", orgIds: ["acme-uk"], optionKeys: ["olderThanDays"], options: { olderThanDays: 5 } },
             { id: "possible_duplicates", permission: "AP.FraudReview", orgIds: [] },
           ],
           orgs: [{ id: "acme-uk", name: "Acme UK" }, { id: "acme-de", name: "Acme DE" }],
@@ -171,7 +176,7 @@ describe("the Agents screen", () => {
     const calls = await openAgents({ permissions: ["AP.Agents"], agents: [] });
     button("New agent")!.click();
     const report = document.getElementById("agent-report") as HTMLSelectElement;
-    expect([...report.options].map((o) => o.value)).toEqual(["outstanding_payables", "accruals"]);
+    expect([...report.options].map((o) => o.value)).toEqual(["outstanding_payables", "accruals", "stuck_work"]);
     // Accruals is held in Acme UK only: Acme DE is not offered.
     report.value = "accruals";
     report.dispatchEvent(new Event("change"));
@@ -196,6 +201,7 @@ describe("the Agents screen", () => {
       schedule: { every: "month", time: "08:00", day: "lastWorking" },
       deliver: { task: true, email: false },
       recipients: [],
+      options: {},
     });
     await vi.waitFor(() => expect(document.getElementById("agents-note")?.textContent).toContain("Saved, paused."));
   });
@@ -338,5 +344,58 @@ describe("delivery and recipients — decision 0623", () => {
     await vi.waitFor(() => expect(document.getElementById("agent-stop-notice")?.textContent).toBe("You will no longer get \u201cWeekly payables\u201d."));
     expect(calls.some((c) => c.method === "POST" && c.path === "/api/agents/agt-1/stop")).toBe(true);
     expect(location.search).toBe("");
+  });
+});
+
+describe("options, highlights and comparison — decision 0624", () => {
+  it("offers each report's own options with its defaults, and sends them", async () => {
+    const calls = await openAgents({ permissions: ["AP.Agents"], agents: [] });
+    expect(document.getElementById("agents-runnow-hint")?.textContent).toBe("Run now sends only to you, to try an agent. Everyone else gets theirs on the schedule.");
+    button("New agent")!.click();
+    expect((document.getElementById("agent-option-highlightDays") as HTMLInputElement).value).toBe("60");
+    const min = document.getElementById("agent-option-minTotal") as HTMLInputElement;
+    expect(min.value).toBe("");
+    const report = document.getElementById("agent-report") as HTMLSelectElement;
+    report.value = "stuck_work";
+    report.dispatchEvent(new Event("change"));
+    expect(document.getElementById("agent-option-minTotal")).toBeNull();
+    const older = document.getElementById("agent-option-olderThanDays") as HTMLInputElement;
+    expect(older.value).toBe("5");
+    older.value = "10";
+    older.dispatchEvent(new Event("input"));
+    const name = document.getElementById("agent-name") as HTMLInputElement;
+    name.value = "Stuck";
+    name.dispatchEvent(new Event("input"));
+    shell().querySelector<HTMLButtonElement>("#agent-form .actionlink.primary")!.click();
+    await vi.waitFor(() => expect(calls.some((c) => c.method === "POST" && c.path === "/api/agents")).toBe(true));
+    expect(calls.find((c) => c.method === "POST")!.body).toMatchObject({ report: "stuck_work", options: { olderThanDays: 10 } });
+  });
+
+  it("highlights rows in a note's table, says why, and compares the totals with the last report", async () => {
+    const { reportTable } = await import("/agent-notes.js");
+    const { loadStrings } = await import("/strings.js");
+    stub({ permissions: [] });
+    await loadStrings();
+    const node = reportTable({
+      report: "stuck_work",
+      columns: [
+        { key: "stage", label: "agents.col.stage", kind: "text" },
+        { key: "open", label: "agents.col.open", kind: "count" },
+      ],
+      rows: [
+        { stage: "Approval", open: 4, _highlight: 1 },
+        { stage: "Coding", open: 1 },
+      ],
+      totals: [{ currency: null, total: null, count: 5 }],
+      previous: [{ currency: null, total: null, count: 3 }],
+      options: { olderThanDays: 5 },
+      skippedOrgs: [],
+      asAt: "2026-10-05T07:00:00Z",
+    });
+    const rows = [...node.querySelectorAll("tbody tr")];
+    expect(rows[0].classList.contains("agenthighlight")).toBe(true);
+    expect(rows[1].classList.contains("agenthighlight")).toBe(false);
+    expect(node.textContent).toContain("Highlighted: open 10 days or more.");
+    expect(node.textContent).toContain("up 2 since the last report");
   });
 });

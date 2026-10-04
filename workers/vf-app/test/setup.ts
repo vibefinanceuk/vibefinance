@@ -132,6 +132,7 @@ import partnerConnectorCopiesSql from "../../../migrations/0125_partner_connecto
 import sftpRoutesSql from "../../../migrations/0126_sftp_routes.sql?raw";
 import agentsSql from "../../../migrations/0127_agents.sql?raw";
 import agentEmailSql from "../../../migrations/0128_agent_email.sql?raw";
+import agentOptionsSql from "../../../migrations/0129_agent_options.sql?raw";
 
 // Another known divergence from production, on top of the one below:
 // D1's exec() splits its input by newline and executes each non-empty
@@ -462,6 +463,7 @@ export async function applyTestSchema(): Promise<void> {
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(sftpRoutesSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(agentsSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(agentEmailSql)));
+  await env.DB.exec(toOneStatementPerLine(stripSqlComments(agentOptionsSql)));
 }
 
 /**

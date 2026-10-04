@@ -234,6 +234,7 @@ function startNew() {
     schedule: { every: "week", time: "08:00", weekday: 1 },
     deliver: { task: true, email: false },
     recipients: [],
+    options: { ...(first?.options ?? {}) },
   };
   problem = "";
   render();
@@ -248,6 +249,7 @@ function startEdit(agent) {
     schedule: { ...agent.schedule },
     deliver: { ...(agent.deliver ?? { task: true, email: false }) },
     recipients: (agent.recipients ?? []).filter((p) => p.id !== agent.authorId).map((p) => p.id),
+    options: { ...(agent.options ?? {}) },
   };
   problem = "";
   render();
@@ -311,6 +313,8 @@ function formPanel() {
     report?.id,
     (v) => {
       draft.report = v;
+      // Decision 0624: a report's own options, from its defaults.
+      draft.options = { ...(offered.find((r) => r.id === v)?.options ?? {}) };
       const allowed = offered.find((r) => r.id === v)?.orgIds ?? [];
       draft.orgIds = draft.orgIds.filter((id) => allowed.includes(id));
       if (draft.orgIds.length === 0 && allowed.length > 0) draft.orgIds = [allowed[0]];
@@ -337,7 +341,7 @@ function formPanel() {
     primary: true,
     label: editing === "new" ? t("agents.form.savepaused") : t("agents.form.save"),
     onclick: async () => {
-      const body = { name: draft.name, report: report?.id, orgIds: draft.orgIds, schedule: draft.schedule, deliver: draft.deliver, recipients: draft.recipients };
+      const body = { name: draft.name, report: report?.id, orgIds: draft.orgIds, schedule: draft.schedule, deliver: draft.deliver, recipients: draft.recipients, options: draft.options };
       const r =
         editing === "new"
           ? await call("/api/agents", json("POST", body))
@@ -359,9 +363,40 @@ function formPanel() {
     el("div", { class: "cardhead" }, [el("h3", { text: editing === "new" ? t("agents.form.new") : t("agents.form.edit") }), el("div", { class: "dobuttons" }, [cancel, save])]),
     el("div", { class: "dotwo" }, [field(t("agents.form.name"), name, null, "agent-name"), field(t("agents.form.report"), reportSelect, report ? t(`agents.reporthint.${report.id}`) : null, "agent-report")]),
     field(t("agents.form.orgs"), orgBoxes, t("agents.form.orgshint")),
+    optionFields(report),
     scheduleFields(),
     deliveryFields(),
   ]);
+}
+
+/**
+ * **What the report is narrowed by — decision 0624.** Only the report's
+ * own: an amount for outstanding payables, days for the rest.
+ */
+function optionFields(report) {
+  const keys = report?.optionKeys ?? [];
+  if (keys.length === 0) return el("div", { id: "agent-options", hidden: "hidden" });
+  return el(
+    "div",
+    { class: "agentwhen", id: "agent-options" },
+    keys.map((key) => {
+      const input = el("input", {
+        type: "number",
+        id: `agent-option-${key}`,
+        min: key === "minTotal" ? "0" : "1",
+        step: key === "minTotal" ? "0.01" : "1",
+        value: draft.options?.[key] === undefined ? "" : String(draft.options[key]),
+        placeholder: key === "minTotal" ? t("agents.option.mintotal.placeholder") : "",
+        oninput: (e) => {
+          const v = e.target.value;
+          draft.options = { ...draft.options };
+          if (v === "") delete draft.options[key];
+          else draft.options[key] = Number(v);
+        },
+      });
+      return field(t(`agents.option.${key.toLowerCase()}`), input, t(`agents.option.${key.toLowerCase()}.hint`), `agent-option-${key}`);
+    })
+  );
 }
 
 /**
@@ -460,7 +495,11 @@ function render() {
     frame(
       el("div", {}, [
         topbar(t("nav.agents"), t("agents.subtitle")),
-        el("div", { class: "panel" }, [el("div", { class: "agenthead" }, [zoneLine(), el("div", { class: "dobuttons" }, right)])]),
+        el("div", { class: "panel" }, [
+          el("div", { class: "agenthead" }, [zoneLine(), el("div", { class: "dobuttons" }, right)]),
+          // Decision 0624: Run now was taken to send to everyone; it does not.
+          ...(canMake ? [el("p", { class: "muted sm", id: "agents-runnow-hint", text: t("agents.runnowhint") })] : []),
+        ]),
         ...(problem ? [el("div", { class: "note", id: "agents-note", text: problem })] : []),
         ...(editing ? [formPanel()] : []),
         el("div", { class: "panel" }, [

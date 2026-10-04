@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 4 October 2026 (decision 0623). A living document: what
+Last updated 4 October 2026 (decision 0624). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,14 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Agents, slice 3: ageing and two new reports (0624)
+
+Outstanding payables now split each supplier's amount by days past due.
+Two new reports: invoices due soon that are not yet payment-eligible, and
+stuck work (tasks open longer than a number of days). Each report can be
+narrowed (a minimum amount, a number of days), rows past a limit are
+highlighted, and totals are compared with what each person was last sent.
 
 ### Agents, slice 2: email (0623)
 

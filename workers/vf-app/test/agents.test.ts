@@ -170,9 +170,10 @@ describe("starting, running and pausing", () => {
     const table = await tableOf("dan", (await notesOf("dan"))[0].id);
     expect(table.report).toBe("outstanding_payables");
     // inv-c is not eligible, inv-d went to the ERP, inv-e was discarded.
+    // Aged against the due date (decision 0624): inv-a is 34 days past due, inv-b not yet due.
     expect(table.rows).toEqual([
-      { org: "Acme UK", supplier: "Kingsway", currency: "GBP", invoices: 1, total: 120, oldestDue: "2026-09-01", daysPastDue: 34 },
-      { org: "Acme DE", supplier: "Lager Nord GmbH", currency: "EUR", invoices: 1, total: 200, oldestDue: "2026-10-20", daysPastDue: 0 },
+      { org: "Acme UK", supplier: "Kingsway", currency: "GBP", invoices: 1, notDue: 0, d30: 0, d60: 120, d90: 0, d90plus: 0, total: 120, daysPastDue: 34 },
+      { org: "Acme DE", supplier: "Lager Nord GmbH", currency: "EUR", invoices: 1, notDue: 200, d30: 0, d60: 0, d90: 0, d90plus: 0, total: 200, daysPastDue: 0 },
     ]);
     expect(table.totals).toEqual(
       expect.arrayContaining([

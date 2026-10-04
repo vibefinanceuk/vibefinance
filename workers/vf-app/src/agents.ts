@@ -97,6 +97,55 @@ export interface ReportTable {
   /** Chosen organisations left out because the author no longer holds the report's permission there. */
   skippedOrgs: string[];
   asAt: string;
+  /** Decision 0624: this recipient's totals the last time it was sent to them, to compare with. */
+  previous?: ReportTotal[] | null;
+  /** Decision 0624: the options it ran with, so a reader is told (e.g. "at least 1,000.00"). */
+  options?: AgentOptions;
+}
+
+/**
+ * **What an agent's report is narrowed by — decision 0624.** Each report
+ * takes only its own; the rest are dropped.
+ *
+ * - `minTotal` (outstanding payables): only suppliers owing at least this,
+ *   in their own currency.
+ * - `highlightDays` (outstanding payables): rows whose oldest invoice is
+ *   more than this many days past due are highlighted. Default 60.
+ * - `withinDays` (due soon): invoices due within this many days. Default 7.
+ * - `olderThanDays` (stuck work): tasks open longer than this. Default 5.
+ */
+export interface AgentOptions {
+  minTotal?: number;
+  highlightDays?: number;
+  withinDays?: number;
+  olderThanDays?: number;
+}
+
+const OPTION_RULES: Record<string, Record<keyof AgentOptions, { min: number; max: number; default?: number } | undefined>> = {
+  outstanding_payables: { minTotal: { min: 0, max: 1e12 }, highlightDays: { min: 1, max: 365, default: 60 }, withinDays: undefined, olderThanDays: undefined },
+  due_soon_not_eligible: { minTotal: undefined, highlightDays: undefined, withinDays: { min: 1, max: 90, default: 7 }, olderThanDays: undefined },
+  stuck_work: { minTotal: undefined, highlightDays: undefined, withinDays: undefined, olderThanDays: { min: 1, max: 365, default: 5 } },
+};
+
+/** A report's options as sent, checked: the options (defaults filled in), or why not. */
+export function checkOptions(reportId: string, input: unknown): { options: AgentOptions } | { reason: string } {
+  const rules = OPTION_RULES[reportId];
+  const given = input && typeof input === "object" ? (input as Record<string, unknown>) : {};
+  const options: AgentOptions = {};
+  if (!rules) return { options };
+  for (const [key, rule] of Object.entries(rules) as [keyof AgentOptions, { min: number; max: number; default?: number } | undefined][]) {
+    if (!rule) continue;
+    const raw = given[key];
+    if (raw === undefined || raw === null || raw === "") {
+      if (rule.default !== undefined) options[key] = rule.default;
+      continue;
+    }
+    const n = Number(raw);
+    const whole = key !== "minTotal";
+    if (!Number.isFinite(n) || n < rule.min || n > rule.max || (whole && !Number.isInteger(n))) return { reason: `option_invalid_${key.toLowerCase()}` };
+    options[key] = key === "minTotal" ? Math.round(n * 100) / 100 : n;
+  }
+  return { options };
 }
 
 interface Org {
@@ -107,7 +156,7 @@ interface Org {
 interface AgentReport {
   id: string;
   permission: Permission;
-  gather(db: D1Database, authorId: string, orgs: Org[], now: Date): Promise<Omit<ReportTable, "report" | "skippedOrgs" | "asAt">>;
+  gather(db: D1Database, authorId: string, orgs: Org[], now: Date, options: AgentOptions): Promise<Omit<ReportTable, "report" | "skippedOrgs" | "asAt">>;
 }
 
 function addTotal(totals: Map<string, ReportTotal>, currency: string | null, amount: number | null, count = 1) {
@@ -130,16 +179,20 @@ function daysBetween(fromIso: string, to: Date): number {
  * **Outstanding payables** — payment-eligible (process completed, or at
  * its exit stage; never discarded or returned) and **not yet delivered to
  * the ERP**: no Destination delivery (ERP CSV export included, since
- * 0586) has succeeded for it. By organisation, supplier and currency,
- * oldest due date first.
+ * 0586) has succeeded for it. By organisation, supplier and currency.
+ *
+ * **Aged against the due date (BT-9) — decision 0624**: not yet due (or no
+ * due date), then 1–30, 31–60, 61–90 and over 90 days past due, with the
+ * oldest's days past due. Oldest first. `minTotal` keeps suppliers owing
+ * at least that; `highlightDays` marks rows whose oldest is past it.
  */
-async function gatherOutstanding(db: D1Database, authorId: string, orgs: Org[], now: Date) {
+async function gatherOutstanding(db: D1Database, authorId: string, orgs: Org[], now: Date, options: AgentOptions) {
   const visible = await unitsWherePermitted(db, authorId, "AP.Analysis");
   const exits = await exitStageIds(db);
   const exitSql = exits.length === 0 ? "0" : `pi.current_stage_id IN (${exits.map(() => "?").join(", ")})`;
   const seen = new Set<string>();
-  const groups = new Map<string, { org: string; supplier: string | null; currency: string; count: number; total: number; oldestDue: string | null }>();
-  const totals = new Map<string, ReportTotal>();
+  type Group = { org: string; supplier: string | null; currency: string; count: number; total: number; notDue: number; d30: number; d60: number; d90: number; d90plus: number; oldest: number | null };
+  const groups = new Map<string, Group>();
   for (const org of orgs) {
     const units = await scopedToChosenOrg(db, visible, org.id);
     const clause = unitClause({ units }, "h.org_unit_id");
@@ -164,37 +217,180 @@ async function gatherOutstanding(db: D1Database, authorId: string, orgs: Org[], 
       if (seen.has(r.id)) continue;
       seen.add(r.id);
       const key = `${org.id}::${r.supplier_name ?? ""}::${r.currency}`;
-      const g = groups.get(key) ?? { org: org.name, supplier: r.supplier_name, currency: r.currency, count: 0, total: 0, oldestDue: null };
+      const g: Group = groups.get(key) ?? { org: org.name, supplier: r.supplier_name, currency: r.currency, count: 0, total: 0, notDue: 0, d30: 0, d60: 0, d90: 0, d90plus: 0, oldest: null };
       g.count += 1;
       g.total += r.total;
-      if (r.due_date && (!g.oldestDue || r.due_date < g.oldestDue)) g.oldestDue = r.due_date;
+      const past = r.due_date ? daysBetween(r.due_date, now) : null;
+      if (past === null || past <= 0) g.notDue += r.total;
+      else if (past <= 30) g.d30 += r.total;
+      else if (past <= 60) g.d60 += r.total;
+      else if (past <= 90) g.d90 += r.total;
+      else g.d90plus += r.total;
+      if (past !== null && past > 0 && (g.oldest === null || past > g.oldest)) g.oldest = past;
       groups.set(key, g);
-      addTotal(totals, r.currency, r.total);
     }
   }
-  const rows = [...groups.values()]
-    .sort((a, b) => (a.oldestDue ?? "9999").localeCompare(b.oldestDue ?? "9999") || b.total - a.total)
+  const kept = [...groups.values()].filter((g) => options.minTotal === undefined || g.total >= options.minTotal);
+  const totals = new Map<string, ReportTotal>();
+  for (const g of kept) addTotal(totals, g.currency, g.total, g.count);
+  const rows = kept
+    .sort((a, b) => (b.oldest ?? -1) - (a.oldest ?? -1) || b.total - a.total)
     .map((g) => ({
       org: g.org,
       supplier: g.supplier,
       currency: g.currency,
       invoices: g.count,
+      notDue: round2(g.notDue),
+      d30: round2(g.d30),
+      d60: round2(g.d60),
+      d90: round2(g.d90),
+      d90plus: round2(g.d90plus),
       total: round2(g.total),
-      oldestDue: g.oldestDue,
-      daysPastDue: g.oldestDue ? Math.max(0, daysBetween(g.oldestDue, now)) : null,
+      daysPastDue: g.oldest ?? 0,
+      ...(options.highlightDays !== undefined && (g.oldest ?? 0) > options.highlightDays ? { _highlight: 1 } : {}),
     }));
   return {
     columns: [
       { key: "org", label: "agents.col.org", kind: "text" as const },
       { key: "supplier", label: "agents.col.supplier", kind: "text" as const },
-      { key: "invoices", label: "agents.col.invoices", kind: "count" as const },
-      { key: "total", label: "agents.col.total", kind: "money" as const },
       { key: "currency", label: "agents.col.currency", kind: "text" as const },
-      { key: "oldestDue", label: "agents.col.oldestdue", kind: "date" as const },
+      { key: "invoices", label: "agents.col.invoices", kind: "count" as const },
+      { key: "notDue", label: "agents.col.notdue", kind: "money" as const },
+      { key: "d30", label: "agents.col.d30", kind: "money" as const },
+      { key: "d60", label: "agents.col.d60", kind: "money" as const },
+      { key: "d90", label: "agents.col.d90", kind: "money" as const },
+      { key: "d90plus", label: "agents.col.d90plus", kind: "money" as const },
+      { key: "total", label: "agents.col.total", kind: "money" as const },
       { key: "daysPastDue", label: "agents.col.dayspastdue", kind: "days" as const },
     ],
     rows,
     totals: [...totals.values()].map((t) => ({ ...t, total: t.total === null ? null : round2(t.total) })),
+  };
+}
+
+/**
+ * **Due soon, not yet payment-eligible — decision 0624.** Invoices still
+ * in progress short of their exit stage whose due date falls today or in
+ * the next `withinDays` days: the ones to push through before a discount
+ * or a supplier's patience runs out. Soonest first; due within two days
+ * highlighted.
+ */
+async function gatherDueSoon(db: D1Database, authorId: string, orgs: Org[], now: Date, options: AgentOptions) {
+  const visible = await unitsWherePermitted(db, authorId, "AP.Analysis");
+  const exits = await exitStageIds(db);
+  const notExit = exits.length === 0 ? "1" : `pi.current_stage_id NOT IN (${exits.map(() => "?").join(", ")})`;
+  const today = now.toISOString().slice(0, 10);
+  const until = new Date(now.getTime() + (options.withinDays ?? 7) * 86_400_000).toISOString().slice(0, 10);
+  const seen = new Set<string>();
+  const out: Record<string, string | number | null>[] = [];
+  const totals = new Map<string, ReportTotal>();
+  for (const org of orgs) {
+    const units = await scopedToChosenOrg(db, visible, org.id);
+    const clause = unitClause({ units }, "h.org_unit_id");
+    const rows = await db
+      .prepare(
+        `SELECT DISTINCT h.id AS id, COALESCE(h.invoice_number, json_extract(h.facts_json, '$."BT-1"')) AS number,
+                COALESCE(sup.name, json_extract(h.facts_json, '$."BT-27"')) AS supplier_name, s.name AS stage_name,
+                h.currency AS currency, h.total_with_vat AS total, json_extract(h.facts_json, '$."BT-9"') AS due_date
+         FROM invoice_headers h
+         JOIN process_instances pi ON pi.subject_type = 'invoice' AND pi.subject_id = h.id
+         JOIN process_stages s ON s.id = pi.current_stage_id
+         LEFT JOIN suppliers sup ON sup.id = h.supplier_id
+         WHERE pi.status = 'in_progress' AND ${notExit}
+           AND json_extract(h.facts_json, '$."BT-9"') >= ? AND json_extract(h.facts_json, '$."BT-9"') <= ? ${clause.sql}`
+      )
+      .bind(...exits, today, until, ...clause.binds)
+      .all<{ id: string; number: string | null; supplier_name: string | null; stage_name: string; currency: string | null; total: number | null; due_date: string }>();
+    for (const r of rows.results) {
+      if (seen.has(r.id)) continue;
+      seen.add(r.id);
+      const days = -daysBetween(r.due_date, now);
+      out.push({
+        org: org.name,
+        invoiceId: r.id,
+        invoice: r.number,
+        supplier: r.supplier_name,
+        stage: r.stage_name,
+        due: r.due_date.slice(0, 10),
+        daysToDue: days,
+        total: r.total === null ? null : round2(r.total),
+        currency: r.currency,
+        ...(days <= 2 ? { _highlight: 1 } : {}),
+      });
+      addTotal(totals, r.currency, r.total);
+    }
+  }
+  out.sort((a, b) => String(a.due).localeCompare(String(b.due)) || Number(b.total ?? 0) - Number(a.total ?? 0));
+  return {
+    columns: [
+      { key: "org", label: "agents.col.org", kind: "text" as const },
+      { key: "invoice", label: "agents.col.invoice", kind: "text" as const },
+      { key: "supplier", label: "agents.col.supplier", kind: "text" as const },
+      { key: "stage", label: "agents.col.stage", kind: "text" as const },
+      { key: "due", label: "agents.col.due", kind: "date" as const },
+      { key: "daysToDue", label: "agents.col.daystodue", kind: "days" as const },
+      { key: "total", label: "agents.col.total", kind: "money" as const },
+      { key: "currency", label: "agents.col.currency", kind: "text" as const },
+    ],
+    rows: out,
+    totals: [...totals.values()].map((t) => ({ ...t, total: t.total === null ? null : round2(t.total) })),
+  };
+}
+
+/**
+ * **Stuck work — decision 0624.** Tasks open longer than `olderThanDays`,
+ * by organisation, stage and who has them (or unclaimed), with how many
+ * and the oldest's age in days. Oldest first; twice the limit highlighted.
+ */
+async function gatherStuck(db: D1Database, authorId: string, orgs: Org[], now: Date, options: AgentOptions) {
+  const visible = await unitsWherePermitted(db, authorId, "AP.Analysis");
+  const older = options.olderThanDays ?? 5;
+  const before = new Date(now.getTime() - older * 86_400_000).toISOString().replace("T", " ").slice(0, 19);
+  const seen = new Set<string>();
+  type Group = { org: string; stage: string; person: string | null; count: number; oldest: number };
+  const groups = new Map<string, Group>();
+  let count = 0;
+  for (const org of orgs) {
+    const units = await scopedToChosenOrg(db, visible, org.id);
+    const clause = unitClause({ units }, "h.org_unit_id");
+    const rows = await db
+      .prepare(
+        `SELECT t.id AS id, t.created_at AS created_at, s.name AS stage_name, u.name AS user_name
+         FROM tasks t
+         JOIN process_stages s ON s.id = t.stage_id
+         LEFT JOIN org_users u ON u.id = COALESCE(t.owner_user_id, t.claimed_by)
+         LEFT JOIN stage_visits v ON v.id = t.stage_visit_id
+         LEFT JOIN process_instances pi ON pi.id = v.process_instance_id
+         LEFT JOIN invoice_headers h ON pi.subject_type = 'invoice' AND h.id = pi.subject_id
+         WHERE t.status = 'open' AND replace(t.created_at, 'T', ' ') < ? ${clause.sql}`
+      )
+      .bind(before, ...clause.binds)
+      .all<{ id: string; created_at: string; stage_name: string; user_name: string | null }>();
+    for (const r of rows.results) {
+      if (seen.has(r.id)) continue;
+      seen.add(r.id);
+      const age = daysBetween(r.created_at.replace(" ", "T"), now);
+      const key = `${org.id}::${r.stage_name}::${r.user_name ?? ""}`;
+      const g: Group = groups.get(key) ?? { org: org.name, stage: r.stage_name, person: r.user_name, count: 0, oldest: 0 };
+      g.count += 1;
+      g.oldest = Math.max(g.oldest, age);
+      groups.set(key, g);
+      count += 1;
+    }
+  }
+  const rows = [...groups.values()]
+    .sort((a, b) => b.oldest - a.oldest || b.count - a.count)
+    .map((g) => ({ org: g.org, stage: g.stage, person: g.person, open: g.count, oldestDays: g.oldest, ...(g.oldest >= older * 2 ? { _highlight: 1 } : {}) }));
+  return {
+    columns: [
+      { key: "org", label: "agents.col.org", kind: "text" as const },
+      { key: "stage", label: "agents.col.stage", kind: "text" as const },
+      { key: "person", label: "agents.col.person", kind: "text" as const },
+      { key: "open", label: "agents.col.stuck", kind: "count" as const },
+      { key: "oldestDays", label: "agents.col.oldestdays", kind: "days" as const },
+    ],
+    rows,
+    totals: count > 0 ? [{ currency: null, total: null, count }] : [],
   };
 }
 
@@ -320,7 +516,10 @@ async function gatherDuplicates(db: D1Database, authorId: string, orgs: Org[]) {
 /** The reports an agent can run, in the order the form offers them. */
 export const AGENT_REPORTS: AgentReport[] = [
   { id: "outstanding_payables", permission: "AP.Analysis", gather: gatherOutstanding },
-  { id: "overdue_not_eligible", permission: "AP.Analysis", gather: gatherOverdue },
+  // Decision 0624.
+  { id: "due_soon_not_eligible", permission: "AP.Analysis", gather: gatherDueSoon },
+  { id: "stuck_work", permission: "AP.Analysis", gather: gatherStuck },
+  { id: "overdue_not_eligible", permission: "AP.Analysis", gather: (db, a, o, n) => gatherOverdue(db, a, o, n) },
   { id: "accruals", permission: "AP.Analysis", gather: (db, a, o) => gatherAccruals(db, a, o) },
   { id: "open_tasks", permission: "AP.Analysis", gather: (db, a, o) => gatherOpenTasks(db, a, o) },
   { id: "possible_duplicates", permission: "AP.FraudReview", gather: (db, a, o) => gatherDuplicates(db, a, o) },
@@ -360,6 +559,7 @@ interface AgentRow {
   updated_at: string;
   deliver_task: number;
   deliver_email: number;
+  options_json: string;
 }
 
 interface Person {
@@ -398,6 +598,17 @@ function parseIds(json: string): string[] {
   } catch {
     return [];
   }
+}
+
+function parseOptions(row: { report: string; options_json?: string | null }): AgentOptions {
+  let raw: unknown = {};
+  try {
+    raw = JSON.parse(row.options_json ?? "{}");
+  } catch {
+    raw = {};
+  }
+  const checked = checkOptions(row.report, raw);
+  return "options" in checked ? checked.options : (checkOptions(row.report, {}) as { options: AgentOptions }).options;
 }
 
 function parseSchedule(json: string): AgentSchedule | null {
@@ -468,6 +679,7 @@ async function toBody(db: D1Database, rows: AgentRow[]) {
       lastRun: last.get(r.id) ?? null,
       createdAt: r.created_at,
       deliver: { task: r.deliver_task === 1, email: r.deliver_email === 1 },
+      options: parseOptions(r),
       recipients: (await recipientsOf(db, r.id)).map((p) => ({ id: p.id, name: p.name, optedOut: p.optedOutAt !== null })),
     });
   }
@@ -498,7 +710,14 @@ export async function handleListAgents(db: D1Database, userId: string, opts: { a
   const reports = [];
   for (const r of AGENT_REPORTS) {
     const visible = await unitsWherePermitted(db, userId, r.permission);
-    reports.push({ id: r.id, permission: r.permission, orgIds: units.filter((u) => covers(visible, u.id)).map((u) => u.id) });
+    reports.push({
+      id: r.id,
+      permission: r.permission,
+      orgIds: units.filter((u) => covers(visible, u.id)).map((u) => u.id),
+      // Decision 0624: what it can be narrowed by, with the defaults.
+      options: (checkOptions(r.id, {}) as { options: AgentOptions }).options,
+      optionKeys: Object.entries(OPTION_RULES[r.id] ?? {}).filter(([, rule]) => rule).map(([k]) => k),
+    });
   }
   return {
     status: 200,
@@ -525,7 +744,7 @@ async function checkAgentInput(
   input: Record<string, unknown>,
   current?: AgentRow
 ): Promise<
-  | { name: string; report: AgentReport; orgIds: string[]; schedule: AgentSchedule; recipients: string[]; deliverTask: boolean; deliverEmail: boolean }
+  | { name: string; report: AgentReport; orgIds: string[]; schedule: AgentSchedule; recipients: string[]; deliverTask: boolean; deliverEmail: boolean; options: AgentOptions }
   | { reason: string; message: string }
 > {
   const name = typeof input.name === "string" ? input.name.trim() : current?.name ?? "";
@@ -564,7 +783,11 @@ async function checkAgentInput(
       return { reason: "recipient_not_manager", message: "an agent goes only to its author and people with the AP Manager permission" };
     }
   }
-  return { name, report, orgIds, schedule: checked.schedule, recipients, deliverTask, deliverEmail };
+  // Decision 0624: the report's own options; kept from before where not sent and the report is unchanged.
+  const optionsInput = input.options ?? (current && current.report === report.id ? JSON.parse(current.options_json ?? "{}") : {});
+  const opts = checkOptions(report.id, optionsInput);
+  if ("reason" in opts) return { reason: opts.reason, message: "an option is out of range" };
+  return { name, report, orgIds, schedule: checked.schedule, recipients, deliverTask, deliverEmail, options: opts.options };
 }
 
 /** Its author and the people chosen; anyone already there keeps whether they stopped it. */
@@ -593,10 +816,10 @@ export async function handleCreateAgent(db: D1Database, userId: string, input: R
   const at = now.toISOString();
   await db
     .prepare(
-      `INSERT INTO agents (id, name, author_id, report, org_unit_ids_json, schedule_json, status, created_at, updated_at, deliver_task, deliver_email)
-       VALUES (?, ?, ?, ?, ?, ?, 'paused', ?, ?, ?, ?)`
+      `INSERT INTO agents (id, name, author_id, report, org_unit_ids_json, schedule_json, status, created_at, updated_at, deliver_task, deliver_email, options_json)
+       VALUES (?, ?, ?, ?, ?, ?, 'paused', ?, ?, ?, ?, ?)`
     )
-    .bind(id, checked.name, userId, checked.report.id, JSON.stringify(checked.orgIds), JSON.stringify(checked.schedule), at, at, checked.deliverTask ? 1 : 0, checked.deliverEmail ? 1 : 0)
+    .bind(id, checked.name, userId, checked.report.id, JSON.stringify(checked.orgIds), JSON.stringify(checked.schedule), at, at, checked.deliverTask ? 1 : 0, checked.deliverEmail ? 1 : 0, JSON.stringify(checked.options))
     .run();
   await setRecipients(db, id, userId, checked.recipients, now);
   const row = (await loadAgent(db, id))!;
@@ -628,9 +851,9 @@ export async function handleUpdateAgent(db: D1Database, userId: string, id: stri
   await db
     .prepare(
       `UPDATE agents SET name = ?, report = ?, org_unit_ids_json = ?, schedule_json = ?, status = ?, paused_reason = NULL,
-              next_run_at = ?, updated_at = ?, deliver_task = ?, deliver_email = ? WHERE id = ?`
+              next_run_at = ?, updated_at = ?, deliver_task = ?, deliver_email = ?, options_json = ? WHERE id = ?`
     )
-    .bind(checked.name, checked.report.id, JSON.stringify(checked.orgIds), JSON.stringify(checked.schedule), status, nextRunAt, now.toISOString(), checked.deliverTask ? 1 : 0, checked.deliverEmail ? 1 : 0, id)
+    .bind(checked.name, checked.report.id, JSON.stringify(checked.orgIds), JSON.stringify(checked.schedule), status, nextRunAt, now.toISOString(), checked.deliverTask ? 1 : 0, checked.deliverEmail ? 1 : 0, JSON.stringify(checked.options), id)
     .run();
   await setRecipients(db, id, row.author_id, checked.recipients, now);
   return { status: 200, body: (await toBody(db, [(await loadAgent(db, id))!]))[0] };
@@ -764,12 +987,18 @@ export async function runAgent(
       .bind(status, new Date().toISOString(), rowCount, totals ? JSON.stringify(totals) : null, error, runId)
       .run();
   };
-  const record = async (userId: string, channel: "task" | "email", status: "sent" | "failed", rowCount: number, extra: { messageId?: string | null; copyKey?: string | null; error?: string | null } = {}) => {
+  const record = async (
+    userId: string,
+    channel: "task" | "email",
+    status: "sent" | "failed",
+    rowCount: number,
+    extra: { messageId?: string | null; copyKey?: string | null; error?: string | null; totals?: ReportTotal[] | null } = {}
+  ) => {
     await db
       .prepare(
-        "INSERT INTO agent_deliveries (id, run_id, agent_id, user_id, channel, status, row_count, message_id, copy_key, error, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+        "INSERT INTO agent_deliveries (id, run_id, agent_id, user_id, channel, status, row_count, message_id, copy_key, error, created_at, totals_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
       )
-      .bind(`dlv-${crypto.randomUUID()}`, runId, agent.id, userId, channel, status, rowCount, extra.messageId ?? null, extra.copyKey ?? null, extra.error ?? null, now.toISOString())
+      .bind(`dlv-${crypto.randomUUID()}`, runId, agent.id, userId, channel, status, rowCount, extra.messageId ?? null, extra.copyKey ?? null, extra.error ?? null, now.toISOString(), extra.totals ? JSON.stringify(extra.totals) : null)
       .run();
   };
 
@@ -817,8 +1046,21 @@ export async function runAgent(
       const theirs = isAuthor ? null : await unitsWherePermitted(db, person.id, report.permission);
       const theirOrgs = isAuthor ? orgs : orgs.filter((o) => covers(theirs, o.id));
       if (theirOrgs.length === 0) continue;
-      const gathered = await report.gather(db, person.id, theirOrgs, now);
-      const table: ReportTable = { report: report.id, ...gathered, skippedOrgs, asAt: now.toISOString() };
+      const options = parseOptions(agent);
+      const gathered = await report.gather(db, person.id, theirOrgs, now, options);
+      // Decision 0624: compared with what this person was last sent.
+      const last = await db
+        .prepare("SELECT totals_json FROM agent_deliveries WHERE agent_id = ? AND user_id = ? AND status = 'sent' AND totals_json IS NOT NULL ORDER BY created_at DESC LIMIT 1")
+        .bind(agent.id, person.id)
+        .first<{ totals_json: string }>();
+      const table: ReportTable = {
+        report: report.id,
+        ...gathered,
+        skippedOrgs,
+        asAt: now.toISOString(),
+        previous: last ? (JSON.parse(last.totals_json) as ReportTotal[]) : null,
+        options,
+      };
       if (table.rows.length === 0) continue;
       if (isAuthor) authorTable = table;
       anyTable = anyTable ?? table;
@@ -828,7 +1070,7 @@ export async function runAgent(
           .prepare("INSERT INTO agent_notes (id, agent_id, run_id, user_id, report_json, created_at) VALUES (?, ?, ?, ?, ?, ?)")
           .bind(`note-${crypto.randomUUID()}`, agent.id, runId, person.id, JSON.stringify(table), now.toISOString())
           .run();
-        await record(person.id, "task", "sent", table.rows.length);
+        await record(person.id, "task", "sent", table.rows.length, { totals: table.totals });
         sent += 1;
       }
 
@@ -873,7 +1115,7 @@ export async function runAgent(
           attachments: [{ filename: built.filename, content: bytesToBase64(built.csv) }],
         });
         if (result.ok) {
-          await record(person.id, "email", "sent", table.rows.length, { messageId: result.messageId, copyKey });
+          await record(person.id, "email", "sent", table.rows.length, { messageId: result.messageId, copyKey, totals: table.totals });
           sent += 1;
         } else {
           await record(person.id, "email", "failed", table.rows.length, { copyKey, error: result.error.slice(0, 300) });

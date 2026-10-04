@@ -33,10 +33,24 @@ export function cellText(value, kind) {
   return String(value);
 }
 
-function totalsLine(totals) {
-  const parts = (totals ?? []).map((x) =>
-    x.currency ? `${cellText(x.total, "money")} ${x.currency} (${t("agents.notes.invoices").replace("{n}", String(x.count))})` : t("agents.notes.items").replace("{n}", String(x.count))
-  );
+/** Decision 0624: "up 50.00 since the last report", against what this person was last sent. */
+export function compareText(x, previous) {
+  if (!previous) return "";
+  const before = previous.find((p) => (p.currency ?? null) === (x.currency ?? null));
+  const now = x.currency ? Number(x.total ?? 0) : x.count;
+  const then = before ? (x.currency ? Number(before.total ?? 0) : before.count) : 0;
+  const diff = Math.round((now - then) * 100) / 100;
+  if (diff === 0) return t("agents.notes.same");
+  const n = x.currency ? cellText(Math.abs(diff), "money") : String(Math.abs(diff));
+  return t(diff > 0 ? "agents.notes.up" : "agents.notes.down").replace("{n}", n);
+}
+
+function totalsLine(totals, previous) {
+  const parts = (totals ?? []).map((x) => {
+    const base = x.currency ? `${cellText(x.total, "money")} ${x.currency} (${t("agents.notes.invoices").replace("{n}", String(x.count))})` : t("agents.notes.items").replace("{n}", String(x.count));
+    const change = compareText(x, previous);
+    return change ? `${base}, ${change}` : base;
+  });
   return parts.join(" · ");
 }
 
@@ -45,6 +59,22 @@ export function reportTable(table) {
   const numeric = new Set(["money", "count", "days", "percent"]);
   return el("div", { class: "agentreport" }, [
     ...(table.skippedOrgs?.length ? [el("p", { class: "muted sm", text: t("agents.notes.skipped").replace("{orgs}", table.skippedOrgs.join(", ")) })] : []),
+    // Decision 0624: what narrowed it, and what a highlight means.
+    ...(table.options?.minTotal !== undefined ? [el("p", { class: "muted sm", text: t("agents.notes.mintotal").replace("{n}", cellText(table.options.minTotal, "money")) })] : []),
+    ...(table.rows.some((r) => r._highlight)
+      ? [
+          el("p", {
+            class: "muted sm",
+            text: t("agents.notes.highlighted").replace(
+              "{why}",
+              t(`agents.notes.why.${table.report}`).replace(
+                "{n}",
+                String(table.report === "outstanding_payables" ? table.options?.highlightDays ?? "" : (table.options?.olderThanDays ?? 5) * 2)
+              )
+            ),
+          }),
+        ]
+      : []),
     el("div", { class: "agentreportwrap" }, [
       el("table", { class: "agentreporttable" }, [
         el("thead", {}, [el("tr", {}, table.columns.map((c) => el("th", { class: numeric.has(c.kind) ? "num" : "", text: t(c.label) })))]),
@@ -54,7 +84,7 @@ export function reportTable(table) {
           table.rows.map((row) =>
             el(
               "tr",
-              {},
+              row._highlight ? { class: "agenthighlight" } : {},
               table.columns.map((c) => {
                 const raw = row[c.key];
                 const value = c.key === "person" && (raw === null || raw === undefined) ? t("agents.notes.unclaimed") : cellText(raw, c.kind);
@@ -65,7 +95,7 @@ export function reportTable(table) {
         ),
       ]),
     ]),
-    ...(table.totals?.length ? [el("p", { class: "muted sm", text: `${t("agents.notes.total")} ${totalsLine(table.totals)}` })] : []),
+    ...(table.totals?.length ? [el("p", { class: "muted sm", text: `${t("agents.notes.total")} ${totalsLine(table.totals, table.previous)}` })] : []),
   ]);
 }
 

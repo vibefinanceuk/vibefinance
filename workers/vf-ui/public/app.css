@@ -5218,3 +5218,6 @@
 /* Agents, email — decision 0623. */
 .agentto { margin-top: 2px; }
 .agentstopnotice { margin-bottom: 12px; }
+/* Agents, highlights — decision 0624. */
+.agentreporttable tr.agenthighlight td { color: var(--text-danger); font-weight: 700; }
+#agents-runnow-hint { margin: 6px 0 0; }
