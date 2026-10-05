@@ -162,3 +162,54 @@ describe("the credential it forwards (decision 0188)", () => {
     expect(response.status === 503 ? body.reason : "forwarded").toBeTruthy();
   });
 });
+
+describe("refreshing an environment's licence now — decision 0640", () => {
+  const fleet = {
+    customers: [
+      {
+        environments: [
+          { id: "acme-production", deployed: true, instanceUrl: "https://vf-app.acme.example" },
+          { id: "northwind-sandbox", deployed: false, instanceUrl: null },
+        ],
+      },
+    ],
+  };
+  const licence = (seen: Request[]) => ({
+    fetch: async (r: Request) => {
+      seen.push(r);
+      return new Response(JSON.stringify(fleet), { headers: { "Content-Type": "application/json" } });
+    },
+  }) as unknown as Fetcher;
+
+  it("asks the environment at the address the control plane records, and says what it now holds", async () => {
+    const { refreshLicence } = await import("../src/index.js");
+    const seen: Request[] = [];
+    const asked: string[] = [];
+    const response = await refreshLicence({ LICENCE_SERVICE: licence(seen), ADMIN_API_KEY: "k" }, "acme-production", "dan@vibefinance.test", async (input, init) => {
+      asked.push(`${init?.method} ${String(input)}`);
+      return new Response(JSON.stringify({ status: "refreshed", currentState: { known: true, status: "active", plan: "standard" } }));
+    });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ status: "refreshed", environmentId: "acme-production", currentState: { known: true, status: "active", plan: "standard" } });
+    expect(asked).toEqual(["POST https://vf-app.acme.example/licence/refresh"]);
+    expect(seen[0].headers.get("Authorization")).toBe("Bearer k");
+  });
+
+  it("says when the environment is not deployed, unknown, unreachable or could not refresh", async () => {
+    const { refreshLicence } = await import("../src/index.js");
+    const env = { LICENCE_SERVICE: licence([]), ADMIN_API_KEY: "k" };
+    const never = async () => {
+      throw new Error("not asked");
+    };
+    expect(((await (await refreshLicence(env, "northwind-sandbox", "dan", never)).json()) as { reason: string }).reason).toBe("not_deployed");
+    expect((await refreshLicence(env, "nobody", "dan", never)).status).toBe(404);
+    expect(((await (await refreshLicence(env, "acme-production", "dan", never)).json()) as { reason: string }).reason).toBe("unreachable");
+    const refused = await refreshLicence(env, "acme-production", "dan", async () => new Response(JSON.stringify({ status: "not_refreshed", reason: "signature_invalid" }), { status: 502 }));
+    expect(await refused.json()).toMatchObject({ reason: "not_refreshed", detail: "signature_invalid" });
+  });
+
+  it("is an operator route, behind Access like every other", async () => {
+    expect((await SELF.fetch("https://vf-admin.example/api/environments/acme-production/licence-refresh", { method: "POST" })).status).toBe(403);
+    expect((await SELF.fetch(asOperator("/api/environments/acme-production/licence-refresh"))).status).not.toBe(404);
+  });
+});

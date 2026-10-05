@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 5 October 2026 (decision 0639). A living document: what
+Last updated 5 October 2026 (decision 0640). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,12 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Refresh now in the operator console (0640)
+
+A licence saved in the console reaches its environment at once, and a
+Refresh now button asks any deployed environment to read its licence
+again, saying what it now holds or why it could not.
 
 ### The operator console matches the main site (0639)
 

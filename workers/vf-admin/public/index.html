@@ -1226,16 +1226,56 @@ function customerBlock(c) {
     const cell = tr.lastElementChild;
     cell.style.whiteSpace = "nowrap";
     cell.append(button("Licence", () => toggleLicence(tr, e)), button("Config", () => toggleConfig(tr, e)));
+    // Decision 0640: the environment reads its licence now, not at its next six-hourly read.
+    if (e.deployed) {
+      const refreshButton = button("Refresh now", () => refreshNow(e.id, refreshButton));
+      refreshButton.title = "Ask this environment to read its licence now";
+      cell.append(refreshButton);
+    }
     cell.querySelectorAll("button + button").forEach((b) => (b.style.marginLeft = "6px"));
     return tr;
   });
   // Decision 0639: the same columns for every customer, so one customer's line up with the next.
   const t = table(["Environment", "Where", "Licence", "People", ""], rows, "");
   t.classList.add("fleettable");
-  t.insertAdjacentHTML("afterbegin", '<colgroup><col style="width:17%"><col style="width:23%"><col><col style="width:72px"><col style="width:170px"></colgroup>');
+  t.insertAdjacentHTML("afterbegin", '<colgroup><col style="width:17%"><col style="width:23%"><col><col style="width:72px"><col style="width:280px"></colgroup>');
   t.querySelectorAll("th")[3].classList.add("num");
   block.append(t);
   return block;
+}
+
+/**
+ * **Refresh now — decision 0640.** The environment reads its licence
+ * from the control plane at once, and the console says what it now
+ * holds, or why it could not.
+ */
+/** Decision 0640: a saved licence reaches a deployed environment at once. */
+async function saveThenRefresh(e, body) {
+  const saved = await act("/licences", "POST", body);
+  if (saved && e.deployed) await refreshNow(e.id);
+  return saved;
+}
+
+async function refreshNow(environmentId, b) {
+  const label = b?.textContent;
+  if (b) {
+    b.disabled = true;
+    b.textContent = "Refreshing…";
+  }
+  try {
+    const result = await api(`/environments/${encodeURIComponent(environmentId)}/licence-refresh`, { method: "POST" });
+    const state = result.currentState;
+    note(`${environmentId} now holds its licence${state?.known ? `: ${state.plan}, ${state.status}` : ""}.`);
+    return true;
+  } catch (err) {
+    note(`${environmentId}: ${err.message}. It reads its licence again within six hours.`);
+    return false;
+  } finally {
+    if (b) {
+      b.disabled = false;
+      b.textContent = label;
+    }
+  }
 }
 
 function detailRow(tr, className) {
@@ -1302,7 +1342,7 @@ function toggleLicence(tr, e) {
     field("State", status),
     field("Reason", reason),
     button(e.licence ? "Save licence" : "Create licence", () =>
-      act("/licences", "POST", {
+      saveThenRefresh(e, {
         environmentId: e.id,
         plan: plan.value.trim(),
         volumeEntitlement: Number(volume.value),

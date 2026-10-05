@@ -85,6 +85,57 @@ const FORWARDED: readonly RegExp[] = [
   /^\/branding\/[^/]+$/,
 ];
 
+/**
+ * **Refresh now — decision 0640.** An environment reads its licence from
+ * the control plane every six hours (its cron), or when asked at
+ * `POST /licence/refresh` (decision 0004's pattern). This asks it, so a
+ * licence changed here reaches the environment at once.
+ *
+ * - **Where to ask is the control plane's record, never the caller's.**
+ *   The environment's `instanceUrl` comes from the fleet overview, read
+ *   with the admin key, and must be https; the caller names only the
+ *   environment's id.
+ * - The environment's refresh fetches the signed token itself and checks
+ *   its signature; nothing here carries a licence or a key to it.
+ * - It is a plain fetch to the environment's own address: this Worker has
+ *   `global_fetch_strictly_public`, so another Worker's workers.dev
+ *   address is reached over the public internet rather than refused
+ *   (decision 0005's 1042).
+ */
+export async function refreshLicence(
+  env: Pick<Env, "LICENCE_SERVICE" | "ADMIN_API_KEY">,
+  environmentId: string,
+  operator: string,
+  fetchFn: typeof fetch = (input, init) => fetch(input, init),
+): Promise<Response> {
+  const fleet = await env.LICENCE_SERVICE.fetch(
+    new Request("https://vf-licence/fleet-overview", {
+      headers: { Authorization: `Bearer ${env.ADMIN_API_KEY}`, "Cf-Access-Authenticated-User-Email": operator },
+    }),
+  );
+  if (!fleet.ok) return json({ error: "the fleet could not be read", reason: "fleet_unavailable" }, 502);
+  const body = (await fleet.json().catch(() => ({}))) as {
+    customers?: { environments?: { id: string; deployed?: boolean; instanceUrl?: string | null }[] }[];
+  };
+  const environment = (body.customers ?? []).flatMap((c) => c.environments ?? []).find((e) => e.id === environmentId);
+  if (!environment) return json({ error: `${environmentId} is not an environment`, reason: "unknown_environment" }, 404);
+  const base = environment.instanceUrl ?? "";
+  if (!environment.deployed || !/^https:\/\/[^/]+/.test(base)) {
+    return json({ error: `${environmentId} is not deployed yet`, reason: "not_deployed" }, 409);
+  }
+  let response: Response;
+  try {
+    response = await fetchFn(`${base.replace(/\/+$/, "")}/licence/refresh`, { method: "POST", signal: AbortSignal.timeout(10_000) });
+  } catch {
+    return json({ error: `${environmentId} could not be reached`, reason: "unreachable" }, 502);
+  }
+  const answer = (await response.json().catch(() => ({}))) as Record<string, unknown>;
+  if (!response.ok) {
+    return json({ error: `${environmentId} could not refresh its licence`, reason: "not_refreshed", detail: answer.reason ?? response.status }, 502);
+  }
+  return json({ status: "refreshed", environmentId, currentState: answer.currentState ?? null }, 200);
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
@@ -127,7 +178,8 @@ export default {
      * do with what they asked.
      */
     const path = url.pathname.slice("/api".length);
-    if (!FORWARDED.some((pattern) => pattern.test(path))) {
+    const refreshMatch = path.match(/^\/environments\/([^/]+)\/licence-refresh$/);
+    if (!refreshMatch && !FORWARDED.some((pattern) => pattern.test(path))) {
       return json({ error: `${path} is not an operator route` }, 404);
     }
 
@@ -145,6 +197,12 @@ export default {
      * recording (decision 0140), so forwarding it is what makes the
      * action attributable to a person rather than to a shared secret.
      */
+    // Decision 0640: the console asks an environment to read its licence now.
+    if (refreshMatch) {
+      if (request.method !== "POST") return json({ error: "use POST" }, 405);
+      return refreshLicence(env, decodeURIComponent(refreshMatch[1]), operator);
+    }
+
     const headers = new Headers(request.headers);
     headers.set("Authorization", `Bearer ${env.ADMIN_API_KEY}`);
     headers.set("Cf-Access-Authenticated-User-Email", operator);
