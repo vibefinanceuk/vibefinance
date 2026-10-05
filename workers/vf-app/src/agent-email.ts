@@ -88,6 +88,40 @@ const WORDS: Record<EmailLocale, Record<string, string>> = {
     "reason.notonfile": "Supplier not on file",
     "reason.onhold": "Supplier on hold",
     "summary.highlightedrow": "highlighted",
+    // Decision 0633: the agent's own question.
+    "report.query": "Your own question",
+    cutshort: "Only the first {n} rows are here. Narrow the question to see the rest.",
+    "col.country": "Supplier country",
+    "col.net": "Net",
+    "col.vat": "VAT",
+    "col.buyerref": "Buyer reference",
+    "col.ponumber": "Purchase order",
+    "col.status": "Status",
+    "col.delivered": "At the ERP",
+    "col.team": "Team",
+    "col.taskstatus": "Task status",
+    "col.created": "Created",
+    "col.agedays": "Age, days",
+    "col.claimed": "Claimed",
+    "col.ended": "Ended",
+    "col.m.count": "Count",
+    "col.m.sum": "{field}, added up",
+    "col.m.avg": "{field}, average",
+    "col.m.min": "{field}, lowest",
+    "col.m.max": "{field}, highest",
+    "col.m.first": "{field}, earliest",
+    "col.m.last": "{field}, latest",
+    "qstatus.in_progress": "In process",
+    "qstatus.completed": "Through the process",
+    "qstatus.returned_manually": "Returned to the supplier",
+    "qstatus.archived": "Archived",
+    "qstatus.none": "Not in a process",
+    "qtaskstatus.open": "Open",
+    "qtaskstatus.completed": "Completed",
+    "qtaskstatus.returned": "Returned",
+    "qtaskstatus.cancelled": "Cancelled",
+    "qyesno.yes": "Yes",
+    "qyesno.no": "No",
   },
   de: {
     "report.outstanding_payables": "Offene Verbindlichkeiten",
@@ -158,6 +192,40 @@ const WORDS: Record<EmailLocale, Record<string, string>> = {
     "reason.notonfile": "Lieferant nicht angelegt",
     "reason.onhold": "Lieferant gesperrt",
     "summary.highlightedrow": "hervorgehoben",
+    // Entscheidung 0633: die eigene Abfrage des Agenten.
+    "report.query": "Ihre eigene Abfrage",
+    cutshort: "Hier stehen nur die ersten {n} Zeilen. Grenzen Sie die Abfrage ein, um den Rest zu sehen.",
+    "col.country": "Land des Lieferanten",
+    "col.net": "Netto",
+    "col.vat": "USt.",
+    "col.buyerref": "Käuferreferenz",
+    "col.ponumber": "Bestellung",
+    "col.status": "Status",
+    "col.delivered": "Im ERP",
+    "col.team": "Team",
+    "col.taskstatus": "Aufgabenstatus",
+    "col.created": "Erstellt",
+    "col.agedays": "Alter, Tage",
+    "col.claimed": "Übernommen",
+    "col.ended": "Beendet",
+    "col.m.count": "Anzahl",
+    "col.m.sum": "{field}, zusammen",
+    "col.m.avg": "{field}, Durchschnitt",
+    "col.m.min": "{field}, kleinster Wert",
+    "col.m.max": "{field}, größter Wert",
+    "col.m.first": "{field}, frühestens",
+    "col.m.last": "{field}, spätestens",
+    "qstatus.in_progress": "In Bearbeitung",
+    "qstatus.completed": "Prozess durchlaufen",
+    "qstatus.returned_manually": "An den Lieferanten zurückgesandt",
+    "qstatus.archived": "Archiviert",
+    "qstatus.none": "In keinem Prozess",
+    "qtaskstatus.open": "Offen",
+    "qtaskstatus.completed": "Erledigt",
+    "qtaskstatus.returned": "Zurückgegeben",
+    "qtaskstatus.cancelled": "Abgebrochen",
+    "qyesno.yes": "Ja",
+    "qyesno.no": "Nein",
   },
 };
 
@@ -175,7 +243,10 @@ function w(locale: EmailLocale, key: string): string {
 
 /** A column's label key (`agents.col.supplier`) in the language. */
 export function label(locale: EmailLocale, key: string): string {
-  return w(locale, key.replace(/^agents\./, ""));
+  // Decision 0633: a measure's label says it of its field ("Sum of {field}").
+  const [own, field] = key.split("|");
+  const words = w(locale, own.replace(/^agents\./, ""));
+  return field ? words.replace("{field}", label(locale, field)) : words;
 }
 
 function esc(s: string): string {
@@ -184,8 +255,10 @@ function esc(s: string): string {
 
 const NUMERIC = new Set(["money", "count", "days", "percent"]);
 
-export function cell(locale: EmailLocale, value: string | number | null | undefined, kind: string, key: string): string {
+export function cell(locale: EmailLocale, value: string | number | null | undefined, kind: string, key: string, enumKey?: string): string {
   if (key === "person" && (value === null || value === undefined)) return w(locale, "unclaimed");
+  // Decision 0633: a value from a closed set, in words.
+  if (enumKey && typeof value === "string") return w(locale, `${enumKey.replace(/^agents\./, "")}.${value}`);
   if (key === "reason" && typeof value === "string") return w(locale, `reason.${value}`);
   if (value === null || value === undefined || value === "") return "—";
   const tag = locale === "de" ? "de-DE" : "en-GB";
@@ -209,6 +282,7 @@ export function reportCsv(locale: EmailLocale, table: ReportTable): string {
           const v = row[c.key];
           if (c.key === "person" && (v === null || v === undefined)) return quote(w(locale, "unclaimed"));
           if (c.key === "reason" && typeof v === "string") return quote(w(locale, `reason.${v}`));
+          if (c.enumKey && typeof v === "string") return quote(cell(locale, v, c.kind, c.key, c.enumKey));
           if (v === null || v === undefined) return "";
           return typeof v === "number" ? String(v) : quote(String(v));
         })
@@ -265,6 +339,8 @@ function optionLines(locale: EmailLocale, table: ReportTable): string[] {
   if (o.minTotal !== undefined) lines.push(w(locale, "mintotal").replace("{n}", cell(locale, o.minTotal, "money", "total")));
   const n = table.report === "outstanding_payables" ? o.highlightDays : table.report === "stuck_work" ? (o.olderThanDays ?? 5) * 2 : undefined;
   if (table.rows.some((r) => r._highlight)) lines.push(w(locale, "highlighted").replace("{why}", w(locale, `why.${table.report}`).replace("{n}", String(n ?? ""))));
+  // Decision 0633: a question cut short says so.
+  if (table.cutShort) lines.push(w(locale, "cutshort").replace("{n}", String(table.cutShort)));
   return lines;
 }
 
@@ -286,11 +362,11 @@ export function buildAgentEmail(input: AgentEmailInput): { subject: string; text
   const totals = table.totals.length ? `${w(locale, "total")}: ${totalsLine(locale, table)}` : "";
 
   // Text, for a reader that shows no HTML.
-  const widths = table.columns.map((c) => Math.min(28, Math.max(label(locale, c.label).length, ...shown.map((r) => cell(locale, r[c.key], c.kind, c.key).length))));
+  const widths = table.columns.map((c) => Math.min(28, Math.max(label(locale, c.label).length, ...shown.map((r) => cell(locale, r[c.key], c.kind, c.key, c.enumKey).length))));
   const pad = (s: string, n: number, right: boolean) => (s.length > n ? `${s.slice(0, n - 1)}…` : right ? s.padStart(n) : s.padEnd(n));
   const textRows = [
     table.columns.map((c, i) => pad(label(locale, c.label), widths[i], NUMERIC.has(c.kind))).join("  "),
-    ...shown.map((r) => table.columns.map((c, i) => pad(cell(locale, r[c.key], c.kind, c.key), widths[i], NUMERIC.has(c.kind))).join("  ")),
+    ...shown.map((r) => table.columns.map((c, i) => pad(cell(locale, r[c.key], c.kind, c.key, c.enumKey), widths[i], NUMERIC.has(c.kind))).join("  ")),
   ];
   const summary = input.summary ?? null;
   const text = [
@@ -318,7 +394,7 @@ export function buildAgentEmail(input: AgentEmailInput): { subject: string; text
   const th = (c: ReportTable["columns"][number]) =>
     `<th style="text-align:${NUMERIC.has(c.kind) ? "right" : "left"};padding:6px 10px;border-bottom:2px solid #c9d3e0;font-size:12px;color:#4a5768">${esc(label(locale, c.label))}</th>`;
   const td = (r: ReportTable["rows"][number], c: ReportTable["columns"][number]) =>
-    `<td style="text-align:${NUMERIC.has(c.kind) ? "right" : "left"};padding:6px 10px;border-bottom:1px solid #e3e9f1;white-space:nowrap${r._highlight ? ";color:#9c2b1f;font-weight:700" : ""}">${esc(cell(locale, r[c.key], c.kind, c.key))}</td>`;
+    `<td style="text-align:${NUMERIC.has(c.kind) ? "right" : "left"};padding:6px 10px;border-bottom:1px solid #e3e9f1;white-space:nowrap${r._highlight ? ";color:#9c2b1f;font-weight:700" : ""}">${esc(cell(locale, r[c.key], c.kind, c.key, c.enumKey))}</td>`;
   const html = `<div style="font-family:Calibri,Carlito,'Segoe UI',Arial,sans-serif;color:#121a26;font-size:14px;line-height:1.45">
 <h2 style="margin:0 0 4px;color:#854f0b;font-size:20px">${esc(input.agentName)}</h2>
 <p style="margin:0 0 12px;color:#4a5768">${esc(reportName)} · ${esc(w(locale, "asat").replace("{when}", asAt))}</p>

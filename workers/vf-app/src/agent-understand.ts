@@ -135,7 +135,7 @@ Answer with ONE JSON object and nothing else, of this shape:
 {"name": short title, "report": one report id or null, "orgs": ["organisation name", ...] or "all", "schedule": schedule or null, "options": {...}, "deliver": {"task": true|false, "email": true|false}, "recipients": ["person name", ...], "summary": true|false, "refusals": [{"code": code, "words": "the words of the request it is about"}]}
 
 Reports (use the id):
-${AGENT_REPORTS.map((r) => `- ${r.id}: ${REPORT_WORDS[r.id] ?? r.id}`).join("\n")}
+${AGENT_REPORTS.filter((r) => !r.custom).map((r) => `- ${r.id}: ${REPORT_WORDS[r.id] ?? r.id}`).join("\n")}
 
 Schedules (times are HH:MM, 24-hour, in ${ctx.zone}):
 - {"every":"day","time":"08:00"}
@@ -307,7 +307,7 @@ export async function handleUnderstandAgent(
     refusals.push({ code: "cannot_act", words: act[0] });
 
   const reportId =
-    typeof p.report === "string" && AGENT_REPORTS.some((r) => r.id === p.report)
+    typeof p.report === "string" && AGENT_REPORTS.some((r) => r.id === p.report && !r.custom)
       ? p.report
       : null;
   if (typeof p.report === "string" && p.report && !reportId)

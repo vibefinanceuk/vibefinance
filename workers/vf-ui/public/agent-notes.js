@@ -65,6 +65,12 @@ function rowLabel(row) {
   return [row.org, row.supplier ?? row.invoice ?? row.stage, row.person].filter(Boolean).join(" · ");
 }
 
+/** Decision 0633: a column's words; a measure's label says it of its field ("Sum of {field}"). */
+function colLabel(c) {
+  const [own, field] = c.label.split("|");
+  return field ? t(own).replace("{field}", t(field)) : t(own);
+}
+
 export function reportTable(table, opts = {}) {
   // Decision 0629: rows with invoices open Documents at them; all of them from the link above.
   const openable = Boolean(opts.openRow) && table.rows.some(rowHasInvoices);
@@ -106,7 +112,7 @@ export function reportTable(table, opts = {}) {
       : []),
     el("div", { class: "agentreportwrap" }, [
       el("table", { class: "agentreporttable" }, [
-        el("thead", {}, [el("tr", {}, table.columns.map((c) => el("th", { class: numeric.has(c.kind) ? "num" : "", text: t(c.label) })))]),
+        el("thead", {}, [el("tr", {}, table.columns.map((c) => el("th", { class: numeric.has(c.kind) ? "num" : "", text: colLabel(c) })))]),
         el(
           "tbody",
           {},
@@ -126,7 +132,9 @@ export function reportTable(table, opts = {}) {
                     ? t("agents.notes.unclaimed")
                     : c.key === "reason" && typeof raw === "string"
                       ? t(`agents.reason.${raw}`)
-                      : cellText(raw, c.kind);
+                      : c.enumKey && typeof raw === "string"
+                        ? t(`${c.enumKey}.${raw}`)
+                        : cellText(raw, c.kind);
                 return el("td", { class: numeric.has(c.kind) ? "num" : "", text: value });
               })
             )
@@ -135,6 +143,8 @@ export function reportTable(table, opts = {}) {
       ]),
     ]),
     ...(table.totals?.length ? [el("p", { class: "muted sm", text: `${t("agents.notes.total")} ${totalsLine(table.totals, table.previous)}` })] : []),
+    // Decision 0633: a question cut short says so.
+    ...(table.cutShort ? [el("p", { class: "muted sm", text: t("agents.notes.cutshort").replace("{n}", String(table.cutShort)) })] : []),
   ]);
 }
 

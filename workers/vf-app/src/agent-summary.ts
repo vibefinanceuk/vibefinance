@@ -172,7 +172,7 @@ export function summaryPrompt(
       Object.fromEntries([
         ...cols.map((c) => [
           label(locale, c.label),
-          cell(locale, r[c.key], c.kind, c.key),
+          cell(locale, r[c.key], c.kind, c.key, c.enumKey),
         ]),
         ...(r._highlight
           ? [[words(locale, "summary.highlightedrow"), true]]

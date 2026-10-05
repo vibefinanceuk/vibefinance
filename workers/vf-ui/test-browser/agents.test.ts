@@ -147,6 +147,11 @@ const STRINGS = {
     "agents.col.open": "Open tasks",
     "agents.notes.skipped":
       "Left out, as the agent's author can no longer see them: {orgs}.",
+    "agents.col.status": "Status",
+    "agents.col.m.count": "Count",
+    "agents.col.m.sum": "{field}, added up",
+    "agents.qstatus.in_progress": "In process",
+    "agents.notes.cutshort": "Only the first {n} rows are here. Narrow the question to see the rest.",
   },
 };
 
@@ -269,6 +274,15 @@ function stub(opts: {
               optionKeys: ["stageDays"],
               options: { stageDays: 3 },
               event: true,
+            },
+            // Decision 0633: the agent's own question, never chosen from the list.
+            {
+              id: "query",
+              permission: "AP.Analysis",
+              orgIds: ["acme-uk", "acme-de"],
+              optionKeys: [],
+              options: {},
+              custom: true,
             },
           ],
           orgs: [
@@ -1692,5 +1706,41 @@ describe("chasing a supplier — decision 0632", () => {
     shell().querySelector<HTMLButtonElement>("#agent-form .cardhead .actionlink.primary")!.click();
     await vi.waitFor(() => expect(calls.some((c) => c.method === "POST" && c.path === "/api/agents")).toBe(true));
     expect(calls.find((c) => c.method === "POST" && c.path === "/api/agents")!.body).toMatchObject({ report: "returned_no_reply", options: { waitDays: 7 }, action: "chase_supplier" });
+  });
+});
+
+describe("an agent's own question — decision 0633", () => {
+  const NOTE = { id: "note-1", agentId: "agt-9", agentName: "Over 100,000", report: "query", createdAt: "2026-10-05T11:10:00Z", late: false, rowCount: 1, totals: [], canStop: false, kind: "report" };
+
+  it("shows measures and values in the reader's words, and says when it was cut short", async () => {
+    await signIn({
+      permissions: ["AP.TaskView"],
+      notes: [NOTE],
+      note: {
+        id: "note-1",
+        agentName: "Over 100,000",
+        table: {
+          report: "query",
+          columns: [
+            { key: "org", label: "agents.col.org", kind: "text" },
+            { key: "status", label: "agents.col.status", kind: "text", enumKey: "agents.qstatus" },
+            { key: "count", label: "agents.col.m.count", kind: "count" },
+            { key: "sum_total", label: "agents.col.m.sum|agents.col.total", kind: "money" },
+          ],
+          rows: [{ org: "Acme UK", status: "in_progress", count: 2, sum_total: 150900, _ids: "uk-big,uk-small" }],
+          totals: [{ currency: null, total: null, count: 2 }],
+          skippedOrgs: [],
+          asAt: "2026-10-05T11:10:00Z",
+          cutShort: 100,
+        },
+      },
+    });
+    await vi.waitFor(() => expect(document.getElementById("agentnotes")!.hidden).toBe(false));
+    const holder = document.getElementById("agentnotes")!;
+    holder.querySelector<HTMLButtonElement>('.actionlink[title="agents.notes.open"]')!.click();
+    await vi.waitFor(() => expect(holder.querySelector(".agentreporttable")).not.toBeNull());
+    expect([...holder.querySelectorAll(".agentreporttable th")].map((th) => th.textContent)).toEqual(["Organisation", "Status", "Count", "Total, added up"]);
+    expect(holder.querySelector(".agentreporttable tbody tr")!.textContent).toContain("In process");
+    expect(holder.textContent).toContain("Only the first 100 rows are here. Narrow the question to see the rest.");
   });
 });

@@ -13,6 +13,8 @@ import {
   handleRunAgentNow,
   handleSetAgentTimeZone,
   handleStopAgent,
+  handleTryAgentQuery,
+  handleAgentCatalogue,
   handleUpdateAgent,
   runDueAgents,
   type AgentDeps,
@@ -1773,6 +1775,20 @@ export default {
       const auth = await authenticatePerson(db, request, env);
       if (!auth.user) return json({ error: auth.reason }, 401);
       const result = await handleStopAgent(db, auth.user.id, decodeURIComponent(stopMatch[1]));
+      return json(result.body, result.status);
+    }
+    // Decision 0633: what may be asked (the catalogue), and a question tried now. Anyone who can make an agent.
+    if ((pathname === "/agent-catalogue" && request.method === "GET") || (pathname === "/agent-query/try" && request.method === "POST")) {
+      const { db } = resolveTenant(request, env);
+      const auth = await authenticatePerson(db, request, env);
+      if (!auth.user) return json({ error: auth.reason }, 401);
+      if (!(await hasPermission(db, auth.user.id, "AP.Agents"))) return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
+      if (request.method === "GET") {
+        const result = await handleAgentCatalogue(db, auth.user.id);
+        return json(result.body, result.status);
+      }
+      const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+      const result = await handleTryAgentQuery(db, auth.user.id, body);
       return json(result.body, result.status);
     }
     // Decision 0625: plain words in, a draft plan out. Saves nothing.

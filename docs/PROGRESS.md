@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 5 October 2026 (decision 0632). A living document: what
+Last updated 5 October 2026 (decision 0633). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,17 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Agents ask the data: the query layer, slice 1 (0633)
+
+Agreed with Dan: agents may ask their own question of the data instead
+of a fixed report. The question is chosen from a catalogue (invoices and
+tasks so far), never written as SQL. VibeFinance checks it, writes the
+query itself, adds each person's access every time, caps the rows, and
+says when an answer was cut short. Money is compared in one currency,
+and fields an administrator hid are left out. It can be tried and saved
+through the API. Next: plain words write the question, then a builder
+in Edit steps.
 
 ### Agents phase 3, slice 2: chasing a supplier (0632)
 

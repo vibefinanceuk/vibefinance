@@ -43,6 +43,14 @@ import {
   type SummaryOutcome,
 } from "./agent-summary.js";
 import type { CompilerModel } from "@vibefinance/shared";
+import {
+  checkQuery,
+  datasetById,
+  hiddenInQuery,
+  queryCatalogue,
+  runQuery,
+  type AgentQuery,
+} from "./agent-query.js";
 import { sendEmailViaResend } from "./resend-client.js";
 
 /**
@@ -118,6 +126,8 @@ export interface ReportColumn {
   /** A string key; the interface says it in the reader's language. */
   label: string;
   kind: ColumnKind;
+  /** Decision 0633: each value's words are under this key (`agents.qstatus.open`). */
+  enumKey?: string;
 }
 
 export interface ReportTotal {
@@ -140,6 +150,8 @@ export interface ReportTable {
   options?: AgentOptions;
   /** Decision 0626: the AI summary on top, checked against this table. */
   summary?: string | null;
+  /** Decision 0633: a question cut short at this many rows, said to the reader. */
+  cutShort?: number;
 }
 
 /**
@@ -162,12 +174,17 @@ export interface AgentOptions {
   stageDays?: number;
   /** Decision 0632: returned to the supplier this many days ago with no corrected invoice. Default 7. */
   waitDays?: number;
+  /** Decision 0633: the agent's own question, checked against the catalogue. */
+  query?: AgentQuery;
 }
+
+/** The options that are numbers, each with its range (the query is checked on its own). */
+type NumericOption = Exclude<keyof AgentOptions, "query">;
 
 const OPTION_RULES: Record<
   string,
   Record<
-    keyof AgentOptions,
+    NumericOption,
     { min: number; max: number; default?: number } | undefined
   >
 > = {
@@ -223,10 +240,17 @@ export function checkOptions(
     input && typeof input === "object"
       ? (input as Record<string, unknown>)
       : {};
+  // Decision 0633: its own question is its only option.
+  if (reportId === "query") {
+    const checked = checkQuery(given.query);
+    return "query" in checked
+      ? { options: { query: checked.query } }
+      : { reason: checked.reason };
+  }
   const options: AgentOptions = {};
   if (!rules) return { options };
   for (const [key, rule] of Object.entries(rules) as [
-    keyof AgentOptions,
+    NumericOption,
     { min: number; max: number; default?: number } | undefined,
   ][]) {
     if (!rule) continue;
@@ -262,12 +286,16 @@ interface AgentReport {
    * is sent only the rows (`_key`) they have not been sent before.
    */
   event?: boolean;
+  /** Decision 0633: the agent's own question, not a fixed report. */
+  custom?: boolean;
   gather(
     db: D1Database,
     authorId: string,
     orgs: Org[],
     now: Date,
     options: AgentOptions,
+    /** Decision 0633: when the agent last ran, for "new since the last run". */
+    ctx?: { since: string | null },
   ): Promise<Omit<ReportTable, "report" | "skippedOrgs" | "asAt">>;
 }
 
@@ -1177,6 +1205,16 @@ export const AGENT_REPORTS: AgentReport[] = [
     permission: "AP.Analysis",
     gather: gatherReturnedNoReply,
   },
+  // Decision 0633: the agent's own question, from the catalogue.
+  {
+    id: "query",
+    permission: "AP.Analysis",
+    custom: true,
+    gather: async (db, a, o, n, options, ctx) => {
+      if (!options.query) throw new Error("query_missing");
+      return runQuery(db, a, o, options.query, n, ctx);
+    },
+  },
   // Decision 0630: agents started by an event.
   {
     id: "event_stuck",
@@ -1526,6 +1564,8 @@ export async function handleListAgents(
         .map(([k]) => k),
       // Decision 0630: started by an event, looked at hourly.
       event: Boolean(r.event),
+      // Decision 0633: the agent's own question, made by a query, not chosen from the list.
+      custom: Boolean(r.custom),
       // Decision 0631: what it can also prepare for approval.
       actions: actionsForReport(r.id),
     });
@@ -1678,7 +1718,21 @@ async function checkAgentInput(
       : {});
   const opts = checkOptions(report.id, optionsInput);
   if ("reason" in opts)
-    return { reason: opts.reason, message: "an option is out of range" };
+    return {
+      reason: opts.reason,
+      message: report.custom
+        ? "the question is not one that can be asked"
+        : "an option is out of range",
+    };
+  // Decision 0633: a field an administrator has hidden is not asked about.
+  if (opts.options.query) {
+    const hidden = await hiddenInQuery(db, opts.options.query);
+    if (hidden)
+      return {
+        reason: "query_field_hidden",
+        message: `${hidden} is hidden here`,
+      };
+  }
   // Decision 0625: the words it was described in, where it was.
   const description =
     typeof input.description === "string"
@@ -2548,6 +2602,16 @@ async function runAgentOnce(
         : everyone.filter((p) => p.optedOutAt === null);
     const zone = await agentTimeZone(db);
     const send = deps.send ?? sendEmailViaResend;
+    // Decision 0633: "new since the last run" is measured from the last run that finished.
+    const since =
+      (
+        await db
+          .prepare(
+            "SELECT started_at FROM agent_runs WHERE agent_id = ? AND id <> ? AND status IN ('delivered', 'nothing') ORDER BY started_at DESC LIMIT 1",
+          )
+          .bind(agent.id, runId)
+          .first<{ started_at: string }>()
+      )?.started_at ?? null;
 
     // Decision 0626: summaries, one per distinct copy and language; the same copy twice is written once.
     const summaries = new Map<string, SummaryOutcome>();
@@ -2592,6 +2656,7 @@ async function runAgentOnce(
         theirOrgs,
         now,
         options,
+        { since },
       );
       // Decision 0624: compared with what this person was last sent.
       const last = await db
@@ -3388,6 +3453,87 @@ export async function handleSetAgentSettings(
     body: {
       timeZone: await agentTimeZone(db),
       actionsEnabled: await actionsEnabled(db),
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Decision 0633: the query layer — what may be asked, and trying a question.
+// ---------------------------------------------------------------------------
+
+/** `GET /agent-catalogue`: the datasets and fields this person may ask about. */
+export async function handleAgentCatalogue(
+  db: D1Database,
+  userId: string,
+): Promise<RouteResult> {
+  return { status: 200, body: await queryCatalogue(db, userId) };
+}
+
+/** Rows a tried question shows; the agent itself runs to its own limit. */
+const TRY_ROWS = 20;
+
+/**
+ * **`POST /agent-query/try`: a question run now, saving nothing**, over
+ * the organisations chosen, with the person's own access, as the agent
+ * would run it for them. Refused as saving it would be.
+ */
+export async function handleTryAgentQuery(
+  db: D1Database,
+  userId: string,
+  input: Record<string, unknown>,
+  now = new Date(),
+): Promise<RouteResult> {
+  const checked = checkQuery(input.query);
+  if ("reason" in checked)
+    return {
+      status: 422,
+      body: {
+        error: "the question is not one that can be asked",
+        reason: checked.reason,
+        ...(checked.detail ? { detail: checked.detail } : {}),
+      },
+    };
+  const query = checked.query;
+  const hidden = await hiddenInQuery(db, query);
+  if (hidden)
+    return {
+      status: 422,
+      body: { error: `${hidden} is hidden here`, reason: "query_field_hidden", detail: hidden },
+    };
+  const dataset = datasetById(query.dataset)!;
+  const orgIds = Array.isArray(input.orgIds)
+    ? [...new Set(input.orgIds.filter((x): x is string => typeof x === "string"))]
+    : [];
+  if (orgIds.length === 0)
+    return { status: 422, body: { error: "choose at least one organisation", reason: "orgs_missing" } };
+  const orgs = await orgsNamed(db, orgIds);
+  if (orgs.length !== orgIds.length)
+    return { status: 422, body: { error: "an organisation chosen does not exist", reason: "org_unknown" } };
+  const visible = await unitsWherePermitted(db, userId, dataset.permission);
+  const notHeld = orgs.filter((o) => !covers(visible, o.id));
+  if (notHeld.length > 0)
+    return {
+      status: 422,
+      body: {
+        error: `you cannot see this for ${notHeld.map((o) => o.name).join(", ")}`,
+        reason: "org_not_permitted",
+      },
+    };
+  const result = await runQuery(db, userId, orgs, query, now);
+  return {
+    status: 200,
+    body: {
+      query,
+      table: {
+        report: "query",
+        columns: result.columns,
+        rows: result.rows.slice(0, TRY_ROWS),
+        totals: result.totals,
+        skippedOrgs: [],
+        asAt: now.toISOString(),
+        ...(result.cutShort ? { cutShort: result.cutShort } : {}),
+      },
+      count: result.rows.length,
     },
   };
 }

@@ -526,7 +526,8 @@ function agentRow(agent) {
 // --- The form ---------------------------------------------------------------
 
 function reportsOffered() {
-  return (data?.reports ?? []).filter((r) => r.orgIds.length > 0);
+  // Decision 0633: an agent's own question is made from a query, not chosen here.
+  return (data?.reports ?? []).filter((r) => r.orgIds.length > 0 && !r.custom);
 }
 
 function startNew() {

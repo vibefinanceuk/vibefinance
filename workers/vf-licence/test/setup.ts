@@ -265,6 +265,7 @@ import agentDocumentsStringsSql from "../migrations/0273_agent_documents_strings
 import agentEventStringsSql from "../migrations/0274_agent_event_strings.sql?raw";
 import agentActionsStringsSql from "../migrations/0276_agent_actions_strings.sql?raw";
 import agentChaseStringsSql from "../migrations/0277_agent_chase_strings.sql?raw";
+import agentQueryStringsSql from "../migrations/0278_agent_query_strings.sql?raw";
 
 function stripSqlComments(sql: string): string {
   return sql
@@ -563,5 +564,6 @@ export async function applyTestSchema(): Promise<void> {
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(agentEventStringsSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(agentActionsStringsSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(agentChaseStringsSql)));
+  await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(agentQueryStringsSql)));
 
 }
