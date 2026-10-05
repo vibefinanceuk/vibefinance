@@ -5270,5 +5270,7 @@
 .agentplanrow.missing span:last-child { color: var(--text-warning); }
 .agentplantag { font-size: var(--text-sm); text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-accent); font-weight: 700; }
 .agentrefusals { margin: 8px 0 0; padding-left: 18px; color: var(--text-warning); }
+/* Decision 0634: the question, in words, in Edit steps. */
+.agentquestion { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px; }
 .agentsteps { margin-top: 12px; }
 .agentsteps > summary { cursor: pointer; font-weight: 700; }

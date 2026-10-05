@@ -530,6 +530,13 @@ function reportsOffered() {
   return (data?.reports ?? []).filter((r) => r.orgIds.length > 0 && !r.custom);
 }
 
+/** Decision 0634: the reports the form lists, with the agent's own question while the draft is one. */
+function reportsListed() {
+  const offered = reportsOffered();
+  const own = draft?.report === "query" ? (data?.reports ?? []).find((r) => r.id === "query") : null;
+  return own ? [...offered, own] : offered;
+}
+
 function startNew() {
   const first = reportsOffered()[0];
   editing = "new";
@@ -687,7 +694,7 @@ function scheduleFields() {
 }
 
 function formPanel() {
-  const offered = reportsOffered();
+  const offered = reportsListed();
   const report = offered.find((r) => r.id === draft.report) ?? offered[0];
   const name = el("input", {
     type: "text",
@@ -807,7 +814,7 @@ function formPanel() {
         ),
       ]),
       field(t("agents.form.orgs"), orgBoxes, t("agents.form.orgshint")),
-      optionFields(report),
+      report?.custom ? questionField() : optionFields(report),
       report?.event ? eventField() : scheduleFields(),
       summaryField(),
       actionField(report),
@@ -869,6 +876,8 @@ function describeField() {
         orgIds: d.orgIds?.length ? d.orgIds : draft.orgIds,
         schedule: d.schedule ?? draft.schedule,
         options: d.report ? { ...d.options } : draft.options,
+        // Decision 0634: a new question or report drops what the old one prepared.
+        action: d.report && d.report === draft.report ? draft.action : null,
         deliver: { ...d.deliver },
         recipients: [...(d.recipients ?? [])],
         description: r.body.text ?? draft.description,
@@ -877,6 +886,7 @@ function describeField() {
       understood = {
         refusals: r.body.refusals ?? [],
         missing: r.body.missing ?? [],
+        assumed: r.body.assumed ?? [],
       };
       stepsOpen = understood.missing.length > 0;
       render();
@@ -900,6 +910,10 @@ export function planLines(d, ctx) {
     .map((o) => o.name);
   const shape = [];
   const o = d.options ?? {};
+  // Decision 0634: what the words did not say is the usual, and said so.
+  const assumed = new Set(ctx.assumed ?? []);
+  const usual = (key, words) => (assumed.has(key) ? `${words} ${t("agents.plan.usual")}` : words);
+  if (d.report === "query" && o.query) shape.push(...queryWords(o.query, ctx.catalogue ?? data?.catalogue, assumed));
   if (o.minTotal !== undefined)
     shape.push(
       t("agents.plan.mintotal").replace(
@@ -912,15 +926,15 @@ export function planLines(d, ctx) {
     );
   if (o.highlightDays !== undefined)
     shape.push(
-      t("agents.plan.highlightdays").replace("{n}", String(o.highlightDays)),
+      usual("option:highlightDays", t("agents.plan.highlightdays").replace("{n}", String(o.highlightDays))),
     );
   if (o.withinDays !== undefined)
     shape.push(
-      t("agents.plan.withindays").replace("{n}", String(o.withinDays)),
+      usual("option:withinDays", t("agents.plan.withindays").replace("{n}", String(o.withinDays))),
     );
   if (o.olderThanDays !== undefined)
     shape.push(
-      t("agents.plan.olderthandays").replace("{n}", String(o.olderThanDays)),
+      usual("option:olderThanDays", t("agents.plan.olderthandays").replace("{n}", String(o.olderThanDays))),
     );
   const how =
     d.deliver?.task && d.deliver?.email
@@ -962,6 +976,8 @@ function planPanel() {
     orgs: data.orgs,
     managers: data.managers,
     zone: zone(),
+    assumed: understood.assumed ?? [],
+    catalogue: data.catalogue,
   });
   const missing = new Set(understood.missing);
   const missingWords = (key) =>
@@ -1009,6 +1025,74 @@ function planPanel() {
     ...(missing.size
       ? [el("p", { class: "muted sm", text: t("agents.plan.finish") })]
       : []),
+  ]);
+}
+
+/**
+ * **A question in words — decision 0634**: the dataset and its filters,
+ * new or all, the columns or grouping, the order and the limit. Parts the
+ * words did not say are marked "(usual)".
+ */
+export function queryWords(q, catalogue, assumed = new Set()) {
+  const ds = (catalogue?.datasets ?? []).find((d) => d.id === q.dataset);
+  const fieldOf = (key) => ds?.fields.find((f) => f.key === key);
+  const name = (key) => (fieldOf(key) ? t(fieldOf(key).label) : key);
+  const money = (n) => Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const value = (f, v, currency) => {
+    if (Array.isArray(v)) return v.map((x) => value(f, x, currency)).join(", ");
+    if (f?.kind === "enum") return t(`${f.enumKey}.${v}`);
+    if (f?.kind === "money") return `${money(v)} ${currency ?? ""}`.trim();
+    return String(v);
+  };
+  const usual = (key, words) => (assumed.has(key) ? `${words} ${t("agents.plan.usual")}` : words);
+  const and = ` ${t("agents.plan.q.and")} `;
+  const filters = (q.where ?? []).map((w) => {
+    const f = fieldOf(w.field);
+    const v = w.value;
+    const words = t(`agents.qop.${w.op}`)
+      .replace("{field}", name(w.field))
+      .replace("{a}", Array.isArray(v) ? value(f, v[0], w.currency) : "")
+      .replace("{b}", Array.isArray(v) ? value(f, v[1], w.currency) : "")
+      .replace("{value}", v === undefined ? "" : value(f, v, w.currency));
+    return usual(`where:${w.field}`, words);
+  });
+  const dataset = t(`agents.dataset.${q.dataset}`);
+  const parts = [filters.length ? t("agents.plan.q.where").replace("{dataset}", dataset).replace("{filters}", filters.join(and)) : t("agents.plan.q.all").replace("{dataset}", dataset)];
+  parts.push(usual("since", t(`agents.plan.q.since.${q.since === "last_run" ? "last_run" : "all"}`)));
+  if (q.groupBy?.length) {
+    const measures = (q.measures ?? []).map((m) => {
+      if (m.fn === "count") return usual("measure:count", t("agents.col.m.count"));
+      const f = fieldOf(m.field);
+      const fn = f?.kind === "date" ? (m.fn === "min" ? "first" : "last") : m.fn;
+      return t(`agents.col.m.${fn}`).replace("{field}", name(m.field));
+    });
+    parts.push(
+      usual("group:currency", t("agents.plan.q.group").replace("{fields}", q.groupBy.map(name).join(", ")).replace("{measures}", measures.join(", "))),
+    );
+  } else if (q.show?.length) {
+    parts.push(t("agents.plan.q.show").replace("{fields}", q.show.map(name).join(", ")));
+  }
+  const measureName = (key) => {
+    const m = (q.measures ?? []).find((x) => (x.fn === "count" ? "count" : `${x.fn}_${x.field}`) === key);
+    if (!m) return name(key);
+    if (m.fn === "count") return t("agents.col.m.count");
+    return t(`agents.col.m.${m.fn}`).replace("{field}", name(m.field));
+  };
+  for (const s of q.sort ?? [])
+    parts.push(usual("sort", t("agents.plan.q.sort").replace("{field}", measureName(s.key)).replace("{dir}", t(`agents.plan.q.${s.dir === "asc" ? "asc" : "desc"}`))));
+  parts.push(usual("limit", t("agents.plan.q.limit").replace("{n}", String(q.limit ?? 100))));
+  return parts;
+}
+
+/** Decision 0634: the question in Edit steps, in words; changed by changing the words. */
+function questionField() {
+  const q = draft.options?.query;
+  return el("div", { id: "agent-question" }, [
+    field(
+      t("agents.form.question"),
+      el("ul", { class: "agentquestion" }, (q ? queryWords(q, data?.catalogue, new Set(understood?.assumed ?? [])) : []).map((w) => el("li", { text: w }))),
+      t("agents.form.question.hint"),
+    ),
   ]);
 }
 

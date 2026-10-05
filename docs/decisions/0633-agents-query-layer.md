@@ -159,7 +159,7 @@ simple reports moved. This record is (1).
   - vf-app 3579, of which 3577 pass (the two known failures);
   - vf-ui browser 1547, of which 1546 pass (the known
     `typography.test.ts` 10px gap), with the same 331 unhandled errors;
-    worker 113 of 113;
+    worker 111 of 111;
   - vf-licence 361 of 361.
 
   **Migrations** replay: vf-licence 278.

@@ -113,6 +113,8 @@ describe("understanding a request", () => {
       },
       refusals: [],
       missing: [],
+      // Decision 0634: the highlight was not said, so it is the usual one.
+      assumed: ["option:highlightDays"],
     });
     // The model is told the closed lists, today, and the zone.
     expect(prompt).toContain('"Acme Germany GmbH", "Acme UK Ltd"');

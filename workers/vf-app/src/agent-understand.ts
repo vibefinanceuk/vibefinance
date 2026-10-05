@@ -9,6 +9,14 @@ import {
   checkOptions,
   type AgentOptions,
 } from "./agents.js";
+import {
+  assumedParts,
+  catalogueWords,
+  checkQuery,
+  datasetById,
+  hiddenInQuery,
+  queryCatalogue,
+} from "./agent-query.js";
 
 /**
  * **Plain words in, a plan out — decision 0625**, Agents slice 4.
@@ -69,6 +77,9 @@ export type RefusalCode =
   | "unknown_org"
   | "unknown_person"
   | "option_out_of_range"
+  // Decision 0634: a question that cannot be asked, or a report that answers only nearly.
+  | "cannot_ask"
+  | "approximate"
   | "other";
 
 export interface Refusal {
@@ -88,6 +99,12 @@ export interface UnderstoodDraft {
   /** Decision 0626: the AI summary; on unless the words turn it off. */
   summary: boolean;
 }
+
+/** Decision 0634: how a question's parts and a report's options read when refused. */
+const QUERY_REASON_WORDS: Record<string, string> = {
+  query_currency_missing: "an amount with no currency",
+  query_field_hidden: "a field hidden here",
+};
 
 const EMAIL_RE = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g;
 const ACT_RE =
@@ -128,14 +145,27 @@ function promptFor(
     orgs: string[];
     managers: string[];
     me: string;
+    catalogue: string;
   },
 ): string {
   return `You set up a scheduled report ("agent") in an accounts payable system from a manager's request.
 Answer with ONE JSON object and nothing else, of this shape:
-{"name": short title, "report": one report id or null, "orgs": ["organisation name", ...] or "all", "schedule": schedule or null, "options": {...}, "deliver": {"task": true|false, "email": true|false}, "recipients": ["person name", ...], "summary": true|false, "refusals": [{"code": code, "words": "the words of the request it is about"}]}
+{"name": short title, "report": one report id, "query", or null, "query": a question (only with "report": "query"), "assumed": [parts you chose that the request did not say], "orgs": ["organisation name", ...] or "all", "schedule": schedule or null, "options": {...}, "deliver": {"task": true|false, "email": true|false}, "recipients": ["person name", ...], "summary": true|false, "refusals": [{"code": code, "words": "the words of the request it is about"}]}
 
 Reports (use the id):
 ${AGENT_REPORTS.filter((r) => !r.custom).map((r) => `- ${r.id}: ${REPORT_WORDS[r.id] ?? r.id}`).join("\n")}
+
+Use one of those reports ONLY when it answers the request exactly as asked. If the request asks for something a report does only nearly (per invoice rather than per supplier, a particular currency, status, stage, date, person or amount), use "report": "query" and write the question instead. Never approximate.
+
+A question ("query") is asked of one dataset:
+${ctx.catalogue || "(none: this person may not ask questions)"}
+Shape: {"dataset": id, "where": [filter, ...], "since": "all" | "last_run", "show": [field, ...], "groupBy": [field, ...], "measures": [{"fn": "count"} | {"fn": "sum"|"avg"|"min"|"max", "field": field}], "sort": [{"key": field or measure key, "dir": "asc"|"desc"}], "limit": number}
+- A filter is {"field": f, "op": op, "value": v}. Ops by kind: text: is, is_not, in (list), contains, is_empty, not_empty. enum: is, is_not, in (only the values listed). money: over, under, between ([low, high]), and ALWAYS "currency": "GBP"|"EUR"|... (£ is GBP, € is EUR, $ is USD). days: is, over, under, between. date: in_last_days (n), older_than_days (n), before, after (YYYY-MM-DD), between ([from, to]), is_empty, not_empty.
+- "since": "last_run" sends only what is new since the agent last ran ("new", "since last time", "arrived"); otherwise "all".
+- Either "show" (the columns, one row each) or "groupBy" (up to 2 fields) with "measures". A measure's key is "count", or fn_field such as "sum_total".
+- "limit": rows, 1-500, usually 100.
+- Write the amount as a number (100000, not "100k"). Use only the datasets, fields and values listed.
+- For invoices, when the request does not say which, ask only those still being processed (status is in_progress) and list "status" in "assumed". List in "assumed" any field you filtered on, and "since" or "sort", that the request did not itself say.
 
 Schedules (times are HH:MM, 24-hour, in ${ctx.zone}):
 - {"every":"day","time":"08:00"}
@@ -157,6 +187,8 @@ Refusal codes, for any part you cannot express:
 - "too_often": more often than daily (hourly, every few minutes)
 - "unknown_report": a report not in the list
 - "unknown_org", "unknown_person": a name not in the lists
+- "cannot_ask": a question about something not in the datasets or fields above
+- "approximate": a part that can only be answered nearly; say which words
 - "other": anything else that cannot be done
 Never invent ids, organisations or people. Leave out what you refuse.
 
@@ -208,8 +240,10 @@ export async function handleUnderstandAgent(
     .first<{ name: string }>();
   const { units } = await unitsFor(db, userId);
   const allowedByReport = new Map<string, Set<string>>();
+  const visibleByPermission = new Map<string, string[] | null>();
   for (const r of AGENT_REPORTS) {
     const visible = await unitsWherePermitted(db, userId, r.permission);
+    visibleByPermission.set(r.permission, visible);
     allowedByReport.set(
       r.id,
       new Set(
@@ -233,6 +267,8 @@ export async function handleUnderstandAgent(
       .all<{ id: string; name: string }>()
   ).results;
   const zone = await agentTimeZone(db);
+  // Decision 0634: what this person may ask about, fields hidden here left out.
+  const catalogue = await queryCatalogue(db, userId);
   const localDay = new Intl.DateTimeFormat("en-CA", {
     timeZone: zone,
     year: "numeric",
@@ -251,6 +287,7 @@ export async function handleUnderstandAgent(
         orgs: choosable.map((u) => u.name),
         managers: managers.map((m) => m.name),
         me: me?.name ?? "me",
+        catalogue: catalogueWords(catalogue),
       }),
     );
   } catch {
@@ -282,6 +319,8 @@ export async function handleUnderstandAgent(
     "unknown_org",
     "unknown_person",
     "option_out_of_range",
+    "cannot_ask",
+    "approximate",
     "other",
   ]);
   for (const r of Array.isArray(p.refusals) ? p.refusals : []) {
@@ -306,14 +345,46 @@ export async function handleUnderstandAgent(
   if (act && !refusals.some((r) => r.code === "cannot_act"))
     refusals.push({ code: "cannot_act", words: act[0] });
 
-  const reportId =
-    typeof p.report === "string" && AGENT_REPORTS.some((r) => r.id === p.report && !r.custom)
+  // Decision 0634: a question, checked as one saved would be; refused in words if not.
+  let question: AgentOptions["query"] | null = null;
+  let assumed: string[] = [];
+  if (p.report === "query") {
+    const checked = checkQuery(p.query);
+    if ("query" in checked) {
+      const hidden = await hiddenInQuery(db, checked.query);
+      if (hidden) refusals.push({ code: "cannot_ask", words: QUERY_REASON_WORDS.query_field_hidden });
+      else if (!catalogue.datasets.some((d) => d.id === checked.query.dataset))
+        refusals.push({ code: "cannot_ask", words: checked.query.dataset });
+      else {
+        question = checked.query;
+        assumed = assumedParts(p.assumed, p.query, question);
+      }
+    } else {
+      refusals.push({
+        code: "cannot_ask",
+        words: (checked.detail ?? QUERY_REASON_WORDS[checked.reason] ?? checked.reason.replace(/^query_/, "").replace(/_/g, " ")).slice(0, 80),
+      });
+    }
+  }
+  const reportId = question
+    ? "query"
+    : typeof p.report === "string" && AGENT_REPORTS.some((r) => r.id === p.report && !r.custom)
       ? p.report
       : null;
-  if (typeof p.report === "string" && p.report && !reportId)
+  if (typeof p.report === "string" && p.report && p.report !== "query" && !reportId)
     refusals.push({ code: "unknown_report", words: p.report.slice(0, 80) });
+  const queryPermission = question ? datasetById(question.dataset)!.permission : null;
   const allowed = reportId
-    ? allowedByReport.get(reportId)!
+    ? queryPermission
+      ? new Set(
+          units
+            .filter((u) => {
+              const v = visibleByPermission.get(queryPermission);
+              return v === null || (v ?? []).includes(u.id);
+            })
+            .map((u) => u.id),
+        )
+      : allowedByReport.get(reportId)!
     : new Set(choosable.map((u) => u.id));
 
   let orgIds: string[] = [];
@@ -360,9 +431,17 @@ export async function handleUnderstandAgent(
     "schedule" in scheduleChecked ? scheduleChecked.schedule : null;
 
   let options: AgentOptions = {};
-  if (reportId) {
+  if (question) options = { query: question };
+  else if (reportId) {
     const checked = checkOptions(reportId, p.options);
-    if ("options" in checked) options = checked.options;
+    if ("options" in checked) {
+      options = checked.options;
+      // Decision 0634: an option the words did not give is the report's usual one, and said so.
+      const given = (p.options && typeof p.options === "object" ? p.options : {}) as Record<string, unknown>;
+      assumed = Object.keys(options)
+        .filter((k) => given[k] === undefined || given[k] === null)
+        .map((k) => `option:${k}`);
+    }
     else {
       refusals.push({
         code: "option_out_of_range",
@@ -397,5 +476,5 @@ export async function handleUnderstandAgent(
     recipients: [...new Set(recipients)],
     summary: p.summary !== false,
   };
-  return { status: 200, body: { draft, refusals, missing, text } };
+  return { status: 200, body: { draft, refusals, missing, text, assumed } };
 }

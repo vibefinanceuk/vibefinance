@@ -1591,6 +1591,8 @@ export async function handleListAgents(
       summaries: await summariesToday(db, opts.now ?? new Date()),
       // Decision 0631: prepared actions on or off, and who may switch them.
       actionsEnabled: await actionsEnabled(db),
+      // Decision 0634: what a question may ask, so the plan can say it in words.
+      catalogue: await queryCatalogue(db, userId),
     },
   };
 }

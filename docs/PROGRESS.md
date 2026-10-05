@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 5 October 2026 (decision 0633). A living document: what
+Last updated 5 October 2026 (decision 0634). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,15 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Agents ask the data, slice 2: plain words write the question (0634)
+
+Describing an agent now writes a question of the data when no ready-made
+report answers exactly as asked, so "invoices over £100,000" is asked
+per invoice, in pounds, rather than approximated by Outstanding
+payables. The plan says the question in words and marks with (usual)
+anything the words did not say, for ready-made reports too. What cannot
+be asked is said, and nothing near it is chosen instead.
 
 ### Agents ask the data: the query layer, slice 1 (0633)
 

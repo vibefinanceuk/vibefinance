@@ -152,6 +152,22 @@ const STRINGS = {
     "agents.col.m.sum": "{field}, added up",
     "agents.qstatus.in_progress": "In process",
     "agents.notes.cutshort": "Only the first {n} rows are here. Narrow the question to see the rest.",
+    "agents.col.invoice": "Invoice",
+    "agents.col.currency": "Currency",
+    "agents.report.query": "Your own question",
+    "agents.dataset.invoices": "Invoices",
+    "agents.plan.usual": "(usual)",
+    "agents.plan.q.where": "{dataset} where {filters}",
+    "agents.plan.q.and": "and",
+    "agents.plan.q.since.all": "everything that matches",
+    "agents.plan.q.show": "showing {fields}",
+    "agents.plan.q.sort": "{field}, {dir}",
+    "agents.plan.q.desc": "largest first",
+    "agents.plan.q.limit": "at most {n} rows",
+    "agents.qop.over": "{field} is over {value}",
+    "agents.qop.is": "{field} is {value}",
+    "agents.form.question": "The question",
+    "agents.refusal.cannot_ask": "Could not ask about \u201c{words}\u201d: it is not something an agent can ask about here.",
   },
 };
 
@@ -291,6 +307,21 @@ function stub(opts: {
           ],
           limit: { used: 1, max: 5 },
           timeZone: "Europe/London",
+          // Decision 0634: what a question may ask, for the plan in words.
+          catalogue: {
+            datasets: [
+              {
+                id: "invoices",
+                fields: [
+                  { key: "supplier", kind: "text", label: "agents.col.supplier" },
+                  { key: "invoice", kind: "text", label: "agents.col.invoice" },
+                  { key: "total", kind: "money", label: "agents.col.total" },
+                  { key: "currency", kind: "text", label: "agents.col.currency" },
+                  { key: "status", kind: "enum", label: "agents.col.status", values: ["in_progress"], enumKey: "agents.qstatus" },
+                ],
+              },
+            ],
+          },
           canManageAll: opts.permissions.includes("Admin.UserManagement"),
           canSetTimeZone: opts.canSetTimeZone ?? false,
           actionsEnabled: opts.actionsEnabled ?? { environment: true, licence: true },
@@ -1742,5 +1773,61 @@ describe("an agent's own question — decision 0633", () => {
     expect([...holder.querySelectorAll(".agentreporttable th")].map((th) => th.textContent)).toEqual(["Organisation", "Status", "Count", "Total, added up"]);
     expect(holder.querySelector(".agentreporttable tbody tr")!.textContent).toContain("In process");
     expect(holder.textContent).toContain("Only the first 100 rows are here. Narrow the question to see the rest.");
+  });
+});
+
+describe("plain words write a question — decision 0634", () => {
+  const QUERY = {
+    dataset: "invoices",
+    where: [
+      { field: "total", op: "over", value: 100000, currency: "GBP" },
+      { field: "status", op: "is", value: "in_progress" },
+    ],
+    since: "all",
+    show: ["supplier", "invoice", "total", "currency"],
+    groupBy: [],
+    measures: [],
+    sort: [{ key: "total", dir: "desc" }],
+    limit: 100,
+  };
+  const reply = {
+    text: "Every Monday at 12.10pm, check for invoices over \u00a3100,000 and email",
+    draft: {
+      name: "Invoices over \u00a3100,000",
+      report: "query",
+      orgIds: ["acme-uk", "acme-de"],
+      schedule: { every: "week", time: "12:10", weekday: 1 },
+      options: { query: QUERY },
+      deliver: { task: false, email: true },
+      recipients: [],
+      summary: true,
+    },
+    refusals: [{ code: "cannot_ask", words: "paymentMethod" }],
+    missing: [],
+    assumed: ["where:status", "since", "limit"],
+  };
+
+  it("says the question in words, marks what was not said, and saves it", async () => {
+    const calls = await openAgents({ permissions: ["AP.Agents"], agents: [], understandReply: [200, reply] });
+    button("New agent")!.click();
+    const box = document.getElementById("agent-describe") as HTMLTextAreaElement;
+    box.value = reply.text;
+    box.dispatchEvent(new Event("input"));
+    button("Understand")!.click();
+    await vi.waitFor(() => expect(document.getElementById("agent-plan")?.hidden).toBe(false));
+    const rows = Object.fromEntries([...document.querySelectorAll("#agent-plan .agentplanrow")].map((r) => [r.getAttribute("data-step"), r.textContent]));
+    expect(rows.gather).toBe("ReportYour own question \u00b7 Acme UK, Acme DE");
+    expect(rows.shape).toContain("Invoices where Total is over 100,000.00 GBP and Status is In process (usual)");
+    expect(rows.shape).toContain("everything that matches (usual)");
+    expect(rows.shape).toContain("showing Supplier, Invoice, Total, Currency");
+    expect(rows.shape).toContain("Total, largest first");
+    expect(rows.shape).toContain("at most 100 rows (usual)");
+    expect(document.getElementById("agent-refusals")?.textContent).toContain("Could not ask about \u201cpaymentMethod\u201d");
+    // Edit steps shows the question, and the report it is.
+    expect((document.getElementById("agent-report") as HTMLSelectElement).value).toBe("query");
+    expect(document.getElementById("agent-question")?.textContent).toContain("Invoices where Total is over 100,000.00 GBP");
+    shell().querySelector<HTMLButtonElement>("#agent-form .cardhead .actionlink.primary")!.click();
+    await vi.waitFor(() => expect(calls.some((c) => c.method === "POST" && c.path === "/api/agents")).toBe(true));
+    expect(calls.find((c) => c.method === "POST" && c.path === "/api/agents")!.body).toMatchObject({ report: "query", options: { query: QUERY }, orgIds: ["acme-uk", "acme-de"] });
   });
 });

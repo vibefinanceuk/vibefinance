@@ -27,6 +27,8 @@ export type FieldKind = "text" | "enum" | "money" | "days" | "date";
 export interface QueryField {
   key: string;
   kind: FieldKind;
+  /** What it means, in plain English, for the AI (decision 0634). */
+  words: string;
   /** A fixed SQL fragment. `{now}` is bound to the run's time. */
   sql: string;
   /** The column's label key, as the reports' own (`agents.col.supplier`). */
@@ -85,20 +87,21 @@ export const QUERY_DATASETS: QueryDataset[] = [
     currency: "h.currency",
     totals: { total: "h.total_with_vat", currency: "h.currency" },
     fields: [
-      { key: "invoice", kind: "text", sql: INVOICE_NUMBER, label: "agents.col.invoice", bt: "BT-1" },
-      { key: "supplier", kind: "text", sql: SUPPLIER, label: "agents.col.supplier", group: true, bt: "BT-27" },
-      { key: "supplierCountry", kind: "text", sql: `json_extract(h.facts_json, '$."BT-40"')`, label: "agents.col.country", group: true, bt: "BT-40" },
-      { key: "issued", kind: "date", sql: `COALESCE(h.issue_date, json_extract(h.facts_json, '$."BT-2"'))`, label: "agents.col.issued", bt: "BT-2" },
-      { key: "due", kind: "date", sql: `json_extract(h.facts_json, '$."BT-9"')`, label: "agents.col.due", bt: "BT-9" },
-      { key: "received", kind: "date", sql: "h.created_at", label: "agents.col.received" },
-      { key: "total", kind: "money", sql: "h.total_with_vat", label: "agents.col.total", bt: "BT-112" },
-      { key: "net", kind: "money", sql: `CAST(json_extract(h.facts_json, '$."BT-109"') AS REAL)`, label: "agents.col.net", bt: "BT-109" },
-      { key: "vat", kind: "money", sql: `CAST(json_extract(h.facts_json, '$."BT-110"') AS REAL)`, label: "agents.col.vat", bt: "BT-110" },
-      { key: "currency", kind: "text", sql: "h.currency", label: "agents.col.currency", group: true, bt: "BT-5" },
-      { key: "buyerReference", kind: "text", sql: `json_extract(h.facts_json, '$."BT-10"')`, label: "agents.col.buyerref", group: true, bt: "BT-10" },
-      { key: "purchaseOrder", kind: "text", sql: `json_extract(h.facts_json, '$."BT-13"')`, label: "agents.col.ponumber", bt: "BT-13" },
+      { key: "invoice", words: "the invoice number", kind: "text", sql: INVOICE_NUMBER, label: "agents.col.invoice", bt: "BT-1" },
+      { key: "supplier", words: "the supplier's name", kind: "text", sql: SUPPLIER, label: "agents.col.supplier", group: true, bt: "BT-27" },
+      { key: "supplierCountry", words: "the supplier's country code (GB, DE, ...)", kind: "text", sql: `json_extract(h.facts_json, '$."BT-40"')`, label: "agents.col.country", group: true, bt: "BT-40" },
+      { key: "issued", words: "the invoice date", kind: "date", sql: `COALESCE(h.issue_date, json_extract(h.facts_json, '$."BT-2"'))`, label: "agents.col.issued", bt: "BT-2" },
+      { key: "due", words: "the due date", kind: "date", sql: `json_extract(h.facts_json, '$."BT-9"')`, label: "agents.col.due", bt: "BT-9" },
+      { key: "received", words: "when the invoice was received", kind: "date", sql: "h.created_at", label: "agents.col.received" },
+      { key: "total", words: "the total including VAT", kind: "money", sql: "h.total_with_vat", label: "agents.col.total", bt: "BT-112" },
+      { key: "net", words: "the net total", kind: "money", sql: `CAST(json_extract(h.facts_json, '$."BT-109"') AS REAL)`, label: "agents.col.net", bt: "BT-109" },
+      { key: "vat", words: "the VAT total", kind: "money", sql: `CAST(json_extract(h.facts_json, '$."BT-110"') AS REAL)`, label: "agents.col.vat", bt: "BT-110" },
+      { key: "currency", words: "the currency code (GBP, EUR, ...)", kind: "text", sql: "h.currency", label: "agents.col.currency", group: true, bt: "BT-5" },
+      { key: "buyerReference", words: "the buyer reference", kind: "text", sql: `json_extract(h.facts_json, '$."BT-10"')`, label: "agents.col.buyerref", group: true, bt: "BT-10" },
+      { key: "purchaseOrder", words: "the purchase order number", kind: "text", sql: `json_extract(h.facts_json, '$."BT-13"')`, label: "agents.col.ponumber", bt: "BT-13" },
       {
         key: "status",
+        words: "where it is in processing: in_progress (still being processed), completed (through the process: payment-eligible or sent on), returned_manually (returned to the supplier), archived, none",
         kind: "enum",
         sql: "COALESCE(pi.status, 'none')",
         label: "agents.col.status",
@@ -106,9 +109,10 @@ export const QUERY_DATASETS: QueryDataset[] = [
         values: ["in_progress", "completed", "returned_manually", "archived", "none"],
         enumKey: "agents.qstatus",
       },
-      { key: "stage", kind: "text", sql: "s.name", label: "agents.col.stage", group: true },
+      { key: "stage", words: "the stage it is at (approval, coding, ...)", kind: "text", sql: "s.name", label: "agents.col.stage", group: true },
       {
         key: "daysAtStage",
+        words: "days at its current stage",
         kind: "days",
         sql: daysSince(
           "(SELECT MAX(v.created_at) FROM stage_visits v WHERE v.process_instance_id = pi.id AND v.stage_id = pi.current_stage_id)",
@@ -117,6 +121,7 @@ export const QUERY_DATASETS: QueryDataset[] = [
       },
       {
         key: "daysPastDue",
+        words: "days since the due date (negative when not yet due)",
         kind: "days",
         sql: daysSince(`json_extract(h.facts_json, '$."BT-9"')`),
         label: "agents.col.dayspastdue",
@@ -124,6 +129,7 @@ export const QUERY_DATASETS: QueryDataset[] = [
       },
       {
         key: "deliveredToErp",
+        words: "whether it has been delivered to the ERP: yes or no",
         kind: "enum",
         sql: `CASE WHEN EXISTS (SELECT 1 FROM destination_deliveries d WHERE d.invoice_id = h.id AND d.status = 'delivered') THEN 'yes' ELSE 'no' END`,
         label: "agents.col.delivered",
@@ -151,11 +157,12 @@ export const QUERY_DATASETS: QueryDataset[] = [
     currency: null,
     totals: null,
     fields: [
-      { key: "stage", kind: "text", sql: "s.name", label: "agents.col.stage", group: true },
-      { key: "person", kind: "text", sql: "COALESCE(u.name, u.email)", label: "agents.col.person", group: true },
-      { key: "team", kind: "text", sql: "tm.name", label: "agents.col.team", group: true },
+      { key: "stage", words: "the stage of the task", kind: "text", sql: "s.name", label: "agents.col.stage", group: true },
+      { key: "person", words: "who holds it", kind: "text", sql: "COALESCE(u.name, u.email)", label: "agents.col.person", group: true },
+      { key: "team", words: "the team that owns it", kind: "text", sql: "tm.name", label: "agents.col.team", group: true },
       {
         key: "taskStatus",
+        words: "open, completed, returned or cancelled",
         kind: "enum",
         sql: "t.status",
         label: "agents.col.taskstatus",
@@ -163,12 +170,12 @@ export const QUERY_DATASETS: QueryDataset[] = [
         values: ["open", "completed", "returned", "cancelled"],
         enumKey: "agents.qtaskstatus",
       },
-      { key: "created", kind: "date", sql: "t.created_at", label: "agents.col.created" },
-      { key: "ageDays", kind: "days", sql: daysSince("t.created_at"), label: "agents.col.agedays" },
-      { key: "claimed", kind: "date", sql: "t.claimed_at", label: "agents.col.claimed" },
-      { key: "ended", kind: "date", sql: "COALESCE(t.completed_at, t.ended_at)", label: "agents.col.ended" },
-      { key: "invoice", kind: "text", sql: INVOICE_NUMBER, label: "agents.col.invoice", bt: "BT-1" },
-      { key: "supplier", kind: "text", sql: SUPPLIER, label: "agents.col.supplier", group: true, bt: "BT-27" },
+      { key: "created", words: "when the task was created", kind: "date", sql: "t.created_at", label: "agents.col.created" },
+      { key: "ageDays", words: "days since it was created", kind: "days", sql: daysSince("t.created_at"), label: "agents.col.agedays" },
+      { key: "claimed", words: "when it was claimed", kind: "date", sql: "t.claimed_at", label: "agents.col.claimed" },
+      { key: "ended", words: "when it was completed or ended", kind: "date", sql: "COALESCE(t.completed_at, t.ended_at)", label: "agents.col.ended" },
+      { key: "invoice", words: "the invoice number it is about", kind: "text", sql: INVOICE_NUMBER, label: "agents.col.invoice", bt: "BT-1" },
+      { key: "supplier", words: "the supplier of that invoice", kind: "text", sql: SUPPLIER, label: "agents.col.supplier", group: true, bt: "BT-27" },
     ],
   },
 ];
@@ -787,6 +794,7 @@ export async function queryCatalogue(db: D1Database, personId: string) {
           key: f.key,
           kind: f.kind,
           label: f.label,
+          words: f.words,
           ops: OPS[f.kind],
           group: Boolean(f.group),
           ...(f.values ? { values: f.values, enumKey: f.enumKey } : {}),
@@ -794,4 +802,44 @@ export async function queryCatalogue(db: D1Database, personId: string) {
     });
   }
   return { datasets: out, measures: MEASURE_FNS, limits: QUERY_LIMITS };
+}
+
+/** The catalogue as the AI is shown it: each dataset, field, kind and meaning (decision 0634). */
+export function catalogueWords(cat: Awaited<ReturnType<typeof queryCatalogue>>): string {
+  return cat.datasets
+    .map(
+      (d) =>
+        `Dataset "${d.id}":\n${d.fields
+          .map((f) => `  - ${f.key} (${f.kind}${f.group ? ", can group by" : ""}): ${f.words}`)
+          .join("\n")}`,
+    )
+    .join("\n");
+}
+
+/**
+ * **What the plan assumed, to be marked "(usual)" — decision 0634.** The
+ * parts the AI says it chose without being told, if they are parts of
+ * this query, and what our check filled in itself.
+ */
+export function assumedParts(said: unknown, raw: unknown, q: AgentQuery): string[] {
+  const parts = new Set<string>();
+  const known = new Set([
+    ...q.where.map((w) => `where:${w.field}`),
+    ...(q.since === "last_run" || q.since === "all" ? ["since"] : []),
+    ...(q.sort.length ? ["sort"] : []),
+    "limit",
+  ]);
+  for (const x of Array.isArray(said) ? said : []) {
+    if (typeof x !== "string") continue;
+    const p = x.startsWith("where:") || ["since", "sort", "limit"].includes(x) ? x : `where:${x}`;
+    if (known.has(p)) parts.add(p);
+  }
+  const r = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+  const groupSaid = Array.isArray(r.groupBy) ? r.groupBy : [];
+  if (q.groupBy.includes("currency") && !groupSaid.includes("currency")) parts.add("group:currency");
+  if (r.since === undefined) parts.add("since");
+  if (r.limit === undefined) parts.add("limit");
+  const measuresSaid = Array.isArray(r.measures) ? r.measures : [];
+  if (q.groupBy.length && measuresSaid.length === 0) parts.add("measure:count");
+  return [...parts];
 }
