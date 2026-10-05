@@ -47,6 +47,9 @@ const REPORT_WORDS: Record<string, string> = {
     "Open tasks by person: how many open tasks each person has, and how many wait unclaimed (team workload).",
   possible_duplicates:
     "Possible duplicates: invoices that look like another already received (fraud watch).",
+  // Decision 0632.
+  returned_no_reply:
+    "Returned to the supplier with no corrected invoice yet, returned more than a number of days ago. Option: waitDays (1-90, default 7).",
   // Decision 0630: started by an event.
   event_stuck:
     "EVENT, when an invoice has been at one stage longer than a number of days (stuck invoices). Option: stageDays (1-90, default 3).",

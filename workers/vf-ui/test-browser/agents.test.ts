@@ -44,6 +44,12 @@ const STRINGS = {
       "Email is not set up for this environment yet. Ask your administrator.",
     "agents.notes.stop": "Stop sending me this",
     "agents.understand": "Understand",
+    "agents.actions.chase_supplier.title": "Chase {supplier} about invoice {invoice}",
+    "agents.actions.chase.send": "Approve and send",
+    "agents.actions.chase.sent": "Sent to {to}, and shown on the invoice.",
+    "agents.actionreason.number_not_on_invoice": "{stray} is not a number on this invoice. Change it, then send.",
+    "agents.example.chase_returns.name": "Chase returned invoices",
+    "agents.example.chase_returns.words": "Every working day at 9am, returns with no reply, and a letter chasing each.",
     "agents.action.label": "Also prepare",
     "agents.action.none": "Nothing",
     "agents.action.remind_holder": "A reminder to whoever holds each stuck task",
@@ -249,6 +255,14 @@ function stub(opts: {
               orgIds: [],
             },
             {
+              id: "returned_no_reply",
+              permission: "AP.Analysis",
+              orgIds: ["acme-uk"],
+              optionKeys: ["waitDays"],
+              options: { waitDays: 7 },
+              actions: ["chase_supplier"],
+            },
+            {
               id: "event_stuck",
               permission: "AP.Analysis",
               orgIds: ["acme-uk"],
@@ -393,6 +407,7 @@ describe("the Agents screen", () => {
       "outstanding_payables",
       "accruals",
       "stuck_work",
+      "returned_no_reply",
       "event_stuck",
     ]);
     // Accruals is held in Acme UK only: Acme DE is not offered.
@@ -1330,6 +1345,7 @@ describe("ready-made agents — decision 0628", () => {
       "stuck_digest",
       "month_end_accruals",
       "stuck_alert",
+      "chase_returns",
     ]);
     expect(
       document.querySelector('[data-example="weekly_payables"]')!.textContent,
@@ -1614,5 +1630,67 @@ describe("prepared actions — decision 0631", () => {
     shell().querySelector<HTMLButtonElement>('tr[data-agent="agt-1"] .agentopen')!.click();
     await vi.waitFor(() => expect(document.getElementById("agent-page-actionlist")).not.toBeNull());
     expect(document.querySelector("#agent-page-actionlist li")!.textContent).toContain("Remind Uma Becker about invoice K1 \u00b7 done by Maya");
+  });
+});
+
+describe("chasing a supplier — decision 0632", () => {
+  const CHASE = {
+    id: "act-9",
+    kind: "chase_supplier",
+    agentId: "agt-1",
+    agentName: "Chase returns",
+    authorName: "Dan",
+    invoiceId: "ln",
+    status: "waiting",
+    preparedAt: "2026-10-05T09:00:00.000Z",
+    expiresAt: "2026-10-12T09:00:00.000Z",
+    decidedBy: null,
+    decidedAt: null,
+    note: null,
+    reason: null,
+    result: null,
+    payload: {
+      to: "billing@lager-nord.de",
+      cc: "ap@acme.co.uk",
+      subject: "Rechnung 88242: zurückgesandt am 25.09.2026",
+      body: "Sehr geehrte Damen und Herren,\n\nbitte senden Sie uns eine korrigierte Rechnung 88242.",
+      drafted: "ours",
+      facts: { supplier: "Lager Nord GmbH", invoice: "88242", reason: "Missing required information", days: 10 },
+    },
+  };
+
+  it("shows the letter to change, and keeps it open when a number is not the invoice's", async () => {
+    const calls = await signIn({ permissions: ["AP.TaskView"], actions: [CHASE], decideReply: [422, { reason: "number_not_on_invoice", stray: "2.000,00" }] });
+    await vi.waitFor(() => expect(document.querySelector('[data-action="act-9"]')).not.toBeNull());
+    const card = document.querySelector('[data-action="act-9"]')!;
+    expect(card.querySelector(".agentnotename")?.textContent).toBe("Chase Lager Nord GmbH about invoice 88242");
+    expect(card.querySelector(".agentchasemeta")?.textContent).toContain("billing@lager-nord.de");
+    expect(card.querySelector(".agentchasemeta")?.textContent).toContain("ap@acme.co.uk");
+    const body = card.querySelector("textarea") as HTMLTextAreaElement;
+    expect(body.value).toBe(CHASE.payload.body);
+    body.value = `${CHASE.payload.body}\n\nBitte überweisen Sie 2.000,00 EUR.`;
+    card.querySelector<HTMLButtonElement>('.actionlink[title="Approve and send"]')!.click();
+    await vi.waitFor(() => expect(card.querySelector(".agentactionresult")?.textContent).toBe("2.000,00 is not a number on this invoice. Change it, then send."));
+    expect(card.querySelector("textarea")).not.toBeNull();
+    expect(calls.find((c) => c.path === "/api/agent-actions/act-9/approve")!.body).toEqual({ subject: CHASE.payload.subject, body: body.value });
+  });
+
+  it("sends it, and says where", async () => {
+    await signIn({ permissions: ["AP.TaskView"], actions: [CHASE], decideReply: [200, { status: "done", emailed: true, to: "billing@lager-nord.de" }] });
+    await vi.waitFor(() => expect(document.querySelector('[data-action="act-9"]')).not.toBeNull());
+    const card = document.querySelector('[data-action="act-9"]')!;
+    card.querySelector<HTMLButtonElement>('.actionlink[title="Approve and send"]')!.click();
+    await vi.waitFor(() => expect(card.querySelector(".agentactionresult")?.textContent).toBe("Sent to billing@lager-nord.de, and shown on the invoice."));
+    expect(card.querySelector("textarea")).toBeNull();
+  });
+
+  it("is ready-made, and fills in the chaser it prepares", async () => {
+    const calls = await openAgents({ permissions: ["AP.Agents"], agents: [] });
+    button("Ready-made")!.click();
+    document.querySelector<HTMLButtonElement>('[data-example="chase_returns"] .actionlink')!.click();
+    expect((document.getElementById("agent-action") as HTMLSelectElement).value).toBe("chase_supplier");
+    shell().querySelector<HTMLButtonElement>("#agent-form .cardhead .actionlink.primary")!.click();
+    await vi.waitFor(() => expect(calls.some((c) => c.method === "POST" && c.path === "/api/agents")).toBe(true));
+    expect(calls.find((c) => c.method === "POST" && c.path === "/api/agents")!.body).toMatchObject({ report: "returned_no_reply", options: { waitDays: 7 }, action: "chase_supplier" });
   });
 });

@@ -305,7 +305,8 @@ export async function stopFromLink(shell) {
  * then.
  */
 function approvalsPanel(actions, holder) {
-  const cardOf = (a) => {
+  const cardOf = (a) => (a.kind === "chase_supplier" ? chaseCard(a) : reminderCard(a));
+  const reminderCard = (a) => {
     const p = a.payload ?? {};
     const note = el("textarea", { id: `action-note-${a.id}`, class: "input", rows: "2", placeholder: t("agents.actions.noteplaceholder") });
     const said = el("p", { class: "sm agentactionresult", hidden: "hidden" });
@@ -352,6 +353,70 @@ function approvalsPanel(actions, holder) {
         ]),
       ]),
       note,
+      said,
+    ]);
+    return card;
+  };
+  /**
+   * **A supplier chaser — decision 0632.** Who it goes to and the copy are
+   * fixed; the subject and letter can be changed. It is sent only if every
+   * number in it is the invoice's own, and is checked again first.
+   */
+  const chaseCard = (a) => {
+    const p = a.payload ?? {};
+    const f = p.facts ?? {};
+    const subject = el("input", { id: `chase-subject-${a.id}`, class: "input", value: p.subject ?? "" });
+    subject.value = p.subject ?? "";
+    const body = el("textarea", { id: `chase-body-${a.id}`, class: "input", rows: "10" });
+    body.value = p.body ?? "";
+    const said = el("p", { class: "sm agentactionresult", hidden: "hidden" });
+    const decide = async (decision) => {
+      const r = await call(`/api/agent-actions/${encodeURIComponent(a.id)}/${decision}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(decision === "approve" ? { subject: subject.value, body: body.value } : {}),
+      });
+      const reason = r.body?.reason;
+      const key = r.ok ? (decision === "reject" ? "agents.actions.rejected" : "agents.actions.chase.sent") : `agents.actionreason.${reason ?? "failed"}`;
+      said.textContent = (t(key) === key ? (r.body?.error ?? t("agents.failed")) : t(key)).replace("{to}", p.to ?? "").replace("{stray}", r.body?.stray ?? "");
+      said.hidden = false;
+      // A letter that can still be fixed stays open; anything decided closes.
+      if (r.ok || r.status === 409 || r.status === 502) card.querySelectorAll(".dobuttons, textarea, input").forEach((n) => n.remove());
+    };
+    const card = el("div", { class: "agentnote agentaction agentchase", "data-action": a.id }, [
+      el("div", { class: "agentnotehead" }, [
+        el("div", {}, [
+          el("span", {
+            class: "agentnotename",
+            text: t("agents.actions.chase_supplier.title").replace("{supplier}", f.supplier ?? "").replace("{invoice}", f.invoice ?? "—"),
+          }),
+          el("span", { class: "rmpill q agentnotetag", text: t("agents.actions.tag") }),
+          el("div", {
+            class: "muted sm",
+            text: t("agents.actions.chase_supplier.detail")
+              .replace("{reason}", f.reason ?? "—")
+              .replace("{days}", String(f.days ?? "")),
+          }),
+          el("div", {
+            class: "muted sm",
+            text: t("agents.actions.from").replace("{agent}", a.agentName).replace("{author}", a.authorName).replace("{when}", stamp(a.expiresAt)),
+          }),
+        ]),
+        el("div", { class: "dobuttons" }, [
+          actionLink("discard", { label: t("agents.actions.reject"), onclick: () => decide("reject") }),
+          actionLink("done", { label: t("agents.actions.chase.send"), primary: true, onclick: () => decide("approve") }),
+        ]),
+      ]),
+      el("dl", { class: "agentchasemeta sm" }, [
+        el("dt", { text: t("agents.actions.chase.to") }),
+        el("dd", { text: p.to ?? "" }),
+        ...(p.cc ? [el("dt", { text: t("agents.actions.chase.cc") }), el("dd", { text: p.cc })] : []),
+      ]),
+      el("label", { class: "sm", for: `chase-subject-${a.id}`, text: t("agents.actions.chase.subject") }),
+      subject,
+      el("label", { class: "sm", for: `chase-body-${a.id}`, text: t("agents.actions.chase.body") }),
+      body,
+      el("p", { class: "muted sm", text: t(p.drafted === "ai" ? "agents.actions.chase.draftedai" : "agents.actions.chase.draftedours") }),
       said,
     ]);
     return card;

@@ -139,6 +139,7 @@ import agentCareSql from "../../../migrations/0132_agent_care.sql?raw";
 import agentDocumentsSql from "../../../migrations/0133_agent_documents.sql?raw";
 import agentEventsSeenSql from "../../../migrations/0134_agent_events_seen.sql?raw";
 import agentActionsSql from "../../../migrations/0135_agent_actions.sql?raw";
+import agentChaseSql from "../../../migrations/0136_agent_chase.sql?raw";
 
 // Another known divergence from production, on top of the one below:
 // D1's exec() splits its input by newline and executes each non-empty
@@ -476,6 +477,7 @@ export async function applyTestSchema(): Promise<void> {
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(agentDocumentsSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(agentEventsSeenSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(agentActionsSql)));
+  await env.DB.exec(toOneStatementPerLine(stripSqlComments(agentChaseSql)));
 }
 
 /**

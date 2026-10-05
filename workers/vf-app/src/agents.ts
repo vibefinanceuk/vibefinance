@@ -160,6 +160,8 @@ export interface AgentOptions {
   olderThanDays?: number;
   /** Decision 0630: an invoice at one stage longer than this many days. Default 3. */
   stageDays?: number;
+  /** Decision 0632: returned to the supplier this many days ago with no corrected invoice. Default 7. */
+  waitDays?: number;
 }
 
 const OPTION_RULES: Record<
@@ -175,6 +177,7 @@ const OPTION_RULES: Record<
     withinDays: undefined,
     olderThanDays: undefined,
     stageDays: undefined,
+    waitDays: undefined,
   },
   due_soon_not_eligible: {
     minTotal: undefined,
@@ -182,6 +185,7 @@ const OPTION_RULES: Record<
     withinDays: { min: 1, max: 90, default: 7 },
     olderThanDays: undefined,
     stageDays: undefined,
+    waitDays: undefined,
   },
   stuck_work: {
     minTotal: undefined,
@@ -189,6 +193,7 @@ const OPTION_RULES: Record<
     withinDays: undefined,
     olderThanDays: { min: 1, max: 365, default: 5 },
     stageDays: undefined,
+    waitDays: undefined,
   },
   event_stuck: {
     minTotal: undefined,
@@ -196,6 +201,15 @@ const OPTION_RULES: Record<
     withinDays: undefined,
     olderThanDays: undefined,
     stageDays: { min: 1, max: 90, default: 3 },
+    waitDays: undefined,
+  },
+  returned_no_reply: {
+    minTotal: undefined,
+    highlightDays: undefined,
+    withinDays: undefined,
+    olderThanDays: undefined,
+    stageDays: undefined,
+    waitDays: { min: 1, max: 90, default: 7 },
   },
 };
 
@@ -998,6 +1012,114 @@ async function gatherFailedFiles(db: D1Database, now: Date) {
   };
 }
 
+/** Returns older than this are no longer chased or reported. */
+const RETURNED_LOOKBACK_DAYS = 90;
+
+/**
+ * **Returned to the supplier, no reply — decision 0632.** Invoices
+ * returned to their supplier (decision 0498) more than `waitDays` ago
+ * (default 7, within the last 90 days) for which no corrected invoice
+ * has arrived since: no later invoice with the same number from the
+ * same supplier (matched supplier, or the same printed name).
+ */
+async function gatherReturnedNoReply(
+  db: D1Database,
+  authorId: string,
+  orgs: Org[],
+  now: Date,
+  options: AgentOptions,
+) {
+  const visible = await unitsWherePermitted(db, authorId, "AP.Analysis");
+  const wait = options.waitDays ?? 7;
+  const before = new Date(now.getTime() - wait * 86_400_000).toISOString();
+  const after = new Date(
+    now.getTime() - RETURNED_LOOKBACK_DAYS * 86_400_000,
+  ).toISOString();
+  const seen = new Set<string>();
+  const out: Record<string, string | number | null>[] = [];
+  const totals = new Map<string, ReportTotal>();
+  for (const org of orgs) {
+    const units = await scopedToChosenOrg(db, visible, org.id);
+    const clause = unitClause({ units }, "h.org_unit_id");
+    const rows = await db
+      .prepare(
+        `SELECT h.id AS id, COALESCE(h.invoice_number, json_extract(h.facts_json, '$."BT-1"')) AS number,
+                COALESCE(sup.name, json_extract(h.facts_json, '$."BT-27"')) AS supplier_name,
+                h.currency AS currency, h.total_with_vat AS total, pi.ended_at AS returned_at, r.label AS reason
+         FROM invoice_headers h
+         JOIN process_instances pi ON pi.subject_type = 'invoice' AND pi.subject_id = h.id
+         LEFT JOIN suppliers sup ON sup.id = h.supplier_id
+         LEFT JOIN supplier_return_reasons r ON r.id = pi.return_reason_id
+         WHERE pi.status = 'returned_manually' AND pi.ended_at <= ? AND pi.ended_at >= ?
+           AND NOT EXISTS (${REPLY_ARRIVED_SQL}) ${clause.sql}`,
+      )
+      .bind(before, after, ...clause.binds)
+      .all<{
+        id: string;
+        number: string | null;
+        supplier_name: string | null;
+        currency: string | null;
+        total: number | null;
+        returned_at: string;
+        reason: string | null;
+      }>();
+    for (const r of rows.results) {
+      if (seen.has(r.id)) continue;
+      seen.add(r.id);
+      out.push({
+        org: org.name,
+        invoiceId: r.id,
+        invoice: r.number,
+        supplier: r.supplier_name,
+        returned: r.returned_at.slice(0, 10),
+        daysSince: daysBetween(r.returned_at, now),
+        returnReason: r.reason,
+        total: r.total === null ? null : round2(r.total),
+        currency: r.currency,
+        _key: `returned:${r.id}`,
+      });
+      addTotal(totals, r.currency, r.total);
+    }
+  }
+  out.sort((a, b) => Number(b.daysSince) - Number(a.daysSince));
+  return {
+    columns: [
+      { key: "org", label: "agents.col.org", kind: "text" as const },
+      { key: "invoice", label: "agents.col.invoice", kind: "text" as const },
+      { key: "supplier", label: "agents.col.supplier", kind: "text" as const },
+      { key: "returned", label: "agents.col.returned", kind: "date" as const },
+      {
+        key: "daysSince",
+        label: "agents.col.dayssince",
+        kind: "days" as const,
+      },
+      {
+        key: "returnReason",
+        label: "agents.col.returnreason",
+        kind: "text" as const,
+      },
+      { key: "total", label: "agents.col.total", kind: "money" as const },
+      { key: "currency", label: "agents.col.currency", kind: "text" as const },
+    ],
+    rows: out,
+    totals: [...totals.values()].map((t) => ({
+      ...t,
+      total: t.total === null ? null : round2(t.total),
+    })),
+  };
+}
+
+/**
+ * Whether a corrected invoice arrived after the return of invoice `h`
+ * (instance `pi`): a later invoice with the same number from the same
+ * supplier. Used as `NOT EXISTS (...)` with `h` and `pi` in scope.
+ */
+export const REPLY_ARRIVED_SQL = `SELECT 1 FROM invoice_headers n
+  WHERE n.id <> h.id AND replace(n.created_at, ' ', 'T') > substr(pi.ended_at, 1, 19)
+    AND COALESCE(n.invoice_number, json_extract(n.facts_json, '$."BT-1"')) = COALESCE(h.invoice_number, json_extract(h.facts_json, '$."BT-1"'))
+    AND ((h.supplier_id IS NOT NULL AND n.supplier_id = h.supplier_id)
+      OR (h.supplier_id IS NULL AND json_extract(n.facts_json, '$."BT-27"') = json_extract(h.facts_json, '$."BT-27"')))`;
+
 /** The totals of the rows kept, by currency, or a count where rows have none. */
 function totalsOfRows(rows: Record<string, unknown>[]): ReportTotal[] {
   const totals = new Map<string, ReportTotal>();
@@ -1048,6 +1170,12 @@ export const AGENT_REPORTS: AgentReport[] = [
     id: "possible_duplicates",
     permission: "AP.FraudReview",
     gather: (db, a, o) => gatherDuplicates(db, a, o),
+  },
+  // Decision 0632: returned to the supplier with no corrected invoice since.
+  {
+    id: "returned_no_reply",
+    permission: "AP.Analysis",
+    gather: gatherReturnedNoReply,
   },
   // Decision 0630: agents started by an event.
   {
@@ -1129,8 +1257,8 @@ interface AgentRow {
   plan_version: number;
   /** Decision 0626: 1 when each copy carries an AI summary. */
   summary: number;
-  /** Decision 0631: what it also prepares for approval, if anything. */
-  action: string | null;
+  /** Decision 0631: what it also prepares for approval, if anything (`action_kind` since 0632). */
+  action_kind: string | null;
 }
 
 interface Person {
@@ -1329,7 +1457,7 @@ async function toBody(db: D1Database, rows: AgentRow[]) {
       // Decision 0626: whether each copy carries an AI summary.
       summary: r.summary !== 0,
       // Decision 0631: what it also prepares for approval.
-      action: r.action ?? null,
+      action: r.action_kind ?? null,
       recipients: (await recipientsOf(db, r.id)).map((p) => ({
         id: p.id,
         name: p.name,
@@ -1571,7 +1699,7 @@ async function checkAgentInput(
     input.action !== undefined
       ? input.action
       : current && current.report === report.id
-        ? current.action
+        ? current.action_kind
         : null,
   );
   if ("reason" in actionChecked)
@@ -1749,7 +1877,7 @@ export async function handleCreateAgent(
   const version = await keepPlanVersion(db, id, userId, checked, now);
   await db
     .prepare(
-      "UPDATE agents SET description = ?, plan_version = ?, summary = ?, action = ? WHERE id = ?",
+      "UPDATE agents SET description = ?, plan_version = ?, summary = ?, action_kind = ? WHERE id = ?",
     )
     .bind(
       checked.description,
@@ -1850,7 +1978,7 @@ export async function handleUpdateAgent(
   const version = await keepPlanVersion(db, id, userId, checked, now);
   await db
     .prepare(
-      "UPDATE agents SET description = ?, plan_version = ?, summary = ?, action = ? WHERE id = ?",
+      "UPDATE agents SET description = ?, plan_version = ?, summary = ?, action_kind = ? WHERE id = ?",
     )
     .bind(
       checked.description,
@@ -2635,7 +2763,15 @@ async function runAgentOnce(
     }
 
     // Decision 0631: what it also prepares, from the author's own copy.
-    if (agent.action) await prepareActions(db, agent, authorTable, runId, now);
+    if (agent.action_kind)
+      await prepareActions(
+        db,
+        { id: agent.id, action: agent.action_kind },
+        authorTable,
+        runId,
+        now,
+        deps,
+      );
     const shown = authorTable ?? anyTable;
     if (sent === 0 && failed === 0) {
       await finish("nothing", 0, [], null);

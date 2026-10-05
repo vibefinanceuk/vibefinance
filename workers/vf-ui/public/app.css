@@ -5202,6 +5202,12 @@
 /* Decision 0629: a note's report opens in Documents. */
 /* Decision 0631: a prepared action waiting for approval. */
 .agentaction textarea { width: 100%; margin-top: 8px; }
+/* Decision 0632: a supplier chaser, editable before it is sent. */
+.agentchase input, .agentchase textarea { width: 100%; margin: 4px 0 8px; }
+.agentchase label { display: block; margin-top: 6px; font-weight: 700; }
+.agentchasemeta { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; margin: 8px 0 0; }
+.agentchasemeta dt { color: var(--text-muted); }
+.agentchasemeta dd { margin: 0; }
 .agentactionresult { margin: 8px 0 0; }
 .agentreportopen { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 0 0 8px; }
 /* Decision 0628: ready-made agents. */

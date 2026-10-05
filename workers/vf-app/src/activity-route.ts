@@ -437,12 +437,12 @@ export async function handleGetActivity(db: D1Database, invoiceId: string): Prom
     taskActionEvents(db, invoiceId),
     taskEndedEvents(db, invoiceId),
     erpExportEvents(db, invoiceId),
-    // Decision 0631: a reminder an agent prepared and a person approved.
+    // Decisions 0631 and 0632: a reminder or a supplier chaser an agent prepared and a person approved.
     reminderTimeline(db, invoiceId).then((rows) =>
       rows.map((r) => ({
         kind: "action_taken",
         at: r.at,
-        action: "remind",
+        action: r.action,
         userName: r.userName,
         comment: r.comment,
         targetUserName: r.targetUserName,

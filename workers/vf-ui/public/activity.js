@@ -132,6 +132,9 @@ function actionTakenLine(item) {
     case "discard":
       return t("activity.discarded").replace("{who}", who);
     // Decision 0631 — a reminder an agent prepared and a person approved; the note shows as the comment.
+    // Decision 0632 — a supplier chased; the subject shows as the comment.
+    case "chase":
+      return t("activity.chased").replace("{who}", who).replace("{target}", item.targetUserName ?? "");
     case "remind":
       return t("activity.reminded").replace("{who}", who).replace("{target}", item.targetUserName ?? "");
     case "reassign":

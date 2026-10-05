@@ -97,6 +97,8 @@ export const EXAMPLES = [
   },
   // Decision 0630: started by an event.
   { id: "stuck_alert", report: "event_stuck", schedule: { every: "hour" }, options: { stageDays: 3 }, email: true },
+  // Decision 0632: prepares a chaser for each return with no reply, for approval.
+  { id: "chase_returns", report: "returned_no_reply", schedule: { every: "workday", time: "09:00" }, options: { waitDays: 7 }, email: false, action: "chase_supplier" },
   { id: "duplicate_alert", report: "event_duplicate", schedule: { every: "hour" }, options: {}, email: true },
   { id: "failed_files", report: "event_file_failed", schedule: { every: "hour" }, options: {}, email: true },
 ];
@@ -125,6 +127,8 @@ function startFromExample(x) {
     options: { ...(report.options ?? {}), ...x.options },
     description: t(`agents.example.${x.id}.words`),
     summary: true,
+    // Decision 0632: what it prepares, where the report can.
+    action: x.action && (report.actions ?? []).includes(x.action) ? x.action : null,
   };
   understood = { refusals: [], missing: [] };
   stepsOpen = false;
@@ -1205,7 +1209,10 @@ function actionsSwitch() {
 /** Decision 0631: one prepared action, in words, for the agent's page. */
 export function actionWords(a) {
   const p = a.payload ?? {};
-  const what = t(`agents.actions.${a.kind}.title`).replace("{holder}", p.holderName ?? "").replace("{invoice}", p.invoiceNumber ?? "—");
+  const what = t(`agents.actions.${a.kind}.title`)
+    .replace("{holder}", p.holderName ?? "")
+    .replace("{supplier}", p.facts?.supplier ?? p.supplier ?? "")
+    .replace("{invoice}", p.invoiceNumber ?? p.facts?.invoice ?? "—");
   const status = t(`agents.actionstatus.${a.status}`);
   const by = a.decidedBy ? t("agents.actions.by").replace("{name}", a.decidedBy) : "";
   const key = a.reason ? `agents.actionreason.${a.reason}` : null;
