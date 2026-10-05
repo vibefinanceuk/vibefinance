@@ -7,6 +7,7 @@ import {
   hasMyPermission,
 } from "/tasks.js";
 import { actionLink } from "/viewer.js";
+import { reportTable } from "/agent-notes.js";
 
 /**
  * **Agents — decision 0622**, slice 1, under Accounts payable.
@@ -36,6 +37,8 @@ let page = null; // { id, body, runs, runId }
 let agentLog = null; // null, "loading", or events
 // Decision 0628: the library of ready-made agents, open or not.
 let showExamples = false;
+// Decision 0636: the question tried now — null, "loading", { table, count } or { problem }.
+let tried = null;
 
 /**
  * **Ready-made agents — decision 0628 (phase 2, slice 1).** The design's
@@ -526,15 +529,29 @@ function agentRow(agent) {
 // --- The form ---------------------------------------------------------------
 
 function reportsOffered() {
-  // Decision 0633: an agent's own question is made from a query, not chosen here.
-  return (data?.reports ?? []).filter((r) => r.orgIds.length > 0 && !r.custom);
+  // Decision 0636: an agent's own question is offered too, where there is something to ask about.
+  return (data?.reports ?? []).filter((r) => r.orgIds.length > 0 && (!r.custom || (data?.catalogue?.datasets ?? []).length > 0));
 }
 
 /** Decision 0634: the reports the form lists, with the agent's own question while the draft is one. */
 function reportsListed() {
   const offered = reportsOffered();
-  const own = draft?.report === "query" ? (data?.reports ?? []).find((r) => r.id === "query") : null;
+  const own = draft?.report === "query" && !offered.some((r) => r.id === "query") ? (data?.reports ?? []).find((r) => r.id === "query") : null;
   return own ? [...offered, own] : offered;
+}
+
+/** Decision 0636: a first question for a dataset — a few of its columns, nothing narrowed yet. */
+export function startingQuestion(dataset) {
+  return {
+    dataset: dataset?.id ?? "invoices",
+    where: [],
+    since: "all",
+    show: (dataset?.fields ?? []).slice(0, 4).map((f) => f.key),
+    groupBy: [],
+    measures: [],
+    sort: [],
+    limit: 100,
+  };
 }
 
 function startNew() {
@@ -555,6 +572,7 @@ function startNew() {
   understood = null;
   stepsOpen = false;
   problem = "";
+  tried = null;
   render();
 }
 
@@ -575,6 +593,7 @@ function startEdit(agent) {
     action: agent.action ?? null,
   };
   understood = null;
+  tried = null;
   stepsOpen = !agent.description;
   problem = "";
   render();
@@ -714,6 +733,9 @@ function formPanel() {
       draft.report = v;
       // Decision 0624: a report's own options, from its defaults.
       draft.options = { ...(offered.find((r) => r.id === v)?.options ?? {}) };
+      // Decision 0636: the agent's own question starts from the first dataset.
+      if (v === "query") draft.options = { query: startingQuestion(data?.catalogue?.datasets?.[0]) };
+      tried = null;
       // Decision 0631: an action only where the new report can prepare it.
       if (!(offered.find((r) => r.id === v)?.actions ?? []).includes(draft.action)) draft.action = null;
       // Decision 0630: an event report looks every hour; another needs a time again.
@@ -888,6 +910,7 @@ function describeField() {
         missing: r.body.missing ?? [],
         assumed: r.body.assumed ?? [],
       };
+      tried = null;
       stepsOpen = understood.missing.length > 0;
       render();
     },
@@ -1086,15 +1109,280 @@ export function queryWords(q, catalogue, assumed = new Set()) {
   return parts;
 }
 
-/** Decision 0634: the question in Edit steps, in words; changed by changing the words. */
+/**
+ * **The question in Edit steps — decisions 0634 and 0636.** In words, and
+ * as a builder: what to ask about, filters, new or all, the columns or a
+ * grouping, the order and the limit, each offered only from what this
+ * person may ask. **Try it now** runs it with their own access, saving
+ * nothing. The server checks it again on Try and on Save.
+ */
 function questionField() {
   const q = draft.options?.query;
-  return el("div", { id: "agent-question" }, [
+  if (!q) return el("div", { id: "agent-question" });
+  const datasets = data?.catalogue?.datasets ?? [];
+  const ds = datasets.find((d) => d.id === q.dataset) ?? datasets[0];
+  const fields = ds?.fields ?? [];
+  const fieldOf = (key) => fields.find((f) => f.key === key);
+  const fieldName = (f) => t(f.label);
+  // A change of shape redraws the form; typing only updates the draft.
+  const set = (change, redraw = true) => {
+    draft.options = { ...draft.options, query: { ...draft.options.query, ...change } };
+    if (redraw) {
+      tried = null;
+      render();
+    } else {
+      // The words follow what is typed, without redrawing the field being typed in.
+      const list = document.getElementById("agent-q-words");
+      if (list) list.replaceChildren(...queryWords(draft.options.query, data?.catalogue, new Set(understood?.assumed ?? [])).map((w) => el("li", { text: w })));
+    }
+  };
+  const now = () => draft.options.query;
+  const input = (props, onvalue) =>
+    el("input", { ...props, oninput: (e) => onvalue(e.target.value) });
+
+  const datasetSelect = select(
+    "agent-q-dataset",
+    datasets.map((d) => [d.id, t(`agents.dataset.${d.id}`)]),
+    ds?.id,
+    (v) => set(startingQuestion(datasets.find((d) => d.id === v))),
+  );
+
+  const valueControls = (w, i) => {
+    const f = fieldOf(w.field);
+    const put = (value, extra = {}) => {
+      const where = now().where.map((x, j) => (j === i ? { ...x, value, ...extra } : x));
+      set({ where }, false);
+    };
+    if (!f || w.op === "is_empty" || w.op === "not_empty") return [];
+    if (f.kind === "enum") {
+      if (w.op === "in") {
+        const chosen = Array.isArray(w.value) ? w.value : [];
+        return [
+          el(
+            "span",
+            { class: "agentqvalues" },
+            (f.values ?? []).map((v) => {
+              const box = el("input", {
+                type: "checkbox",
+                onchange: (e) => {
+                  const now2 = Array.isArray(now().where[i].value) ? now().where[i].value : [];
+                  put(e.target.checked ? [...new Set([...now2, v])] : now2.filter((x) => x !== v));
+                },
+              });
+              box.checked = chosen.includes(v);
+              return el("label", { class: "agentorg" }, [box, el("span", { text: t(`${f.enumKey}.${v}`) })]);
+            }),
+          ),
+        ];
+      }
+      return [select(`agent-q-value-${i}`, (f.values ?? []).map((v) => [v, t(`${f.enumKey}.${v}`)]), w.value, (v) => put(v))];
+    }
+    const kindType = f.kind === "date" && !["in_last_days", "older_than_days"].includes(w.op) ? "date" : f.kind === "text" ? "text" : "number";
+    const asValue = (v) => (kindType === "number" ? (v === "" ? null : Number(v)) : v);
+    const currency =
+      f.kind === "money"
+        ? [
+            input(
+              { type: "text", class: "agentqcurrency", maxlength: "3", value: w.currency ?? "", placeholder: "GBP", "aria-label": t("agents.q.currency") },
+              (v) => {
+                const where = now().where.map((x, j) => (j === i ? { ...x, currency: v.toUpperCase() } : x));
+                set({ where }, false);
+              },
+            ),
+          ]
+        : [];
+    if (w.op === "between") {
+      const pair = Array.isArray(w.value) ? w.value : ["", ""];
+      return [
+        input({ type: kindType, class: "agentqvalue", value: pair[0] ?? "", "data-part": "from" }, (v) => {
+          const cur = Array.isArray(now().where[i].value) ? now().where[i].value : [null, null];
+          put([asValue(v), cur[1]]);
+        }),
+        el("span", { class: "muted sm", text: t("agents.plan.q.and") }),
+        input({ type: kindType, class: "agentqvalue", value: pair[1] ?? "", "data-part": "to" }, (v) => {
+          const cur = Array.isArray(now().where[i].value) ? now().where[i].value : [null, null];
+          put([cur[0], asValue(v)]);
+        }),
+        ...currency,
+      ];
+    }
+    if (w.op === "in") {
+      return [
+        input({ type: "text", class: "agentqvalue", value: Array.isArray(w.value) ? w.value.join(", ") : "", placeholder: t("agents.q.commas") }, (v) =>
+          put(v.split(",").map((x) => x.trim()).filter(Boolean)),
+        ),
+      ];
+    }
+    return [input({ type: kindType, class: "agentqvalue", value: w.value ?? "" }, (v) => put(asValue(v))), ...currency];
+  };
+
+  const filterRows = (q.where ?? []).map((w, i) => {
+    const f = fieldOf(w.field);
+    return el("div", { class: "agentqrow", "data-filter": String(i) }, [
+      select(`agent-q-field-${i}`, fields.map((x) => [x.key, fieldName(x)]), w.field, (v) => {
+        const nf = fieldOf(v);
+        const where = now().where.map((x, j) => (j === i ? { field: v, op: nf.ops[0], ...(nf.kind === "money" ? { currency: x.currency ?? "GBP" } : {}) } : x));
+        set({ where });
+      }),
+      select(`agent-q-op-${i}`, (f?.ops ?? []).map((op) => [op, t(`agents.q.op.${op}`)]), w.op, (v) => {
+        const where = now().where.map((x, j) => (j === i ? { field: x.field, op: v, ...(x.currency ? { currency: x.currency } : {}) } : x));
+        set({ where });
+      }),
+      ...valueControls(w, i),
+      actionLink("close", { label: t("agents.q.remove"), onclick: () => set({ where: now().where.filter((_, j) => j !== i) }) }),
+    ]);
+  });
+  const addFilter = actionLink("create", {
+    label: t("agents.q.addfilter"),
+    onclick: () => {
+      const f = fields[0];
+      if (f) set({ where: [...now().where, { field: f.key, op: f.ops[0], ...(f.kind === "money" ? { currency: "GBP" } : {}) }] });
+    },
+  });
+
+  const since = select(
+    "agent-q-since",
+    [
+      ["all", t("agents.plan.q.since.all")],
+      ["last_run", t("agents.plan.q.since.last_run")],
+    ],
+    q.since ?? "all",
+    (v) => set({ since: v }),
+  );
+
+  const grouped = (q.groupBy ?? []).length > 0;
+  const shapeSelect = select(
+    "agent-q-shape",
+    [
+      ["rows", t("agents.q.shape.rows")],
+      ["group", t("agents.q.shape.group")],
+    ],
+    grouped ? "group" : "rows",
+    (v) => {
+      if (v === "group") {
+        const g = fields.find((f) => f.group);
+        set({ groupBy: g ? [g.key] : [], measures: [{ fn: "count" }], show: [], sort: [] });
+      } else set({ groupBy: [], measures: [], show: startingQuestion(ds).show, sort: [] });
+    },
+  );
+
+  const showBoxes = el(
+    "div",
+    { class: "agentorgs", id: "agent-q-show" },
+    fields.map((f) => {
+      const box = el("input", {
+        type: "checkbox",
+        onchange: (e) => {
+          const show = e.target.checked ? [...now().show, f.key] : now().show.filter((k) => k !== f.key);
+          set({ show, sort: now().sort.filter((s) => show.includes(s.key)) });
+        },
+      });
+      box.checked = (q.show ?? []).includes(f.key);
+      return el("label", { class: "agentorg" }, [box, el("span", { text: fieldName(f) })]);
+    }),
+  );
+
+  const groupable = fields.filter((f) => f.group);
+  const groupSelects = [0, 1].map((i) =>
+    select(
+      `agent-q-group-${i}`,
+      [...(i === 1 ? [["", t("agents.q.none")]] : []), ...groupable.map((f) => [f.key, fieldName(f)])],
+      q.groupBy?.[i] ?? "",
+      (v) => {
+        const g = [...(now().groupBy ?? [])];
+        if (v) g[i] = v;
+        else g.splice(i, 1);
+        set({ groupBy: [...new Set(g.filter(Boolean))], sort: [] });
+      },
+    ),
+  );
+  const measured = fields.filter((f) => ["money", "days", "date"].includes(f.kind));
+  const measureKeyOf = (m) => (m.fn === "count" ? "count" : `${m.fn}_${m.field}`);
+  const measureLabel = (m) => {
+    if (m.fn === "count") return t("agents.col.m.count");
+    const f = fieldOf(m.field);
+    const fn = f?.kind === "date" ? (m.fn === "min" ? "first" : "last") : m.fn;
+    return t(`agents.col.m.${fn}`).replace("{field}", f ? fieldName(f) : m.field);
+  };
+  const measureOptions = [
+    { fn: "count" },
+    ...measured.flatMap((f) => (f.kind === "date" ? ["min", "max"] : ["sum", "avg", "min", "max"]).map((fn) => ({ fn, field: f.key }))),
+  ];
+  const measureBoxes = el(
+    "div",
+    { class: "agentorgs", id: "agent-q-measures" },
+    measureOptions.map((m) => {
+      const key = measureKeyOf(m);
+      const box = el("input", {
+        type: "checkbox",
+        onchange: (e) => {
+          const measures = e.target.checked ? [...now().measures, m] : now().measures.filter((x) => measureKeyOf(x) !== key);
+          set({ measures, sort: now().sort.filter((s) => s.key !== key) });
+        },
+      });
+      box.checked = (q.measures ?? []).some((x) => measureKeyOf(x) === key);
+      return el("label", { class: "agentorg" }, [box, el("span", { text: measureLabel(m) })]);
+    }),
+  );
+
+  const sortable = grouped
+    ? [...q.groupBy.map((k) => [k, fieldOf(k) ? fieldName(fieldOf(k)) : k]), ...(q.measures ?? []).map((m) => [measureKeyOf(m), measureLabel(m)])]
+    : (q.show ?? []).map((k) => [k, fieldOf(k) ? fieldName(fieldOf(k)) : k]);
+  const sortSelect = select("agent-q-sort", [["", t("agents.q.none")], ...sortable], q.sort?.[0]?.key ?? "", (v) =>
+    set({ sort: v ? [{ key: v, dir: now().sort?.[0]?.dir ?? "desc" }] : [] }),
+  );
+  const dirSelect = select(
+    "agent-q-dir",
+    [
+      ["desc", t("agents.plan.q.desc")],
+      ["asc", t("agents.plan.q.asc")],
+    ],
+    q.sort?.[0]?.dir ?? "desc",
+    (v) => set({ sort: now().sort.length ? [{ key: now().sort[0].key, dir: v }] : [] }),
+  );
+  const limit = input({ type: "number", id: "agent-q-limit", min: "1", max: "500", step: "1", value: String(q.limit ?? 100) }, (v) =>
+    set({ limit: v === "" ? 100 : Number(v) }, false),
+  );
+
+  const tryIt = actionLink("compile", {
+    label: tried === "loading" ? t("agents.q.trying") : t("agents.q.try"),
+    onclick: async () => {
+      if (tried === "loading") return;
+      tried = "loading";
+      render();
+      const r = await call("/api/agent-query/try", json("POST", { query: draft.options.query, orgIds: draft.orgIds }));
+      tried = r.ok ? { table: r.body.table, count: r.body.count } : { problem: why(r.body) };
+      render();
+    },
+  });
+  const triedPanel =
+    tried && tried !== "loading"
+      ? tried.problem
+        ? el("p", { class: "agentrefusals", id: "agent-q-tried", text: tried.problem })
+        : el("div", { id: "agent-q-tried", class: "agentqtried" }, [
+            el("p", { class: "muted sm", text: t("agents.q.tried").replace("{n}", String(tried.count)).replace("{shown}", String(tried.table.rows.length)) }),
+            reportTable(tried.table),
+          ])
+      : null;
+
+  return el("div", { id: "agent-question", class: "agentqbuilder" }, [
     field(
       t("agents.form.question"),
-      el("ul", { class: "agentquestion" }, (q ? queryWords(q, data?.catalogue, new Set(understood?.assumed ?? [])) : []).map((w) => el("li", { text: w }))),
-      t("agents.form.question.hint"),
+      el("ul", { class: "agentquestion", id: "agent-q-words" }, queryWords(q, data?.catalogue, new Set(understood?.assumed ?? [])).map((w) => el("li", { text: w }))),
+      t("agents.q.hint"),
     ),
+    el("div", { class: "dotwo" }, [field(t("agents.q.dataset"), datasetSelect, null, "agent-q-dataset"), field(t("agents.q.since"), since, null, "agent-q-since")]),
+    field(t("agents.q.where"), el("div", { class: "agentqfilters", id: "agent-q-filters" }, [...filterRows, el("div", { class: "dobuttons" }, [addFilter])])),
+    field(t("agents.q.shape"), shapeSelect, null, "agent-q-shape"),
+    grouped
+      ? el("div", {}, [
+          field(t("agents.q.groupby"), el("div", { class: "agentqrow" }, groupSelects)),
+          field(t("agents.q.measures"), measureBoxes),
+        ])
+      : field(t("agents.q.show"), showBoxes),
+    el("div", { class: "agentqrow" }, [field(t("agents.q.sort"), el("div", { class: "agentqrow" }, [sortSelect, dirSelect]), null, "agent-q-sort"), field(t("agents.q.limit"), limit, null, "agent-q-limit")]),
+    el("div", { class: "dobuttons" }, [tryIt]),
+    ...(triedPanel ? [triedPanel] : []),
   ]);
 }
 

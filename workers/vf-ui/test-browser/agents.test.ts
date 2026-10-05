@@ -169,6 +169,12 @@ const STRINGS = {
     "agents.form.question": "The question",
     "agents.plan.missing.shape": "Follows from the report.",
     "agents.refusal.question_unclear": "Could not read the part about {words} as written.",
+    "agents.q.try": "Try it now",
+    "agents.q.addfilter": "Add a condition",
+    "agents.q.tried": "{n} rows with your own access. The first {shown} are shown.",
+    "agents.error.query_currency_missing": "An amount needs its currency, such as GBP.",
+    "agents.q.shape.group": "Grouped, with totals",
+    "agents.plan.q.group": "by {fields}: {measures}",
     "agents.refusal.cannot_ask": "Could not ask about \u201c{words}\u201d: it is not something an agent can ask about here.",
   },
 };
@@ -216,6 +222,7 @@ function stub(opts: {
   calls?: Call[];
   emailReady?: boolean;
   understandReply?: [number, unknown];
+  tryReply?: [number, unknown];
   aiReady?: boolean;
   page?: unknown;
   runs?: unknown[];
@@ -315,11 +322,11 @@ function stub(opts: {
               {
                 id: "invoices",
                 fields: [
-                  { key: "supplier", kind: "text", label: "agents.col.supplier" },
-                  { key: "invoice", kind: "text", label: "agents.col.invoice" },
-                  { key: "total", kind: "money", label: "agents.col.total" },
-                  { key: "currency", kind: "text", label: "agents.col.currency" },
-                  { key: "status", kind: "enum", label: "agents.col.status", values: ["in_progress"], enumKey: "agents.qstatus" },
+                  { key: "supplier", kind: "text", label: "agents.col.supplier", group: true, ops: ["is", "is_not", "in", "contains", "is_empty", "not_empty"] },
+                  { key: "invoice", kind: "text", label: "agents.col.invoice", ops: ["is", "is_not", "in", "contains", "is_empty", "not_empty"] },
+                  { key: "total", kind: "money", label: "agents.col.total", ops: ["over", "under", "between"] },
+                  { key: "currency", kind: "text", label: "agents.col.currency", group: true, ops: ["is", "is_not", "in", "contains", "is_empty", "not_empty"] },
+                  { key: "status", kind: "enum", label: "agents.col.status", group: true, values: ["in_progress"], enumKey: "agents.qstatus", ops: ["is", "is_not", "in"] },
                 ],
               },
             ],
@@ -342,6 +349,9 @@ function stub(opts: {
         ];
         return reply(status, body);
       }
+      // Decision 0636: a question tried now.
+      if (path === "/api/agent-query/try")
+        return reply(...(opts.tryReply ?? [422, { reason: "query_show_missing" }]));
       if (path === "/api/agents/understand")
         return reply(
           ...(opts.understandReply ?? [503, { reason: "ai_unavailable" }]),
@@ -456,6 +466,8 @@ describe("the Agents screen", () => {
       "stuck_work",
       "returned_no_reply",
       "event_stuck",
+      // Decision 0636: the agent's own question, where there is something to ask about.
+      "query",
     ]);
     // Accruals is held in Acme UK only: Acme DE is not offered.
     report.value = "accruals";
@@ -1858,5 +1870,85 @@ describe("a question that could not be read — decision 0635", () => {
     await vi.waitFor(() => expect(document.getElementById("agent-plan")?.hidden).toBe(false));
     expect(document.querySelector('#agent-plan [data-step="shape"]')?.textContent).toContain("Follows from the report.");
     expect(document.getElementById("agent-refusals")?.textContent).toBe("Could not read the part about the total including VAT as written.");
+  });
+});
+
+describe("the question builder — decision 0636", () => {
+  const pick = (id: string, value: string) => {
+    const node = document.getElementById(id) as HTMLSelectElement;
+    node.value = value;
+    node.dispatchEvent(new Event("change"));
+  };
+  const type = (node: HTMLInputElement, value: string) => {
+    node.value = value;
+    node.dispatchEvent(new Event("input"));
+  };
+
+  it("builds a question in Edit steps, tries it with the person's own access, and saves it", async () => {
+    const calls = await openAgents({
+      permissions: ["AP.Agents"],
+      agents: [],
+      tryReply: [
+        200,
+        {
+          count: 2,
+          table: {
+            report: "query",
+            columns: [
+              { key: "org", label: "agents.col.org", kind: "text" },
+              { key: "supplier", label: "agents.col.supplier", kind: "text" },
+              { key: "total", label: "agents.col.total", kind: "money" },
+            ],
+            rows: [
+              { org: "Acme UK", supplier: "Kingsway", total: 150000 },
+              { org: "Acme DE", supplier: "Lager Nord", total: 300000 },
+            ],
+            totals: [],
+            skippedOrgs: [],
+            asAt: "2026-10-05T12:00:00Z",
+          },
+        },
+      ],
+    });
+    button("New agent")!.click();
+    (document.getElementById("agent-steps") as HTMLDetailsElement).open = true;
+    pick("agent-report", "query");
+    expect(document.getElementById("agent-q-dataset")).not.toBeNull();
+    // A condition: Total is over 100,000 GBP.
+    button("Add a condition")!.click();
+    pick("agent-q-field-0", "total");
+    pick("agent-q-op-0", "over");
+    const row = document.querySelector('[data-filter="0"]')!;
+    type(row.querySelector<HTMLInputElement>(".agentqvalue")!, "100000");
+    type(row.querySelector<HTMLInputElement>(".agentqcurrency")!, "gbp");
+    expect(document.getElementById("agent-q-words")?.textContent).toContain("Invoices where Total is over 100,000.00 GBP");
+    button("Try it now")!.click();
+    await vi.waitFor(() => expect(document.getElementById("agent-q-tried")).not.toBeNull());
+    const tried = calls.find((c) => c.path === "/api/agent-query/try")!.body as { query: Record<string, unknown>; orgIds: string[] };
+    expect(tried.query).toMatchObject({ dataset: "invoices", where: [{ field: "total", op: "over", value: 100000, currency: "GBP" }], show: ["supplier", "invoice", "total", "currency"] });
+    expect(tried.orgIds).toEqual(["acme-uk"]);
+    expect(document.getElementById("agent-q-tried")!.textContent).toContain("2 rows with your own access. The first 2 are shown.");
+    expect(document.querySelectorAll("#agent-q-tried .agentreporttable tbody tr")).toHaveLength(2);
+
+    // Grouped instead: by supplier, with a count.
+    pick("agent-q-shape", "group");
+    expect((document.getElementById("agent-q-group-0") as HTMLSelectElement).value).toBe("supplier");
+    expect(document.getElementById("agent-q-words")?.textContent).toContain("by Supplier: Count");
+
+    shell().querySelector<HTMLButtonElement>("#agent-form .cardhead .actionlink.primary")!.click();
+    await vi.waitFor(() => expect(calls.some((c) => c.method === "POST" && c.path === "/api/agents")).toBe(true));
+    expect(calls.find((c) => c.method === "POST" && c.path === "/api/agents")!.body).toMatchObject({
+      report: "query",
+      options: { query: { dataset: "invoices", where: [{ field: "total", op: "over", value: 100000, currency: "GBP" }], groupBy: ["supplier"], measures: [{ fn: "count" }], show: [] } },
+    });
+  });
+
+  it("says why a question tried now cannot be asked", async () => {
+    await openAgents({ permissions: ["AP.Agents"], agents: [], tryReply: [422, { reason: "query_currency_missing" }] });
+    button("New agent")!.click();
+    (document.getElementById("agent-steps") as HTMLDetailsElement).open = true;
+    pick("agent-report", "query");
+    button("Try it now")!.click();
+    await vi.waitFor(() => expect(document.getElementById("agent-q-tried")?.textContent).toBe("An amount needs its currency, such as GBP."));
   });
 });

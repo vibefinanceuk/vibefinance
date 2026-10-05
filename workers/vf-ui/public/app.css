@@ -5272,5 +5272,14 @@
 .agentrefusals { margin: 8px 0 0; padding-left: 18px; color: var(--text-warning); }
 /* Decision 0634: the question, in words, in Edit steps. */
 .agentquestion { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px; }
+/* Decision 0636: the question builder in Edit steps. */
+.agentqbuilder { display: flex; flex-direction: column; gap: 12px; }
+.agentqfilters { display: flex; flex-direction: column; gap: 8px; }
+.agentqrow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.agentqrow select, .agentqvalue { min-width: 0; max-width: 100%; }
+.agentqvalue { width: 160px; }
+.agentqcurrency { width: 64px; text-transform: uppercase; }
+.agentqvalues { display: flex; flex-wrap: wrap; gap: 8px; }
+.agentqtried { display: flex; flex-direction: column; gap: 6px; }
 .agentsteps { margin-top: 12px; }
 .agentsteps > summary { cursor: pointer; font-weight: 700; }

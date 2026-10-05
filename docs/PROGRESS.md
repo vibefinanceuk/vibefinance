@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 5 October 2026 (decision 0635). A living document: what
+Last updated 5 October 2026 (decision 0636). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,14 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Agents ask the data, slice 3: the question builder (0636)
+
+The question can be built and changed in Edit steps: what it asks about,
+its conditions, new or all, the columns or a grouping with totals, the
+order and how many rows, each chosen from what the person may ask about.
+Try it now shows what it finds with their own access before saving.
+Your own question can be chosen from the form directly.
 
 ### Agents ask the data: a question read as written (0635)
 
