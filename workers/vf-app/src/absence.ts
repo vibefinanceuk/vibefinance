@@ -503,3 +503,21 @@ export async function coveringFor(db: D1Database, userId: string, now = new Date
     .all<{ user_id: string; name: string; returns_on: string }>();
   return rows.results.map((r) => ({ userId: r.user_id, name: r.name, returnsOn: r.returns_on }));
 }
+
+/**
+ * **This person's absence state, for the button in the top bar —
+ * decision 0642.** Away now (and until when), and how many people they
+ * cover for today.
+ */
+export async function absenceStatus(db: D1Database, userId: string, now = new Date()): Promise<{ awayUntil: string | null; covering: number }> {
+  const today = await localToday(db, now);
+  const away = await db
+    .prepare("SELECT returns_on FROM absences WHERE user_id = ? AND cancelled_at IS NULL AND starts_on <= ? AND returns_on > ? LIMIT 1")
+    .bind(userId, today, today)
+    .first<{ returns_on: string }>();
+  const covering = await db
+    .prepare("SELECT count(*) AS n FROM absences WHERE cover_user_id = ? AND cancelled_at IS NULL AND starts_on <= ? AND returns_on > ?")
+    .bind(userId, today, today)
+    .first<{ n: number }>();
+  return { awayUntil: away?.returns_on ?? null, covering: covering?.n ?? 0 };
+}

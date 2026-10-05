@@ -1,5 +1,5 @@
 import { t } from "/strings.js";
-import { el, frame, topbar, setCurrentScreen } from "/tasks.js";
+import { el, frame, topbar, setCurrentScreen, setMyAbsence } from "/tasks.js";
 import { actionLink } from "/viewer.js";
 
 /**
@@ -35,6 +35,8 @@ function why(body) {
 async function load() {
   const r = await call("/api/absences");
   data = r.ok ? r.body : null;
+  // Decision 0642: the top bar's button follows what this screen now knows.
+  if (data) setMyAbsence({ awayUntil: (data.mine ?? []).find((a) => a.state === "away")?.returnsOn ?? null, covering: (data.covering ?? []).length });
   return r.ok;
 }
 

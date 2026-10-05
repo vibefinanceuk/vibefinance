@@ -5196,6 +5196,9 @@
 .absencetable { width: 100%; border-collapse: collapse; }
 .absencetable th, .absencetable td { text-align: left; padding: 8px 8px 8px 0; vertical-align: top; border-bottom: 0.5px solid var(--border); }
 .absencetable th { font-size: var(--text-sm); color: var(--text-muted); font-weight: 600; }
+/* Decision 0642: the top bar's Absence button, coloured while away or covering. */
+.absencebutton.away { color: var(--text-warning); }
+.absencebutton.covering { color: var(--text-accent); }
 .absenceticks { display: flex; flex-wrap: wrap; gap: 8px 22px; margin: 4px 0 10px; }
 .absencetick { display: inline-flex; align-items: center; gap: 8px; }
 .agenttable { width: 100%; border-collapse: collapse; }

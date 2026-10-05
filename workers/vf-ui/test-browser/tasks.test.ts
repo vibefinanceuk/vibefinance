@@ -439,8 +439,6 @@ describe("the flat nav, permission-filtered (decisions 0274 and 0276)", () => {
       "AP Analytics",
       "Tasks",
       "Documents",
-      // Absence and cover — decision 0641.
-      "Absence",
       "Suppliers",
       "Access",
       "AP Setup",
@@ -644,8 +642,8 @@ describe("the flat nav, permission-filtered (decisions 0274 and 0276)", () => {
     await openList([APPROVAL_TASK]);
 
     const items = [...document.querySelectorAll(".navitem")];
-    // Decision 0557: Sources became Routes and Process routes. Decision 0641: Absence.
-    expect(items).toHaveLength(13);
+    // Decision 0557: Sources became Routes and Process routes. (Absence is in the top bar, decision 0642.)
+    expect(items).toHaveLength(12);
     for (const item of items) {
       expect(item.querySelector("svg")).not.toBeNull();
     }
@@ -856,8 +854,6 @@ describe("the flat nav, permission-filtered (decisions 0274 and 0276)", () => {
       "AP Analytics",
       "Tasks",
       "Documents",
-      // Absence and cover — decision 0641.
-      "Absence",
       "Suppliers",
       "Access",
       "AP Setup",
@@ -897,8 +893,7 @@ describe("the flat nav, permission-filtered (decisions 0274 and 0276)", () => {
      */
     const cases: [string, string][] = [
       ["AP.Dashboard", "Dashboard"],
-      // Decision 0641: Absence is for anyone who works tasks.
-      ["AP.TaskView", "Tasks|Absence"],
+      ["AP.TaskView", "Tasks"],
       ["Admin.RuleManagement", "Rules"],
       ["AP.Review", "Documents"],
     ];

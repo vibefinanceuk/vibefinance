@@ -1,7 +1,7 @@
 import { env } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
 import { applyTestSchema } from "./setup.js";
-import { handleAmendAbsence, handleCancelAbsence, handleCreateAbsence, handleListAbsences, processAbsences } from "../src/absence.js";
+import { absenceStatus, handleAmendAbsence, handleCancelAbsence, handleCreateAbsence, handleListAbsences, processAbsences } from "../src/absence.js";
 
 /**
  * Absence and cover — decision 0641. The AP team is Uma, Ben and Cara,
@@ -80,6 +80,9 @@ describe("marking oneself away", () => {
     ]);
     // Ben is told whom he covers for; the Timeline says who passed what, and why.
     expect(((await handleListAbsences(env.DB, "ben", MONDAY)).body as Listed).covering).toEqual([{ userId: "uma", name: "Uma", returnsOn: "2026-10-08" }]);
+    // Decision 0642: the top bar's Absence button says who is away, and who covers.
+    expect(await absenceStatus(env.DB, "uma", MONDAY)).toEqual({ awayUntil: "2026-10-08", covering: 0 });
+    expect(await absenceStatus(env.DB, "ben", MONDAY)).toEqual({ awayUntil: null, covering: 1 });
     const event = await env.DB.prepare("SELECT action, actor_id, target_user_id, comment FROM task_action_events WHERE task_id = 't-small'").first();
     expect(event).toEqual({ action: "reassign", actor_id: "uma", target_user_id: "ben", comment: "Away 2026-10-05 until 2026-10-08: passed to cover" });
   });

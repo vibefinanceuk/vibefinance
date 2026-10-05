@@ -967,8 +967,6 @@ const NAV_GROUPS = [
       // Agents — decision 0622, under Accounts payable.
       ["agents", "agents"],
       ["documents", "documents"],
-      // Absence and cover — decision 0641, last under Accounts payable.
-      ["absence", "away"],
     ],
   },
   {
@@ -1064,7 +1062,7 @@ export function frame(main) {
    * (Tasks, third; Documents, fourth) has.
    */
   // Agents (decision 0622) likewise: between Create (fifth) and Documents (fourth), the first.
-  const FIXED_HUES = new Map([["create", 5], ["agents", 1], ["absence", 2]]);
+  const FIXED_HUES = new Map([["create", 5], ["agents", 1]]);
   const HUES = new Map([
     ...NAV_GROUPS.flatMap(({ screens }) => screens)
       .filter(([screen]) => !FIXED_HUES.has(screen))
@@ -1253,6 +1251,14 @@ export function topbar(title, subtitle, right = [], extra = []) {
        * reported live: "At the top of the page, between Night / Day,
        * and Sign out... add a Language button."
        */
+      /**
+       * **Absence, in the top bar — decision 0642.** Dan: an absence
+       * "transcends workflows, and applies to AP, AR and Expense", so it
+       * sits with the person's own settings rather than under one
+       * workflow's menu. It says *Away* while they are, and *Covering*
+       * while someone's tasks are with them.
+       */
+      ...(mayOpen("absence") ? [absenceButton()] : []),
       languagePicker(relaunchAfterLanguageChange),
       /**
        * **Help, between Language and Sign out — decision 0518**, the
@@ -1296,6 +1302,28 @@ export function topbar(title, subtitle, right = [], extra = []) {
       ),
     ].filter(Boolean)),
   ]);
+}
+
+/** Decision 0642: the Absence screen tells the top bar what changed, without asking whoami again. */
+export function setMyAbsence(absence) {
+  if (me) me.absence = absence;
+}
+
+/** Decision 0642: Absence, Away or Covering, opening the Absence screen. */
+function absenceButton() {
+  const a = me?.absence ?? null;
+  const state = a?.awayUntil ? "away" : a?.covering ? "covering" : "none";
+  const label = t(`absence.button.${state}`);
+  return el(
+    "button",
+    {
+      class: `actionlink absencebutton${state === "none" ? "" : ` ${state}`}`,
+      id: "absence-button",
+      title: state === "away" ? t("absence.button.awaytitle").replace("{day}", a.awayUntil) : label,
+      onclick: () => go("absence"),
+    },
+    [icon("away"), el("span", { text: label })]
+  );
 }
 
 function render() {

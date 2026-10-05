@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 5 October 2026 (decision 0641). A living document: what
+Last updated 5 October 2026 (decision 0642). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,12 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Absence in the top bar (0642)
+
+Absence belongs to the person, not one workflow, so it moved from the
+Accounts payable menu to the top bar, where it reads Absence, Away or
+Covering.
 
 ### Absence and cover (0641)
 

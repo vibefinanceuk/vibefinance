@@ -10,6 +10,10 @@ const STRINGS = {
   locale: "en",
   strings: {
     "nav.absence": "Absence",
+    "absence.button.none": "Absence",
+    "absence.button.away": "Away",
+    "absence.button.covering": "Covering",
+    "absence.button.awaytitle": "Away until {day}",
     "absence.subtitle": "When you are away, and who covers your tasks.",
     "absence.new": "I will be away",
     "absence.newfor": "For someone in my team",
@@ -115,9 +119,10 @@ afterEach(() => {
 });
 
 describe("the Absence screen", () => {
-  it("is in the menu for anyone who works tasks", async () => {
+  it("is in the top bar for anyone who works tasks, not in a workflow's menu — decision 0642", async () => {
     await openAbsence({ permissions: ["AP.TaskView"] });
-    expect([...shell().querySelectorAll(".navitem")].some((n) => n.textContent?.includes("Absence"))).toBe(true);
+    expect(document.getElementById("absence-button")?.textContent).toBe("Absence");
+    expect([...shell().querySelectorAll(".navitem")].some((n) => n.textContent?.includes("Absence"))).toBe(false);
     expect(document.getElementById("absence-mine")?.textContent).toBe("No absence planned.");
     // Not an AP Manager: no team panel, and no arranging for others.
     expect(document.getElementById("absence-team")).toBeNull();
@@ -157,5 +162,17 @@ describe("the Absence screen", () => {
     expect(button("For someone in my team")).toBeDefined();
     [...row.querySelectorAll("button")].find((b) => b.textContent?.includes("Cancel absence"))!.click();
     await vi.waitFor(() => expect(calls.some((c) => c.path === "/api/absences/abs-1/cancel")).toBe(true));
+  });
+});
+
+describe("the top bar's Absence button — decision 0642", () => {
+  it("says Away while one is away, and Covering while someone's tasks are with one", async () => {
+    await openAbsence({ permissions: ["AP.TaskView"], list: { mine: [{ ...UMA_AWAY, userId: "u-maya" }] } });
+    expect(document.getElementById("absence-button")?.textContent).toBe("Away");
+    expect(document.getElementById("absence-button")?.getAttribute("title")).toBe("Away until 2026-10-08");
+    document.body.innerHTML = `<main id="shell"></main><main id="viewer" hidden></main>`;
+    vi.resetModules();
+    await openAbsence({ permissions: ["AP.TaskView"], list: { covering: [{ userId: "u-uma", name: "Uma", returnsOn: "2026-10-08" }] } });
+    expect(document.getElementById("absence-button")?.textContent).toBe("Covering");
   });
 });

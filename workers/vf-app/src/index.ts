@@ -20,7 +20,7 @@ import {
   type AgentDeps,
 } from "./agents.js";
 import { handleUnderstandAgent } from "./agent-understand.js";
-import { handleAmendAbsence, handleCancelAbsence, handleCreateAbsence, handleListAbsences, processAbsences } from "./absence.js";
+import { absenceStatus, handleAmendAbsence, handleCancelAbsence, handleCreateAbsence, handleListAbsences, processAbsences } from "./absence.js";
 import { handleCollectNow, handleForgetSftpIdentity, handleGetSftp, handleSaveSftp, handleTestSftp, sftpRunnerFrom } from "./sftp.js";
 import { handleGetPoMatchView, handlePoCandidates, handleLinkPo, handlePairLine, PO_PANEL_PERMISSIONS } from "./po-match-panel-route.js";
 import { resolveTenant } from "@vibefinance/shared";
@@ -5330,6 +5330,8 @@ export default {
           // and a key does not, or the reverse.
           authenticatedVia: auth.via,
           environmentId: env.ENVIRONMENT_ID ?? null,
+          // Decision 0642: away now, or covering for someone, for the top bar's Absence button.
+          absence: await absenceStatus(db, auth.user.id).catch(() => null),
         },
         200
       );
