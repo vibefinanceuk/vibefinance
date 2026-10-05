@@ -265,6 +265,51 @@ function isText(v: unknown): v is string {
 
 type Refusal = { reason: string; detail?: string };
 
+const SYMBOLS: Record<string, string> = { "£": "GBP", "€": "EUR", $: "USD", "¥": "JPY" };
+
+/** A currency as a three-letter code: "GBP", "gbp" or "£". Null when it is not one. */
+export function currencyCode(v: unknown): string | null {
+  if (typeof v !== "string") return null;
+  const t = v.trim();
+  if (SYMBOLS[t]) return SYMBOLS[t];
+  const up = t.toUpperCase();
+  return CURRENCY.test(up) ? up : null;
+}
+
+/**
+ * An amount as the model may write it: 100000, "100000", "100,000",
+ * "£100,000", "100k", "1.5m", "GBP 100000", or {"amount": 100000,
+ * "currency": "GBP"}. The currency, where it carries one. Undefined when
+ * it is not an amount.
+ */
+export function readAmount(v: unknown): { amount: number; currency: string | null } | undefined {
+  if (typeof v === "number") return Number.isFinite(v) ? { amount: v, currency: null } : undefined;
+  if (v && typeof v === "object" && !Array.isArray(v)) {
+    const o = v as Record<string, unknown>;
+    const inner = readAmount(o.amount ?? o.value);
+    if (!inner) return undefined;
+    return { amount: inner.amount, currency: currencyCode(o.currency) ?? inner.currency };
+  }
+  if (typeof v !== "string") return undefined;
+  let text = v.trim();
+  let currency: string | null = null;
+  for (const [sym, code] of Object.entries(SYMBOLS)) {
+    if (text.includes(sym)) {
+      currency = code;
+      text = text.split(sym).join("");
+    }
+  }
+  const code = text.match(/\b([A-Za-z]{3})\b/);
+  if (code && CURRENCY.test(code[1].toUpperCase())) {
+    currency = currency ?? code[1].toUpperCase();
+    text = text.replace(code[0], "");
+  }
+  const m = text.replace(/[\s,]/g, "").match(/^(\d+(?:\.\d+)?)([km])?$/i);
+  if (!m) return undefined;
+  const n = Number(m[1]) * (m[2]?.toLowerCase() === "k" ? 1_000 : m[2]?.toLowerCase() === "m" ? 1_000_000 : 1);
+  return { amount: Math.round(n * 100) / 100, currency };
+}
+
 function checkFilter(d: QueryDataset, raw: unknown): { filter: QueryFilter } | Refusal {
   if (!raw || typeof raw !== "object") return { reason: "query_filter_invalid" };
   const r = raw as Record<string, unknown>;
@@ -276,14 +321,17 @@ function checkFilter(d: QueryDataset, raw: unknown): { filter: QueryFilter } | R
   const bad = { reason: "query_value_invalid", detail: f.key };
   if (op === "is_empty" || op === "not_empty") return { filter: { field: f.key, op } };
   if (f.kind === "money") {
-    const currency = typeof r.currency === "string" ? r.currency.toUpperCase() : "";
-    if (!CURRENCY.test(currency)) return { reason: "query_currency_missing", detail: f.key };
+    // Decision 0635: an amount and its currency, however the model wrote them, when it is plain which.
+    const amounts = (op === "between" ? (Array.isArray(v) ? v : []) : [v]).map(readAmount);
+    const currency = currencyCode(r.currency) ?? amounts.map((a) => a?.currency).find((c) => c) ?? null;
+    if (!currency) return { reason: "query_currency_missing", detail: f.key };
+    const nums = amounts.map((a) => a?.amount);
+    if (nums.some((n) => n === undefined || !isAmount(n))) return bad;
     if (op === "between") {
-      if (!Array.isArray(v) || v.length !== 2 || !isAmount(v[0]) || !isAmount(v[1]) || v[0] > v[1]) return bad;
-      return { filter: { field: f.key, op, value: [v[0], v[1]], currency } };
+      if (nums.length !== 2 || nums[0]! > nums[1]!) return bad;
+      return { filter: { field: f.key, op, value: [nums[0], nums[1]], currency } };
     }
-    if (!isAmount(v)) return bad;
-    return { filter: { field: f.key, op, value: v, currency } };
+    return { filter: { field: f.key, op, value: nums[0], currency } };
   }
   if (f.kind === "days") {
     if (op === "between") {

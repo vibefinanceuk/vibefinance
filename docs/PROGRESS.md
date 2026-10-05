@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 5 October 2026 (decision 0634). A living document: what
+Last updated 5 October 2026 (decision 0635). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,15 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Agents ask the data: a question read as written (0635)
+
+Dan's "invoices over £100,000" was refused because the amount was not
+written the one way the check accepted. Amounts are now read however
+they are written when the currency is plain, a refused question goes
+back to the AI once with the reason, and what cannot be read is said by
+what it means. A plan with no report no longer shows another report's
+narrowing.
 
 ### Agents ask the data, slice 2: plain words write the question (0634)
 

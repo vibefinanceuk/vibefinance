@@ -1976,6 +1976,8 @@ const KEYS_THE_INTERFACE_USES = [
   "agents.form.question.hint",
   "help.screen.agents.38",
   "help.screen.agents.39",
+  "agents.refusal.question_unclear",
+  "agents.plan.missing.shape",
   "agents.report.due_soon_not_eligible",
   "agents.report.stuck_work",
   "agents.reporthint.due_soon_not_eligible",

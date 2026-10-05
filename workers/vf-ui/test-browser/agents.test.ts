@@ -167,6 +167,8 @@ const STRINGS = {
     "agents.qop.over": "{field} is over {value}",
     "agents.qop.is": "{field} is {value}",
     "agents.form.question": "The question",
+    "agents.plan.missing.shape": "Follows from the report.",
+    "agents.refusal.question_unclear": "Could not read the part about {words} as written.",
     "agents.refusal.cannot_ask": "Could not ask about \u201c{words}\u201d: it is not something an agent can ask about here.",
   },
 };
@@ -1829,5 +1831,32 @@ describe("plain words write a question — decision 0634", () => {
     shell().querySelector<HTMLButtonElement>("#agent-form .cardhead .actionlink.primary")!.click();
     await vi.waitFor(() => expect(calls.some((c) => c.method === "POST" && c.path === "/api/agents")).toBe(true));
     expect(calls.find((c) => c.method === "POST" && c.path === "/api/agents")!.body).toMatchObject({ report: "query", options: { query: QUERY }, orgIds: ["acme-uk", "acme-de"] });
+  });
+});
+
+describe("a question that could not be read — decision 0635", () => {
+  it("says which part, and does not show a report's narrowing before there is a report", async () => {
+    await openAgents({
+      permissions: ["AP.Agents"],
+      agents: [],
+      understandReply: [
+        200,
+        {
+          text: "invoices over 100,000",
+          draft: { name: "Big ones", report: null, orgIds: ["acme-uk"], schedule: { every: "week", time: "12:10", weekday: 1 }, options: {}, deliver: { task: true, email: false }, recipients: [], summary: true },
+          refusals: [{ code: "question_unclear", words: "the total including VAT" }],
+          missing: ["report"],
+          assumed: [],
+        },
+      ],
+    });
+    button("New agent")!.click();
+    const box = document.getElementById("agent-describe") as HTMLTextAreaElement;
+    box.value = "invoices over 100,000";
+    box.dispatchEvent(new Event("input"));
+    button("Understand")!.click();
+    await vi.waitFor(() => expect(document.getElementById("agent-plan")?.hidden).toBe(false));
+    expect(document.querySelector('#agent-plan [data-step="shape"]')?.textContent).toContain("Follows from the report.");
+    expect(document.getElementById("agent-refusals")?.textContent).toBe("Could not read the part about the total including VAT as written.");
   });
 });

@@ -79,6 +79,7 @@ export type RefusalCode =
   | "option_out_of_range"
   // Decision 0634: a question that cannot be asked, or a report that answers only nearly.
   | "cannot_ask"
+  | "question_unclear"
   | "approximate"
   | "other";
 
@@ -165,6 +166,7 @@ Shape: {"dataset": id, "where": [filter, ...], "since": "all" | "last_run", "sho
 - Either "show" (the columns, one row each) or "groupBy" (up to 2 fields) with "measures". A measure's key is "count", or fn_field such as "sum_total".
 - "limit": rows, 1-500, usually 100.
 - Write the amount as a number (100000, not "100k"). Use only the datasets, fields and values listed.
+- For example, "invoices over £5,000 from Kingsway" is {"dataset": "invoices", "where": [{"field": "total", "op": "over", "value": 5000, "currency": "GBP"}, {"field": "supplier", "op": "contains", "value": "Kingsway"}], "show": ["supplier", "invoice", "total", "stage"]}.
 - For invoices, when the request does not say which, ask only those still being processed (status is in_progress) and list "status" in "assumed". List in "assumed" any field you filtered on, and "since" or "sort", that the request did not itself say.
 
 Schedules (times are HH:MM, 24-hour, in ${ctx.zone}):
@@ -278,18 +280,17 @@ export async function handleUnderstandAgent(
   const weekday = WEEKDAYS[new Date(`${localDay}T12:00:00Z`).getUTCDay()];
 
   let raw: string;
+  const prompt = promptFor(text, {
+    today: localDay,
+    weekday,
+    zone,
+    orgs: choosable.map((u) => u.name),
+    managers: managers.map((m) => m.name),
+    me: me?.name ?? "me",
+    catalogue: catalogueWords(catalogue),
+  });
   try {
-    raw = await model.compile(
-      promptFor(text, {
-        today: localDay,
-        weekday,
-        zone,
-        orgs: choosable.map((u) => u.name),
-        managers: managers.map((m) => m.name),
-        me: me?.name ?? "me",
-        catalogue: catalogueWords(catalogue),
-      }),
-    );
+    raw = await model.compile(prompt);
   } catch {
     return {
       status: 503,
@@ -299,7 +300,24 @@ export async function handleUnderstandAgent(
       },
     };
   }
-  const parsed = extractJson(raw);
+  let parsed = extractJson(raw);
+  // Decision 0635: a question our check refuses is sent back once, with why, to be put right.
+  const first = parsed && typeof parsed === "object" && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : null;
+  if (first?.report === "query") {
+    const checked = checkQuery(first.query);
+    if ("reason" in checked) {
+      try {
+        const again = extractJson(
+          await model.compile(
+            `${prompt}\n\nYour answer was:\n${JSON.stringify(first)}\nIts query was refused by the checker: ${checked.reason}${checked.detail ? ` (${checked.detail})` : ""}. Use only the datasets, fields, ops and values listed, and for money a number "value" with a "currency" code. Answer again with the whole corrected JSON object.`,
+          ),
+        );
+        if (again && typeof again === "object" && !Array.isArray(again)) parsed = again;
+      } catch {
+        // Keep the first answer; it is refused in words below.
+      }
+    }
+  }
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
     return {
       status: 422,
@@ -320,6 +338,7 @@ export async function handleUnderstandAgent(
     "unknown_person",
     "option_out_of_range",
     "cannot_ask",
+    "question_unclear",
     "approximate",
     "other",
   ]);
@@ -360,9 +379,13 @@ export async function handleUnderstandAgent(
         assumed = assumedParts(p.assumed, p.query, question);
       }
     } else {
+      // Decision 0635: a field or dataset that is not there cannot be asked; a part written so it cannot be read is unclear.
+      const unknown = checked.reason === "query_field_unknown" || checked.reason === "query_dataset_unknown";
+      const ds = catalogue.datasets.find((d) => d.id === (p.query as Record<string, unknown> | undefined)?.dataset);
+      const meant = ds?.fields.find((f) => f.key === checked.detail?.split(" ")[0])?.words;
       refusals.push({
-        code: "cannot_ask",
-        words: (checked.detail ?? QUERY_REASON_WORDS[checked.reason] ?? checked.reason.replace(/^query_/, "").replace(/_/g, " ")).slice(0, 80),
+        code: unknown ? "cannot_ask" : "question_unclear",
+        words: (unknown ? (checked.detail ?? "") : (meant ?? QUERY_REASON_WORDS[checked.reason] ?? checked.detail ?? checked.reason.replace(/^query_/, "").replace(/_/g, " "))).slice(0, 80),
       });
     }
   }

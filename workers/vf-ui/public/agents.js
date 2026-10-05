@@ -982,7 +982,7 @@ function planPanel() {
   const missing = new Set(understood.missing);
   const missingWords = (key) =>
     t(
-      `agents.plan.missing.${key === "when" ? "schedule" : missing.has("report") || !draft.report ? "report" : "orgs"}`,
+      `agents.plan.missing.${key === "when" ? "schedule" : key === "shape" ? "shape" : missing.has("report") || !draft.report ? "report" : "orgs"}`,
     );
   return el("div", { class: "agentplan", id: "agent-plan" }, [
     el("h4", { text: t("agents.plan.heading") }),
@@ -993,7 +993,9 @@ function planPanel() {
         // What the words left out is said as missing, even where the form keeps its own default.
         const text =
           (key === "when" && missing.has("schedule")) ||
-          (key === "gather" && (missing.has("report") || missing.has("orgs")))
+          (key === "gather" && (missing.has("report") || missing.has("orgs"))) ||
+          // Decision 0635: with no report yet, what narrows it is not known either.
+          (key === "shape" && missing.has("report"))
             ? null
             : said;
         return el(

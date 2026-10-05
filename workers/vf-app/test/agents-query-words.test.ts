@@ -122,7 +122,36 @@ describe("plain words write a question", () => {
       { text: "invoices over 100,000" },
       NOW,
     );
-    expect((noCurrency.body as Understood).refusals).toContainEqual({ code: "cannot_ask", words: "total" });
+    // Decision 0635: an amount with no currency at all is unclear, said by what it means, after one retry.
+    expect((noCurrency.body as Understood).refusals).toContainEqual({ code: "question_unclear", words: "the total including VAT" });
+  });
+
+  it("reads an amount however the model wrote it, when its currency is plain", async () => {
+    for (const filter of [
+      { field: "total", op: "over", value: "£100,000" },
+      { field: "total", op: "over", value: { amount: 100000, currency: "GBP" } },
+      { field: "total", op: "over", value: "100k", currency: "£" },
+      { field: "total", op: "over", value: "100000 GBP" },
+    ]) {
+      const r = await handleUnderstandAgent(env.DB, model({ ...MONDAY_ANSWER, query: { ...MONDAY_ANSWER.query, where: [filter] } }), "dan", { text: MONDAY_WORDS }, NOW);
+      const body = r.body as Understood;
+      expect(body.refusals).toEqual([]);
+      expect(body.draft.options.query?.where).toEqual([{ field: "total", op: "over", value: 100000, currency: "GBP" }]);
+    }
+  });
+
+  it("sends a refused question back once, with why, and uses the answer put right", async () => {
+    const answers = [
+      { ...MONDAY_ANSWER, query: { ...MONDAY_ANSWER.query, where: [{ field: "amount", op: "over", value: 100000, currency: "GBP" }] } },
+      MONDAY_ANSWER,
+    ];
+    const prompts: string[] = [];
+    const m: CompilerModel = { compile: async (p: string) => (prompts.push(p), JSON.stringify(answers[prompts.length - 1])) };
+    const body = (await handleUnderstandAgent(env.DB, m, "dan", { text: MONDAY_WORDS }, NOW)).body as Understood;
+    expect(prompts).toHaveLength(2);
+    expect(prompts[1]).toContain("Its query was refused by the checker: query_field_unknown (amount)");
+    expect(body.draft.report).toBe("query");
+    expect(body.refusals).toEqual([]);
   });
 
   it("keeps to the organisations and fields this person may ask about", async () => {
