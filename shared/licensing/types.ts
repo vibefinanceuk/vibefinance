@@ -37,6 +37,12 @@ export interface LicenceClaims {
   /** Decision 0626: AI summaries agents may write a day; vf-app's default (100) when absent. */
   summaryLimit?: number;
   /** Decision 0631: false where the licence leaves prepared actions out; allowed when absent. */
+  /**
+   * Decision 0638: agents' own questions a day (each run or try of a
+   * question takes one). 0 leaves questions out of the tier; absent, the
+   * default applies.
+   */
+  queryLimit?: number;
   agentActions?: boolean;
   /**
    * The staged block, Blueprint: "notice in the product, then notice

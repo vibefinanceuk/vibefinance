@@ -204,3 +204,19 @@ describe("prepared actions on the licence — decision 0631", () => {
     expect(await claims()).not.toHaveProperty("agentActions");
   });
 });
+
+describe("agents' own questions on the licence — decision 0638", () => {
+  it("are the default unless the licence names a number a day, and 0 leaves them out", async () => {
+    const base = { environmentId: "acme-production-eu", plan: "standard", volumeEntitlement: 1000, validFrom: "2026-01-01" };
+    const claims = async () =>
+      (await verifyLicenceToken(((await handleIssueToken(env.CONTROL_DB, privateKeyJwk, "acme-production-eu")).body as { token: string }).token, publicKeyJwk)).claims;
+    await handleUpsertLicence(env.CONTROL_DB, base);
+    expect(await claims()).not.toHaveProperty("queryLimit");
+    expect((await handleUpsertLicence(env.CONTROL_DB, { ...base, queryLimit: -1 })).status).toBe(400);
+    expect((await handleUpsertLicence(env.CONTROL_DB, { ...base, queryLimit: 2.5 })).status).toBe(400);
+    expect((await handleUpsertLicence(env.CONTROL_DB, { ...base, queryLimit: 1000 })).body).toMatchObject({ queryLimit: 1000 });
+    expect(await claims()).toMatchObject({ queryLimit: 1000 });
+    await handleUpsertLicence(env.CONTROL_DB, { ...base, queryLimit: 0 });
+    expect(await claims()).toMatchObject({ queryLimit: 0 });
+  });
+});

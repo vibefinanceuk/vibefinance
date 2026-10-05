@@ -37,16 +37,23 @@ export type AgentActionKind = "remind_holder" | "chase_supplier";
 
 export const AGENT_ACTIONS: Record<
   AgentActionKind,
-  { permission: Permission; reports: string[] }
+  {
+    permission: Permission;
+    reports: string[];
+    /** Decision 0638: the datasets whose questions can prepare it, by the invoices in their rows. */
+    datasets: string[];
+  }
 > = {
   remind_holder: {
     permission: "AP.TaskManage",
     reports: ["stuck_work", "event_stuck"],
+    datasets: ["invoices", "tasks", "stage_visits"],
   },
   // Decision 0632: as for Return To Supplier itself.
   chase_supplier: {
     permission: "AP.ReturnToSupplier",
     reports: ["returned_no_reply"],
+    datasets: ["returns"],
   },
 };
 
@@ -89,15 +96,24 @@ export async function actionsEnabled(
 export function checkAction(
   reportId: string,
   input: unknown,
+  dataset?: string | null,
 ): { action: AgentActionKind | null } | { reason: string } {
   if (input === undefined || input === null || input === "")
     return { action: null };
   if (typeof input !== "string" || !(input in AGENT_ACTIONS))
     return { reason: "action_unknown" };
   const kind = input as AgentActionKind;
-  if (!AGENT_ACTIONS[kind].reports.includes(reportId))
-    return { reason: "action_not_for_report" };
+  const fits =
+    reportId === "query"
+      ? Boolean(dataset) && AGENT_ACTIONS[kind].datasets.includes(dataset!)
+      : AGENT_ACTIONS[kind].reports.includes(reportId);
+  if (!fits) return { reason: "action_not_for_report" };
   return { action: kind };
+}
+
+/** Decision 0638: the actions a question of this dataset can prepare. */
+export function actionsForDataset(dataset: string): AgentActionKind[] {
+  return (Object.keys(AGENT_ACTIONS) as AgentActionKind[]).filter((k) => AGENT_ACTIONS[k].datasets.includes(dataset));
 }
 
 /** The actions a report can prepare, for the form. */

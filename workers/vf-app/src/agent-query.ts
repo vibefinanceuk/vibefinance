@@ -5,6 +5,7 @@ import {
   unitsWherePermitted,
 } from "./enforce.js";
 import type { Permission } from "./permissions.js";
+import { readLicenceState } from "./licence-cache.js";
 
 /**
  * **Agents: asking the data — decision 0633 (the query layer, slice 1).**
@@ -501,6 +502,12 @@ export interface QueryMeasure {
 
 export interface AgentQuery {
   dataset: string;
+  /**
+   * Decision 0638: started by an event — looked at every hour, each person
+   * sent only the rows they have not had (as decision 0630's reports).
+   * Rows one each only, so each has its own key.
+   */
+  event?: boolean;
   where: QueryFilter[];
   since: "all" | "last_run";
   show: string[];
@@ -754,7 +761,11 @@ export function checkQuery(input: unknown): { query: AgentQuery } | Refusal {
   if (typeof limit !== "number" || !Number.isInteger(limit) || limit < 1 || limit > QUERY_LIMITS.limitMax)
     return { reason: "query_limit_invalid" };
 
-  return { query: { dataset: d.id, where, since, show, groupBy, measures, sort, limit } };
+  // Decision 0638: an event needs rows one each, so each row has its own key.
+  if (q.event !== undefined && typeof q.event !== "boolean") return { reason: "query_event_invalid" };
+  if (q.event === true && groupBy.length > 0) return { reason: "query_event_grouped" };
+
+  return { query: { dataset: d.id, ...(q.event === true ? { event: true } : {}), where, since, show, groupBy, measures, sort, limit } };
 }
 
 /** Every field a query reads, to find any that are hidden. */
@@ -1114,7 +1125,9 @@ export async function queryCatalogue(db: D1Database, personId: string) {
   const hidden = await hiddenFields(db);
   const { units } = await unitsFor(db, personId);
   const out = [];
-  for (const d of QUERY_DATASETS) {
+  // Decision 0638: nothing to ask where the licence leaves questions out.
+  const inLicence = (await queryLimit(db)) > 0;
+  for (const d of inLicence ? QUERY_DATASETS : []) {
     const visible = await unitsWherePermitted(db, personId, d.permission);
     if (visible !== null && visible.length === 0) continue;
     out.push({
@@ -1193,4 +1206,45 @@ export function assumedParts(said: unknown, raw: unknown, q: AgentQuery): string
   const measuresSaid = Array.isArray(r.measures) ? r.measures : [];
   if (q.groupBy.length && measuresSaid.length === 0) parts.add("measure:count");
   return [...parts];
+}
+
+// ---------------------------------------------------------------------------
+// Decision 0638: the day's allowance of questions, on the licence.
+// ---------------------------------------------------------------------------
+
+/** Questions a day when the licence names none. */
+export const DEFAULT_QUERY_LIMIT = 500;
+
+/** The licence's questions a day: 0 leaves them out of the tier. */
+export async function queryLimit(db: D1Database): Promise<number> {
+  const state = await readLicenceState(db);
+  const limit = state.known ? (state.claims as { queryLimit?: unknown }).queryLimit : undefined;
+  return typeof limit === "number" && Number.isInteger(limit) && limit >= 0 ? limit : DEFAULT_QUERY_LIMIT;
+}
+
+/**
+ * Take one of today's questions (UTC day), in one statement so two runs
+ * at once cannot both take the last. The reason when none is left, or
+ * when the licence leaves questions out.
+ */
+export async function takeQuery(db: D1Database, now: Date): Promise<null | "query_not_in_licence" | "query_limit_reached"> {
+  const limit = await queryLimit(db);
+  if (limit <= 0) return "query_not_in_licence";
+  const result = await db
+    .prepare(
+      `INSERT INTO agent_query_days (day, queries) VALUES (?, 1)
+       ON CONFLICT(day) DO UPDATE SET queries = queries + 1 WHERE queries < ?`,
+    )
+    .bind(now.toISOString().slice(0, 10), limit)
+    .run();
+  return (result.meta?.changes ?? 0) > 0 ? null : "query_limit_reached";
+}
+
+/** Questions asked today, and the day's limit. */
+export async function queriesToday(db: D1Database, now: Date): Promise<{ used: number; max: number }> {
+  const row = await db
+    .prepare("SELECT queries FROM agent_query_days WHERE day = ?")
+    .bind(now.toISOString().slice(0, 10))
+    .first<{ queries: number }>();
+  return { used: row?.queries ?? 0, max: await queryLimit(db) };
 }

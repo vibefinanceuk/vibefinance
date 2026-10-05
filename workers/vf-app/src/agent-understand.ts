@@ -162,6 +162,7 @@ ${ctx.catalogue || "(none: this person may not ask questions)"}
 Shape: {"dataset": id, "where": [filter, ...], "since": "all" | "last_run", "show": [field, ...], "groupBy": [field, ...], "measures": [{"fn": "count"} | {"fn": "sum"|"avg"|"min"|"max", "field": field}], "sort": [{"key": field or measure key, "dir": "asc"|"desc"}], "limit": number}
 - A filter is {"field": f, "op": op, "value": v}. Ops by kind: text: is, is_not, in (list), contains, is_empty, not_empty. enum: is, is_not, in (only the values listed). money: over, under, between ([low, high]), and ALWAYS "currency": "GBP"|"EUR"|... (£ is GBP, € is EUR, $ is USD). days: is, over, under, between. date: in_last_days (n), older_than_days (n), before, after (YYYY-MM-DD), between ([from, to]), is_empty, not_empty.
 - "since": "last_run" sends only what is new since the agent last ran ("new", "since last time", "arrived"); otherwise "all".
+- "event": true when the request says "as soon as", "whenever" or "when ... happens" about a question: it is then looked at every hour and each person is sent only rows they have not had, so use "schedule": null, do not refuse "too_often", and do not group.
 - Either "show" (the columns, one row each) or "groupBy" (up to 2 fields) with "measures". A measure's key is "count", or fn_field such as "sum_total".
 - "limit": rows, 1-500, usually 100.
 - Write the amount as a number (100000, not "100k"). Use only the datasets, fields and values listed.
@@ -433,9 +434,10 @@ export async function handleUnderstandAgent(
   }
 
   // Decision 0630: an event report looks every hour by itself, whatever was said about when.
-  const isEvent = Boolean(
-    reportId && AGENT_REPORTS.find((r) => r.id === reportId)?.event,
-  );
+  const isEvent =
+    Boolean(reportId && AGENT_REPORTS.find((r) => r.id === reportId)?.event) ||
+    // Decision 0638: a question started by an event.
+    Boolean(question?.event);
   if (isEvent) {
     for (let i = refusals.length - 1; i >= 0; i--)
       if (refusals[i].code === "too_often") refusals.splice(i, 1);

@@ -24,6 +24,7 @@ interface LicenceRow {
   status_effective_at: string | null;
   agent_limit: number | null;
   summary_limit?: number | null;
+  query_limit?: number | null;
   agent_actions?: number | null;
 }
 
@@ -47,7 +48,7 @@ export async function handleIssueToken(
 ): Promise<RouteResult> {
   const row = await db
     .prepare(
-      `SELECT plan, features_json, volume_entitlement, valid_to, status, status_reason, status_effective_at, agent_limit, summary_limit, agent_actions
+      `SELECT plan, features_json, volume_entitlement, valid_to, status, status_reason, status_effective_at, agent_limit, summary_limit, agent_actions, query_limit
        FROM licences WHERE environment_id = ?`
     )
     .bind(environmentId)
@@ -84,6 +85,8 @@ export async function handleIssueToken(
     ...(row.agent_limit !== null && row.agent_limit !== undefined ? { agentLimit: row.agent_limit } : {}),
     ...(row.summary_limit !== null && row.summary_limit !== undefined ? { summaryLimit: row.summary_limit } : {}),
     ...(row.agent_actions === 0 ? { agentActions: false } : {}),
+    // Decision 0638: agents' own questions a day.
+    ...(row.query_limit !== null && row.query_limit !== undefined ? { queryLimit: row.query_limit } : {}),
     status: row.status as LicenceClaims["status"],
     statusReason: row.status_reason ?? undefined,
     statusEffectiveAt: row.status_effective_at ?? undefined,

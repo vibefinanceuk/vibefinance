@@ -104,11 +104,42 @@ export const EXAMPLES = [
   { id: "chase_returns", report: "returned_no_reply", schedule: { every: "workday", time: "09:00" }, options: { waitDays: 7 }, email: false, action: "chase_supplier" },
   { id: "duplicate_alert", report: "event_duplicate", schedule: { every: "hour" }, options: {}, email: true },
   { id: "failed_files", report: "event_file_failed", schedule: { every: "hour" }, options: {}, email: true },
+  // Decision 0638: ready-made questions, to use as they are or change in Edit steps.
+  {
+    id: "large_invoices",
+    report: "query",
+    schedule: { every: "week", time: "08:00", weekday: 1 },
+    options: { query: { dataset: "invoices", where: [{ field: "total", op: "over", value: 100000, currency: "GBP" }, { field: "status", op: "is", value: "in_progress" }], since: "all", show: ["supplier", "invoice", "total", "currency", "stage", "daysAtStage"], groupBy: [], measures: [], sort: [{ key: "total", dir: "desc" }], limit: 100 } },
+    email: true,
+  },
+  {
+    id: "spend_by_gl",
+    report: "query",
+    schedule: { every: "month", time: "16:00", day: "lastWorking" },
+    options: { query: { dataset: "coding", where: [{ field: "received", op: "in_last_days", value: 31 }], since: "all", show: [], groupBy: ["glCode"], measures: [{ fn: "count" }, { fn: "sum", field: "amount" }], sort: [{ key: "sum_amount", dir: "desc" }], limit: 100 } },
+    email: true,
+  },
+  {
+    id: "slow_stages",
+    report: "query",
+    schedule: { every: "week", time: "08:00", weekday: 1 },
+    options: { query: { dataset: "stage_visits", where: [{ field: "entered", op: "in_last_days", value: 30 }], since: "all", show: [], groupBy: ["visitStage"], measures: [{ fn: "count" }, { fn: "avg", field: "daysSpent" }, { fn: "max", field: "daysSpent" }], sort: [{ key: "avg_daysSpent", dir: "desc" }], limit: 50 } },
+    email: false,
+  },
+  {
+    id: "failed_deliveries",
+    report: "query",
+    schedule: { every: "hour" },
+    options: { query: { dataset: "deliveries", event: true, where: [{ field: "deliveryStatus", op: "is", value: "failed" }], since: "all", show: ["invoice", "supplier", "destination", "error"], groupBy: [], measures: [], sort: [], limit: 100 } },
+    email: true,
+  },
 ];
 
 function examplesOffered() {
   const offered = new Map(reportsOffered().map((r) => [r.id, r]));
-  return EXAMPLES.filter((x) => offered.has(x.report));
+  // Decision 0638: a ready-made question only where its dataset may be asked about.
+  const askable = new Set((data?.catalogue?.datasets ?? []).map((d) => d.id));
+  return EXAMPLES.filter((x) => offered.has(x.report) && (!x.options?.query || askable.has(x.options.query.dataset)));
 }
 
 function startFromExample(x) {
@@ -116,10 +147,12 @@ function startFromExample(x) {
   if (!report) return;
   showExamples = false;
   editing = "new";
+  const askedOf = x.options?.query ? (data?.catalogue?.datasets ?? []).find((d) => d.id === x.options.query.dataset) : null;
   draft = {
     name: t(`agents.example.${x.id}.name`),
     report: report.id,
-    orgIds: [...report.orgIds],
+    // Decision 0638: a question's organisations are its dataset's.
+    orgIds: [...(askedOf?.orgIds ?? report.orgIds)],
     schedule: { ...x.schedule },
     // Email where it is set up and the example sends one; the task list otherwise.
     deliver:
@@ -127,7 +160,7 @@ function startFromExample(x) {
         ? { task: true, email: true }
         : { task: true, email: false },
     recipients: [],
-    options: { ...(report.options ?? {}), ...x.options },
+    options: x.options?.query ? { query: structuredClone(x.options.query) } : { ...(report.options ?? {}), ...x.options },
     description: t(`agents.example.${x.id}.words`),
     summary: true,
     // Decision 0632: what it prepares, where the report can.
@@ -839,7 +872,8 @@ function formPanel() {
       ]),
       field(t("agents.form.orgs"), orgBoxes, t("agents.form.orgshint")),
       report?.custom ? questionField() : optionFields(report),
-      report?.event ? eventField() : scheduleFields(),
+      // Decision 0638: a question may be started by an event too.
+      report?.event || draft.options?.query?.event ? eventField() : scheduleFields(),
       summaryField(),
       actionField(report),
       deliveryFields(),
@@ -1085,7 +1119,8 @@ export function queryWords(q, catalogue, assumed = new Set()) {
   });
   const dataset = t(`agents.dataset.${q.dataset}`);
   const parts = [filters.length ? t("agents.plan.q.where").replace("{dataset}", dataset).replace("{filters}", filters.join(and)) : t("agents.plan.q.all").replace("{dataset}", dataset)];
-  parts.push(usual("since", t(`agents.plan.q.since.${q.since === "last_run" ? "last_run" : "all"}`)));
+  // Decision 0638: an event question sends what is new as soon as it is found.
+  parts.push(q.event ? t("agents.plan.q.event") : usual("since", t(`agents.plan.q.since.${q.since === "last_run" ? "last_run" : "all"}`)));
   if (q.groupBy?.length) {
     const measures = (q.measures ?? []).map((m) => {
       if (m.fn === "count") return usual("measure:count", t("agents.col.m.count"));
@@ -1153,7 +1188,9 @@ function questionField() {
         draft.orgIds = draft.orgIds.filter((id) => next.orgIds.includes(id));
         if (draft.orgIds.length === 0 && next.orgIds.length > 0) draft.orgIds = [next.orgIds[0]];
       }
-      set(startingQuestion(next));
+      // A new dataset starts on a schedule.
+      if (draft.schedule?.every === "hour") draft.schedule = { every: "week", time: "08:00", weekday: 1 };
+      set({ ...startingQuestion(next), event: false });
     },
   );
 
@@ -1262,6 +1299,19 @@ function questionField() {
   );
 
   const grouped = (q.groupBy ?? []).length > 0;
+  // Decision 0638: on its schedule, or as soon as something new matches (rows one each only).
+  const whenSelect = select(
+    "agent-q-when",
+    [
+      ["schedule", t("agents.q.when.schedule")],
+      ...(grouped ? [] : [["event", t("agents.q.when.event")]]),
+    ],
+    q.event ? "event" : "schedule",
+    (v) => {
+      draft.schedule = v === "event" ? { every: "hour" } : { every: "week", time: "08:00", weekday: 1 };
+      set({ event: v === "event" });
+    },
+  );
   const shapeSelect = select(
     "agent-q-shape",
     [
@@ -1272,7 +1322,9 @@ function questionField() {
     (v) => {
       if (v === "group") {
         const g = fields.find((f) => f.group);
-        set({ groupBy: g ? [g.key] : [], measures: [{ fn: "count" }], show: [], sort: [] });
+        // Decision 0638: grouped rows have no key each, so an event question becomes a scheduled one.
+        if (now().event) draft.schedule = { every: "week", time: "08:00", weekday: 1 };
+        set({ groupBy: g ? [g.key] : [], measures: [{ fn: "count" }], show: [], sort: [], event: false });
       } else set({ groupBy: [], measures: [], show: startingQuestion(ds).show, sort: [] });
     },
   );
@@ -1382,7 +1434,8 @@ function questionField() {
       el("ul", { class: "agentquestion", id: "agent-q-words" }, queryWords(q, data?.catalogue, new Set(understood?.assumed ?? [])).map((w) => el("li", { text: w }))),
       t("agents.q.hint"),
     ),
-    el("div", { class: "dotwo" }, [field(t("agents.q.dataset"), datasetSelect, null, "agent-q-dataset"), field(t("agents.q.since"), since, null, "agent-q-since")]),
+    el("div", { class: "dotwo" }, [field(t("agents.q.dataset"), datasetSelect, null, "agent-q-dataset"), field(t("agents.q.when"), whenSelect, null, "agent-q-when")]),
+    ...(q.event ? [] : [field(t("agents.q.since"), since, null, "agent-q-since")]),
     field(t("agents.q.where"), el("div", { class: "agentqfilters", id: "agent-q-filters" }, [...filterRows, el("div", { class: "dobuttons" }, [addFilter])])),
     field(t("agents.q.shape"), shapeSelect, null, "agent-q-shape"),
     grouped
@@ -1393,6 +1446,8 @@ function questionField() {
       : field(t("agents.q.show"), showBoxes),
     el("div", { class: "agentqrow" }, [field(t("agents.q.sort"), el("div", { class: "agentqrow" }, [sortSelect, dirSelect]), null, "agent-q-sort"), field(t("agents.q.limit"), limit, null, "agent-q-limit")]),
     el("div", { class: "dobuttons" }, [tryIt]),
+    // Decision 0638: the day's questions against the licence.
+    ...(data?.queries ? [el("p", { class: "muted sm", id: "agent-q-allowance", text: t("agents.q.allowance").replace("{used}", String(data.queries.used)).replace("{max}", String(data.queries.max)) })] : []),
     ...(triedPanel ? [triedPanel] : []),
   ]);
 }
@@ -1551,7 +1606,9 @@ function eventField() {
  * agent gets ready after each run, for a person to approve on Tasks.
  */
 function actionField(report) {
-  const kinds = report?.actions ?? [];
+  // Decision 0638: a question prepares what its dataset can.
+  const asked = report?.custom ? (data?.catalogue?.datasets ?? []).find((d) => d.id === draft.options?.query?.dataset) : null;
+  const kinds = (report?.custom ? asked?.actions : report?.actions) ?? [];
   if (kinds.length === 0) return el("div", { hidden: "hidden" });
   const on = data.actionsEnabled ?? { environment: true, licence: true };
   const chooser = select(

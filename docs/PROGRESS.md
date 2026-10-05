@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 5 October 2026 (decision 0637). A living document: what
+Last updated 5 October 2026 (decision 0638). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,16 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Agents ask the data, slice 5: events, actions and the allowance (0638)
+
+A question can now be started by an event (looked at hourly, sending only
+what is new), can prepare reminders or chasers for approval as the
+reports do, and counts against a daily allowance on the licence (500 by
+default; 0 leaves questions out of a tier). Four ready-made questions
+join the library. The three simple reports stay as code for now, as
+their highlights, unclaimed row and reminders are not yet things a
+question can say.
 
 ### Agents ask the data, slice 4: the other datasets (0637)
 

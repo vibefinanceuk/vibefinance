@@ -1045,7 +1045,7 @@ function licenceCell(e) {
   if (!l) return '<span class="outcome-refused">no licence</span>';
   const tone = l.status === "active" ? "outcome-recorded" : "outcome-refused";
   return `<div>${escapeHtml(l.plan)} · <span class="${tone}">${escapeHtml(l.status)}</span></div>
-    <div class="muted">${escapeHtml(l.volumeEntitlement)} invoices · ${l.agentLimit === null || l.agentLimit === undefined ? "default agents" : `${escapeHtml(l.agentLimit)} agents`} · ${l.summaryLimit === null || l.summaryLimit === undefined ? "default summaries" : `${escapeHtml(l.summaryLimit)} summaries a day`} · ${l.agentActions === false ? "no prepared actions" : "prepared actions"} · ${escapeHtml(String(l.validFrom ?? "").slice(0, 10))} to ${escapeHtml(l.validTo ? String(l.validTo).slice(0, 10) : "open")}</div>
+    <div class="muted">${escapeHtml(l.volumeEntitlement)} invoices · ${l.agentLimit === null || l.agentLimit === undefined ? "default agents" : `${escapeHtml(l.agentLimit)} agents`} · ${l.summaryLimit === null || l.summaryLimit === undefined ? "default summaries" : `${escapeHtml(l.summaryLimit)} summaries a day`} · ${l.agentActions === false ? "no prepared actions" : "prepared actions"} · ${l.queryLimit === 0 ? "no own questions" : l.queryLimit === null || l.queryLimit === undefined ? "default questions" : `${escapeHtml(l.queryLimit)} questions a day`} · ${escapeHtml(String(l.validFrom ?? "").slice(0, 10))} to ${escapeHtml(l.validTo ? String(l.validTo).slice(0, 10) : "open")}</div>
     ${l.statusReason ? `<div class="muted">${escapeHtml(l.statusReason)}</div>` : ""}`;
 }
 
@@ -1114,8 +1114,13 @@ function toggleLicence(tr, e) {
   agents.placeholder = "default";
   // Decision 0626: AI summaries agents may write a day; blank for vf-app's default (100).
   const summaries = input(l.summaryLimit ?? "", 5, "number");
+  // Decision 0638: agents' own questions a day; 0 leaves them out of the tier.
   summaries.min = "0";
   summaries.placeholder = "default";
+  // Decision 0638: agents' own questions a day; blank for vf-app's default (500), 0 leaves them out.
+  const queries = input(l.queryLimit ?? "", 6, "number");
+  queries.min = "0";
+  queries.placeholder = "default";
   // Decision 0631: prepared actions in this tier; ticked unless the licence leaves them out.
   const actions = Object.assign(document.createElement("input"), { type: "checkbox", checked: l.agentActions !== false });
   const from = input(String(l.validFrom ?? "").slice(0, 10), 11, "date");
@@ -1132,6 +1137,7 @@ function toggleLicence(tr, e) {
     field("Agents (blank: default)", agents),
     field("AI summaries a day (blank: default)", summaries),
     field("Prepared actions", actions),
+    field("Own questions a day (blank: default, 0: none)", queries),
     field("From", from),
     field("To (blank: open)", to),
     field("State", status),
@@ -1144,6 +1150,7 @@ function toggleLicence(tr, e) {
         agentLimit: agents.value.trim() === "" ? null : Number(agents.value),
         summaryLimit: summaries.value.trim() === "" ? null : Number(summaries.value),
         agentActions: actions.checked ? null : false,
+        queryLimit: queries.value.trim() === "" ? null : Number(queries.value),
         validFrom: from.value,
         ...(to.value ? { validTo: to.value } : {}),
         status: status.value,

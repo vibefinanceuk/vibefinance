@@ -176,6 +176,12 @@ const STRINGS = {
     "agents.q.shape.group": "Grouped, with totals",
     "agents.plan.q.group": "by {fields}: {measures}",
     "agents.dataset.suppliers": "Suppliers",
+    "agents.dataset.returns": "Returns to suppliers",
+    "agents.q.when.event": "As soon as something new matches",
+    "agents.plan.q.event": "as soon as something new matches",
+    "agents.q.allowance": "Questions today: {used} of {max}.",
+    "agents.example.large_invoices.name": "Large invoices",
+    "agents.action.chase_supplier": "A letter chasing the supplier for each return",
     "agents.refusal.cannot_ask": "Could not ask about \u201c{words}\u201d: it is not something an agent can ask about here.",
   },
 };
@@ -317,6 +323,8 @@ function stub(opts: {
           ],
           limit: { used: 1, max: 5 },
           timeZone: "Europe/London",
+          // Decision 0638: the day's questions against the licence.
+          queries: { used: 3, max: 500 },
           // Decision 0634: what a question may ask, for the plan in words.
           catalogue: {
             datasets: [
@@ -329,6 +337,13 @@ function stub(opts: {
                   { key: "currency", kind: "text", label: "agents.col.currency", group: true, ops: ["is", "is_not", "in", "contains", "is_empty", "not_empty"] },
                   { key: "status", kind: "enum", label: "agents.col.status", group: true, values: ["in_progress"], enumKey: "agents.qstatus", ops: ["is", "is_not", "in"] },
                 ],
+              },
+              // Decision 0638: returns, whose questions can prepare chasers.
+              {
+                id: "returns",
+                orgIds: ["acme-uk"],
+                actions: ["chase_supplier"],
+                fields: [{ key: "invoice", kind: "text", label: "agents.col.invoice", ops: ["is", "contains"] }],
               },
               // Decision 0637: a dataset with its own organisations, and nothing recording when a row arrived.
               {
@@ -1413,6 +1428,8 @@ describe("ready-made agents — decision 0628", () => {
       "month_end_accruals",
       "stuck_alert",
       "chase_returns",
+      // Decision 0638: a ready-made question whose dataset may be asked about here.
+      "large_invoices",
     ]);
     expect(
       document.querySelector('[data-example="weekly_payables"]')!.textContent,
@@ -1977,5 +1994,52 @@ describe("the other datasets — decision 0637", () => {
     expect([...(document.getElementById("agent-q-since") as HTMLSelectElement).options].map((o) => o.value)).toEqual(["all"]);
     expect([...document.querySelectorAll("#agent-orgs input")].map((i) => i.id)).toEqual(["agent-org-acme-de"]);
     expect((document.getElementById("agent-org-acme-de") as HTMLInputElement).checked).toBe(true);
+  });
+});
+
+describe("questions started by an event, with actions, and ready-made — decision 0638", () => {
+  const pick = (id: string, value: string) => {
+    const node = document.getElementById(id) as HTMLSelectElement;
+    node.value = value;
+    node.dispatchEvent(new Event("change"));
+  };
+
+  it("starts a question by an event, looked at hourly, and saves it so", async () => {
+    const calls = await openAgents({ permissions: ["AP.Agents"], agents: [] });
+    button("New agent")!.click();
+    (document.getElementById("agent-steps") as HTMLDetailsElement).open = true;
+    pick("agent-report", "query");
+    expect(document.getElementById("agent-q-allowance")?.textContent).toBe("Questions today: 3 of 500.");
+    pick("agent-q-when", "event");
+    expect(document.getElementById("agent-q-since")).toBeNull();
+    expect(document.getElementById("agent-q-words")?.textContent).toContain("as soon as something new matches");
+    // Grouped rows cannot be an event: the choice goes, and it is on a schedule again.
+    pick("agent-q-shape", "group");
+    expect([...(document.getElementById("agent-q-when") as HTMLSelectElement).options].map((o) => o.value)).toEqual(["schedule"]);
+    pick("agent-q-shape", "rows");
+    pick("agent-q-when", "event");
+    shell().querySelector<HTMLButtonElement>("#agent-form .cardhead .actionlink.primary")!.click();
+    await vi.waitFor(() => expect(calls.some((c) => c.method === "POST" && c.path === "/api/agents")).toBe(true));
+    expect(calls.find((c) => c.method === "POST" && c.path === "/api/agents")!.body).toMatchObject({ report: "query", schedule: { every: "hour" }, options: { query: { event: true } } });
+  });
+
+  it("offers a question the actions its dataset can prepare", async () => {
+    await openAgents({ permissions: ["AP.Agents"], agents: [] });
+    button("New agent")!.click();
+    (document.getElementById("agent-steps") as HTMLDetailsElement).open = true;
+    pick("agent-report", "query");
+    expect(document.getElementById("agent-action")).toBeNull();
+    pick("agent-q-dataset", "returns");
+    expect([...(document.getElementById("agent-action") as HTMLSelectElement).options].map((o) => o.value)).toEqual(["", "chase_supplier"]);
+  });
+
+  it("offers ready-made questions only where their dataset may be asked about", async () => {
+    await openAgents({ permissions: ["AP.Agents"], agents: [] });
+    button("Ready-made")!.click();
+    expect(document.querySelector('[data-example="large_invoices"]')).not.toBeNull();
+    expect(document.querySelector('[data-example="spend_by_gl"]')).toBeNull();
+    document.querySelector<HTMLButtonElement>('[data-example="large_invoices"] .actionlink')!.click();
+    expect((document.getElementById("agent-report") as HTMLSelectElement).value).toBe("query");
+    expect(document.getElementById("agent-q-words")?.textContent).toContain("Total is over 100,000.00 GBP");
   });
 });

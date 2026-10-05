@@ -16,6 +16,7 @@ import { handlePossibleDuplicates } from "./fraud-duplicates-route.js";
 import { handleUnapprovedSuppliers } from "./fraud-unapproved-suppliers-route.js";
 import {
   actionsEnabled,
+  actionsForDataset,
   actionsForReport,
   actionsOfAgent,
   checkAction,
@@ -46,7 +47,10 @@ import type { CompilerModel } from "@vibefinance/shared";
 import {
   checkQuery,
   datasetById,
+  queriesToday,
+  queryLimit,
   REPLY_ARRIVED_SQL,
+  takeQuery,
   hiddenInQuery,
   queryCatalogue,
   runQuery,
@@ -1210,6 +1214,9 @@ export const AGENT_REPORTS: AgentReport[] = [
     custom: true,
     gather: async (db, a, o, n, options, ctx) => {
       if (!options.query) throw new Error("query_missing");
+      // Decision 0638: each copy takes one of the day's questions on the licence.
+      const refused = await takeQuery(db, n);
+      if (refused) throw new Error(refused);
       return runQuery(db, a, o, options.query, n, ctx);
     },
   },
@@ -1559,7 +1566,11 @@ export async function handleListAgents(
     .prepare("SELECT count(*) AS n FROM agents WHERE status <> 'removed'")
     .first<{ n: number }>();
   const { units } = await unitsFor(db, userId);
-  const catalogue = await queryCatalogue(db, userId);
+  // Decision 0638: each dataset with the actions its questions can prepare.
+  const catalogue = await queryCatalogue(db, userId).then((c) => ({
+    ...c,
+    datasets: c.datasets.map((d) => ({ ...d, actions: actionsForDataset(d.id) })),
+  }));
   const reports = [];
   for (const r of AGENT_REPORTS) {
     const visible = await unitsWherePermitted(db, userId, r.permission);
@@ -1607,6 +1618,8 @@ export async function handleListAgents(
       actionsEnabled: await actionsEnabled(db),
       // Decision 0634: what a question may ask, so the plan can say it in words.
       catalogue,
+      // Decision 0638: questions asked today, against the licence.
+      queries: await queriesToday(db, opts.now ?? new Date()),
     },
   };
 }
@@ -1676,6 +1689,11 @@ async function checkAgentInput(
         )?.query?.dataset,
       )
     : null;
+  // Decision 0638: a question may itself be started by an event (new rows, looked at hourly).
+  const rawQuestion = report.custom
+    ? ((input.options ?? (current && current.report === report.id ? JSON.parse(current.options_json ?? "{}") : {})) as { query?: { event?: unknown } })?.query
+    : null;
+  const eventLike = Boolean(report.event) || rawQuestion?.event === true;
   const visible = await unitsWherePermitted(db, userId, asked?.permission ?? report.permission);
   const notHeld = known.filter((o) => !covers(visible, o.id));
   if (notHeld.length > 0) {
@@ -1685,7 +1703,7 @@ async function checkAgentInput(
     };
   }
   // Decision 0630: an event report is looked at every hour; it has no time of its own.
-  const checked: ReturnType<typeof checkSchedule> = report.event
+  const checked: ReturnType<typeof checkSchedule> = eventLike
     ? { schedule: { every: "hour" } }
     : checkSchedule(
         input.schedule ??
@@ -1751,6 +1769,9 @@ async function checkAgentInput(
         ? "the question is not one that can be asked"
         : "an option is out of range",
     };
+  // Decision 0638: no question where the licence leaves them out.
+  if (opts.options.query && (await queryLimit(db)) === 0)
+    return { reason: "query_not_in_licence", message: "the licence does not include agents' own questions" };
   // Decision 0633: a field an administrator has hidden is not asked about.
   if (opts.options.query) {
     const hidden = await hiddenInQuery(db, opts.options.query);
@@ -1782,6 +1803,8 @@ async function checkAgentInput(
       : current && current.report === report.id
         ? current.action_kind
         : null,
+    // Decision 0638: a question prepares what its dataset can.
+    opts.options.query?.dataset,
   );
   if ("reason" in actionChecked)
     return {
@@ -2590,6 +2613,8 @@ async function runAgentOnce(
     }
     const chosen = await orgsNamed(db, parseIds(agent.org_unit_ids_json));
     const permission = permissionOf(report, parseOptions(agent));
+    // Decision 0638: a question started by an event is sent as an event report is: only what each person has not had.
+    const eventLike = Boolean(report.event) || Boolean(parseOptions(agent).query?.event);
     const authorVisible = await unitsWherePermitted(
       db,
       agent.author_id,
@@ -2702,7 +2727,7 @@ async function runAgentOnce(
         options,
       };
       // Decision 0630: an event agent sends each person only what they have not been sent.
-      if (report.event) {
+      if (eventLike) {
         const keys = table.rows.map((r) => String(r._key ?? ""));
         const already = keys.length
           ? await db
@@ -2721,7 +2746,7 @@ async function runAgentOnce(
       }
       if (table.rows.length === 0) continue;
       const markSent = async () => {
-        if (!report.event) return;
+        if (!eventLike) return;
         const keys = table.rows
           .map((r) => String(r._key ?? ""))
           .filter(Boolean);
@@ -2869,7 +2894,7 @@ async function runAgentOnce(
     if (sent === 0 && failed === 0) {
       await finish("nothing", 0, [], null);
       // Decision 0630: an event agent looks every hour; an hour with nothing new leaves no run behind.
-      if (report.event)
+      if (eventLike)
         await db
           .prepare("DELETE FROM agent_runs WHERE id = ?")
           .bind(runId)
@@ -3547,6 +3572,10 @@ export async function handleTryAgentQuery(
         reason: "org_not_permitted",
       },
     };
+  // Decision 0638: a try takes one of the day's questions too.
+  const refused = await takeQuery(db, now);
+  if (refused)
+    return { status: 422, body: { error: refused === "query_limit_reached" ? "today's questions are used" : "the licence does not include agents' own questions", reason: refused } };
   const result = await runQuery(db, userId, orgs, query, now);
   return {
     status: 200,
