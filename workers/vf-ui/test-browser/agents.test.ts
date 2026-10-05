@@ -44,6 +44,22 @@ const STRINGS = {
       "Email is not set up for this environment yet. Ask your administrator.",
     "agents.notes.stop": "Stop sending me this",
     "agents.understand": "Understand",
+    "agents.action.label": "Also prepare",
+    "agents.action.none": "Nothing",
+    "agents.action.remind_holder": "A reminder to whoever holds each stuck task",
+    "agents.actions.areon": "Prepared actions are on.",
+    "agents.actions.turnoff": "Turn off",
+    "agents.actions.heading": "For your approval",
+    "agents.actions.approve": "Approve",
+    "agents.actions.reject": "Reject",
+    "agents.actions.remind_holder.title": "Remind {holder} about invoice {invoice}",
+    "agents.actions.remind_holder.detail": "{supplier} \u00b7 at {stage} for {days} days",
+    "agents.actions.done": "Done: {holder} has been reminded by email.",
+    "agents.actions.rejected": "Rejected. Nothing was done.",
+    "agents.actionreason.changed": "The task moved on since this was prepared, so nothing was done.",
+    "agents.actionstatus.done": "done",
+    "agents.actions.by": "by {name}",
+    "agents.page.actions": "What it prepared",
     "agents.when.hour": "Every hour, when there is something new",
     "agents.report.event_stuck": "When an invoice is stuck at a stage",
     "agents.example.stuck_alert.name": "Tell me when an invoice is stuck",
@@ -175,6 +191,10 @@ function stub(opts: {
   page?: unknown;
   runs?: unknown[];
   events?: unknown[];
+  actions?: unknown[];
+  decideReply?: [number, unknown];
+  canSetTimeZone?: boolean;
+  actionsEnabled?: { environment: boolean; licence: boolean };
 }) {
   const calls = opts.calls ?? [];
   vi.stubGlobal(
@@ -221,6 +241,7 @@ function stub(opts: {
               orgIds: ["acme-uk"],
               optionKeys: ["olderThanDays"],
               options: { olderThanDays: 5 },
+              actions: ["remind_holder"],
             },
             {
               id: "possible_duplicates",
@@ -243,7 +264,8 @@ function stub(opts: {
           limit: { used: 1, max: 5 },
           timeZone: "Europe/London",
           canManageAll: opts.permissions.includes("Admin.UserManagement"),
-          canSetTimeZone: false,
+          canSetTimeZone: opts.canSetTimeZone ?? false,
+          actionsEnabled: opts.actionsEnabled ?? { environment: true, licence: true },
           managers: [
             { id: "u-maya", name: "Maya", hasEmail: true },
             { id: "u-olu", name: "Olu", hasEmail: false },
@@ -273,6 +295,12 @@ function stub(opts: {
         return reply(200, opts.page);
       if (path === "/api/documents")
         return reply(200, { documents: [], total: 0, page: 1, pageSize: 25, agent: { name: "Weekly payables" } });
+      if (path === "/api/agent-actions")
+        return reply(200, { actions: opts.actions ?? [] });
+      if (path.startsWith("/api/agent-actions/"))
+        return reply(...(opts.decideReply ?? [200, { status: "done", emailed: true }]));
+      if (path === "/api/agent-settings")
+        return reply(200, { timeZone: "Europe/London", actionsEnabled: { environment: false, licence: true } });
       if (path === "/api/agent-events")
         return reply(200, { events: opts.events ?? [] });
       if (path.startsWith("/api/agents/agt-1")) return reply(200, { ...AGENT });
@@ -396,6 +424,7 @@ describe("the Agents screen", () => {
       name: "Month-end accruals",
       description: null,
       summary: true,
+      action: null,
       report: "accruals",
       orgIds: ["acme-uk"],
       schedule: { every: "month", time: "08:00", day: "lastWorking" },
@@ -1506,5 +1535,84 @@ describe("agents started by an event — decision 0630", () => {
       asAt: "2026-10-05T07:00:00Z",
     });
     expect(node.querySelector("tbody td")?.textContent).toBe("Supplier not on file");
+  });
+});
+
+describe("prepared actions — decision 0631", () => {
+  const ACTION = {
+    id: "act-1",
+    kind: "remind_holder",
+    agentId: "agt-1",
+    agentName: "Stuck work",
+    authorName: "Dan",
+    invoiceId: "k1",
+    status: "waiting",
+    preparedAt: "2026-10-05T09:00:00.000Z",
+    expiresAt: "2026-10-12T09:00:00.000Z",
+    decidedBy: null,
+    decidedAt: null,
+    note: null,
+    reason: null,
+    result: null,
+    payload: { taskId: "t-k1", holderId: "uma", holderName: "Uma Becker", invoiceId: "k1", invoiceNumber: "K1", supplier: "Kingsway Logistics", stage: "Approval", days: 7 },
+  };
+
+  it("offers Also prepare only for a report that can, and saves it", async () => {
+    const calls = await openAgents({ permissions: ["AP.Agents"], agents: [] });
+    button("New agent")!.click();
+    const report = document.getElementById("agent-report") as HTMLSelectElement;
+    expect(document.getElementById("agent-action")).toBeNull();
+    report.value = "stuck_work";
+    report.dispatchEvent(new Event("change"));
+    const action = document.getElementById("agent-action") as HTMLSelectElement;
+    expect([...action.options].map((o) => o.value)).toEqual(["", "remind_holder"]);
+    action.value = "remind_holder";
+    action.dispatchEvent(new Event("change"));
+    (document.getElementById("agent-name") as HTMLInputElement).value = "Stuck";
+    document.getElementById("agent-name")!.dispatchEvent(new Event("input"));
+    shell().querySelector<HTMLButtonElement>("#agent-form .cardhead .actionlink.primary")!.click();
+    await vi.waitFor(() => expect(calls.some((c) => c.method === "POST" && c.path === "/api/agents")).toBe(true));
+    expect(calls.find((c) => c.method === "POST" && c.path === "/api/agents")!.body).toMatchObject({ report: "stuck_work", action: "remind_holder" });
+    // Another report drops it.
+    report.value = "accruals";
+    report.dispatchEvent(new Event("change"));
+    expect(document.getElementById("agent-action")).toBeNull();
+  });
+
+  it("puts what waits for approval on Tasks, and approves it with a note", async () => {
+    const calls = await signIn({ permissions: ["AP.TaskView"], actions: [ACTION] });
+    await vi.waitFor(() => expect(document.getElementById("agent-approvals")).not.toBeNull());
+    const card = document.querySelector('[data-action="act-1"]')!;
+    expect(card.querySelector(".agentnotename")?.textContent).toBe("Remind Uma Becker about invoice K1");
+    expect(card.textContent).toContain("Kingsway Logistics \u00b7 at Approval for 7 days");
+    (card.querySelector("textarea") as HTMLTextAreaElement).value = "By Wednesday, please.";
+    card.querySelector<HTMLButtonElement>('.actionlink[title="Approve"]')!.click();
+    await vi.waitFor(() => expect(card.querySelector(".agentactionresult")?.textContent).toBe("Done: Uma Becker has been reminded by email."));
+    expect(calls.find((c) => c.path === "/api/agent-actions/act-1/approve")!.body).toEqual({ note: "By Wednesday, please." });
+    expect(card.querySelector(".dobuttons")).toBeNull();
+  });
+
+  it("says why when it could not be done, and when it was rejected", async () => {
+    await signIn({ permissions: ["AP.TaskView"], actions: [ACTION], decideReply: [409, { reason: "changed" }] });
+    await vi.waitFor(() => expect(document.querySelector('[data-action="act-1"]')).not.toBeNull());
+    document.querySelector<HTMLButtonElement>('[data-action="act-1"] .actionlink[title="Approve"]')!.click();
+    await vi.waitFor(() => expect(document.querySelector('[data-action="act-1"] .agentactionresult')?.textContent).toBe("The task moved on since this was prepared, so nothing was done."));
+  });
+
+  it("lists what an agent prepared on its page, and lets an administrator turn actions off", async () => {
+    const calls = await openAgents({
+      permissions: ["AP.Agents", "Admin.Configure"],
+      canSetTimeZone: true,
+      page: { agent: { ...AGENT }, versions: [], recipients: [], events: [], actions: [{ ...ACTION, status: "done", decidedBy: "Maya" }] },
+      runs: [],
+    });
+    expect(document.getElementById("agent-actions-switch")?.textContent).toContain("Prepared actions are on.");
+    document.querySelector<HTMLButtonElement>('#agent-actions-switch .actionlink[title="Turn off"]')!.click();
+    await vi.waitFor(() => expect(calls.some((c) => c.method === "PUT" && c.path === "/api/agent-settings")).toBe(true));
+    expect(calls.find((c) => c.method === "PUT" && c.path === "/api/agent-settings")!.body).toEqual({ actionsEnabled: false });
+
+    shell().querySelector<HTMLButtonElement>('tr[data-agent="agt-1"] .agentopen')!.click();
+    await vi.waitFor(() => expect(document.getElementById("agent-page-actionlist")).not.toBeNull());
+    expect(document.querySelector("#agent-page-actionlist li")!.textContent).toContain("Remind Uma Becker about invoice K1 \u00b7 done by Maya");
   });
 });

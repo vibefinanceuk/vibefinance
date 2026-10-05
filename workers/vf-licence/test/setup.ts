@@ -253,6 +253,7 @@ import openSupplierSql from "../migrations/0262_open_supplier_strings.sql?raw";
 import sftpStringsSql from "../migrations/0263_sftp_strings.sql?raw";
 import licenceAgentLimitSql from "../migrations/0264_licence_agent_limit.sql?raw";
 import licenceSummaryLimitSql from "../migrations/0269_licence_summary_limit.sql?raw";
+import licenceAgentActionsSql from "../migrations/0275_licence_agent_actions.sql?raw";
 import agentsStringsSql from "../migrations/0265_agents_strings.sql?raw";
 import agentEmailStringsSql from "../migrations/0266_agent_email_strings.sql?raw";
 import agentOptionsStringsSql from "../migrations/0267_agent_options_strings.sql?raw";
@@ -262,6 +263,7 @@ import agentCareStringsSql from "../migrations/0271_agent_care_strings.sql?raw";
 import agentExamplesStringsSql from "../migrations/0272_agent_examples_strings.sql?raw";
 import agentDocumentsStringsSql from "../migrations/0273_agent_documents_strings.sql?raw";
 import agentEventStringsSql from "../migrations/0274_agent_event_strings.sql?raw";
+import agentActionsStringsSql from "../migrations/0276_agent_actions_strings.sql?raw";
 
 function stripSqlComments(sql: string): string {
   return sql
@@ -548,6 +550,7 @@ export async function applyTestSchema(): Promise<void> {
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(sftpStringsSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(licenceAgentLimitSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(licenceSummaryLimitSql)));
+  await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(licenceAgentActionsSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(agentsStringsSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(agentEmailStringsSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(agentOptionsStringsSql)));
@@ -557,5 +560,6 @@ export async function applyTestSchema(): Promise<void> {
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(agentExamplesStringsSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(agentDocumentsStringsSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(agentEventStringsSql)));
+  await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(agentActionsStringsSql)));
 
 }

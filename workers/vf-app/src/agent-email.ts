@@ -327,3 +327,63 @@ ${input.documentsUrl ? `<p style="margin:16px 0 0"><a href="${esc(input.document
   const filename = `${input.agentName.replace(/[^A-Za-z0-9 _-]+/g, "").trim().replace(/\s+/g, "-") || "agent"}-${table.asAt.slice(0, 10)}.csv`;
   return { subject, text, html, csv: reportCsv(locale, table), filename };
 }
+
+/**
+ * **A reminder to whoever holds a stuck task — decision 0631.** Sent once
+ * a person approved what an agent prepared, in the holder's language,
+ * naming who asked, the invoice, the stage and how long it has waited.
+ */
+const REMINDER_WORDS: Record<EmailLocale, Record<string, string>> = {
+  en: {
+    subject: "A reminder about invoice {invoice}",
+    body: "{approver} asks you to look at invoice {invoice} from {supplier}, which has been with you at {stage} for {days} days.",
+    note: "Their note: {note}",
+    open: "Open VibeFinance",
+    why: "This reminder was prepared by an agent and approved by {approver}.",
+    unknown: "an unnamed supplier",
+  },
+  de: {
+    subject: "Erinnerung zur Rechnung {invoice}",
+    body: "{approver} bittet Sie, sich die Rechnung {invoice} von {supplier} anzusehen, die seit {days} Tagen im Schritt {stage} bei Ihnen liegt.",
+    note: "Hinweis: {note}",
+    open: "VibeFinance öffnen",
+    why: "Diese Erinnerung hat ein Agent vorbereitet, {approver} hat sie freigegeben.",
+    unknown: "einem unbenannten Lieferanten",
+  },
+};
+
+export function buildReminderEmail(input: {
+  locale: EmailLocale;
+  approverName: string;
+  holderName: string;
+  invoiceNumber: string | null;
+  supplier: string | null;
+  stage: string;
+  days: number;
+  note: string | null;
+  appUrl: string | null;
+}): { subject: string; text: string; html: string } {
+  const words = REMINDER_WORDS[input.locale];
+  const fill = (s: string) =>
+    s
+      .replace(/\{approver\}/g, input.approverName)
+      .replace(/\{invoice\}/g, input.invoiceNumber ?? "—")
+      .replace(/\{supplier\}/g, input.supplier ?? words.unknown)
+      .replace(/\{stage\}/g, input.stage)
+      .replace(/\{days\}/g, String(input.days))
+      .replace(/\{note\}/g, input.note ?? "");
+  const lines = [
+    fill(words.body),
+    ...(input.note ? [fill(words.note)] : []),
+    ...(input.appUrl ? [`${words.open}: ${input.appUrl}`] : []),
+    "",
+    fill(words.why),
+  ];
+  const html = `<div style="font-family:Calibri,Carlito,'Segoe UI',Arial,sans-serif;color:#121a26;font-size:14px;line-height:1.45">
+<p style="margin:0 0 10px">${esc(fill(words.body))}</p>
+${input.note ? `<p style="margin:0 0 10px;padding:8px 12px;border-left:3px solid #378add;background:#e6f1fb">${esc(fill(words.note))}</p>` : ""}
+${input.appUrl ? `<p style="margin:12px 0 0"><a href="${esc(input.appUrl)}" style="color:#185fa5">${esc(words.open)}</a></p>` : ""}
+<p style="margin:20px 0 0;color:#7b8798;font-size:12px">${esc(fill(words.why))}</p>
+</div>`;
+  return { subject: fill(words.subject), text: lines.join("\n"), html };
+}

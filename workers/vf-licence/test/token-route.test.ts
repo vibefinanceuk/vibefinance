@@ -189,3 +189,18 @@ describe("the summary limit — decision 0626", () => {
     expect(await claims()).not.toHaveProperty("summaryLimit");
   });
 });
+
+describe("prepared actions on the licence — decision 0631", () => {
+  it("are allowed unless the licence leaves them out, and the token says so only then", async () => {
+    const base = { environmentId: "acme-production-eu", plan: "standard", volumeEntitlement: 1000, validFrom: "2026-01-01" };
+    const claims = async () =>
+      (await verifyLicenceToken(((await handleIssueToken(env.CONTROL_DB, privateKeyJwk, "acme-production-eu")).body as { token: string }).token, publicKeyJwk)).claims;
+    await handleUpsertLicence(env.CONTROL_DB, base);
+    expect(await claims()).not.toHaveProperty("agentActions");
+    expect((await handleUpsertLicence(env.CONTROL_DB, { ...base, agentActions: "no" })).status).toBe(400);
+    await handleUpsertLicence(env.CONTROL_DB, { ...base, agentActions: false });
+    expect(await claims()).toMatchObject({ agentActions: false });
+    await handleUpsertLicence(env.CONTROL_DB, { ...base, agentActions: true });
+    expect(await claims()).not.toHaveProperty("agentActions");
+  });
+});

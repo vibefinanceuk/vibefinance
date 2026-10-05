@@ -5200,6 +5200,9 @@
 .agentopen:hover, .agentopen:focus-visible { text-decoration: underline; }
 .agentsection h3 { margin: 0 0 8px; }
 /* Decision 0629: a note's report opens in Documents. */
+/* Decision 0631: a prepared action waiting for approval. */
+.agentaction textarea { width: 100%; margin-top: 8px; }
+.agentactionresult { margin: 8px 0 0; }
 .agentreportopen { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 0 0 8px; }
 /* Decision 0628: ready-made agents. */
 .agentexamples { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; margin-top: 10px; }

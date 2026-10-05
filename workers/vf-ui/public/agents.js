@@ -538,6 +538,7 @@ function startNew() {
     options: { ...(first?.options ?? {}) },
     description: "",
     summary: true,
+    action: null,
   };
   understood = null;
   stepsOpen = false;
@@ -559,6 +560,7 @@ function startEdit(agent) {
     options: { ...(agent.options ?? {}) },
     description: agent.description ?? "",
     summary: agent.summary !== false,
+    action: agent.action ?? null,
   };
   understood = null;
   stepsOpen = !agent.description;
@@ -700,6 +702,8 @@ function formPanel() {
       draft.report = v;
       // Decision 0624: a report's own options, from its defaults.
       draft.options = { ...(offered.find((r) => r.id === v)?.options ?? {}) };
+      // Decision 0631: an action only where the new report can prepare it.
+      if (!(offered.find((r) => r.id === v)?.actions ?? []).includes(draft.action)) draft.action = null;
       // Decision 0630: an event report looks every hour; another needs a time again.
       if (offered.find((r) => r.id === v)?.event) draft.schedule = { every: "hour" };
       else if (draft.schedule?.every === "hour") draft.schedule = { every: "week", time: "08:00", weekday: 1 };
@@ -746,6 +750,7 @@ function formPanel() {
         options: draft.options,
         description: draft.description || null,
         summary: draft.summary,
+        action: draft.action ?? null,
       };
       const r =
         editing === "new"
@@ -800,6 +805,7 @@ function formPanel() {
       optionFields(report),
       report?.event ? eventField() : scheduleFields(),
       summaryField(),
+      actionField(report),
       deliveryFields(),
     ],
   );
@@ -939,6 +945,8 @@ export function planLines(d, ctx) {
         ? t("agents.plan.summary.off")
         : t("agents.plan.summary.on"),
     ],
+    // Decision 0631: what it also prepares for approval.
+    ...(d.action ? [["act", t(`agents.plan.act.${d.action}`)]] : []),
     ["deliver", `${how}, ${who}`],
   ];
 }
@@ -1148,6 +1156,63 @@ function eventField() {
   );
 }
 
+/**
+ * **Also prepare — decision 0631.** For a report that can: an action the
+ * agent gets ready after each run, for a person to approve on Tasks.
+ */
+function actionField(report) {
+  const kinds = report?.actions ?? [];
+  if (kinds.length === 0) return el("div", { hidden: "hidden" });
+  const on = data.actionsEnabled ?? { environment: true, licence: true };
+  const chooser = select(
+    "agent-action",
+    [["", t("agents.action.none")], ...kinds.map((k) => [k, t(`agents.action.${k}`)])],
+    draft.action ?? "",
+    (v) => {
+      draft.action = v || null;
+      render();
+    },
+  );
+  return field(
+    t("agents.action.label"),
+    chooser,
+    !on.licence
+      ? t("agents.action.offlicence")
+      : !on.environment
+        ? t("agents.action.offenvironment")
+        : t(`agents.action.${draft.action ?? "none"}.hint`),
+  );
+}
+
+/** Decision 0631: an administrator turns prepared actions on or off for the environment. */
+function actionsSwitch() {
+  const on = data.actionsEnabled ?? { environment: true, licence: true };
+  if (!data.canSetTimeZone || !on.licence) return null;
+  return el("div", { class: "agentzone sm", id: "agent-actions-switch" }, [
+    el("span", { text: on.environment ? t("agents.actions.areon") : t("agents.actions.areoff") }),
+    actionLink(on.environment ? "paused" : "activate", {
+      label: on.environment ? t("agents.actions.turnoff") : t("agents.actions.turnon"),
+      onclick: async () => {
+        const r = await call("/api/agent-settings", json("PUT", { actionsEnabled: !on.environment }));
+        problem = r.ok ? "" : why(r.body);
+        await load();
+        render();
+      },
+    }),
+  ]);
+}
+
+/** Decision 0631: one prepared action, in words, for the agent's page. */
+export function actionWords(a) {
+  const p = a.payload ?? {};
+  const what = t(`agents.actions.${a.kind}.title`).replace("{holder}", p.holderName ?? "").replace("{invoice}", p.invoiceNumber ?? "—");
+  const status = t(`agents.actionstatus.${a.status}`);
+  const by = a.decidedBy ? t("agents.actions.by").replace("{name}", a.decidedBy) : "";
+  const key = a.reason ? `agents.actionreason.${a.reason}` : null;
+  const why = key ? (t(key) === key ? a.reason : t(key)) : "";
+  return [what, [status, by].filter(Boolean).join(" "), why].filter(Boolean).join(" · ");
+}
+
 /** Who it goes to, in a row: "Task list and email · Dan, Maya (stopped)". */
 function deliveryWords(agent) {
   const how =
@@ -1290,6 +1355,7 @@ function render() {
             zoneLine(),
             el("div", { class: "dobuttons" }, right),
           ]),
+          ...[actionsSwitch()].filter(Boolean),
           // Decision 0624: Run now was taken to send to everyone; it does not.
           ...(canMake
             ? [
@@ -1407,6 +1473,7 @@ export function changedSteps(plan, before) {
   if (!same(plan.options, before.options)) steps.push("shape");
   if ((plan.summary !== false) !== (before.summary !== false))
     steps.push("summarise");
+  if ((plan.action ?? null) !== (before.action ?? null)) steps.push("act");
   if (
     !same(plan.deliver, before.deliver) ||
     !same(
@@ -1671,6 +1738,23 @@ function agentPage() {
     ]),
     section("agent-page-versions", t("agents.page.versions"), versionCards),
     section("agent-page-recipients", t("agents.page.recipients"), [recipients]),
+    // Decision 0631: what it prepared, and what became of each.
+    ...((body.actions ?? []).length
+      ? [
+          section("agent-page-actions", t("agents.page.actions"), [
+            el(
+              "ul",
+              { class: "agentevents", id: "agent-page-actionlist" },
+              body.actions.map((a) =>
+                el("li", { "data-status": a.status }, [
+                  el("span", { class: "muted sm", text: `${when(a.preparedAt)} · ` }),
+                  el("span", { text: actionWords(a) }),
+                ]),
+              ),
+            ),
+          ]),
+        ]
+      : []),
     section("agent-page-events", t("agents.page.history"), [history]),
   ]);
 }

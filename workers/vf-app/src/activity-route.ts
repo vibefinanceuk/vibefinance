@@ -2,6 +2,7 @@ import type { RouteResult } from "./examples-route.js";
 import { t } from "./i18n.js";
 import type { Locale } from "./i18n.js";
 import { messagesForInvoice } from "./received-files.js";
+import { reminderTimeline } from "./agent-actions.js";
 
 /**
  * The document activity feed — decision 0267.
@@ -428,7 +429,7 @@ export async function handleGetActivity(db: D1Database, invoiceId: string): Prom
     return { status: 404, body: { error: `document ${invoiceId} does not exist` } };
   }
 
-  const [received, stageCompletions, ruleFirings, comments, taskActions, taskEnded, erpExports] = await Promise.all([
+  const [received, stageCompletions, ruleFirings, comments, taskActions, taskEnded, erpExports, reminders] = await Promise.all([
     receivedEvent(db, invoiceId),
     stageCompletedEvents(db, invoiceId),
     ruleFiredEvents(db, invoiceId),
@@ -436,9 +437,20 @@ export async function handleGetActivity(db: D1Database, invoiceId: string): Prom
     taskActionEvents(db, invoiceId),
     taskEndedEvents(db, invoiceId),
     erpExportEvents(db, invoiceId),
+    // Decision 0631: a reminder an agent prepared and a person approved.
+    reminderTimeline(db, invoiceId).then((rows) =>
+      rows.map((r) => ({
+        kind: "action_taken",
+        at: r.at,
+        action: "remind",
+        userName: r.userName,
+        comment: r.comment,
+        targetUserName: r.targetUserName,
+      })) as ActivityItem[]
+    ),
   ]);
 
-  const items = [...received, ...stageCompletions, ...ruleFirings, ...comments, ...taskActions, ...taskEnded, ...erpExports].sort(
+  const items = [...received, ...stageCompletions, ...ruleFirings, ...comments, ...taskActions, ...taskEnded, ...erpExports, ...reminders].sort(
     (a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0)
   );
 

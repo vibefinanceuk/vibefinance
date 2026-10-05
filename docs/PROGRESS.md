@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 4 October 2026 (decision 0630). A living document: what
+Last updated 5 October 2026 (decision 0631). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,16 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Agents phase 3, slice 1: prepared actions (0631)
+
+Phase 3 agreed with Dan: agents prepare actions that a person approves.
+The first: a stuck work agent prepares a reminder to whoever holds each
+stuck task. It waits under For your approval on Tasks, is checked again
+when approved, emails the holder in their language, and is shown on the
+invoice's Timeline. Administrators can turn prepared actions off, and
+the licence can leave them out. Next: chasing suppliers, cover while
+away, sending early to the ERP, then tacit approval.
 
 ### Agents phase 2, slice 3: agents started by an event (0630)
 

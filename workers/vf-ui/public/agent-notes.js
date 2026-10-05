@@ -141,9 +141,11 @@ export function reportTable(table, opts = {}) {
 /** Fills the Tasks screen's place for notes; hidden while there are none. */
 export async function fill(holder) {
   if (!holder) return;
-  const r = await call("/api/agent-notes");
+  // Decision 0631: what waits for this person's approval, beside the notes.
+  const [r, a] = await Promise.all([call("/api/agent-notes"), call("/api/agent-actions")]);
   const notes = r.ok ? r.body?.notes ?? [] : [];
-  if (notes.length === 0) {
+  const actions = a.ok ? a.body?.actions ?? [] : [];
+  if (notes.length === 0 && actions.length === 0) {
     holder.hidden = true;
     holder.replaceChildren();
     return;
@@ -266,11 +268,16 @@ export async function fill(holder) {
   };
 
   holder.replaceChildren(
-    el("div", { class: "panel agentnotes" }, [
-      el("h3", { text: t("agents.notes.heading") }),
-      el("p", { class: "muted sm", text: t("agents.notes.sub") }),
-      ...notes.map(rowOf),
-    ])
+    ...(actions.length ? [approvalsPanel(actions, holder)] : []),
+    ...(notes.length
+      ? [
+          el("div", { class: "panel agentnotes" }, [
+            el("h3", { text: t("agents.notes.heading") }),
+            el("p", { class: "muted sm", text: t("agents.notes.sub") }),
+            ...notes.map(rowOf),
+          ]),
+        ]
+      : [])
   );
 }
 
@@ -289,4 +296,69 @@ export async function stopFromLink(shell) {
   const text = r.ok ? t("agents.notes.stoppedlink").replace("{name}", r.body?.name ?? "") : t(r.body?.reason === "author_cannot_stop" ? "agents.error.author_cannot_stop" : "agents.notes.stopfailed");
   const notice = el("div", { class: "panel agentstopnotice", id: "agent-stop-notice", role: "status", text });
   shell?.prepend(notice);
+}
+
+/**
+ * **For your approval — decision 0631.** What agents prepared and this
+ * person may approve: what will happen, a note to add, Approve or
+ * Reject. Nothing is done until they approve, and it is checked again
+ * then.
+ */
+function approvalsPanel(actions, holder) {
+  const cardOf = (a) => {
+    const p = a.payload ?? {};
+    const note = el("textarea", { id: `action-note-${a.id}`, class: "input", rows: "2", placeholder: t("agents.actions.noteplaceholder") });
+    const said = el("p", { class: "sm agentactionresult", hidden: "hidden" });
+    const decide = async (decision) => {
+      const r = await call(`/api/agent-actions/${encodeURIComponent(a.id)}/${decision}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(decision === "approve" ? { note: note.value } : { reason: note.value }),
+      });
+      const key = r.ok
+        ? decision === "reject"
+          ? "agents.actions.rejected"
+          : r.body?.emailed
+            ? "agents.actions.done"
+            : "agents.actions.donenoemail"
+        : `agents.actionreason.${r.body?.reason ?? "failed"}`;
+      said.textContent = t(key) === key ? (r.body?.error ?? t("agents.failed")) : t(key).replace("{holder}", p.holderName ?? "");
+      said.hidden = false;
+      card.querySelectorAll(".dobuttons, textarea").forEach((n) => n.remove());
+    };
+    const card = el("div", { class: "agentnote agentaction", "data-action": a.id }, [
+      el("div", { class: "agentnotehead" }, [
+        el("div", {}, [
+          el("span", {
+            class: "agentnotename",
+            text: t(`agents.actions.${a.kind}.title`).replace("{holder}", p.holderName ?? "").replace("{invoice}", p.invoiceNumber ?? "—"),
+          }),
+          el("span", { class: "rmpill q agentnotetag", text: t("agents.actions.tag") }),
+          el("div", {
+            class: "muted sm",
+            text: t(`agents.actions.${a.kind}.detail`)
+              .replace("{supplier}", p.supplier ?? "—")
+              .replace("{stage}", p.stage ?? "")
+              .replace("{days}", String(p.days ?? "")),
+          }),
+          el("div", {
+            class: "muted sm",
+            text: t("agents.actions.from").replace("{agent}", a.agentName).replace("{author}", a.authorName).replace("{when}", stamp(a.expiresAt)),
+          }),
+        ]),
+        el("div", { class: "dobuttons" }, [
+          actionLink("discard", { label: t("agents.actions.reject"), onclick: () => decide("reject") }),
+          actionLink("done", { label: t("agents.actions.approve"), primary: true, onclick: () => decide("approve") }),
+        ]),
+      ]),
+      note,
+      said,
+    ]);
+    return card;
+  };
+  return el("div", { class: "panel agentnotes", id: "agent-approvals" }, [
+    el("h3", { text: t("agents.actions.heading") }),
+    el("p", { class: "muted sm", text: t("agents.actions.sub") }),
+    ...actions.map(cardOf),
+  ]);
 }

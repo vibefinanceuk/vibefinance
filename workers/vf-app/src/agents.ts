@@ -15,6 +15,15 @@ import { handleWorkloadOpenTasks } from "./workload-open-tasks-route.js";
 import { handlePossibleDuplicates } from "./fraud-duplicates-route.js";
 import { handleUnapprovedSuppliers } from "./fraud-unapproved-suppliers-route.js";
 import {
+  actionsEnabled,
+  actionsForReport,
+  actionsOfAgent,
+  checkAction,
+  expireAgentActions,
+  prepareActions,
+  type AgentActionKind,
+} from "./agent-actions.js";
+import {
   checkSchedule,
   DEFAULT_TIME_ZONE,
   isTimeZone,
@@ -1120,6 +1129,8 @@ interface AgentRow {
   plan_version: number;
   /** Decision 0626: 1 when each copy carries an AI summary. */
   summary: number;
+  /** Decision 0631: what it also prepares for approval, if anything. */
+  action: string | null;
 }
 
 interface Person {
@@ -1317,6 +1328,8 @@ async function toBody(db: D1Database, rows: AgentRow[]) {
       planVersion: r.plan_version ?? 1,
       // Decision 0626: whether each copy carries an AI summary.
       summary: r.summary !== 0,
+      // Decision 0631: what it also prepares for approval.
+      action: r.action ?? null,
       recipients: (await recipientsOf(db, r.id)).map((p) => ({
         id: p.id,
         name: p.name,
@@ -1385,6 +1398,8 @@ export async function handleListAgents(
         .map(([k]) => k),
       // Decision 0630: started by an event, looked at hourly.
       event: Boolean(r.event),
+      // Decision 0631: what it can also prepare for approval.
+      actions: actionsForReport(r.id),
     });
   }
   return {
@@ -1406,6 +1421,8 @@ export async function handleListAgents(
       // Decision 0626: whether summaries can be written here, and today's against the licence.
       aiReady: Boolean(opts.aiReady),
       summaries: await summariesToday(db, opts.now ?? new Date()),
+      // Decision 0631: prepared actions on or off, and who may switch them.
+      actionsEnabled: await actionsEnabled(db),
     },
   };
 }
@@ -1428,6 +1445,7 @@ async function checkAgentInput(
       options: AgentOptions;
       description: string | null;
       summary: boolean;
+      action: AgentActionKind | null;
     }
   | { reason: string; message: string }
 > {
@@ -1547,6 +1565,20 @@ async function checkAgentInput(
       : current
         ? current.summary !== 0
         : true;
+  // Decision 0631: what it also prepares; kept on edit while the report is the same.
+  const actionChecked = checkAction(
+    report.id,
+    input.action !== undefined
+      ? input.action
+      : current && current.report === report.id
+        ? current.action
+        : null,
+  );
+  if ("reason" in actionChecked)
+    return {
+      reason: actionChecked.reason,
+      message: "that action is not one this report can prepare",
+    };
   return {
     name,
     report,
@@ -1558,6 +1590,7 @@ async function checkAgentInput(
     options: opts.options,
     description,
     summary,
+    action: actionChecked.action,
   };
 }
 
@@ -1577,6 +1610,8 @@ function planOf(c: Checked) {
     recipients: [...c.recipients].sort(),
     // Decision 0626: said only when off, so plans kept before the summary existed (on) are unchanged.
     ...(c.summary ? {} : { summary: false }),
+    // Decision 0631: said only when set, so earlier plans are unchanged.
+    ...(c.action ? { action: c.action } : {}),
   };
 }
 
@@ -1714,9 +1749,15 @@ export async function handleCreateAgent(
   const version = await keepPlanVersion(db, id, userId, checked, now);
   await db
     .prepare(
-      "UPDATE agents SET description = ?, plan_version = ?, summary = ? WHERE id = ?",
+      "UPDATE agents SET description = ?, plan_version = ?, summary = ?, action = ? WHERE id = ?",
     )
-    .bind(checked.description, version, checked.summary ? 1 : 0, id)
+    .bind(
+      checked.description,
+      version,
+      checked.summary ? 1 : 0,
+      checked.action,
+      id,
+    )
     .run();
   await logEvent(db, id, userId, "created", { version }, now);
   const row = (await loadAgent(db, id))!;
@@ -1809,9 +1850,15 @@ export async function handleUpdateAgent(
   const version = await keepPlanVersion(db, id, userId, checked, now);
   await db
     .prepare(
-      "UPDATE agents SET description = ?, plan_version = ?, summary = ? WHERE id = ?",
+      "UPDATE agents SET description = ?, plan_version = ?, summary = ?, action = ? WHERE id = ?",
     )
-    .bind(checked.description, version, checked.summary ? 1 : 0, id)
+    .bind(
+      checked.description,
+      version,
+      checked.summary ? 1 : 0,
+      checked.action,
+      id,
+    )
     .run();
   // Decision 0627: what changed, in the agent log.
   if (checked.name !== row.name)
@@ -2587,6 +2634,8 @@ async function runAgentOnce(
       }
     }
 
+    // Decision 0631: what it also prepares, from the author's own copy.
+    if (agent.action) await prepareActions(db, agent, authorTable, runId, now);
     const shown = authorTable ?? anyTable;
     if (sent === 0 && failed === 0) {
       await finish("nothing", 0, [], null);
@@ -2661,6 +2710,13 @@ export async function purgeOldAgentRecords(
     if (copies.results.length > 0)
       await bucket.delete(copies.results.map((c) => c.copy_key));
   }
+  // Decision 0631: a prepared action outlives its run.
+  await db
+    .prepare(
+      `UPDATE agent_actions SET run_id = NULL WHERE run_id IN (${marks})`,
+    )
+    .bind(...ids)
+    .run();
   await db
     .prepare(`DELETE FROM agent_deliveries WHERE run_id IN (${marks})`)
     .bind(...ids)
@@ -2712,6 +2768,8 @@ export async function runDueAgents(
   deps: AgentDeps = NO_DEPS,
 ): Promise<{ ran: number }> {
   await purgeOldAgentRecords(db, deps.bucket, now);
+  // Decision 0631: prepared actions nobody approved in time lapse.
+  await expireAgentActions(db, now);
   const due = await db
     .prepare(
       "SELECT * FROM agents WHERE status = 'active' AND next_run_at IS NOT NULL AND next_run_at <= ? ORDER BY next_run_at LIMIT ?",
@@ -3054,6 +3112,8 @@ export async function handleGetAgent(
         optedOutAt: r.opted_out_at,
       })),
       events: events.results.map(eventBody),
+      // Decision 0631: what it prepared, and what became of each.
+      actions: await actionsOfAgent(db, id),
     },
   };
 }
@@ -3156,4 +3216,42 @@ export async function agentDocumentIds(
     ? (JSON.parse(d.invoice_ids_json) as string[])
     : [];
   return { ids: ids.slice(0, AGENT_DOCUMENTS_MAX), name: d.name };
+}
+
+/**
+ * `PUT /agent-settings` (Admin.Configure): the time zone (decision 0622)
+ * and, decision 0631, whether prepared actions are on in this environment.
+ */
+export async function handleSetAgentSettings(
+  db: D1Database,
+  input: Record<string, unknown>,
+  now = new Date(),
+): Promise<RouteResult> {
+  if (input.timeZone !== undefined) {
+    const r = await handleSetAgentTimeZone(db, input, now);
+    if (r.status !== 200) return r;
+  }
+  if (input.actionsEnabled !== undefined) {
+    if (typeof input.actionsEnabled !== "boolean")
+      return {
+        status: 422,
+        body: {
+          error: "actionsEnabled must be true or false",
+          reason: "actions_invalid",
+        },
+      };
+    await db
+      .prepare(
+        "UPDATE org_settings SET agent_actions = ?, updated_at = datetime('now') WHERE id = 1",
+      )
+      .bind(input.actionsEnabled ? 1 : 0)
+      .run();
+  }
+  return {
+    status: 200,
+    body: {
+      timeZone: await agentTimeZone(db),
+      actionsEnabled: await actionsEnabled(db),
+    },
+  };
 }

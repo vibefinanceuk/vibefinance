@@ -36,6 +36,8 @@ export interface LicenceClaims {
   agentLimit?: number;
   /** Decision 0626: AI summaries agents may write a day; vf-app's default (100) when absent. */
   summaryLimit?: number;
+  /** Decision 0631: false where the licence leaves prepared actions out; allowed when absent. */
+  agentActions?: boolean;
   /**
    * The staged block, Blueprint: "notice in the product, then notice
    * with a date, then restriction." Only "blocked" actually restricts

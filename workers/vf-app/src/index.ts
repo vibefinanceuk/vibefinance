@@ -6,6 +6,7 @@ import {
   handleListAgentNotes,
   handleListAgentRuns,
   handleGetAgent,
+  handleSetAgentSettings,
   handleListAgentEvents,
   handleListAgents,
   handleRemoveAgent,
@@ -61,6 +62,7 @@ import { handleSupplierDiscountEligibility } from "./supplier-discount-eligibili
 import { evaluateRuleSet, templateCsv, validateRule } from "@vibefinance/shared";
 import type { CompiledRuleSet, InvoiceFacts } from "@vibefinance/shared";
 import { COMPILER_MODEL_ID, createWorkersAiCompilerModel } from "./compiler-model.js";
+import { handleDecideAgentAction, handleListAgentActions } from "./agent-actions.js";
 import type { AiRunnable } from "./compiler-model.js";
 import { handleCompileRequest } from "./compile-route.js";
 import { isBlocked, readLicenceState, refreshLicenceCache } from "./licence-cache.js";
@@ -1864,8 +1866,25 @@ export default {
         return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
       }
       const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
-      const result = await handleSetAgentTimeZone(db, body);
+      const result = await handleSetAgentSettings(db, body);
       return json(result.body, result.status);
+    }
+    // Decision 0631: prepared actions waiting for approval, and deciding one.
+    if (pathname === "/agent-actions" || /^\/agent-actions\/[^/]+\/(approve|reject)$/.test(pathname)) {
+      const { db, documents } = resolveTenant(request, env);
+      const auth = await authenticatePerson(db, request, env);
+      if (!auth.user) return json({ error: auth.reason }, 401);
+      if (pathname === "/agent-actions" && request.method === "GET") {
+        const result = await handleListAgentActions(db, auth.user.id);
+        return json(result.body, result.status);
+      }
+      const decide = pathname.match(/^\/agent-actions\/([^/]+)\/(approve|reject)$/);
+      if (decide && request.method === "POST") {
+        const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+        const result = await handleDecideAgentAction(db, auth.user.id, decodeURIComponent(decide[1]), decide[2] as "approve" | "reject", body, agentDeps(env, documents));
+        return json(result.body, result.status);
+      }
+      return json({ error: "method not allowed" }, 405);
     }
 
     /**
