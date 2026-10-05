@@ -760,6 +760,10 @@ async function go(screen) {
     // its panel on Process routes; this is the org switcher's relaunch.
     const { reopen } = await import("/outbound-editor.js");
     await reopen();
+  } else if (screen === "absence") {
+    // Absence and cover — decision 0641.
+    const { open } = await import("/absence.js");
+    await open();
   } else if (screen === "agents") {
     // Agents — decision 0622.
     const { open } = await import("/agents.js");
@@ -892,6 +896,8 @@ const NAV_PERMISSIONS = {
   create: "AP.Create",
   // Agents — decision 0622: their makers, and administrators who may remove anyone's.
   agents: ["AP.Agents", "Admin.UserManagement"],
+  // Absence and cover — decision 0641: anyone who works tasks, and AP Managers for their team.
+  absence: ["AP.TaskView", "AP.Manager"],
   /**
    * **Either standing opens it, decision 0321** — extending decision
    * 0320's own `Admin.Configure` correction rather than reverting it:
@@ -961,6 +967,8 @@ const NAV_GROUPS = [
       // Agents — decision 0622, under Accounts payable.
       ["agents", "agents"],
       ["documents", "documents"],
+      // Absence and cover — decision 0641, last under Accounts payable.
+      ["absence", "away"],
     ],
   },
   {
@@ -1056,7 +1064,7 @@ export function frame(main) {
    * (Tasks, third; Documents, fourth) has.
    */
   // Agents (decision 0622) likewise: between Create (fifth) and Documents (fourth), the first.
-  const FIXED_HUES = new Map([["create", 5], ["agents", 1]]);
+  const FIXED_HUES = new Map([["create", 5], ["agents", 1], ["absence", 2]]);
   const HUES = new Map([
     ...NAV_GROUPS.flatMap(({ screens }) => screens)
       .filter(([screen]) => !FIXED_HUES.has(screen))

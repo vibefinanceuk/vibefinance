@@ -265,6 +265,9 @@ const PROXIED_TO_INSTANCE: RegExp[] = [
   // Decision 0633: what an agent may ask about, and a question tried now.
   /^\/agent-catalogue$/,
   /^\/agent-query\/try$/,
+  // Decision 0641: absence and cover.
+  /^\/absences$/,
+  /^\/absences\/[^/]+(\/cancel)?$/,
   // SFTP out and SFTP in: settings, test, forget the identity, collect (decision 0620).
   /^\/route-instances\/[^/]+\/sftp(\/(test|collect|forget-identity))?$/,
   // Submit a Destination for review, from a partner's sandbox — decision 0595.

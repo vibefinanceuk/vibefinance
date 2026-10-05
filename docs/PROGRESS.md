@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 5 October 2026 (decision 0640). A living document: what
+Last updated 5 October 2026 (decision 0641). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,15 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Absence and cover (0641)
+
+People mark themselves away, with dates and who covers, on a new
+Absence screen; AP Managers see their team's absences and may arrange,
+amend or cancel them. While someone is away their open tasks pass to
+the cover, where the cover may do them (permission, and approval limit),
+and come back on their return. Every move shows on the invoice's
+Timeline.
 
 ### Refresh now in the operator console (0640)
 

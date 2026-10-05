@@ -20,6 +20,7 @@ import {
   type AgentDeps,
 } from "./agents.js";
 import { handleUnderstandAgent } from "./agent-understand.js";
+import { handleAmendAbsence, handleCancelAbsence, handleCreateAbsence, handleListAbsences, processAbsences } from "./absence.js";
 import { handleCollectNow, handleForgetSftpIdentity, handleGetSftp, handleSaveSftp, handleTestSftp, sftpRunnerFrom } from "./sftp.js";
 import { handleGetPoMatchView, handlePoCandidates, handleLinkPo, handlePairLine, PO_PANEL_PERMISSIONS } from "./po-match-panel-route.js";
 import { resolveTenant } from "@vibefinance/shared";
@@ -1790,6 +1791,32 @@ export default {
       const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
       const result = await handleTryAgentQuery(db, auth.user.id, body);
       return json(result.body, result.status);
+    }
+    // Decision 0641: absence and cover. Anyone signed in arranges their own; an AP Manager their team's (checked in the handlers).
+    if (pathname === "/absences" || /^\/absences\/[^/]+(\/cancel)?$/.test(pathname)) {
+      const { db } = resolveTenant(request, env);
+      const auth = await authenticatePerson(db, request, env);
+      if (!auth.user) return json({ error: auth.reason }, 401);
+      if (pathname === "/absences" && request.method === "GET") {
+        const result = await handleListAbsences(db, auth.user.id);
+        return json(result.body, result.status);
+      }
+      const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+      if (pathname === "/absences" && request.method === "POST") {
+        const result = await handleCreateAbsence(db, auth.user.id, body);
+        return json(result.body, result.status);
+      }
+      const cancel = pathname.match(/^\/absences\/([^/]+)\/cancel$/);
+      if (cancel && request.method === "POST") {
+        const result = await handleCancelAbsence(db, auth.user.id, decodeURIComponent(cancel[1]));
+        return json(result.body, result.status);
+      }
+      const one = pathname.match(/^\/absences\/([^/]+)$/);
+      if (one && request.method === "PATCH") {
+        const result = await handleAmendAbsence(db, auth.user.id, decodeURIComponent(one[1]), body);
+        return json(result.body, result.status);
+      }
+      return json({ error: "not found" }, 404);
     }
     // Decision 0625: plain words in, a draft plan out. Saves nothing.
     if (pathname === "/agents/understand" && request.method === "POST") {
@@ -6709,6 +6736,13 @@ export default {
         await runDueAgents(db, new Date(), agentDeps(env, documents));
       } catch {
         // Deliberately silent: each run records its own failure.
+      }
+      // Decision 0641: absences pass tasks to their cover, and hand them back on return.
+      try {
+        const { db } = resolveTenant(new Request("https://scheduled-trigger.internal/"), env);
+        await processAbsences(db, new Date());
+      } catch {
+        // Deliberately silent: the next tick tries again.
       }
       return;
     }

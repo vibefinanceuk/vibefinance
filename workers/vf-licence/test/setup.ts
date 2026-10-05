@@ -272,6 +272,7 @@ import agentQuestionBuilderStringsSql from "../migrations/0281_agent_question_bu
 import agentQueryDatasetsStringsSql from "../migrations/0282_agent_query_datasets_strings.sql?raw";
 import licenceQueryLimitSql from "../migrations/0283_licence_query_limit.sql?raw";
 import agentQueryEventsStringsSql from "../migrations/0284_agent_query_events_strings.sql?raw";
+import absenceStringsSql from "../migrations/0285_absence_strings.sql?raw";
 
 function stripSqlComments(sql: string): string {
   return sql
@@ -577,5 +578,6 @@ export async function applyTestSchema(): Promise<void> {
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(agentQueryDatasetsStringsSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(licenceQueryLimitSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(agentQueryEventsStringsSql)));
+  await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(absenceStringsSql)));
 
 }

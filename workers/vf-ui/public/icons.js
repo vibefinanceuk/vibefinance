@@ -395,6 +395,8 @@ ICONS.po_pair = ICONS.po_matching;
  * **Agents — decision 0622.** An alarm clock: an agent is a report that
  * comes on its own, at the time somebody chose.
  */
+// Decision 0641: absence — a calendar with a person stepping out.
+ICONS.away = '<rect x="3" y="5" width="13" height="15" rx="2"/><path d="M3 9h13M7 3v4M12 3v4"/><path d="M19 12v8M16.5 17.5 19 20l2.5-2.5"/>';
 ICONS.agents = '<circle cx="12" cy="13" r="7"/><path d="M12 9.5V13l2.5 1.5M5 4.5 3 6.5M19 4.5l2 2M8.5 20.5 7 22M15.5 20.5 17 22"/>';
 
 export function icon(name) {

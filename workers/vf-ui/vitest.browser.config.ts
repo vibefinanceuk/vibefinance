@@ -148,6 +148,8 @@ export default defineConfig({
       "/destinations.js": resolve(__dirname, "public/destinations.js"),
       "/sftp-settings.js": resolve(__dirname, "public/sftp-settings.js"),
       "/agents.js": resolve(__dirname, "public/agents.js"),
+      // Absence and cover — decision 0641.
+      "/absence.js": resolve(__dirname, "public/absence.js"),
       "/agent-notes.js": resolve(__dirname, "public/agent-notes.js"),
       "/route-library.js": resolve(__dirname, "public/route-library.js"),
       "/outbound-editor.js": resolve(__dirname, "public/outbound-editor.js"),

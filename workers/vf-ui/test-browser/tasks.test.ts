@@ -35,6 +35,7 @@ const STRINGS = {
     "nav.apanalytics": "AP Analytics",
     "nav.rules": "Rules",
     "nav.documents": "Documents",
+    "nav.absence": "Absence",
     "nav.roles": "Roles",
     "nav.access": "Access",
     "nav.apsetup": "AP Setup",
@@ -438,6 +439,8 @@ describe("the flat nav, permission-filtered (decisions 0274 and 0276)", () => {
       "AP Analytics",
       "Tasks",
       "Documents",
+      // Absence and cover — decision 0641.
+      "Absence",
       "Suppliers",
       "Access",
       "AP Setup",
@@ -641,8 +644,8 @@ describe("the flat nav, permission-filtered (decisions 0274 and 0276)", () => {
     await openList([APPROVAL_TASK]);
 
     const items = [...document.querySelectorAll(".navitem")];
-    // Decision 0557: Sources became Routes and Process routes.
-    expect(items).toHaveLength(12);
+    // Decision 0557: Sources became Routes and Process routes. Decision 0641: Absence.
+    expect(items).toHaveLength(13);
     for (const item of items) {
       expect(item.querySelector("svg")).not.toBeNull();
     }
@@ -853,6 +856,8 @@ describe("the flat nav, permission-filtered (decisions 0274 and 0276)", () => {
       "AP Analytics",
       "Tasks",
       "Documents",
+      // Absence and cover — decision 0641.
+      "Absence",
       "Suppliers",
       "Access",
       "AP Setup",
@@ -892,7 +897,8 @@ describe("the flat nav, permission-filtered (decisions 0274 and 0276)", () => {
      */
     const cases: [string, string][] = [
       ["AP.Dashboard", "Dashboard"],
-      ["AP.TaskView", "Tasks"],
+      // Decision 0641: Absence is for anyone who works tasks.
+      ["AP.TaskView", "Tasks|Absence"],
       ["Admin.RuleManagement", "Rules"],
       ["AP.Review", "Documents"],
     ];
@@ -928,7 +934,7 @@ describe("the flat nav, permission-filtered (decisions 0274 and 0276)", () => {
       // The menu itself, as frame() draws it for this person, whatever screen they landed on.
       const { frame } = await import("/tasks.js");
       const labels = [...frame(document.createElement("div")).querySelectorAll(".navitem")].map((a) => a.textContent);
-      expect(labels, `permission ${permission}`).toEqual([label]);
+      expect(labels, `permission ${permission}`).toEqual(label.split("|"));
     }
 
     lenient({

@@ -50,6 +50,7 @@ const STRINGS = {
     "column.rule": "Rule",
     "column.status": "Status",
     "nav.documents": "Documents",
+    "nav.absence": "Absence",
     "nav.roles": "Roles",
     "nav.access": "Access",
     "nav.apsetup": "AP Setup",
@@ -325,6 +326,8 @@ describe("the navigation", () => {
       "AP Analytics",
       "Tasks",
       "Documents",
+      // Absence and cover — decision 0641, last under Accounts payable.
+      "Absence",
       "Suppliers",
       "Access",
       // AP Setup — decision 0440, added to the configuration group

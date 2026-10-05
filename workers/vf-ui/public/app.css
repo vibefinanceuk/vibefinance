@@ -5192,6 +5192,12 @@
 .agentzone { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; color: var(--text-secondary); }
 .agentzone .actionlink { flex-direction: row; padding: 2px 8px; gap: 4px; }
 .agentzone .actionlink svg { width: 14px; height: 14px; }
+/* Decision 0641: absence and cover. */
+.absencetable { width: 100%; border-collapse: collapse; }
+.absencetable th, .absencetable td { text-align: left; padding: 8px 8px 8px 0; vertical-align: top; border-bottom: 0.5px solid var(--border); }
+.absencetable th { font-size: var(--text-sm); color: var(--text-muted); font-weight: 600; }
+.absenceticks { display: flex; flex-wrap: wrap; gap: 8px 22px; margin: 4px 0 10px; }
+.absencetick { display: inline-flex; align-items: center; gap: 8px; }
 .agenttable { width: 100%; border-collapse: collapse; }
 .agenttable th, .agenttable td { text-align: left; padding: 8px 8px 8px 0; vertical-align: top; border-bottom: 0.5px solid var(--border); }
 .agentname { font-weight: 700; color: var(--text-accent); }
