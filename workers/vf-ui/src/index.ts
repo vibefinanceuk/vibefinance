@@ -210,6 +210,10 @@ const PROXIED_TO_INSTANCE: RegExp[] = [
   /^\/return-email-settings$/,
   /^\/admin\/return-reasons$/,
   /^\/admin\/return-reasons\/[^/]+$/,
+  // Decision 0643: why goods went back — the same list shape, its own list.
+  /^\/goods-return-reasons$/,
+  /^\/admin\/goods-return-reasons$/,
+  /^\/admin\/goods-return-reasons\/[^/]+$/,
   /^\/admin\/ap-team-email$/,
   // What the Validation viewer needs (decision 0106): the keyed values,
   // and a short-lived signed URL for the retained original.

@@ -189,6 +189,14 @@ const AP_PERMISSIONS = [
    * the report's own permission in each organisation.
    */
   "AP.Agents",
+  /**
+   * **Decision 0643.** Record goods receipts and returns against
+   * purchase order lines: the third leg of three-way matching (0082).
+   * Its own permission because whoever receives goods is often in the
+   * warehouse, not in AP; granted to nobody by default. The Access
+   * screen offers a ready-made AP Receiving role holding it.
+   */
+  "AP.Receive",
 ] as const;
 
 /**
@@ -393,6 +401,7 @@ export const PERMISSION_DESCRIPTIONS: Record<Permission, string> = {
   "AP.Export": "Export payment-eligible invoices to the ERP as a CSV file, each once, and download past exports (decision 0552)",
   "AP.Assistant": "Ask the AP Analytics screen's Talk to an AP Expert tab a question — each answer still scoped by whatever else you hold",
   "AP.Agents": "Make agents: reports run on a schedule for chosen organisations and delivered to your task list (decision 0622)",
+  "AP.Receive": "Record goods receipts and returns against purchase order lines (decision 0643)",
   "AP.Manager": "Remove a collaborator from an invoice's conversation — decision 0476, deliberately narrower than the AP.Review that can add one",
 
   "AR.Validate": "Accounts Receivable — not yet built",

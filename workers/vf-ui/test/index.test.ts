@@ -720,6 +720,10 @@ describe("the proxy carries every path a screen calls (decision 0131)", () => {
     ["GET", "/api/admin/return-reasons"],
     ["POST", "/api/admin/return-reasons"],
     ["PATCH", "/api/admin/return-reasons/duplicate_invoice"],
+    ["GET", "/api/goods-return-reasons"],
+    ["GET", "/api/admin/goods-return-reasons"],
+    ["POST", "/api/admin/goods-return-reasons"],
+    ["PATCH", "/api/admin/goods-return-reasons/damaged"],
     ["GET", "/api/admin/ap-team-email"],
     ["PUT", "/api/admin/ap-team-email"],
   ];

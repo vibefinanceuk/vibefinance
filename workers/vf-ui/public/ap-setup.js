@@ -92,6 +92,8 @@ let costCentreNames = [];
 // this tab showing its own empty state rather than taking down every
 // other tab on the screen.
 let returnReasons = [];
+// Decision 0643: why goods went back to a supplier — the same list shape, its own list.
+let goodsReturnReasons = [];
 let apTeamEmail = null;
 
 /**
@@ -419,15 +421,19 @@ async function removeStageReturnTarget(id) {
  */
 async function loadReturnReasonsTab() {
   try {
-    const [reasonsResponse, emailResponse] = await Promise.all([
+    const [reasonsResponse, emailResponse, goodsResponse] = await Promise.all([
       fetch("/api/admin/return-reasons"),
       fetch("/api/admin/ap-team-email"),
+      // Its own failure leaves the goods list empty, not the whole tab.
+      fetch("/api/admin/goods-return-reasons").catch(() => null),
     ]);
     returnReasons = reasonsResponse.ok ? ((await reasonsResponse.json()).reasons ?? []) : [];
     apTeamEmail = emailResponse.ok ? ((await emailResponse.json()).apTeamEmail ?? null) : null;
+    goodsReturnReasons = goodsResponse?.ok ? ((await goodsResponse.json()).reasons ?? []) : [];
   } catch (err) {
     console.error("Return reasons tab load failed", err);
     returnReasons = [];
+    goodsReturnReasons = [];
     apTeamEmail = null;
   }
 }
@@ -450,12 +456,12 @@ async function loadReturnReasonsTab() {
  * Supplier picker's own AP-team checkbox already uses (`viewer.js`),
  * so clicking the word toggles the box here too.
  */
-function returnReasonRow(reason, problem) {
+function returnReasonRow(reason, problem, base = "return-reasons") {
   const labelInput = el("input", { type: "text", value: reason.label });
   const activeCheckbox = el("input", { type: "checkbox", ...(reason.active ? { checked: "checked" } : {}) });
   const save = async () => {
     problem.textContent = "";
-    const response = await fetch(`/api/admin/return-reasons/${encodeURIComponent(reason.id)}`, {
+    const response = await fetch(`/api/admin/${base}/${encodeURIComponent(reason.id)}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ label: labelInput.value.trim(), active: activeCheckbox.checked }),
@@ -474,9 +480,13 @@ function returnReasonRow(reason, problem) {
   ]);
 }
 
-function returnReasonsTab(problem) {
-  const rows = returnReasons.map((reason) => returnReasonRow(reason, problem));
-
+/**
+ * One reason list's panel: its rows, and a row to add one. Decision
+ * 0643 gave the tab a second list — why goods went back — with the same
+ * shape and its own routes (`base`).
+ */
+function reasonListPanel(reasons, base, titleKey, subKey, problem, id) {
+  const rows = reasons.map((reason) => returnReasonRow(reason, problem, base));
   const newId = el("input", { type: "text", placeholder: t("apsetup.returnreasons.newid") });
   const newLabel = el("input", { type: "text", placeholder: t("apsetup.returnreasons.newlabel") });
   const addReason = async () => {
@@ -485,7 +495,7 @@ function returnReasonsTab(problem) {
       problem.textContent = t("apsetup.returnreasons.idandlabelrequired");
       return;
     }
-    const response = await fetch("/api/admin/return-reasons", {
+    const response = await fetch(`/api/admin/${base}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ id: newId.value.trim(), label: newLabel.value.trim() }),
@@ -497,7 +507,15 @@ function returnReasonsTab(problem) {
     await loadReturnReasonsTab();
     render();
   };
+  return el("div", { class: "panel", ...(id ? { id } : {}) }, [
+    el("div", { class: "cardhead" }, [el("h3", { text: t(titleKey) })]),
+    el("p", { class: "muted sm", text: t(subKey) }),
+    el("div", { class: "returnreasonlist" }, rows),
+    el("div", { class: "returnreasonrow returnreasonnew" }, [newId, newLabel, actionLink("create", { label: t("apsetup.add"), onclick: addReason })]),
+  ]);
+}
 
+function returnReasonsTab(problem) {
   const apTeamEmailInput = el("input", { type: "text", value: apTeamEmail ?? "", placeholder: t("apsetup.returnreasons.apteamemailplaceholder") });
   const saveApTeamEmail = async () => {
     problem.textContent = "";
@@ -516,21 +534,13 @@ function returnReasonsTab(problem) {
 
   return el("div", {}, [
     problem,
-    el("div", { class: "panel" }, [
-      el("div", { class: "cardhead" }, [el("h3", { text: t("apsetup.returnreasons") })]),
-      el("p", { class: "muted sm", text: t("apsetup.returnreasons.sub") }),
-      el("div", { class: "returnreasonlist" }, rows),
-      el("div", { class: "returnreasonrow returnreasonnew" }, [
-        newId,
-        newLabel,
-        actionLink("create", { label: t("apsetup.add"), onclick: addReason }),
-      ]),
-    ]),
+    reasonListPanel(returnReasons, "return-reasons", "apsetup.returnreasons", "apsetup.returnreasons.sub", problem),
     el("div", { class: "panel" }, [
       el("div", { class: "cardhead" }, [el("h3", { text: t("apsetup.returnreasons.apteamemail") })]),
       el("p", { class: "muted sm", text: t("apsetup.returnreasons.apteamemailsub") }),
       el("div", { class: "editgrid" }, [apTeamEmailInput, actionLink("save", { onclick: saveApTeamEmail })]),
     ]),
+    reasonListPanel(goodsReturnReasons, "goods-return-reasons", "apsetup.goodsreturnreasons", "apsetup.goodsreturnreasons.sub", problem, "goods-return-reasons"),
   ]);
 }
 

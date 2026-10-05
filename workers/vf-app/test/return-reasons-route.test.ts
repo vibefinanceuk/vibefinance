@@ -80,3 +80,25 @@ describe("updating a reason", () => {
     expect((await handleUpdateReturnReason(env.DB, "other", { sortOrder: 1.5 })).status).toBe(400);
   });
 });
+
+describe("goods return reasons — decision 0643", () => {
+  it("ships its own six, kept apart from why an invoice went back", async () => {
+    const goods = (await handleListActiveReturnReasons(env.DB, "goods_return_reasons")).body as { reasons: { id: string }[] };
+    expect(goods.reasons.map((r) => r.id)).toEqual(["damaged", "wrong_item", "not_ordered", "quality_failure", "short_dated", "rejected_on_delivery"]);
+    const invoice = (await handleListActiveReturnReasons(env.DB)).body as { reasons: { id: string }[] };
+    expect(invoice.reasons.map((r) => r.id)).not.toContain("damaged");
+  });
+
+  it("adds, renames and retires one without touching the other list", async () => {
+    expect((await handleCreateReturnReason(env.DB, { id: "late", label: "Arrived too late" }, "goods_return_reasons")).status).toBe(201);
+    expect((await handleUpdateReturnReason(env.DB, "damaged", { active: false }, "goods_return_reasons")).status).toBe(200);
+    const active = (await handleListActiveReturnReasons(env.DB, "goods_return_reasons")).body as { reasons: { id: string }[] };
+    expect(active.reasons.map((r) => r.id)).toContain("late");
+    expect(active.reasons.map((r) => r.id)).not.toContain("damaged");
+    const all = (await handleListAllReturnReasons(env.DB, "goods_return_reasons")).body as { reasons: { id: string }[] };
+    expect(all.reasons.map((r) => r.id)).toContain("damaged");
+    expect(((await handleListAllReturnReasons(env.DB)).body as { reasons: { id: string }[] }).reasons.map((r) => r.id)).not.toContain("late");
+    // An invoice reason is not a goods reason.
+    expect((await handleUpdateReturnReason(env.DB, "duplicate_invoice", { active: false }, "goods_return_reasons")).status).toBe(404);
+  });
+});

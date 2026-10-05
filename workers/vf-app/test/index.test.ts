@@ -1632,6 +1632,33 @@ describe("Return To Supplier's own new routes, through the real router (decision
     expect(await getRes.json()).toEqual({ apTeamEmail: "ap-team@acme.com" });
   });
 
+  it("serves goods return reasons the same way: the active list to anyone, the admin list and writes on Admin.Configure — decision 0643", async () => {
+    const limitedKey = await seedUserWithPermissions(["AP.TaskView"]);
+    const active = await SELF.fetch("https://example.com/goods-return-reasons", { headers: { Authorization: `Bearer ${limitedKey}` } });
+    expect(active.status).toBe(200);
+    expect(((await active.json()) as { reasons: { id: string }[] }).reasons[0].id).toBe("damaged");
+    expect((await SELF.fetch("https://example.com/admin/goods-return-reasons", { headers: { Authorization: `Bearer ${limitedKey}` } })).status).toBe(403);
+
+    const adminKey = await seedUserWithPermissions(["Admin.Configure"]);
+    const created = await SELF.fetch("https://example.com/admin/goods-return-reasons", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${adminKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ id: "late", label: "Arrived too late" }),
+    });
+    expect(created.status).toBe(201);
+    const retired = await SELF.fetch("https://example.com/admin/goods-return-reasons/late", {
+      method: "PATCH",
+      headers: { Authorization: `Bearer ${adminKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ active: false }),
+    });
+    expect(retired.status).toBe(200);
+    const all = await SELF.fetch("https://example.com/admin/goods-return-reasons", { headers: { Authorization: `Bearer ${adminKey}` } });
+    expect(((await all.json()) as { reasons: { id: string; active: boolean }[] }).reasons.find((r) => r.id === "late")?.active).toBe(false);
+    // The invoice list never gained it.
+    const invoiceList = await SELF.fetch("https://example.com/admin/return-reasons", { headers: { Authorization: `Bearer ${adminKey}` } });
+    expect(((await invoiceList.json()) as { reasons: { id: string }[] }).reasons.some((r) => r.id === "late")).toBe(false);
+  });
+
   it("completes a return through the real router, recording the categorised reason", async () => {
     const { id: userId, apiKey } = await seedUserWithPermissionsAndId(["AP.Approve", "AP.ReturnToSupplier"]);
 

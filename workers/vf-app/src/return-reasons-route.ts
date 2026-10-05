@@ -16,6 +16,15 @@ import type { RouteResult } from "./org-route.js";
  * so there is no DELETE route here at all, only the active flag.
  */
 
+/**
+ * **Two lists, one shape — decision 0643.** `supplier_return_reasons`
+ * says why an *invoice* went back to its supplier (0498);
+ * `goods_return_reasons` says why *goods* went back (migration 0139).
+ * Different vocabularies a report must never mix, so different tables,
+ * but the same flat, deactivate-never-delete list, so the same code.
+ */
+export type ReasonList = "supplier_return_reasons" | "goods_return_reasons";
+
 export interface ReturnReason {
   id: string;
   label: string;
@@ -40,17 +49,17 @@ function toReturnReason(r: ReturnReasonRow): ReturnReason {
  * all may read this; it names no supplier, no amount, nothing
  * sensitive.
  */
-export async function handleListActiveReturnReasons(db: D1Database): Promise<RouteResult> {
+export async function handleListActiveReturnReasons(db: D1Database, list: ReasonList = "supplier_return_reasons"): Promise<RouteResult> {
   const rows = await db
-    .prepare("SELECT id, label, active, sort_order FROM supplier_return_reasons WHERE active = 1 ORDER BY sort_order, label")
+    .prepare(`SELECT id, label, active, sort_order FROM ${list} WHERE active = 1 ORDER BY sort_order, label`)
     .all<ReturnReasonRow>();
   return { status: 200, body: { reasons: rows.results.map(toReturnReason) } };
 }
 
 /** Every reason, active or not — the admin screen's own list. */
-export async function handleListAllReturnReasons(db: D1Database): Promise<RouteResult> {
+export async function handleListAllReturnReasons(db: D1Database, list: ReasonList = "supplier_return_reasons"): Promise<RouteResult> {
   const rows = await db
-    .prepare("SELECT id, label, active, sort_order FROM supplier_return_reasons ORDER BY sort_order, label")
+    .prepare(`SELECT id, label, active, sort_order FROM ${list} ORDER BY sort_order, label`)
     .all<ReturnReasonRow>();
   return { status: 200, body: { reasons: rows.results.map(toReturnReason) } };
 }
@@ -61,7 +70,11 @@ export interface CreateReturnReasonBody {
   sortOrder?: unknown;
 }
 
-export async function handleCreateReturnReason(db: D1Database, body: CreateReturnReasonBody): Promise<RouteResult> {
+export async function handleCreateReturnReason(
+  db: D1Database,
+  body: CreateReturnReasonBody,
+  list: ReasonList = "supplier_return_reasons"
+): Promise<RouteResult> {
   const { id, label, sortOrder } = body;
   if (typeof id !== "string" || !id || typeof label !== "string" || !label.trim()) {
     return { status: 400, body: { error: "id and label (both non-empty strings) are required" } };
@@ -70,13 +83,13 @@ export async function handleCreateReturnReason(db: D1Database, body: CreateRetur
     return { status: 400, body: { error: "sortOrder, if present, must be a whole number" } };
   }
 
-  const existing = await db.prepare("SELECT id FROM supplier_return_reasons WHERE id = ?").bind(id).first();
+  const existing = await db.prepare(`SELECT id FROM ${list} WHERE id = ?`).bind(id).first();
   if (existing) {
     return { status: 409, body: { error: `return reason ${id} already exists` } };
   }
 
   await db
-    .prepare("INSERT INTO supplier_return_reasons (id, label, sort_order) VALUES (?, ?, ?)")
+    .prepare(`INSERT INTO ${list} (id, label, sort_order) VALUES (?, ?, ?)`)
     .bind(id, label.trim(), sortOrder ?? 0)
     .run();
 
@@ -99,10 +112,11 @@ export interface UpdateReturnReasonBody {
 export async function handleUpdateReturnReason(
   db: D1Database,
   reasonId: string,
-  body: UpdateReturnReasonBody
+  body: UpdateReturnReasonBody,
+  list: ReasonList = "supplier_return_reasons"
 ): Promise<RouteResult> {
   const existing = await db
-    .prepare("SELECT id, label, active, sort_order FROM supplier_return_reasons WHERE id = ?")
+    .prepare(`SELECT id, label, active, sort_order FROM ${list} WHERE id = ?`)
     .bind(reasonId)
     .first<ReturnReasonRow>();
   if (!existing) {
@@ -125,7 +139,7 @@ export async function handleUpdateReturnReason(
   const newSortOrder = typeof sortOrder === "number" ? sortOrder : existing.sort_order;
 
   await db
-    .prepare("UPDATE supplier_return_reasons SET label = ?, active = ?, sort_order = ? WHERE id = ?")
+    .prepare(`UPDATE ${list} SET label = ?, active = ?, sort_order = ? WHERE id = ?`)
     .bind(newLabel, newActive ? 1 : 0, newSortOrder, reasonId)
     .run();
 

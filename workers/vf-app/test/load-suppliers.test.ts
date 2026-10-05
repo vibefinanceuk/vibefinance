@@ -1674,6 +1674,30 @@ describe("the general field-change history — decision 0427", () => {
 
       expect((await handleUpdateSupplier(env.DB, id, { projectOnly: "yes" }, "bob")).status).toBe(400);
     });
+
+    it("marks a supplier Receipting required, records it, and a load can say it in words — decision 0643", async () => {
+      const id = await seedOne();
+      expect((await handleUpdateSupplier(env.DB, id, { matchOption: "three_way" }, "bob")).status).toBe(200);
+      expect(await changes(id)).toContainEqual({ field: "match_option", old_value: null, new_value: "three_way", changed_by: "bob" });
+      const listed = ((await handleListSuppliers(env.DB)).body as { suppliers: { matchOption: string | null }[] }).suppliers[0];
+      expect(listed.matchOption).toBe("three_way");
+
+      // Cleared, and refused when it is not a match option.
+      expect((await handleUpdateSupplier(env.DB, id, { matchOption: null }, "bob")).status).toBe(200);
+      expect((await env.DB.prepare("SELECT match_option FROM suppliers WHERE id = ?").bind(id).first<{ match_option: string | null }>())!.match_option).toBeNull();
+      const refused = await handleUpdateSupplier(env.DB, id, { matchOption: "four_way" }, "bob");
+      expect(refused.status).toBe(400);
+      expect((refused.body as { reason: string }).reason).toBe("match_option_invalid");
+
+      // The ERP's file may name it as the screens do.
+      await load("ERP ID,Name,match_option\n40100,Acme Widgets,Receipting required\n40200,Globex,3-way\n40300,Initech,Two way");
+      const rows = (await env.DB.prepare("SELECT erp_identifier, match_option FROM suppliers ORDER BY erp_identifier").all<{ erp_identifier: string; match_option: string }>()).results;
+      expect(rows.map((r) => [r.erp_identifier, r.match_option])).toEqual([
+        ["40100", "three_way"],
+        ["40200", "three_way"],
+        ["40300", "two_way"],
+      ]);
+    });
   });
 
   describe("holding, releasing, and deactivating (handleSetSupplierState)", () => {

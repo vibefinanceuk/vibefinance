@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 5 October 2026 (decision 0642). A living document: what
+Last updated 5 October 2026 (decision 0643). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,15 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Goods receipts, slice 1 (0643)
+
+The groundwork for goods receipts and three-way matching: a new
+AP.Receive permission with a ready-made AP Receiving role offered on the
+Roles tab; suppliers shown and edited as *Receipting required* (the
+existing three-way match option); and a goods return reasons list, kept
+apart from invoice return reasons, on AP setup. The register, the
+screen and the matching follow.
 
 ### Absence in the top bar (0642)
 

@@ -274,8 +274,9 @@ export async function handleLoadSuppliers(
       continue;
     }
 
-    const matchOption = (values.match_option ?? "").toLowerCase().replace(/[\s-]/g, "_");
-    if (matchOption && !["two_way", "three_way", "none"].includes(matchOption)) {
+    const rawMatchOption = (values.match_option ?? "").trim();
+    const matchOption = rawMatchOption ? normaliseMatchOption(rawMatchOption) ?? "" : "";
+    if (rawMatchOption && !matchOption) {
       refused.push({ row: i + 1, reason: `match option "${values.match_option}" is not recognised` });
       continue;
     }
@@ -1217,6 +1218,21 @@ const EDITABLE = [
 ] as const;
 
 /**
+ * A match option as a person or an ERP might write it — decision 0643.
+ * `three_way` is also accepted as *receipting required*, *3-way* or
+ * *three way*, since the screens now name it for what it means.
+ * `undefined` for anything not recognised.
+ */
+export function normaliseMatchOption(value: unknown): "two_way" | "three_way" | "none" | undefined {
+  if (typeof value !== "string") return undefined;
+  const v = value.trim().toLowerCase().replace(/[\s-]+/g, "_");
+  if (v === "two_way" || v === "2_way") return "two_way";
+  if (v === "three_way" || v === "3_way" || v === "receipting_required" || v === "receipt_required") return "three_way";
+  if (v === "none") return "none";
+  return undefined;
+}
+
+/**
  * Changing a supplier by hand — decision 0230.
  *
  * **We are the mirror** (decision 0208), and this does not stop being
@@ -1307,6 +1323,26 @@ export async function handleUpdateSupplier(
     touched.project_only = body.projectOnly;
   }
 
+  /**
+   * **How its invoices are matched — decision 0643.** `three_way` is
+   * what the screens call *Receipting required*: its invoices wait for
+   * the goods receipt. Like the fields above it is the ERP's, so the
+   * next load that carries a match option overwrites it, and the screen
+   * warns as it does for them.
+   */
+  let matchOptionBefore: string | null | undefined;
+  if ("matchOption" in body) {
+    const wanted = body.matchOption === null || body.matchOption === "" ? null : normaliseMatchOption(body.matchOption);
+    if (wanted === undefined) {
+      return { status: 400, body: { error: "matchOption must be two_way, three_way, none, or null to clear it", reason: "match_option_invalid" } };
+    }
+    const row = await db.prepare("SELECT match_option FROM suppliers WHERE id = ?").bind(supplierId).first<{ match_option: string | null }>();
+    matchOptionBefore = row?.match_option ?? null;
+    sets.push("match_option = ?");
+    values.push(wanted);
+    touched.match_option = wanted;
+  }
+
   if (sets.length === 0) return { status: 400, body: { error: "nothing to change" } };
 
   await db
@@ -1317,7 +1353,14 @@ export async function handleUpdateSupplier(
   await recordSupplierFieldChanges(
     db,
     supplierId,
-    diffSupplierFields({ ...supplier, ...(projectOnlyBefore !== null ? { project_only: projectOnlyBefore } : {}) }, touched),
+    diffSupplierFields(
+      {
+        ...supplier,
+        ...(projectOnlyBefore !== null ? { project_only: projectOnlyBefore } : {}),
+        ...(matchOptionBefore !== undefined ? { match_option: matchOptionBefore } : {}),
+      },
+      touched
+    ),
     changedBy
   );
 

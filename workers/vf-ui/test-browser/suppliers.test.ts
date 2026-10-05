@@ -872,3 +872,59 @@ describe("project-only expenditure, per supplier site — decision 0547", () => 
     expect(sent[0].body).toMatchObject({ name: "Fit-out Company", projectOnly: false });
   });
 });
+
+describe("Receipting required — decision 0643", () => {
+  const SITE = { id: "s1", erpIdentifier: "E1", erpSiteIdentifier: null, name: "Northwind", status: "active", onHold: false, projectOnly: false, matchOption: "two_way" };
+
+  async function openDetail(site: Record<string, unknown>) {
+    stubFetch({ suppliers: [site], lastLoad: null, fedByLoad: false });
+    const inner = globalThis.fetch as unknown as (url: string, init?: RequestInit) => Promise<Response>;
+    const sent: unknown[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        if (init?.method === "PUT") {
+          sent.push(JSON.parse(String(init.body)));
+          return { ok: true, json: async () => ({ id: "s1" }) } as Response;
+        }
+        return inner(url, init);
+      })
+    );
+    Object.assign(STRINGS.strings, {
+      "suppliers.matchoption": "How invoices are matched",
+      "suppliers.matchoption.unset": "Not set",
+      "suppliers.matchoption.two_way": "Two-way: against the purchase order",
+      "suppliers.matchoption.three_way": "Receipting required: the order and the goods receipt",
+      "suppliers.matchoption.none": "Not matched",
+      "suppliers.receipting.short": "Receipting required",
+    });
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { open } = await import("/suppliers.js");
+    await open();
+    return sent;
+  }
+
+  it("says so on the supplier's row", async () => {
+    await openDetail({ ...SITE, matchOption: "three_way" });
+    const cells = [...document.querySelectorAll("tbody tr td")].map((td) => td.textContent ?? "");
+    expect(cells).toContain("Receipting required");
+  });
+
+  it("is chosen in the pop-out, beside the ERP's other fields, and saved with them", async () => {
+    const sent = await openDetail(SITE);
+    (document.querySelector("tbody tr") as HTMLElement).click();
+    const select = document.getElementById("suppliermatchoption") as HTMLSelectElement;
+    expect(select.value).toBe("two_way");
+    expect([...select.options].map((o) => o.textContent)).toEqual([
+      "Not set",
+      "Two-way: against the purchase order",
+      "Receipting required: the order and the goods receipt",
+      "Not matched",
+    ]);
+    select.value = "three_way";
+    ([...document.querySelectorAll(".popout .cardhead button")].find((b) => b.getAttribute("title") === "Save") as HTMLButtonElement).click();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(sent[0]).toMatchObject({ matchOption: "three_way", projectOnly: false });
+  });
+});

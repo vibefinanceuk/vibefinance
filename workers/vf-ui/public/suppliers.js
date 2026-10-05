@@ -511,6 +511,22 @@ function openSupplier(s) {
   );
 
   /**
+   * **How its invoices are matched — decision 0643.** The ERP's own
+   * setting, so it sits with the fields above and warns as they do.
+   * Three-way is named for what it means: *Receipting required*, its
+   * invoices waiting for the goods receipt.
+   */
+  const matchOption = el(
+    "select",
+    { id: "suppliermatchoption" },
+    ["", "two_way", "three_way", "none"].map((v) =>
+      el("option", { value: v, text: t(`suppliers.matchoption.${v || "unset"}`), ...((s.matchOption ?? "") === v ? { selected: "selected" } : {}) })
+    )
+  );
+  fields.matchOption = matchOption;
+  form.append(el("label", { for: "suppliermatchoption", text: t("suppliers.matchoption") }), matchOption);
+
+  /**
    * **Project-only expenditure — decision 0547.** VibeFinance's own
    * setting for this site, not the ERP's, so the note says a load leaves
    * it alone (unlike every field above).
@@ -808,6 +824,8 @@ function supplierRows() {
       s.isProcurementSite ? t("suppliers.procurement") : null,
       // Decision 0547 — what the site's spend is for, alongside what the site is for.
       s.projectOnly ? t("suppliers.projectonly.short") : null,
+      // Decision 0643 — its invoices wait for the goods receipt.
+      s.matchOption === "three_way" ? t("suppliers.receipting.short") : null,
     ]
       .filter(Boolean)
       .join(", ") || "—";

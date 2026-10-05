@@ -4242,17 +4242,32 @@ export default {
       return json(result.body, result.status);
     }
 
+    /**
+     * **Goods return reasons — decision 0643.** The same list shape for
+     * why goods went back to a supplier, kept apart from why an invoice
+     * did. The active list is read by whoever records or sees receipts;
+     * the admin list and writes are `Admin.Configure`, as above.
+     */
+    if (pathname === "/goods-return-reasons" && request.method === "GET") {
+      const { db } = resolveTenant(request, env);
+      const person = await authenticatePerson(db, request, env);
+      if (!person.user) return json({ error: t("unauthorized", resolveLocale(env.LOCALE)) }, 401);
+      const result = await handleListActiveReturnReasons(db, "goods_return_reasons");
+      return json(result.body, result.status);
+    }
+
     // The admin screen's own list and writes — every reason, active or
     // not, and `Admin.Configure` gated the same way `/sources/:id/org`
     // already is for a setup action with no per-invoice consequence.
-    if (pathname === "/admin/return-reasons" && request.method === "GET") {
+    const reasonListOf = (path: string) => (path.startsWith("/admin/goods-") ? "goods_return_reasons" : "supplier_return_reasons");
+    if ((pathname === "/admin/return-reasons" || pathname === "/admin/goods-return-reasons") && request.method === "GET") {
       const { db } = resolveTenant(request, env);
       const auth = await requirePermission(db, request, "Admin.Configure", sessionContext(env));
       if (!auth.authorized) return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
-      const result = await handleListAllReturnReasons(db);
+      const result = await handleListAllReturnReasons(db, reasonListOf(pathname));
       return json(result.body, result.status);
     }
-    if (pathname === "/admin/return-reasons" && request.method === "POST") {
+    if ((pathname === "/admin/return-reasons" || pathname === "/admin/goods-return-reasons") && request.method === "POST") {
       const { db } = resolveTenant(request, env);
       const auth = await requirePermission(db, request, "Admin.Configure", sessionContext(env));
       if (!auth.authorized) return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
@@ -4262,10 +4277,10 @@ export default {
       } catch {
         return json({ error: t("invalidJsonBody", resolveLocale(env.LOCALE)) }, 400);
       }
-      const result = await handleCreateReturnReason(db, (body ?? {}) as Record<string, unknown>);
+      const result = await handleCreateReturnReason(db, (body ?? {}) as Record<string, unknown>, reasonListOf(pathname));
       return json(result.body, result.status);
     }
-    const updateReturnReasonMatch = pathname.match(/^\/admin\/return-reasons\/([^/]+)$/);
+    const updateReturnReasonMatch = pathname.match(/^\/admin\/(?:goods-)?return-reasons\/([^/]+)$/);
     if (updateReturnReasonMatch && request.method === "PATCH") {
       const { db } = resolveTenant(request, env);
       const auth = await requirePermission(db, request, "Admin.Configure", sessionContext(env));
@@ -4276,7 +4291,7 @@ export default {
       } catch {
         return json({ error: t("invalidJsonBody", resolveLocale(env.LOCALE)) }, 400);
       }
-      const result = await handleUpdateReturnReason(db, updateReturnReasonMatch[1], (body ?? {}) as Record<string, unknown>);
+      const result = await handleUpdateReturnReason(db, updateReturnReasonMatch[1], (body ?? {}) as Record<string, unknown>, reasonListOf(pathname));
       return json(result.body, result.status);
     }
 

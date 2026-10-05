@@ -110,6 +110,8 @@ const STRINGS = {
     "roles.done": "Done",
     "roles.createpersonfailed": "Could not create the person. Please try again.",
     "action.newrole": "New role",
+    "roles.readymade.receiving": "Add the AP Receiving role",
+    "roles.readymade.receivingname": "AP Receiving",
     "action.close": "Close",
     "action.save": "Save",
     "column.unit": "Unit",
@@ -679,6 +681,33 @@ describe("creating a role — decision 0326", () => {
     button?.click();
 
     expect(document.querySelector(".permissiongroups.scrollable")).not.toBeNull();
+  });
+
+  it("offers the ready-made AP Receiving role while no role holds AP.Receive, filled in — decision 0643", async () => {
+    const WITH_RECEIVE = [...KNOWN, { name: "AP.Receive", description: "Record goods receipts" }];
+    await openRolesAs(["Admin.RoleManagement", "Admin.Configure"], { ...EMPTY, knownPermissions: WITH_RECEIVE });
+    switchTab("Roles");
+    const offer = [...document.querySelectorAll("button")].find((b) => b.textContent?.includes("Add the AP Receiving role"));
+    expect(offer).toBeDefined();
+    offer!.click();
+    const [idInput, nameInput] = [...document.querySelectorAll<HTMLInputElement>(".editgrid input")];
+    expect(idInput.value).toBe("ap-receiving");
+    expect(nameInput.value).toBe("AP Receiving");
+    const checked = [...document.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')].filter((b) => b.checked).map((b) => b.nextElementSibling?.textContent);
+    expect(checked).toEqual(["AP.Receive"]);
+
+    // Once a role holds it, the offer goes.
+    document.querySelector(".backdrop")?.remove();
+    mountShell();
+    vi.unstubAllGlobals();
+    vi.resetModules();
+    await openRolesAs(["Admin.RoleManagement", "Admin.Configure"], {
+      ...EMPTY,
+      knownPermissions: WITH_RECEIVE,
+      roles: [{ id: "goods-in", name: "Goods in", permissions: ["AP.Receive"] }],
+    });
+    switchTab("Roles");
+    expect([...document.querySelectorAll("button")].some((b) => b.textContent?.includes("Add the AP Receiving role"))).toBe(false);
   });
 
   it("posts the entered id, name, and checked permissions, then reloads", async () => {

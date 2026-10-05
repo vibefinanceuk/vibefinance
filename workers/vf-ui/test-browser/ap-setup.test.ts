@@ -136,6 +136,8 @@ const STRINGS = {
     "apsetup.returnreasons.apteamemail": "AP team email",
     "apsetup.returnreasons.apteamemailsub": "Copied in on a Return To Supplier email when the sender ticks the box.",
     "apsetup.returnreasons.apteamemailplaceholder": "ap-team@example.com",
+    "apsetup.goodsreturnreasons": "Goods return reasons",
+    "apsetup.goodsreturnreasons.sub": "Why goods were sent back to a supplier.",
   },
 };
 
@@ -2047,6 +2049,41 @@ describe("the Return Reasons tab (decision 0498, row layout in 0499)", () => {
 
     expect(created).toContainEqual({ id: "wrong_currency", label: "Wrong currency charged" });
     expect(listedAfterCreate).toBe(true);
+  });
+
+  it("lists why goods went back in a panel of its own, and adds to that list — decision 0643", async () => {
+    const created: { path: string; body: unknown }[] = [];
+    await openApSetupAs(
+      ["Admin.Configure"],
+      EMPTY_OVERVIEW,
+      EMPTY_CONFIG,
+      returnReasonsRoutes(REASONS, { apTeamEmail: null }, {
+        "/api/admin/goods-return-reasons": { reasons: [{ id: "damaged", label: "Damaged", active: true, sortOrder: 10 }] },
+      })
+    );
+    switchTab("Return Reasons");
+    const panel = document.getElementById("goods-return-reasons")!;
+    expect(panel.querySelector("h3")?.textContent).toBe("Goods return reasons");
+    const rows = [...panel.querySelectorAll(".returnreasonrow:not(.returnreasonnew)")];
+    expect(rows.map((r) => (r.querySelector("input[type=text]") as HTMLInputElement).value)).toEqual(["Damaged"]);
+    // The invoice list keeps its own two.
+    expect(document.querySelectorAll(".returnreasonrow:not(.returnreasonnew)")).toHaveLength(3);
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        const path = String(url).split("?")[0];
+        if (init?.method === "POST") created.push({ path, body: JSON.parse(String(init.body)) });
+        return { ok: true, json: async () => ({ reasons: [] }) } as Response;
+      })
+    );
+    const newRow = panel.querySelector(".returnreasonnew")!;
+    const [idInput, labelInput] = [...newRow.querySelectorAll("input[type=text]")] as HTMLInputElement[];
+    idInput.value = "late";
+    labelInput.value = "Arrived too late";
+    (newRow.querySelector(".actionlink") as HTMLButtonElement).click();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(created).toEqual([{ path: "/api/admin/goods-return-reasons", body: { id: "late", label: "Arrived too late" } }]);
   });
 
   it("shows the AP team email in its own panel, unaffected by the row layout above", async () => {

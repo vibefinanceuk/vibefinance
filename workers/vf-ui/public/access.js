@@ -300,14 +300,35 @@ function permissionCheckboxes(selected) {
  * and the method (`POST` to create, `PUT` to replace) — everything
  * else, including the closed-vocabulary checkboxes, is identical.
  */
-function openRoleForm(existingRole) {
+/**
+ * **Ready-made roles — decision 0643.** A role is each customer's own,
+ * so none is created unasked; but a new permission nobody holds needs a
+ * way in. Offered while no role holds it: the role form opens filled
+ * in, and the administrator can change any of it before creating it.
+ */
+const READY_MADE_ROLES = [{ id: "ap-receiving", nameKey: "roles.readymade.receivingname", labelKey: "roles.readymade.receiving", permissions: ["AP.Receive"] }];
+
+function readyMadeRoleButtons() {
+  return READY_MADE_ROLES.filter(
+    (r) =>
+      r.permissions.every((p) => knownPermissions.some((k) => k.name === p)) &&
+      !roles.some((role) => r.permissions.every((p) => role.permissions.includes(p)))
+  ).map((r) =>
+    actionLink("newrole", {
+      label: t(r.labelKey),
+      onclick: () => openRoleForm(null, { id: r.id, name: t(r.nameKey), permissions: r.permissions }),
+    })
+  );
+}
+
+function openRoleForm(existingRole, preset = null) {
   const problem = el("div", { class: "warn" });
 
   const idInput = existingRole
     ? el("input", { type: "text", value: existingRole.id, disabled: "disabled" })
-    : el("input", { type: "text" });
-  const nameInput = el("input", { type: "text", value: existingRole?.name ?? "" });
-  const { container: permissionsContainer, getChecked } = permissionCheckboxes(existingRole?.permissions ?? []);
+    : el("input", { type: "text", value: preset?.id ?? "" });
+  const nameInput = el("input", { type: "text", value: existingRole?.name ?? preset?.name ?? "" });
+  const { container: permissionsContainer, getChecked } = permissionCheckboxes(existingRole?.permissions ?? preset?.permissions ?? []);
 
   const form = el("div", { class: "editgrid" }, [
     el("label", { text: t("roles.roleid") }),
@@ -1320,7 +1341,9 @@ function render() {
         "roles.norolesconfigured",
         ["column.role", "roles.permissions"],
         roles.map(roleRow),
-        canManage ? actionLink("newrole", { onclick: () => openRoleForm(null) }) : null
+        canManage
+          ? el("div", { class: "statebuttons" }, [actionLink("newrole", { onclick: () => openRoleForm(null) }), ...readyMadeRoleButtons()])
+          : null
       ),
     people: () =>
       section(
