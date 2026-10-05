@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 5 October 2026 (decision 0638). A living document: what
+Last updated 5 October 2026 (decision 0639). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,12 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### The operator console matches the main site (0639)
+
+The console now uses the main site's typeface, Day and Night palettes,
+menu sizes and pills; its menu folds to icons; Night or Day and Sign out
+sit at the top right; and each customer's table lines up with the next.
 
 ### Agents ask the data, slice 5: events, actions and the allowance (0638)
 

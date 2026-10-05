@@ -18,18 +18,62 @@
   not change the screen that approves customers.
 -->
 
+<script>
+  // Decision 0639: the chosen mood before anything is drawn, so Day never flashes Night.
+  try { const m = localStorage.getItem("vf-admin-mood"); if (m === "day" || m === "night") document.documentElement.setAttribute("data-mood", m); } catch {}
+</script>
 <style>
+/*
+  **The main site's typeface, carried here — decision 0639.** Carlito is
+  Calibri's metric twin; without it a Mac fell back to the system font,
+  so the console never matched the app. The same files as vf-ui's.
+*/
+@font-face { font-family: "Carlito"; src: url("/fonts/carlito-latin-400-normal.woff2") format("woff2"); font-weight: 400; font-style: normal; font-display: swap; }
+@font-face { font-family: "Carlito"; src: url("/fonts/carlito-latin-700-normal.woff2") format("woff2"); font-weight: 700; font-style: normal; font-display: swap; }
+@font-face { font-family: "Carlito"; src: url("/fonts/carlito-latin-400-italic.woff2") format("woff2"); font-weight: 400; font-style: italic; font-display: swap; }
+
+/*
+  **Day time and Night time, as the main site — decision 0639.** Day is
+  the default palette; Night follows the machine's own preference unless
+  the operator chose one (`data-mood` on <html>, kept in this browser).
+  The values are the main site's own (tokens.css), copied rather than
+  shared, as 0140 decided for the console.
+*/
 :root {
+  --surface-0: #f2f6fb; --surface-1: #e8eff8; --surface-2: #ffffff;
+  --text-primary: #121a26; --text-secondary: #4a5768; --text-muted: #7b8798;
+  --border: rgba(18, 26, 38, 0.10); --border-strong: rgba(18, 26, 38, 0.18);
+  --text-accent: #185fa5; --bg-accent: #e6f1fb;
+  --text-warning: #854f0b; --text-success: #3b6d11; --text-danger: #9c2b1f;
+  --bg-warning: #faeeda; --bg-success: #eaf3de; --bg-danger: #fbe4e1;
+  --text-sm: 12px; --text-base: 14px; --text-lg: 16px; --text-xl: 20px;
+  --radius: 8px;
+  --font-sans: Calibri, Carlito, "Segoe UI", -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
+  /* The side menu's icon colours, as the main site's (decision 0527). */
+  --nav-1: #2563eb; --nav-2: #0d9488; --nav-3: #7c3aed; --nav-4: #ea580c; --nav-5: #db2777;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-mood="day"]) {
+    --surface-0: #0d1626; --surface-1: #141f33; --surface-2: #1b2941;
+    --text-primary: #e8eef7; --text-secondary: #9dabc0; --text-muted: #6f7e94;
+    --border: rgba(232, 238, 247, 0.12); --border-strong: rgba(232, 238, 247, 0.22);
+    --text-accent: #9fc9f2; --bg-accent: #123a66;
+    --text-warning: #f0c477; --text-success: #a8cf85; --text-danger: #f2a99a;
+    --bg-warning: #4a3208; --bg-success: #1f4310; --bg-danger: #3d140f;
+    --nav-1: #60a5fa; --nav-2: #2dd4bf; --nav-3: #a78bfa; --nav-4: #fb923c; --nav-5: #f472b6;
+    color-scheme: dark;
+  }
+}
+:root[data-mood="night"] {
   --surface-0: #0d1626; --surface-1: #141f33; --surface-2: #1b2941;
   --text-primary: #e8eef7; --text-secondary: #9dabc0; --text-muted: #6f7e94;
   --border: rgba(232, 238, 247, 0.12); --border-strong: rgba(232, 238, 247, 0.22);
   --text-accent: #9fc9f2; --bg-accent: #123a66;
-  --text-warning: #f0c477; --text-success: #a8cf85; --text-danger: #f0a3a3;
-  --text-sm: 12px; --text-base: 14px; --text-lg: 16px; --text-xl: 20px;
-  --radius: 8px;
-  --font-sans: Calibri, Carlito, "Segoe UI", -apple-system, sans-serif;
-  /* The side menu's icon colours, as the main site's at night (decision 0527). */
+  --text-warning: #f0c477; --text-success: #a8cf85; --text-danger: #f2a99a;
+  --bg-warning: #4a3208; --bg-success: #1f4310; --bg-danger: #3d140f;
   --nav-1: #60a5fa; --nav-2: #2dd4bf; --nav-3: #a78bfa; --nav-4: #fb923c; --nav-5: #f472b6;
+  color-scheme: dark;
 }
 
 * { box-sizing: border-box; }
@@ -40,7 +84,7 @@ body {
 }
 input, button, select { font: inherit; }
 
-h1 { font-size: var(--text-xl); margin: 0; font-weight: 600; }
+h1 { font-size: var(--text-xl); margin: 0; font-weight: 700; }
 .who { color: var(--text-muted); font-size: var(--text-sm); margin: 4px 0 0; }
 .rule { border: none; border-top: 0.5px solid var(--border); margin: 18px 0; }
 
@@ -52,14 +96,19 @@ h1 { font-size: var(--text-xl); margin: 0; font-weight: 600; }
   margin: 0 0 14px;
 }
 .panel:last-child { margin-bottom: 0; }
-.panel h2 { font-size: var(--text-lg); margin: 0 0 12px; font-weight: 600; }
+.panel h2 { font-size: var(--text-lg); margin: 0 0 12px; font-weight: 700; }
 
 table { width: 100%; border-collapse: collapse; }
 th {
-  text-align: left; font-size: var(--text-sm); font-weight: 600;
+  text-align: left; font-size: var(--text-sm); font-weight: 700;
   color: var(--text-muted); padding: 0 10px 8px;
   border-bottom: 0.5px solid var(--border); white-space: nowrap;
 }
+/* Decision 0639: a number's heading sits over its number. */
+th.num { text-align: right; }
+/* Decision 0639: the customers' tables share one set of columns, so each customer's line up with the next. */
+table.fleettable { table-layout: fixed; }
+table.fleettable td { overflow-wrap: anywhere; }
 td { padding: 10px; border-bottom: 0.5px solid var(--border); vertical-align: top; }
 tr:last-child td { border-bottom: none; }
 
@@ -87,9 +136,12 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .partner { border-top: 0.5px solid var(--border); padding: 14px 0 6px; }
 .partner:first-of-type { border-top: none; }
 .partner h3 { font-size: var(--text-base); margin: 0; font-weight: 600; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
-.pill { font-size: var(--text-sm); padding: 1px 8px; border-radius: 999px; border: 0.5px solid var(--border-strong); }
-.pill.ok { color: var(--text-success); border-color: var(--text-success); }
-.pill.warn { color: var(--text-warning); border-color: var(--text-warning); }
+.pill { display: inline-block; font-size: var(--text-sm); line-height: 1.5; padding: 0 9px; border-radius: 999px; border: 0.5px solid var(--border-strong); white-space: nowrap; }
+/* Decision 0639: states and decisions as filled pills, as the main site's. */
+.pill.ok { color: var(--text-success); border-color: transparent; background: var(--bg-success); }
+.pill.warn { color: var(--text-warning); border-color: transparent; background: var(--bg-warning); }
+.pill.bad { color: var(--text-danger); border-color: transparent; background: var(--bg-danger); }
+.pill.quiet { color: var(--text-secondary); background: var(--surface-1); border-color: transparent; }
 .cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 18px; margin-top: 10px; }
 .cols h4 { font-size: var(--text-sm); color: var(--text-muted); margin: 0 0 6px; font-weight: 600; }
 .line { display: flex; gap: 8px; align-items: center; justify-content: space-between; padding: 4px 0; }
@@ -111,6 +163,8 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .review a { color: var(--text-accent); }
 .chip { font-size: var(--text-sm); padding: 1px 7px; border-radius: 999px; border: 0.5px solid var(--border-strong); margin-right: 4px; }
 input, select { background: var(--surface-1); color: var(--text-primary); border: 0.5px solid var(--border-strong); border-radius: var(--radius); padding: 4px 8px; min-height: 30px; }
+/* Decision 0639: a tick box at its own size, not a field's. */
+input[type="checkbox"], input[type="radio"] { width: 16px; height: 16px; min-height: 0; padding: 0; margin: 0; accent-color: var(--text-accent); }
 .empty { padding: 24px 10px; text-align: center; color: var(--text-muted); }
 
 /*
@@ -119,15 +173,23 @@ input, select { background: var(--surface-1); color: var(--text-primary); border
   the site menu, like we have on the main site". Still its own words and
   colours (0140): only the shape is shared.
 */
-.frame { display: grid; grid-template-columns: 240px minmax(0, 1fr); min-height: 100vh; }
+.frame { display: grid; grid-template-columns: 240px minmax(0, 1fr); min-height: 100vh; transition: grid-template-columns .15s ease; }
 .nav { position: sticky; top: 0; height: 100vh; display: flex; flex-direction: column; background: var(--surface-1); border-right: 0.5px solid var(--border); padding: 18px 12px 12px; }
 .navscroll { flex: 1 1 auto; overflow-y: auto; }
-.brandmark { display: block; width: 84px; height: auto; margin: 2px auto 4px; opacity: .85; }
+.brandmark { display: block; width: 84px; height: auto; margin: 2px auto 4px; opacity: .9; }
+/* Decision 0639: the light mark at night, the dark one by day, the small one folded. */
+.brandmark.day, .brandmark.mark { display: none; }
+:root[data-mood="day"] .brandmark.night { display: none; }
+:root[data-mood="day"] .brandmark.day { display: block; }
+@media (prefers-color-scheme: light) {
+  :root:not([data-mood="night"]) .brandmark.night { display: none; }
+  :root:not([data-mood="night"]) .brandmark.day { display: block; }
+}
 .consolename { text-align: center; font-size: var(--text-sm); color: var(--text-muted); letter-spacing: .06em; text-transform: uppercase; margin-bottom: 14px; }
 .navgroup { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--text-muted); margin: 16px 10px 4px; }
-.navitem { position: relative; display: flex; align-items: center; gap: 12px; width: 100%; padding: 8px 10px; border: 0; border-radius: var(--radius); background: none; color: var(--text-secondary); text-align: left; cursor: pointer; min-height: 0; text-decoration: none; }
-.navitem .navicon { width: 28px; height: 28px; margin: -2px; display: flex; align-items: center; justify-content: center; border-radius: 7px; flex: none; }
-.navitem svg { width: 20px; height: 20px; }
+.navitem { position: relative; display: flex; align-items: center; gap: 14px; width: 100%; padding: 9px 12px; border: 0; border-radius: var(--radius); background: none; color: var(--text-secondary); text-align: left; cursor: pointer; min-height: 0; text-decoration: none; font-size: var(--text-base); line-height: 1.35; }
+.navitem .navicon { width: 32px; height: 32px; margin: -4px; display: flex; align-items: center; justify-content: center; border-radius: 8px; flex: none; }
+.navitem svg { width: 22px; height: 22px; }
 .navitem:hover { background: var(--surface-2); color: var(--text-primary); }
 .navitem:hover .navicon, .navitem.on .navicon { color: var(--hue); background: color-mix(in srgb, var(--hue) 16%, transparent); }
 .navitem.on { background: var(--surface-2); color: var(--text-primary); }
@@ -138,8 +200,32 @@ input, select { background: var(--surface-1); color: var(--text-primary); border
 .navitem .next { margin-left: auto; font-size: 11px; color: var(--text-muted); }
 .hue1 { --hue: var(--nav-1); } .hue2 { --hue: var(--nav-2); } .hue3 { --hue: var(--nav-3); } .hue4 { --hue: var(--nav-4); } .hue5 { --hue: var(--nav-5); }
 .nav .who { border-top: 0.5px solid var(--border); padding: 10px 6px 0; margin: 8px 0 0; word-break: break-all; }
+/*
+  **A menu that folds, as the main site's — decision 0639.** The fold
+  button sits at the menu's foot; folded, only the icons stay, each with
+  its name as a tooltip, and the choice is kept in this browser.
+*/
+.navfold { display: flex; align-items: center; gap: 10px; width: 100%; margin-top: 8px; padding: 8px 12px; border: 0; background: none; color: var(--text-muted); min-height: 0; border-radius: var(--radius); }
+.navfold:hover { background: var(--surface-2); color: var(--text-primary); }
+.navfold svg { width: 18px; height: 18px; flex: none; transition: transform .15s ease; }
+.frame.folded { grid-template-columns: 68px minmax(0, 1fr); }
+.frame.folded .nav { padding-left: 8px; padding-right: 8px; }
+.frame.folded .navitem { justify-content: center; padding: 9px 0; }
+.frame.folded .navitem > span:not(.navicon), .frame.folded .consolename, .frame.folded .navgroup, .frame.folded .nav .who, .frame.folded .navfold span { display: none; }
+.frame.folded .navitem .badge { display: none; }
+.frame.folded .navitem.on::before { left: -8px; }
+.frame.folded .navgroup + .navitem { margin-top: 12px; }
+.frame.folded .brandmark.night, .frame.folded .brandmark.day { display: none !important; }
+.frame.folded .brandmark.mark { display: block; width: 30px; margin: 2px auto 14px; }
+.frame.folded .navfold { justify-content: center; padding: 8px 0; }
+.frame.folded .navfold svg { transform: rotate(180deg); }
 .main { padding: 26px 30px 40px; min-width: 0; }
 .topbar { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; border-bottom: 0.5px solid var(--border); padding-bottom: 14px; margin-bottom: 18px; }
+/* Decision 0639: Night or Day, and Sign out, at the top right, as the main site's. */
+.topactions { display: flex; gap: 6px; align-self: flex-start; }
+.topbtn { display: flex; flex-direction: column; align-items: center; gap: 4px; min-width: 56px; padding: 6px 8px; border: 0; background: none; color: var(--text-secondary); font-size: var(--text-sm); min-height: 0; border-radius: var(--radius); text-decoration: none; }
+.topbtn:hover { background: var(--surface-2); color: var(--text-primary); }
+.topbtn svg { width: 22px; height: 22px; }
 .topbar p { margin: 4px 0 0; color: var(--text-secondary); font-size: var(--text-sm); max-width: 820px; }
 .screen[hidden] { display: none; }
 /* Home. */
@@ -156,6 +242,7 @@ input, select { background: var(--surface-1); color: var(--text-primary); border
 .customer td { font-size: var(--text-sm); }
 .licenceform { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 8px; }
 .licenceform label { font-size: var(--text-sm); color: var(--text-muted); display: flex; flex-direction: column; gap: 2px; }
+.licenceform label.tick { flex-direction: row; align-items: center; gap: 6px; align-self: flex-end; min-height: 30px; }
 .envconfig pre { white-space: pre-wrap; word-break: break-word; background: var(--surface-1); padding: 8px; border-radius: var(--radius); max-height: 320px; overflow: auto; font-size: var(--text-sm); }
 .toolbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 12px; }
 .grant { display: inline-flex; align-items: center; gap: 4px; margin: 0 6px 4px 0; }
@@ -165,7 +252,7 @@ a { color: var(--text-accent); }
   .frame { grid-template-columns: 1fr; }
   .nav { position: static; height: auto; flex-direction: row; overflow-x: auto; padding: 8px; border-right: 0; border-bottom: 0.5px solid var(--border); }
   .navscroll { display: flex; align-items: center; gap: 4px; overflow: visible; }
-  .brandmark, .consolename, .navgroup, .nav .who { display: none; }
+  .brandmark, .consolename, .navgroup, .nav .who, .navfold { display: none !important; }
   .navitem { width: auto; white-space: nowrap; }
   .navitem.on::before { display: none; }
   .main { padding: 16px; }
@@ -205,7 +292,9 @@ a { color: var(--text-accent); }
 <div class="frame">
 <nav class="nav" aria-label="Operator console">
   <div class="navscroll">
-    <img class="brandmark" src="/img/logo-light.png" alt="VibeFinance">
+    <img class="brandmark night" src="/img/logo-light.png" alt="VibeFinance">
+    <img class="brandmark day" src="/img/logo.png" alt="VibeFinance">
+    <img class="brandmark mark" src="/img/logo-mark.png" alt="VibeFinance">
     <div class="consolename">Operator console</div>
     <div class="navgroup">Overview</div>
     <a class="navitem hue1" href="#/home" data-screen="home"><span class="navicon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11.5 12 4l9 7.5"/><path d="M5 10v10h14V10"/><path d="M10 20v-6h4v6"/></svg></span><span>Home</span><span class="badge" data-badge="home" hidden></span></a>
@@ -223,6 +312,7 @@ a { color: var(--text-accent); }
     <a class="navitem hue4" href="#/log" data-screen="log"><span class="navicon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 3h10l3 3v15H7z"/><path d="M4 6v15h3"/><path d="M10 10h7M10 14h7M10 18h4"/></svg></span><span>Admin log</span><span class="badge" data-badge="log" hidden></span></a>
   </div>
   <p class="who" id="who">…</p>
+  <button class="navfold" id="navfold" type="button" title="Fold the menu" aria-label="Fold the menu"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 17l-5-5 5-5"/><path d="M18 17l-5-5 5-5"/></svg><span>Fold the menu</span></button>
 </nav>
 
 <main class="main">
@@ -230,6 +320,10 @@ a { color: var(--text-accent); }
   <div>
     <h1 id="screen-title">Home</h1>
     <p id="screen-sub"></p>
+  </div>
+  <div class="topactions">
+    <button class="topbtn" id="mood" type="button"></button>
+    <a class="topbtn" id="signout" href="/cdn-cgi/access/logout" title="Sign out"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 4h5v16h-5"/><path d="M10 8l-4 4 4 4"/><path d="M6 12h10"/></svg><span>Sign out</span></a>
   </div>
 </header>
 
@@ -419,6 +513,66 @@ a { color: var(--text-accent); }
 <script type="module">
 const note = (message) => { document.getElementById("note").textContent = message ?? ""; };
 
+/*
+  **Day or Night, and a menu that folds — decision 0639**, as the main
+  site's (0139, 0311). Both are this browser's own choice, kept in
+  localStorage, and a page that cannot keep them still works.
+*/
+const keep = (key, value) => { try { localStorage.setItem(key, value); } catch { /* not kept */ } };
+const kept = (key) => { try { return localStorage.getItem(key); } catch { return null; } };
+const MOOD_ICON = {
+  night: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/></svg>',
+  day: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>',
+};
+function currentMood() {
+  const chosen = document.documentElement.getAttribute("data-mood");
+  if (chosen === "day" || chosen === "night") return chosen;
+  return window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "night" : "day";
+}
+function showMood() {
+  const mood = currentMood();
+  const button = document.getElementById("mood");
+  const label = mood === "night" ? "Night" : "Day";
+  button.title = `${label}: choose to change`;
+  button.innerHTML = `${MOOD_ICON[mood]}<span>${label}</span>`;
+}
+{
+  const chosen = kept("vf-admin-mood");
+  if (chosen === "day" || chosen === "night") document.documentElement.setAttribute("data-mood", chosen);
+  showMood();
+  document.getElementById("mood").addEventListener("click", () => {
+    const next = currentMood() === "night" ? "day" : "night";
+    document.documentElement.setAttribute("data-mood", next);
+    keep("vf-admin-mood", next);
+    showMood();
+  });
+  const frame = document.querySelector(".frame");
+  const fold = document.getElementById("navfold");
+  const setFold = (folded) => {
+    frame.classList.toggle("folded", folded);
+    const words = folded ? "Open the menu" : "Fold the menu";
+    fold.title = words;
+    fold.setAttribute("aria-label", words);
+    fold.querySelector("span").textContent = words;
+  };
+  setFold(kept("vf-admin-nav") === "folded");
+  fold.addEventListener("click", () => {
+    const folded = !frame.classList.contains("folded");
+    setFold(folded);
+    keep("vf-admin-nav", folded ? "folded" : "open");
+  });
+  // Folded, each item says its name on hover.
+  document.querySelectorAll(".navitem").forEach((item) => {
+    const name = item.querySelector("span:not(.navicon):not(.badge)")?.textContent;
+    if (name) item.title = name;
+  });
+}
+
+/** Decision 0639: a state or decision as a pill — ok, warn, bad or quiet. */
+function pill(text, tone = "quiet") {
+  return `<span class="pill ${tone}">${escapeHtml(text)}</span>`;
+}
+
 async function api(path, init) {
   const response = await fetch(`/api${path}`, init);
   const body = await response.json().catch(() => ({}));
@@ -488,7 +642,7 @@ function actionRow(action) {
       <div class="sm muted">${action.actorSource === "access" ? "verified" : "shared key"}</div>
     </td>
     <td class="sm">${escapeHtml(action.action)}${action.subject ? `<div class="muted">${escapeHtml(action.subject)}</div>` : ""}</td>
-    <td class="sm outcome-${escapeHtml(action.outcome)}">${escapeHtml(action.outcome)}</td>
+    <td class="sm">${pill(action.outcome, action.outcome === "recorded" ? "ok" : action.outcome === "failed" ? "bad" : "warn")}</td>
     <td class="sm num muted">${action.statusCode ?? ""}</td>`;
   return tr;
 }
@@ -565,7 +719,7 @@ async function loadInvitations(customers) {
     tr.innerHTML = `
       <td><div>${escapeHtml(i.email)}</div><div class="sm muted">${escapeHtml(i.createdVia === "operator" ? `by ${i.createdBy ?? "?"}` : `by ${i.createdBy ?? "?"} in ${i.createdVia.slice(12)}`)}</div></td>
       <td class="sm">${escapeHtml(names.get(i.customerId) ?? i.customerId)}</td>
-      <td class="sm ${i.status === "accepted" ? "outcome-recorded" : i.status === "pending" && !i.sendError ? "" : "outcome-refused"}">${escapeHtml(i.status === "pending" && i.sendError ? `not sent: ${i.sendError}` : i.status)}</td>
+      <td class="sm">${pill(i.status === "pending" && i.sendError ? `not sent: ${i.sendError}` : i.status, i.status === "accepted" ? "ok" : i.status === "pending" && !i.sendError ? "quiet" : "warn")}</td>
       <td class="sm">${escapeHtml(String(i.status === "accepted" ? i.acceptedAt : i.expiresAt).slice(0, 16).replace("T", " "))}</td>
       <td></td>`;
     const cell = tr.lastElementChild;
@@ -632,7 +786,7 @@ function partnerBlock(p, customers) {
     const line = document.createElement("div");
     line.className = "line sm";
     const state = invitationState(person);
-    line.innerHTML = `<span>${escapeHtml(person.email)} <span class="${person.canSignIn ? "outcome-recorded" : "outcome-refused"}">· ${escapeHtml(state)}</span></span>`;
+    line.innerHTML = `<span>${escapeHtml(person.email)} ${pill(state, person.canSignIn ? "ok" : "warn")}</span>`;
     const buttons = document.createElement("span");
     // Decision 0593: an invitation in place of a password set by curl.
     if (!person.canSignIn && p.sandbox.environments.length > 0) {
@@ -796,7 +950,7 @@ function connectorRows(versions) {
     tr.dataset.connector = latest.connectorId;
     tr.innerHTML = `<td>${escapeHtml(latest.name)}<div class="sm muted">${escapeHtml(latest.partner.name)}</div></td>
       <td class="sm">${vs.map((v) => `<span class="chip">v${v.version} ${escapeHtml(v.status)}</span>`).join("")}</td>
-      <td class="sm ${latest.connector.status === "active" ? "outcome-recorded" : "outcome-refused"}">${latest.connector.status === "active" ? "active" : `suspended: ${escapeHtml(latest.connector.suspendedReason ?? "")}`}</td><td></td>`;
+      <td class="sm">${latest.connector.status === "active" ? pill("active", "ok") : pill(`suspended: ${latest.connector.suspendedReason ?? ""}`, "warn")}</td><td></td>`;
     const cell = tr.lastElementChild;
     const base = `/partner-connectors/${encodeURIComponent(latest.connectorId)}`;
     if (latest.connector.status === "active") {
@@ -1003,9 +1157,9 @@ async function loadSignups() {
       const tr = document.createElement("tr");
       const where = r.status === "approved" ? (r.environmentId ? `${r.customerId ?? ""} · ${r.environmentId}` : "approved, not provisioned yet") : "";
       tr.innerHTML = `<td><div>${escapeHtml(r.companyName)}</div><div class="sm muted">${escapeHtml(r.contactName)} · ${escapeHtml(r.contactEmail)}</div></td>
-        <td class="sm ${r.status === "approved" ? "outcome-recorded" : "outcome-refused"}">${escapeHtml(r.status)}</td>
+        <td class="sm">${pill(r.status, r.status === "approved" ? "ok" : "bad")}</td>
         <td class="sm">${escapeHtml(when(r.decidedAt))}<div class="muted">${escapeHtml(r.decidedBy ?? "")}</div></td>
-        <td class="sm ${r.status === "approved" && !r.environmentId ? "outcome-refused" : ""}">${escapeHtml(where)}</td>`;
+        <td class="sm">${r.status === "approved" && !r.environmentId ? pill(where, "warn") : escapeHtml(where)}</td>`;
       return tr;
     });
     document.getElementById("decided").replaceChildren(table(["Company", "Decision", "When, by whom", "Customer · environment"], decided, "Nothing decided yet."));
@@ -1042,9 +1196,9 @@ function renderFleet() {
 
 function licenceCell(e) {
   const l = e.licence;
-  if (!l) return '<span class="outcome-refused">no licence</span>';
-  const tone = l.status === "active" ? "outcome-recorded" : "outcome-refused";
-  return `<div>${escapeHtml(l.plan)} · <span class="${tone}">${escapeHtml(l.status)}</span></div>
+  if (!l) return pill("no licence", "warn");
+  const tone = l.status === "active" ? "ok" : l.status === "blocked" ? "bad" : "warn";
+  return `<div>${escapeHtml(l.plan)} ${pill(l.status, tone)}</div>
     <div class="muted">${escapeHtml(l.volumeEntitlement)} invoices · ${l.agentLimit === null || l.agentLimit === undefined ? "default agents" : `${escapeHtml(l.agentLimit)} agents`} · ${l.summaryLimit === null || l.summaryLimit === undefined ? "default summaries" : `${escapeHtml(l.summaryLimit)} summaries a day`} · ${l.agentActions === false ? "no prepared actions" : "prepared actions"} · ${l.queryLimit === 0 ? "no own questions" : l.queryLimit === null || l.queryLimit === undefined ? "default questions" : `${escapeHtml(l.queryLimit)} questions a day`} · ${escapeHtml(String(l.validFrom ?? "").slice(0, 10))} to ${escapeHtml(l.validTo ? String(l.validTo).slice(0, 10) : "open")}</div>
     ${l.statusReason ? `<div class="muted">${escapeHtml(l.statusReason)}</div>` : ""}`;
 }
@@ -1064,7 +1218,7 @@ function customerBlock(c) {
     const tr = document.createElement("tr");
     tr.dataset.environment = e.id;
     tr.innerHTML = `<td><div>${escapeHtml(e.id)}</div><div class="muted">${escapeHtml(e.kind)} · ${escapeHtml(e.region)}${e.locale ? ` · ${escapeHtml(e.locale)}` : ""}</div></td>
-      <td>${e.deployed ? `<a href="${escapeHtml(e.instanceUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(e.instanceUrl.replace(/^https:\/\//, ""))}</a>` : '<span class="outcome-refused">not yet deployed</span>'}
+      <td>${e.deployed ? `<a href="${escapeHtml(e.instanceUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(e.instanceUrl.replace(/^https:\/\//, ""))}</a>` : pill("not yet deployed", "warn")}
         <div class="muted">${escapeHtml(e.workerName ?? "no Worker recorded")}${e.d1DatabaseName ? ` · ${escapeHtml(e.d1DatabaseName)}` : ""}</div></td>
       <td>${licenceCell(e)}</td>
       <td class="num">${e.people}</td>
@@ -1075,7 +1229,12 @@ function customerBlock(c) {
     cell.querySelectorAll("button + button").forEach((b) => (b.style.marginLeft = "6px"));
     return tr;
   });
-  block.append(table(["Environment", "Where", "Licence", "People", ""], rows, ""));
+  // Decision 0639: the same columns for every customer, so one customer's line up with the next.
+  const t = table(["Environment", "Where", "Licence", "People", ""], rows, "");
+  t.classList.add("fleettable");
+  t.insertAdjacentHTML("afterbegin", '<colgroup><col style="width:17%"><col style="width:23%"><col><col style="width:72px"><col style="width:170px"></colgroup>');
+  t.querySelectorAll("th")[3].classList.add("num");
+  block.append(t);
   return block;
 }
 
@@ -1136,7 +1295,7 @@ function toggleLicence(tr, e) {
     field("Invoices", volume),
     field("Agents (blank: default)", agents),
     field("AI summaries a day (blank: default)", summaries),
-    field("Prepared actions", actions),
+    Object.assign(field("Prepared actions", actions), { className: "tick" }),
     field("Own questions a day (blank: default, 0: none)", queries),
     field("From", from),
     field("To (blank: open)", to),
