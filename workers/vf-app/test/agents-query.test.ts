@@ -145,7 +145,7 @@ describe("running a question", () => {
     await env.DB.prepare("INSERT INTO field_visibility (field, visibility) VALUES ('BT-27', 'hidden')").run();
     await expect(runQuery(env.DB, "dan", [UK], ok(OVER_100K), MONDAY)).rejects.toThrow("query_field_hidden");
     const catalogue = (await handleAgentCatalogue(env.DB, "dan")).body as { datasets: { id: string; fields: { key: string }[] }[] };
-    expect(catalogue.datasets.map((d) => d.id)).toEqual(["invoices", "tasks"]);
+    expect(catalogue.datasets.map((d) => d.id)).toEqual(["invoices", "tasks", "lines", "coding", "stage_visits", "returns"]); // decision 0637: all an AP.Analysis holder may ask
     expect(catalogue.datasets[0].fields.map((f) => f.key)).not.toContain("supplier");
     const made = await handleCreateAgent(env.DB, "dan", { name: "Big ones", report: "query", options: { query: OVER_100K }, orgIds: ["acme-uk"], schedule: { every: "week", weekday: 1, time: "12:10" } }, MONDAY);
     expect(made.body).toMatchObject({ reason: "query_field_hidden" });

@@ -1,6 +1,7 @@
 import {
   scopedToChosenOrg,
   unitClause,
+  unitsFor,
   unitsWherePermitted,
 } from "./enforce.js";
 import type { Permission } from "./permissions.js";
@@ -48,14 +49,20 @@ export interface QueryDataset {
   permission: Permission;
   /** The fixed FROM and joins. */
   from: string;
-  /** The organisation unit column the scope is applied to. */
-  scope: string;
+  /**
+   * The organisation unit column the scope is applied to. Null for what
+   * belongs to no organisation (received files, decision 0637): asked
+   * once, and only by someone holding the permission somewhere.
+   */
+  scope: string | null;
+  /** Decision 0637: a fixed condition every row meets (a return is a returned process). */
+  where?: string;
   /** One row's own id, to count each once across organisations. */
   rowId: string;
-  /** The invoice a row is about, for Documents (decision 0629). */
-  invoiceId: string;
-  /** What "new since the last run" is measured by. */
-  since: string;
+  /** The invoice a row is about, for Documents (decision 0629); null where rows are not invoices'. */
+  invoiceId: string | null;
+  /** What "new since the last run" is measured by; null where nothing records when a row arrived. */
+  since: string | null;
   /** The currency a money field is in. */
   currency: string | null;
   /** The total and currency of a row, for the report's totals. */
@@ -71,6 +78,50 @@ const INVOICE_NUMBER = `COALESCE(h.invoice_number, json_extract(h.facts_json, '$
 function daysSince(expr: string): string {
   return `CAST(julianday({now}) - julianday(${expr}) AS INTEGER)`;
 }
+
+/**
+ * **A returned invoice's corrected one has arrived — decision 0632**: a
+ * later invoice with the same number from the same supplier (matched, or
+ * the same printed name). Uses `h` and `pi`. Kept here since 0637, so the
+ * returns dataset and the report share it.
+ */
+export const REPLY_ARRIVED_SQL = `SELECT 1 FROM invoice_headers n
+  WHERE n.id <> h.id AND replace(n.created_at, ' ', 'T') > substr(pi.ended_at, 1, 19)
+    AND COALESCE(n.invoice_number, json_extract(n.facts_json, '$."BT-1"')) = COALESCE(h.invoice_number, json_extract(h.facts_json, '$."BT-1"'))
+    AND ((h.supplier_id IS NOT NULL AND n.supplier_id = h.supplier_id)
+      OR (h.supplier_id IS NULL AND json_extract(n.facts_json, '$."BT-27"') = json_extract(h.facts_json, '$."BT-27"')))`;
+
+/**
+ * **The invoice a row belongs to, joined the one way we define —
+ * decision 0637.** Lines, coding, stage visits, returns and deliveries
+ * each offer these of their invoice; a field is only ever reached
+ * through this join, never one the AI makes.
+ */
+function invoiceFields(skip: string[] = []): QueryField[] {
+  const all: QueryField[] = [
+    { key: "invoice", words: "the invoice number", kind: "text", sql: INVOICE_NUMBER, label: "agents.col.invoice", bt: "BT-1" },
+    { key: "supplier", words: "the invoice's supplier", kind: "text", sql: SUPPLIER, label: "agents.col.supplier", group: true, bt: "BT-27" },
+    { key: "currency", words: "the invoice's currency code (GBP, EUR, ...)", kind: "text", sql: "h.currency", label: "agents.col.currency", group: true, bt: "BT-5" },
+    { key: "issued", words: "the invoice date", kind: "date", sql: `COALESCE(h.issue_date, json_extract(h.facts_json, '$."BT-2"'))`, label: "agents.col.issued", bt: "BT-2" },
+    { key: "received", words: "when the invoice was received", kind: "date", sql: "h.created_at", label: "agents.col.received" },
+    {
+      key: "status",
+      words: "where the invoice is in processing: in_progress, completed, returned_manually, archived, none",
+      kind: "enum",
+      sql: "COALESCE(pi.status, 'none')",
+      label: "agents.col.status",
+      group: true,
+      values: ["in_progress", "completed", "returned_manually", "archived", "none"],
+      enumKey: "agents.qstatus",
+    },
+    { key: "stage", words: "the stage the invoice is at", kind: "text", sql: "s.name", label: "agents.col.stage", group: true },
+  ];
+  return all.filter((f) => !skip.includes(f.key));
+}
+
+const INVOICE_JOINS = `LEFT JOIN process_instances pi ON pi.id = ${LATEST_INSTANCE}
+      LEFT JOIN process_stages s ON s.id = pi.current_stage_id
+      LEFT JOIN suppliers sup ON sup.id = h.supplier_id`;
 
 export const QUERY_DATASETS: QueryDataset[] = [
   {
@@ -176,6 +227,233 @@ export const QUERY_DATASETS: QueryDataset[] = [
       { key: "ended", words: "when it was completed or ended", kind: "date", sql: "COALESCE(t.completed_at, t.ended_at)", label: "agents.col.ended" },
       { key: "invoice", words: "the invoice number it is about", kind: "text", sql: INVOICE_NUMBER, label: "agents.col.invoice", bt: "BT-1" },
       { key: "supplier", words: "the supplier of that invoice", kind: "text", sql: SUPPLIER, label: "agents.col.supplier", group: true, bt: "BT-27" },
+    ],
+  },
+  // Decision 0637: invoice lines, with their invoice.
+  {
+    id: "lines",
+    permission: "AP.Analysis",
+    from: `invoice_lines l
+      JOIN invoice_headers h ON h.id = l.invoice_id
+      ${INVOICE_JOINS}`,
+    scope: "h.org_unit_id",
+    rowId: "l.id",
+    invoiceId: "h.id",
+    since: "h.created_at",
+    currency: "h.currency",
+    totals: { total: "l.amount", currency: "h.currency" },
+    fields: [
+      { key: "description", words: "the line's description", kind: "text", sql: "COALESCE(l.description, json_extract(l.facts_json, '$.\"BT-153\"'))", label: "agents.col.description", bt: "BT-154" },
+      { key: "item", words: "the item's name", kind: "text", sql: "json_extract(l.facts_json, '$.\"BT-153\"')", label: "agents.col.item", group: true, bt: "BT-153" },
+      { key: "amount", words: "the line's net amount", kind: "money", sql: "l.amount", label: "agents.col.amount", bt: "BT-131" },
+      { key: "vatRate", words: "the line's VAT rate, as written (20, 19, ...)", kind: "text", sql: "CAST(json_extract(l.facts_json, '$.\"BT-152\"') AS TEXT)", label: "agents.col.vatrate", group: true, bt: "BT-152" },
+      { key: "costCentre", words: "the cost centre on the line as received", kind: "text", sql: "l.cost_centre", label: "agents.col.costcentre", group: true },
+      {
+        key: "purchaseOrder",
+        words: "the purchase order the line is paired with",
+        kind: "text",
+        sql: "(SELECT pp.order_number FROM invoice_line_po_pairings pp WHERE pp.invoice_id = l.invoice_id AND pp.line_number = l.line_number)",
+        label: "agents.col.ponumber",
+        group: true,
+      },
+      ...invoiceFields(),
+    ],
+  },
+  // Decision 0637: coding — each split of a line to a cost centre, project and GL code.
+  {
+    id: "coding",
+    permission: "AP.Analysis",
+    from: `invoice_line_coding_splits c
+      JOIN invoice_headers h ON h.id = c.invoice_id
+      LEFT JOIN invoice_lines l ON l.invoice_id = c.invoice_id AND l.line_number = c.line_number
+      ${INVOICE_JOINS}`,
+    scope: "h.org_unit_id",
+    rowId: "c.invoice_id || ':' || c.line_number || ':' || c.seq",
+    invoiceId: "h.id",
+    since: "h.created_at",
+    currency: "h.currency",
+    totals: { total: "c.amount", currency: "h.currency" },
+    fields: [
+      { key: "glCode", words: "the GL code it is coded to", kind: "text", sql: "c.gl_code", label: "agents.col.glcode", group: true },
+      { key: "costCentre", words: "the cost centre it is coded to", kind: "text", sql: "c.cost_centre", label: "agents.col.costcentre", group: true },
+      { key: "project", words: "the project it is coded to", kind: "text", sql: "c.project", label: "agents.col.project", group: true },
+      { key: "amount", words: "the amount coded", kind: "money", sql: "c.amount", label: "agents.col.amount" },
+      { key: "description", words: "the line's description", kind: "text", sql: "l.description", label: "agents.col.description", bt: "BT-154" },
+      ...invoiceFields(),
+    ],
+  },
+  // Decision 0637: each time an invoice was at a stage, and for how long.
+  {
+    id: "stage_visits",
+    permission: "AP.Analysis",
+    from: `stage_visits v
+      JOIN process_instances pi ON pi.id = v.process_instance_id AND pi.subject_type = 'invoice'
+      JOIN invoice_headers h ON h.id = pi.subject_id
+      JOIN process_stages vs ON vs.id = v.stage_id
+      LEFT JOIN process_stages s ON s.id = pi.current_stage_id
+      LEFT JOIN suppliers sup ON sup.id = h.supplier_id`,
+    scope: "h.org_unit_id",
+    rowId: "v.id",
+    invoiceId: "h.id",
+    since: "v.created_at",
+    currency: "h.currency",
+    totals: null,
+    fields: [
+      { key: "visitStage", words: "the stage of this visit", kind: "text", sql: "vs.name", label: "agents.col.visitstage", group: true },
+      { key: "entered", words: "when the invoice reached the stage", kind: "date", sql: "v.created_at", label: "agents.col.entered" },
+      {
+        key: "left",
+        words: "when it moved on from the stage (empty while still there)",
+        kind: "date",
+        sql: "(SELECT MIN(v2.created_at) FROM stage_visits v2 WHERE v2.process_instance_id = v.process_instance_id AND v2.created_at > v.created_at)",
+        label: "agents.col.left",
+      },
+      {
+        key: "daysSpent",
+        words: "days spent at the stage (until now while still there)",
+        kind: "days",
+        sql: "CAST(julianday(COALESCE((SELECT MIN(v2.created_at) FROM stage_visits v2 WHERE v2.process_instance_id = v.process_instance_id AND v2.created_at > v.created_at), {now})) - julianday(v.created_at) AS INTEGER)",
+        label: "agents.col.daysspent",
+      },
+      { key: "outcome", words: "what the stage's rules decided (matched, exception, ...)", kind: "text", sql: "v.outcome", label: "agents.col.outcome", group: true },
+      { key: "total", words: "the invoice's total including VAT", kind: "money", sql: "h.total_with_vat", label: "agents.col.total", bt: "BT-112" },
+      ...invoiceFields(),
+    ],
+  },
+  // Decision 0637: invoices returned to their supplier.
+  {
+    id: "returns",
+    permission: "AP.Analysis",
+    from: `process_instances pi
+      JOIN invoice_headers h ON pi.subject_type = 'invoice' AND h.id = pi.subject_id
+      LEFT JOIN process_stages s ON s.id = pi.current_stage_id
+      LEFT JOIN suppliers sup ON sup.id = h.supplier_id
+      LEFT JOIN supplier_return_reasons rr ON rr.id = pi.return_reason_id`,
+    where: "pi.status = 'returned_manually'",
+    scope: "h.org_unit_id",
+    rowId: "pi.id",
+    invoiceId: "h.id",
+    since: "pi.ended_at",
+    currency: "h.currency",
+    totals: { total: "h.total_with_vat", currency: "h.currency" },
+    fields: [
+      { key: "returned", words: "when it was returned", kind: "date", sql: "pi.ended_at", label: "agents.col.returned" },
+      { key: "daysSince", words: "days since it was returned", kind: "days", sql: daysSince("pi.ended_at"), label: "agents.col.dayssince" },
+      { key: "reason", words: "why it was returned", kind: "text", sql: "COALESCE(rr.label, pi.return_reason_id)", label: "agents.col.returnreason", group: true },
+      { key: "comment", words: "the comment made when it was returned", kind: "text", sql: "pi.supplier_comment", label: "agents.col.comment" },
+      {
+        key: "replyArrived",
+        words: "whether a corrected invoice has arrived since: yes or no",
+        kind: "enum",
+        sql: `CASE WHEN EXISTS (${REPLY_ARRIVED_SQL}) THEN 'yes' ELSE 'no' END`,
+        label: "agents.col.replyarrived",
+        group: true,
+        values: ["yes", "no"],
+        enumKey: "agents.qyesno",
+      },
+      { key: "total", words: "the invoice's total including VAT", kind: "money", sql: "h.total_with_vat", label: "agents.col.total", bt: "BT-112" },
+      ...invoiceFields(["status", "stage"]),
+    ],
+  },
+  // Decision 0637: suppliers, as the Suppliers screen shows them (AP.Supplier, scoped by their organisation).
+  {
+    id: "suppliers",
+    permission: "AP.Supplier",
+    from: "suppliers sup",
+    scope: "sup.org_unit_id",
+    rowId: "sup.id",
+    invoiceId: null,
+    since: null,
+    currency: null,
+    totals: null,
+    fields: [
+      { key: "supplier", words: "the supplier's name", kind: "text", sql: "sup.name", label: "agents.col.supplier", group: true },
+      { key: "erpId", words: "the supplier's ERP identifier", kind: "text", sql: "sup.erp_identifier", label: "agents.col.erpid" },
+      { key: "vatId", words: "the supplier's VAT number", kind: "text", sql: "sup.vat_id", label: "agents.col.vatid" },
+      { key: "country", words: "the supplier's country code (GB, DE, ...)", kind: "text", sql: "sup.country", label: "agents.col.country", group: true },
+      { key: "city", words: "the supplier's city", kind: "text", sql: "sup.city", label: "agents.col.city", group: true },
+      { key: "supplierStatus", words: "active or inactive", kind: "enum", sql: "sup.status", label: "agents.col.status", group: true, values: ["active", "inactive"], enumKey: "agents.qsupplierstatus" },
+      { key: "onHold", words: "whether the supplier is on hold: yes or no", kind: "enum", sql: "CASE WHEN sup.on_hold = 1 THEN 'yes' ELSE 'no' END", label: "agents.col.onhold", group: true, values: ["yes", "no"], enumKey: "agents.qyesno" },
+      { key: "holdReason", words: "why the supplier is on hold", kind: "text", sql: "sup.hold_reason", label: "agents.col.holdreason" },
+      { key: "paymentTerms", words: "the supplier's payment terms", kind: "text", sql: "sup.payment_terms", label: "agents.col.paymentterms", group: true },
+      { key: "matchOption", words: "how its invoices are matched: two_way, three_way or none", kind: "enum", sql: "COALESCE(sup.match_option, 'none')", label: "agents.col.matchoption", group: true, values: ["two_way", "three_way", "none"], enumKey: "agents.qmatch" },
+    ],
+  },
+  // Decision 0637: purchase order lines, as Purchase Orders shows them (AP.Validate, scoped by the order's organisation).
+  {
+    id: "purchase_orders",
+    permission: "AP.Validate",
+    from: `purchase_order_lines pl
+      JOIN purchase_orders po ON po.id = pl.purchase_order_id`,
+    scope: "po.org_unit_id",
+    rowId: "pl.id",
+    invoiceId: null,
+    since: "pl.created_at",
+    currency: "po.currency",
+    totals: { total: "pl.line_extension_amount", currency: "po.currency" },
+    fields: [
+      { key: "order", words: "the order number", kind: "text", sql: "po.order_number", label: "agents.col.ponumber", group: true },
+      { key: "ordered", words: "the order date", kind: "date", sql: "po.issue_date", label: "agents.col.ordered" },
+      { key: "supplier", words: "the order's supplier", kind: "text", sql: "(SELECT s2.name FROM suppliers s2 WHERE s2.vat_id = po.seller_party_id LIMIT 1)", label: "agents.col.supplier", group: true },
+      { key: "orderStatus", words: "active, on_hold or closed", kind: "enum", sql: "po.status", label: "agents.col.status", group: true, values: ["active", "on_hold", "closed"], enumKey: "agents.qpostatus" },
+      { key: "item", words: "the item ordered", kind: "text", sql: "COALESCE(pl.item_name, pl.item_description)", label: "agents.col.item", group: true },
+      { key: "amount", words: "the line's net amount", kind: "money", sql: "pl.line_extension_amount", label: "agents.col.amount" },
+      { key: "currency", words: "the order's currency code", kind: "text", sql: "po.currency", label: "agents.col.currency", group: true },
+      {
+        key: "invoiced",
+        words: "whether an invoice line has been paired with it: yes or no",
+        kind: "enum",
+        sql: "CASE WHEN EXISTS (SELECT 1 FROM invoice_line_po_pairings pp WHERE pp.order_number = po.order_number AND pp.po_line_number = pl.line_number) THEN 'yes' ELSE 'no' END",
+        label: "agents.col.invoiced",
+        group: true,
+        values: ["yes", "no"],
+        enumKey: "agents.qyesno",
+      },
+    ],
+  },
+  // Decision 0637: deliveries of invoices to the ERP and other destinations (Integration.Monitor, scoped by the invoice).
+  {
+    id: "deliveries",
+    permission: "Integration.Monitor",
+    from: `destination_deliveries d
+      JOIN invoice_headers h ON h.id = d.invoice_id
+      LEFT JOIN route_instances ri ON ri.id = d.instance_id
+      ${INVOICE_JOINS}`,
+    scope: "h.org_unit_id",
+    rowId: "d.instance_id || ':' || d.invoice_id",
+    invoiceId: "h.id",
+    since: "d.created_at",
+    currency: "h.currency",
+    totals: { total: "h.total_with_vat", currency: "h.currency" },
+    fields: [
+      { key: "destination", words: "where it is delivered to", kind: "text", sql: "COALESCE(ri.name, d.instance_id)", label: "agents.col.destination", group: true },
+      { key: "deliveryStatus", words: "pending, retrying, delivered, failed or skipped", kind: "enum", sql: "d.status", label: "agents.col.deliverystatus", group: true, values: ["pending", "retrying", "delivered", "failed", "skipped"], enumKey: "agents.qdelivery" },
+      { key: "queued", words: "when it was queued to be sent", kind: "date", sql: "d.created_at", label: "agents.col.queued" },
+      { key: "delivered", words: "when it was delivered", kind: "date", sql: "d.delivered_at", label: "agents.col.deliveredat" },
+      { key: "error", words: "the last error, if any", kind: "text", sql: "d.last_error", label: "agents.col.problem" },
+      { key: "total", words: "the invoice's total including VAT", kind: "money", sql: "h.total_with_vat", label: "agents.col.total", bt: "BT-112" },
+      ...invoiceFields(["status", "stage"]),
+    ],
+  },
+  // Decision 0637: files received from suppliers and channels (Integration.Monitor; they belong to no organisation).
+  {
+    id: "files",
+    permission: "Integration.Monitor",
+    from: "route_messages m",
+    where: "m.direction = 'in'",
+    scope: null,
+    rowId: "m.id",
+    invoiceId: null,
+    since: "m.received_at",
+    currency: null,
+    totals: null,
+    fields: [
+      { key: "received", words: "when the file arrived", kind: "date", sql: "m.received_at", label: "agents.col.received" },
+      { key: "from", words: "who sent it", kind: "text", sql: "m.counterparty", label: "agents.col.from", group: true },
+      { key: "subject", words: "its subject or file name", kind: "text", sql: "m.subject", label: "agents.col.subject" },
+      { key: "fileStatus", words: "received, delivered, partial, failed or dismissed", kind: "enum", sql: "m.status", label: "agents.col.status", group: true, values: ["received", "delivered", "partial", "failed", "dismissed"], enumKey: "agents.qfile" },
+      { key: "failedAt", words: "where it failed: gateway, format, translation or delivery", kind: "text", sql: "m.failed_part", label: "agents.col.failedat", group: true },
+      { key: "error", words: "what went wrong", kind: "text", sql: "m.error_text", label: "agents.col.problem" },
     ],
   },
 ];
@@ -397,6 +675,8 @@ export function checkQuery(input: unknown): { query: AgentQuery } | Refusal {
 
   const since = q.since === undefined || q.since === "all" ? "all" : q.since === "last_run" ? "last_run" : null;
   if (!since) return { reason: "query_since_invalid" };
+  // Decision 0637: only where something records when a row arrived.
+  if (since === "last_run" && !d.since) return { reason: "query_since_invalid", detail: d.id };
 
   const groupIn = q.groupBy === undefined ? [] : q.groupBy;
   if (!Array.isArray(groupIn) || groupIn.length > QUERY_LIMITS.groupBy) return { reason: "query_group_invalid" };
@@ -660,16 +940,19 @@ export async function runQuery(
 
   type Raw = { _rid: string; _inv: string | null; _t: number | null; _c: string | null; [k: string]: unknown };
   const seen = new Set<string>();
-  const found: { org: QueryOrg; row: Raw }[] = [];
+  const found: { org: QueryOrg | null; row: Raw }[] = [];
   let cut = false;
-  for (const org of orgs) {
-    const units = await scopedToChosenOrg(db, visible, org.id);
-    const clause = unitClause({ units }, d.scope);
+  // Decision 0637: what belongs to no organisation is asked once, by someone holding the permission somewhere.
+  const unscoped = d.scope === null;
+  const asked: (QueryOrg | null)[] = unscoped ? (visible !== null && visible.length === 0 ? [] : [null]) : orgs;
+  for (const org of asked) {
+    const units = org ? await scopedToChosenOrg(db, visible, org.id) : null;
+    const clause = d.scope ? unitClause({ units }, d.scope) : { sql: "", binds: [] };
     const sql = new Sql(nowIso);
-    sql.frag(`SELECT ${d.rowId} AS _rid, ${d.invoiceId} AS _inv`);
+    sql.frag(`SELECT ${d.rowId} AS _rid, ${d.invoiceId ?? "NULL"} AS _inv`);
     if (d.totals) sql.frag(`, ${d.totals.total} AS _t, ${d.totals.currency} AS _c`);
     sqlFields.forEach((key, i) => sql.frag(`, (${fieldOf(d, key)!.sql}) AS f${i}`));
-    sql.frag(` FROM ${d.from} WHERE 1 = 1`);
+    sql.frag(` FROM ${d.from} WHERE ${d.where ?? "1 = 1"}`);
     for (const w of q.where) addFilter(sql, d, w);
     if (q.since === "last_run" && ctx.since) sql.frag(` AND julianday(${d.since}) > julianday(`).bind(ctx.since).frag(")");
     sql.text += clause.sql;
@@ -681,7 +964,7 @@ export async function runQuery(
         sql.frag(`${i ? ", " : ""}f${at} IS NULL, f${at} ${s.dir === "asc" ? "ASC" : "DESC"}`);
       });
     } else if (!grouped) {
-      sql.frag(` ORDER BY ${d.since} DESC`);
+      sql.frag(` ORDER BY ${d.since ?? d.rowId} DESC`);
     }
     sql.frag(` LIMIT ${cap + 1}`);
     if (sql.binds.length > QUERY_LIMITS.binds) throw new Error("query_too_large");
@@ -696,6 +979,7 @@ export async function runQuery(
     }
   }
 
+  const orgColumn: QueryColumn[] = unscoped ? [] : [{ key: "org", label: "agents.col.org", kind: "text" }];
   const fieldColumns = (keys: string[]): QueryColumn[] =>
     keys.map((k) => {
       const f = fieldOf(d, k)!;
@@ -722,7 +1006,7 @@ export async function runQuery(
   if (!grouped) {
     const totals = new Map<string, { currency: string | null; total: number | null; count: number }>();
     let rows = found.map(({ org, row }) => {
-      const out: Record<string, string | number | null> = { org: org.name };
+      const out: Record<string, string | number | null> = unscoped ? {} : { org: org?.name ?? null };
       for (const k of q.show) out[k] = value(fieldOf(d, k)!, row[k]);
       if (row._inv) out.invoiceId = row._inv;
       out._key = `q:${row._rid}`;
@@ -746,7 +1030,7 @@ export async function runQuery(
       }
     }
     return {
-      columns: [{ key: "org", label: "agents.col.org", kind: "text" }, ...fieldColumns(q.show)],
+      columns: [...orgColumn, ...fieldColumns(q.show)],
       rows,
       totals: d.totals
         ? [...totals.values()].map((t) => ({ ...t, total: t.total === null ? null : round2(t.total) }))
@@ -758,20 +1042,20 @@ export async function runQuery(
   }
 
   // Grouped: each organisation's groups, with their measures.
-  type Group = { org: string; keys: Record<string, string | number | null>; rows: Raw[]; ids: Set<string> };
+  type Group = { org: string | null; keys: Record<string, string | number | null>; rows: Raw[]; ids: Set<string> };
   const groups = new Map<string, Group>();
   for (const { org, row } of found) {
     const keys: Record<string, string | number | null> = {};
     for (const k of q.groupBy) keys[k] = value(fieldOf(d, k)!, row[k]);
-    const id = JSON.stringify([org.id, ...q.groupBy.map((k) => keys[k])]);
-    const g = groups.get(id) ?? { org: org.name, keys, rows: [], ids: new Set<string>() };
+    const id = JSON.stringify([org?.id ?? "", ...q.groupBy.map((k) => keys[k])]);
+    const g = groups.get(id) ?? { org: org?.name ?? null, keys, rows: [], ids: new Set<string>() };
     g.rows.push(row);
     if (row._inv) g.ids.add(row._inv);
     groups.set(id, g);
   }
   let count = 0;
   let rows = [...groups.values()].map((g) => {
-    const out: Record<string, string | number | null> = { org: g.org, ...g.keys };
+    const out: Record<string, string | number | null> = { ...(unscoped ? {} : { org: g.org }), ...g.keys };
     for (const m of q.measures) {
       const key = measureKey(m);
       if (m.fn === "count") {
@@ -814,7 +1098,7 @@ export async function runQuery(
     };
   });
   return {
-    columns: [{ key: "org", label: "agents.col.org", kind: "text" }, ...fieldColumns(q.groupBy), ...measureColumns],
+    columns: [...orgColumn, ...fieldColumns(q.groupBy), ...measureColumns],
     rows,
     totals: count > 0 ? [{ currency: null, total: null, count }] : [],
     ...(cut ? { cutShort: found.length >= QUERY_LIMITS.scanMax ? QUERY_LIMITS.scanMax : q.limit } : {}),
@@ -828,6 +1112,7 @@ export async function runQuery(
  */
 export async function queryCatalogue(db: D1Database, personId: string) {
   const hidden = await hiddenFields(db);
+  const { units } = await unitsFor(db, personId);
   const out = [];
   for (const d of QUERY_DATASETS) {
     const visible = await unitsWherePermitted(db, personId, d.permission);
@@ -836,6 +1121,10 @@ export async function queryCatalogue(db: D1Database, personId: string) {
       id: d.id,
       label: `agents.dataset.${d.id}`,
       permission: d.permission,
+      // Decision 0637: the organisations it may be asked about, by its own permission.
+      orgIds: units.filter((u) => visible === null || visible.includes(u.id)).map((u) => u.id),
+      // Decision 0637: whether "only what is new" can be asked of it.
+      since: Boolean(d.since),
       fields: d.fields
         .filter((f) => !(f.bt && hidden.has(f.bt)))
         .map((f) => ({
@@ -853,11 +1142,25 @@ export async function queryCatalogue(db: D1Database, personId: string) {
 }
 
 /** The catalogue as the AI is shown it: each dataset, field, kind and meaning (decision 0634). */
+/** Decision 0637: what one row of each dataset is, for the AI. */
+const DATASET_WORDS: Record<string, string> = {
+  invoices: "one row per invoice",
+  tasks: "one row per task on an invoice",
+  lines: "one row per invoice line, with its invoice's fields",
+  coding: "one row per coding split of an invoice line (GL code, cost centre, project), with its invoice's fields; use for spend by GL code, cost centre or project",
+  stage_visits: "one row per time an invoice was at a stage, with how long; use for time spent at stages",
+  returns: "one row per invoice returned to its supplier",
+  suppliers: "one row per supplier on file",
+  purchase_orders: "one row per purchase order line",
+  deliveries: "one row per delivery of an invoice to the ERP or another destination",
+  files: "one row per file received from a supplier or channel",
+};
+
 export function catalogueWords(cat: Awaited<ReturnType<typeof queryCatalogue>>): string {
   return cat.datasets
     .map(
       (d) =>
-        `Dataset "${d.id}":\n${d.fields
+        `Dataset "${d.id}" (${DATASET_WORDS[d.id] ?? d.id}${d.since ? "" : "; \"since\" must be \"all\""}):\n${d.fields
           .map((f) => `  - ${f.key} (${f.kind}${f.group ? ", can group by" : ""}): ${f.words}`)
           .join("\n")}`,
     )

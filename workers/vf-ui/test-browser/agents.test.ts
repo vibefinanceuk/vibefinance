@@ -175,6 +175,7 @@ const STRINGS = {
     "agents.error.query_currency_missing": "An amount needs its currency, such as GBP.",
     "agents.q.shape.group": "Grouped, with totals",
     "agents.plan.q.group": "by {fields}: {measures}",
+    "agents.dataset.suppliers": "Suppliers",
     "agents.refusal.cannot_ask": "Could not ask about \u201c{words}\u201d: it is not something an agent can ask about here.",
   },
 };
@@ -328,6 +329,13 @@ function stub(opts: {
                   { key: "currency", kind: "text", label: "agents.col.currency", group: true, ops: ["is", "is_not", "in", "contains", "is_empty", "not_empty"] },
                   { key: "status", kind: "enum", label: "agents.col.status", group: true, values: ["in_progress"], enumKey: "agents.qstatus", ops: ["is", "is_not", "in"] },
                 ],
+              },
+              // Decision 0637: a dataset with its own organisations, and nothing recording when a row arrived.
+              {
+                id: "suppliers",
+                orgIds: ["acme-de"],
+                since: false,
+                fields: [{ key: "supplier", kind: "text", label: "agents.col.supplier", group: true, ops: ["is", "contains"] }],
               },
             ],
           },
@@ -1950,5 +1958,24 @@ describe("the question builder — decision 0636", () => {
     pick("agent-report", "query");
     button("Try it now")!.click();
     await vi.waitFor(() => expect(document.getElementById("agent-q-tried")?.textContent).toBe("An amount needs its currency, such as GBP."));
+  });
+});
+
+describe("the other datasets — decision 0637", () => {
+  it("offers only the organisations a dataset may be asked about, and 'only what is new' only where it can be", async () => {
+    await openAgents({ permissions: ["AP.Agents"], agents: [] });
+    button("New agent")!.click();
+    (document.getElementById("agent-steps") as HTMLDetailsElement).open = true;
+    const pick = (id: string, value: string) => {
+      const node = document.getElementById(id) as HTMLSelectElement;
+      node.value = value;
+      node.dispatchEvent(new Event("change"));
+    };
+    pick("agent-report", "query");
+    expect([...(document.getElementById("agent-q-since") as HTMLSelectElement).options].map((o) => o.value)).toEqual(["all", "last_run"]);
+    pick("agent-q-dataset", "suppliers");
+    expect([...(document.getElementById("agent-q-since") as HTMLSelectElement).options].map((o) => o.value)).toEqual(["all"]);
+    expect([...document.querySelectorAll("#agent-orgs input")].map((i) => i.id)).toEqual(["agent-org-acme-de"]);
+    expect((document.getElementById("agent-org-acme-de") as HTMLInputElement).checked).toBe(true);
   });
 });

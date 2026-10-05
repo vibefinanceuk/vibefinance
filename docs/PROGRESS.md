@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 5 October 2026 (decision 0636). A living document: what
+Last updated 5 October 2026 (decision 0637). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,15 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Agents ask the data, slice 4: the other datasets (0637)
+
+Questions can now ask about invoice lines, coding (spend by GL code,
+cost centre or project), the time invoices spend at each stage, returns
+to suppliers, suppliers, purchase order lines, deliveries to the ERP and
+files received. Each needs the permission of the screen that shows it,
+and is scoped as that screen is, so nobody sees more through an agent
+than they could on screen.
 
 ### Agents ask the data, slice 3: the question builder (0636)
 

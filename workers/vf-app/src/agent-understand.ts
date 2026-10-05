@@ -13,7 +13,6 @@ import {
   assumedParts,
   catalogueWords,
   checkQuery,
-  datasetById,
   hiddenInQuery,
   queryCatalogue,
 } from "./agent-query.js";
@@ -242,10 +241,8 @@ export async function handleUnderstandAgent(
     .first<{ name: string }>();
   const { units } = await unitsFor(db, userId);
   const allowedByReport = new Map<string, Set<string>>();
-  const visibleByPermission = new Map<string, string[] | null>();
   for (const r of AGENT_REPORTS) {
     const visible = await unitsWherePermitted(db, userId, r.permission);
-    visibleByPermission.set(r.permission, visible);
     allowedByReport.set(
       r.id,
       new Set(
@@ -255,8 +252,12 @@ export async function handleUnderstandAgent(
       ),
     );
   }
-  const choosable = units.filter((u) =>
-    [...allowedByReport.values()].some((s) => s.has(u.id)),
+  // Decision 0634: what this person may ask about, fields hidden here left out.
+  const catalogue = await queryCatalogue(db, userId);
+  // Decision 0637: organisations where a report, or any dataset, may be asked about.
+  const askable = new Set(catalogue.datasets.flatMap((d) => d.orgIds));
+  const choosable = units.filter(
+    (u) => askable.has(u.id) || [...allowedByReport.values()].some((s) => s.has(u.id)),
   );
   const managers = (
     await db
@@ -269,8 +270,6 @@ export async function handleUnderstandAgent(
       .all<{ id: string; name: string }>()
   ).results;
   const zone = await agentTimeZone(db);
-  // Decision 0634: what this person may ask about, fields hidden here left out.
-  const catalogue = await queryCatalogue(db, userId);
   const localDay = new Intl.DateTimeFormat("en-CA", {
     timeZone: zone,
     year: "numeric",
@@ -396,17 +395,11 @@ export async function handleUnderstandAgent(
       : null;
   if (typeof p.report === "string" && p.report && p.report !== "query" && !reportId)
     refusals.push({ code: "unknown_report", words: p.report.slice(0, 80) });
-  const queryPermission = question ? datasetById(question.dataset)!.permission : null;
+  // Decision 0637: a question may be asked where its dataset's own permission is held.
+  const askedOf = question ? catalogue.datasets.find((d) => d.id === question!.dataset) : null;
   const allowed = reportId
-    ? queryPermission
-      ? new Set(
-          units
-            .filter((u) => {
-              const v = visibleByPermission.get(queryPermission);
-              return v === null || (v ?? []).includes(u.id);
-            })
-            .map((u) => u.id),
-        )
+    ? askedOf
+      ? new Set(askedOf.orgIds)
       : allowedByReport.get(reportId)!
     : new Set(choosable.map((u) => u.id));
 

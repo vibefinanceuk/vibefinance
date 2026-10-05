@@ -189,7 +189,7 @@ describe("plain words write a question", () => {
 
   it("tells the screen what a question may ask, so the plan can be said in words", async () => {
     const body = (await handleListAgents(env.DB, "dan")).body as { catalogue: { datasets: { id: string; fields: { key: string; words: string }[] }[] } };
-    expect(body.catalogue.datasets.map((d) => d.id)).toEqual(["invoices", "tasks"]);
+    expect(body.catalogue.datasets.map((d) => d.id)).toEqual(["invoices", "tasks", "lines", "coding", "stage_visits", "returns"]); // decision 0637: all an AP.Analysis holder may ask
     expect(body.catalogue.datasets[0].fields.find((f) => f.key === "total")?.words).toBe("the total including VAT");
   });
 });

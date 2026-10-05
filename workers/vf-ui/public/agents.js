@@ -748,7 +748,9 @@ function formPanel() {
       render();
     },
   );
-  const orgs = (data.orgs ?? []).filter((o) => report?.orgIds.includes(o.id));
+  // Decision 0637: a question's organisations are those where its dataset may be asked about.
+  const askedOf = report?.custom ? (data.catalogue?.datasets ?? []).find((d) => d.id === draft.options?.query?.dataset) : null;
+  const orgs = (data.orgs ?? []).filter((o) => (askedOf?.orgIds ?? report?.orgIds ?? []).includes(o.id));
   const orgBoxes = el(
     "div",
     { class: "agentorgs", id: "agent-orgs" },
@@ -1144,7 +1146,15 @@ function questionField() {
     "agent-q-dataset",
     datasets.map((d) => [d.id, t(`agents.dataset.${d.id}`)]),
     ds?.id,
-    (v) => set(startingQuestion(datasets.find((d) => d.id === v))),
+    (v) => {
+      const next = datasets.find((d) => d.id === v);
+      // Decision 0637: only organisations where the new dataset may be asked about.
+      if (next?.orgIds) {
+        draft.orgIds = draft.orgIds.filter((id) => next.orgIds.includes(id));
+        if (draft.orgIds.length === 0 && next.orgIds.length > 0) draft.orgIds = [next.orgIds[0]];
+      }
+      set(startingQuestion(next));
+    },
   );
 
   const valueControls = (w, i) => {
@@ -1244,7 +1254,8 @@ function questionField() {
     "agent-q-since",
     [
       ["all", t("agents.plan.q.since.all")],
-      ["last_run", t("agents.plan.q.since.last_run")],
+      // Decision 0637: only where something records when a row arrived.
+      ...(ds?.since === false ? [] : [["last_run", t("agents.plan.q.since.last_run")]]),
     ],
     q.since ?? "all",
     (v) => set({ since: v }),

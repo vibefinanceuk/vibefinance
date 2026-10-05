@@ -46,6 +46,7 @@ import type { CompilerModel } from "@vibefinance/shared";
 import {
   checkQuery,
   datasetById,
+  REPLY_ARRIVED_SQL,
   hiddenInQuery,
   queryCatalogue,
   runQuery,
@@ -1142,11 +1143,8 @@ async function gatherReturnedNoReply(
  * (instance `pi`): a later invoice with the same number from the same
  * supplier. Used as `NOT EXISTS (...)` with `h` and `pi` in scope.
  */
-export const REPLY_ARRIVED_SQL = `SELECT 1 FROM invoice_headers n
-  WHERE n.id <> h.id AND replace(n.created_at, ' ', 'T') > substr(pi.ended_at, 1, 19)
-    AND COALESCE(n.invoice_number, json_extract(n.facts_json, '$."BT-1"')) = COALESCE(h.invoice_number, json_extract(h.facts_json, '$."BT-1"'))
-    AND ((h.supplier_id IS NOT NULL AND n.supplier_id = h.supplier_id)
-      OR (h.supplier_id IS NULL AND json_extract(n.facts_json, '$."BT-27"') = json_extract(h.facts_json, '$."BT-27"')))`;
+// Decision 0637: kept in agent-query.ts, which the returns dataset shares.
+export { REPLY_ARRIVED_SQL };
 
 /** The totals of the rows kept, by currency, or a count where rows have none. */
 function totalsOfRows(rows: Record<string, unknown>[]): ReportTotal[] {
@@ -1250,6 +1248,17 @@ export const AGENT_REPORTS: AgentReport[] = [
 
 export function reportById(id: unknown): AgentReport | null {
   return AGENT_REPORTS.find((r) => r.id === id) ?? null;
+}
+
+/**
+ * **The permission a report needs, for this agent — decision 0637.** A
+ * question needs its dataset's (suppliers AP.Supplier, purchase orders
+ * AP.Validate, files and deliveries Integration.Monitor); a ready-made
+ * report its own.
+ */
+export function permissionOf(report: AgentReport, options: AgentOptions | null | undefined): Permission {
+  if (report.custom && options?.query) return datasetById(options.query.dataset)?.permission ?? report.permission;
+  return report.permission;
 }
 
 // ---------------------------------------------------------------------------
@@ -1550,13 +1559,18 @@ export async function handleListAgents(
     .prepare("SELECT count(*) AS n FROM agents WHERE status <> 'removed'")
     .first<{ n: number }>();
   const { units } = await unitsFor(db, userId);
+  const catalogue = await queryCatalogue(db, userId);
   const reports = [];
   for (const r of AGENT_REPORTS) {
     const visible = await unitsWherePermitted(db, userId, r.permission);
+    // Decision 0637: a question may be asked wherever any of its datasets may.
+    const askable = new Set(catalogue.datasets.flatMap((d) => d.orgIds));
     reports.push({
       id: r.id,
       permission: r.permission,
-      orgIds: units.filter((u) => covers(visible, u.id)).map((u) => u.id),
+      orgIds: r.custom
+        ? units.filter((u) => askable.has(u.id)).map((u) => u.id)
+        : units.filter((u) => covers(visible, u.id)).map((u) => u.id),
       // Decision 0624: what it can be narrowed by, with the defaults.
       options: (checkOptions(r.id, {}) as { options: AgentOptions }).options,
       optionKeys: Object.entries(OPTION_RULES[r.id] ?? {})
@@ -1592,7 +1606,7 @@ export async function handleListAgents(
       // Decision 0631: prepared actions on or off, and who may switch them.
       actionsEnabled: await actionsEnabled(db),
       // Decision 0634: what a question may ask, so the plan can say it in words.
-      catalogue: await queryCatalogue(db, userId),
+      catalogue,
     },
   };
 }
@@ -1651,7 +1665,18 @@ async function checkAgentInput(
       reason: "org_unknown",
       message: "an organisation chosen does not exist",
     };
-  const visible = await unitsWherePermitted(db, userId, report.permission);
+  // Decision 0637: a question is checked against its dataset's permission.
+  const asked = report.custom
+    ? datasetById(
+        (
+          (input.options ??
+            (current && current.report === report.id ? JSON.parse(current.options_json ?? "{}") : {})) as {
+            query?: { dataset?: unknown };
+          }
+        )?.query?.dataset,
+      )
+    : null;
+  const visible = await unitsWherePermitted(db, userId, asked?.permission ?? report.permission);
   const notHeld = known.filter((o) => !covers(visible, o.id));
   if (notHeld.length > 0) {
     return {
@@ -2564,10 +2589,11 @@ async function runAgentOnce(
       return { runId, status: "failed", error: "author_access" };
     }
     const chosen = await orgsNamed(db, parseIds(agent.org_unit_ids_json));
+    const permission = permissionOf(report, parseOptions(agent));
     const authorVisible = await unitsWherePermitted(
       db,
       agent.author_id,
-      report.permission,
+      permission,
     );
     const orgs = chosen.filter((o) => covers(authorVisible, o.id));
     const skippedOrgs = chosen
@@ -2646,7 +2672,7 @@ async function runAgentOnce(
         continue;
       const theirs = isAuthor
         ? null
-        : await unitsWherePermitted(db, person.id, report.permission);
+        : await unitsWherePermitted(db, person.id, permission);
       const theirOrgs = isAuthor
         ? orgs
         : orgs.filter((o) => covers(theirs, o.id));
