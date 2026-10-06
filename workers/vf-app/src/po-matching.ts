@@ -563,5 +563,118 @@ export async function mergePoMatchFacts(
     })
   );
 
+  if (orderNumber) await mergeReceiptFacts(db, mergedHeaderFacts, mergedLines, orderNumber, orgConfig, consumption, options.invoiceId);
+
   return { headerFacts: mergedHeaderFacts, lines: mergedLines };
+}
+
+/**
+ * Whether the invoice's supplier is **Receipting required** — decision
+ * 0647: `match_option = 'three_way'` (shown so since 0643). Read live
+ * from the invoice's supplier, like `supplier.projectOnly`, so marking a
+ * supplier takes effect on invoices already in hand; else the
+ * `supplier.matchOption` captured with the invoice.
+ */
+export async function receiptingRequired(db: D1Database, invoiceId: string | undefined, headerFacts: InvoiceFacts): Promise<boolean> {
+  if (invoiceId) {
+    try {
+      const row = await db
+        .prepare("SELECT s.match_option FROM invoice_headers h JOIN suppliers s ON s.id = h.supplier_id WHERE h.id = ?")
+        .bind(invoiceId)
+        .first<{ match_option: string | null }>();
+      if (row) return row.match_option === "three_way";
+    } catch {
+      // No supplier table to read: fall back to what was captured.
+    }
+  }
+  return toText(headerFacts["supplier.matchOption"]) === "three_way";
+}
+
+/**
+ * **Three-way matching: the receipt facts — decision 0647**, Stage 2 of
+ * the Goods Receipts proposal (0643). For an invoice whose supplier is
+ * Receipting required, each line that found its PO line gets:
+ *
+ * - `po.line_receipt_matched` — everything invoiced against the PO line
+ *   so far (other invoices, as two-way matching counts them, plus this
+ *   invoice's lines on it up to this one) is within what is held: net
+ *   received (received less returned, receipts not cancelled), allowing
+ *   the supplier's quantity tolerance, or the organisation's;
+ * - `po.line_receipt_shortfall_pct` — how far it goes beyond what is
+ *   held, as a percentage of the quantity ordered; 0 when it does not;
+ * - `po.line_credit_expected` — goods were returned from that line and
+ *   what is invoiced goes beyond what was kept: a credit note is owed.
+ *
+ * **Absent, not false**, for any other supplier, a Non-PO line, a line
+ * whose PO line was not found, or one with no quantity — so a receipt
+ * rule can never fire on a two-way supplier, whatever its sentence
+ * says (the same convention 0466 set for the line facts). Computed
+ * fresh each time: a receipt recorded since changes the answer.
+ */
+export async function mergeReceiptFacts(
+  db: D1Database,
+  headerFacts: InvoiceFacts,
+  lines: (InvoiceFacts & { lineNumber: number })[],
+  orderNumber: string,
+  orgConfig: OrgMatchingConfig,
+  consumption: PoConsumption,
+  invoiceId: string | undefined
+): Promise<void> {
+  if (!(await receiptingRequired(db, invoiceId, headerFacts))) return;
+  let heldRows: { line: number; movement: string; qty: number }[];
+  let orderedRows: { line_number: number; quantity: number | null }[];
+  try {
+    heldRows = (
+      await db
+        .prepare(
+          `SELECT l.order_line_number AS line, l.movement, SUM(l.quantity) AS qty
+           FROM goods_receipt_lines l JOIN goods_receipts r ON r.id = l.receipt_id
+           WHERE l.order_number = ? AND r.cancelled_at IS NULL
+           GROUP BY l.order_line_number, l.movement`
+        )
+        .bind(orderNumber)
+        .all<{ line: number; movement: string; qty: number }>()
+    ).results;
+    orderedRows = (
+      await db
+        .prepare(
+          `SELECT pl.line_number, pl.quantity FROM purchase_order_lines pl
+           JOIN purchase_orders po ON po.id = pl.purchase_order_id WHERE po.order_number = ?`
+        )
+        .bind(orderNumber)
+        .all<{ line_number: number; quantity: number | null }>()
+    ).results;
+  } catch {
+    // Before migration 0140: no receipts to judge by.
+    return;
+  }
+  const held = new Map<number, { received: number; returned: number }>();
+  for (const r of heldRows) {
+    const h = held.get(r.line) ?? { received: 0, returned: 0 };
+    if (r.movement === "returned") h.returned += r.qty;
+    else h.received += r.qty;
+    held.set(r.line, h);
+  }
+  const ordered = new Map(orderedRows.map((r) => [r.line_number, r.quantity]));
+  const tolerancePct = toNumber(headerFacts["supplier.quantityTolerancePct"]) ?? orgConfig.quantityTolerancePct ?? 0;
+  const thisInvoice = new Map<number, number>();
+  const EPS = 1e-9;
+
+  for (const line of [...lines].sort((a, b) => a.lineNumber - b.lineNumber)) {
+    if (line["po.line_non_po"] === true || line["po.line_reference_found"] !== true) continue;
+    const ref = Number(toText(line["BT-132"]));
+    const quantity = toNumber(line["BT-129"]);
+    if (!Number.isFinite(ref) || quantity === undefined) continue;
+    const before = thisInvoice.get(ref) ?? 0;
+    thisInvoice.set(ref, before + quantity);
+    const soFar = (consumption.byLine.get(ref)?.quantity ?? 0) + before + quantity;
+    const h = held.get(ref) ?? { received: 0, returned: 0 };
+    const net = h.received - h.returned;
+    const orderedQty = ordered.get(ref) ?? null;
+    const slack = orderedQty ? (orderedQty * tolerancePct) / 100 : 0;
+    const beyond = soFar > net + slack + EPS;
+    line["po.line_receipt_matched"] = !beyond;
+    if (orderedQty) line["po.line_receipt_shortfall_pct"] = Math.round((Math.max(0, soFar - net) / orderedQty) * 10000) / 100;
+    line["po.line_credit_expected"] = h.returned > EPS && beyond;
+  }
 }

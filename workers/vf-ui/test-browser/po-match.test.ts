@@ -11,6 +11,12 @@ const STRINGS = {
   strings: {
     "action.close": "Close",
     "pomatch.title": "Purchase order matching",
+    "pomatch.matching": "Matching",
+    "suppliers.receipting.short": "Receipting required",
+    "pomatch.receipt.ok": "Received: {received} kept, {invoiced} invoiced",
+    "pomatch.receipt.awaiting": "Awaiting receipt: {received} kept, {invoiced} invoiced",
+    "pomatch.receipt.credit": "Credit expected: {returned} returned, {invoiced} invoiced",
+    "pomatch.awaitingwarn": "Lines invoiced beyond what has been received and kept: {n}. The receipt rules decide whether the invoice waits.",
     "pomatch.loading": "Loading…",
     "pomatch.loadfailed": "Could not load.",
     "pomatch.linked": "Linked purchase order",
@@ -625,5 +631,41 @@ describe("a PO on hold or closed — decision 0545", () => {
     document.body.innerHTML = "";
     openLineMatchPopout({ orderNumber: "PO-A", held: true, poStatus: "active", holdReason: null, lines: [line] }, line);
     expect(document.querySelector(".pmlinepop .pmstatuswarn")).toBeNull();
+  });
+});
+
+describe("three-way matching in the panel — decision 0647", () => {
+  const withReceipts = {
+    ...VIEW,
+    po: { ...(VIEW as { po: Record<string, unknown> }).po, receiptingRequired: true },
+    lines: VIEW.lines.map((l, i) => ({
+      ...l,
+      receipt:
+        i === 2
+          ? undefined
+          : i === 0
+          ? { matched: true, creditExpected: false, shortfallPct: 0, received: 10, returned: 0, invoiced: 10 }
+          : { matched: false, creditExpected: false, shortfallPct: 20, received: 30, returned: 0, invoiced: 50 },
+    })),
+  };
+
+  it("says the supplier needs receipting, and on each line what was received and invoiced", async () => {
+    await open(withReceipts);
+    expect(panel().textContent).toContain("Receipting required");
+    expect(panel().querySelector('tr[data-line="1"] .pmreceipt')?.textContent).toBe("Received: 10 kept, 10 invoiced");
+    expect(panel().querySelector('tr[data-line="2"] .pmreceipt')?.textContent).toBe("Awaiting receipt: 30 kept, 50 invoiced");
+    expect(panel().querySelector('tr[data-line="2"] .pmreceipt .pmpill')?.classList.contains("bad")).toBe(true);
+    expect(panel().textContent).toContain("Lines invoiced beyond what has been received and kept: 1.");
+  });
+
+  it("says a credit is expected when goods went back", async () => {
+    await open({ ...withReceipts, lines: withReceipts.lines.map((l, i) => (i === 1 ? { ...l, receipt: { ...l.receipt, creditExpected: true, returned: 5 } } : l)) });
+    expect(panel().querySelector('tr[data-line="2"] .pmreceipt')?.textContent).toBe("Credit expected: 5 returned, 50 invoiced");
+  });
+
+  it("shows nothing of it for a supplier that does not need receipting", async () => {
+    await open(VIEW);
+    expect(panel().querySelector(".pmreceipt")).toBeNull();
+    expect(panel().textContent).not.toContain("Receipting required");
   });
 });

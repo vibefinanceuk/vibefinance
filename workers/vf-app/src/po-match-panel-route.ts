@@ -2,7 +2,18 @@ import { loadSplits, saveSplitStatements } from "./coding-splits.js";
 import type { InvoiceFacts } from "@vibefinance/shared";
 import { CODING_FIELD_LISTS } from "./coding-validation.js";
 import type { RouteResult } from "./org-route.js";
-import { computePoLineMatch, computePoMatch, getOrgMatchingConfig, loadPoConsumption, poShareOfTotal, poShareSql, type PoConsumption } from "./po-matching.js";
+import {
+  computePoLineMatch,
+  computePoMatch,
+  getOrgMatchingConfig,
+  loadPoConsumption,
+  mergeReceiptFacts,
+  poShareOfTotal,
+  poShareSql,
+  receiptingRequired,
+  type PoConsumption,
+} from "./po-matching.js";
+import { heldByLine } from "./goods-receipts.js";
 import { unitsWherePermitted, isWithinScope, unitClause } from "./enforce.js";
 import { handleKeyInvoiceFields } from "./key-fields-route.js";
 import { activePairings, loadPairings } from "./po-pairings.js";
@@ -374,6 +385,39 @@ export async function handleGetPoMatchView(db: D1Database, invoiceId: string, us
     })
   );
 
+  /**
+   * **Three-way matching — decision 0647.** For a supplier marked
+   * Receipting required, each line's receipt verdict, worked out by the
+   * same `mergeReceiptFacts` the rules read, with what has been received
+   * and kept on its PO line and what is invoiced against it so far.
+   */
+  const receipting = po ? await receiptingRequired(db, invoiceId, headerFacts) : false;
+  if (po && receipting && consumption) {
+    const probe = lines.map((l) => ({
+      lineNumber: l.lineNumber,
+      ...(l.poLine ? { "BT-132": String(l.poLine.lineNumber) } : {}),
+      ...(l.quantity !== null && l.quantity !== undefined ? { "BT-129": l.quantity } : {}),
+      "po.line_reference_found": l.result.referenceFound,
+      ...(l.nonPo ? { "po.line_non_po": true } : {}),
+    })) as (InvoiceFacts & { lineNumber: number })[];
+    await mergeReceiptFacts(db, { ...headerFacts, "supplier.matchOption": "three_way" }, probe, po.order_number, orgConfig, consumption, undefined);
+    const held = await heldByLine(db, po.order_number);
+    for (const l of lines as (typeof lines[number] & { receipt?: unknown })[]) {
+      const f = probe.find((x) => x.lineNumber === l.lineNumber);
+      if (!f || typeof f["po.line_receipt_matched"] !== "boolean" || !l.poLine) continue;
+      const h = held.get(l.poLine.lineNumber) ?? { received: 0, returned: 0 };
+      l.receipt = {
+        matched: f["po.line_receipt_matched"],
+        creditExpected: f["po.line_credit_expected"] === true,
+        shortfallPct: typeof f["po.line_receipt_shortfall_pct"] === "number" ? f["po.line_receipt_shortfall_pct"] : null,
+        received: Math.round((h.received - h.returned) * 1e6) / 1e6,
+        returned: h.returned,
+        invoiced:
+          Math.round(((consumption.byLine.get(l.poLine.lineNumber)?.quantity ?? 0) + (thisByLine.get(l.poLine.lineNumber)?.quantity ?? 0)) * 1e6) / 1e6,
+      };
+    }
+  }
+
   const referenced = new Set(lines.map((l) => l.poLine?.lineNumber).filter((n) => n !== undefined));
   /**
    * **This invoice's share of the PO — decision 0544**: its total less
@@ -416,6 +460,8 @@ export async function handleGetPoMatchView(db: D1Database, invoiceId: string, us
       referenceNotFound: orderNumber !== null && po === null,
       po: po
         ? {
+            // Decision 0647: its invoices wait for the goods receipt.
+            receiptingRequired: receipting,
             orderNumber: po.order_number,
             issueDate: po.issue_date,
             currency: po.currency,

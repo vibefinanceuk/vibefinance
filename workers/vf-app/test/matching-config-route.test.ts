@@ -171,12 +171,12 @@ describe("handleGetStandardMatchingRules", () => {
     }
   }
 
-  it("returns all five canonical names with no matches when nothing has been authored yet", async () => {
+  it("returns all seven canonical names (two more for three-way matching, decision 0647) with no matches when nothing has been authored yet", async () => {
     const result = await handleGetStandardMatchingRules(env.DB);
     expect(result.status).toBe(200);
     const body = result.body as { standardRules: Array<{ key: string; matches: unknown[] }> };
     // Decision 0545 added the fifth, "Purchase order on hold or closed".
-    expect(body.standardRules).toHaveLength(5);
+    expect(body.standardRules).toHaveLength(7);
     expect(body.standardRules.map((r) => r.key)).toEqual(
       STANDARD_MATCHING_RULES.map((r) => r.key)
     );

@@ -120,6 +120,28 @@ export const STANDARD_MATCHING_RULES = [
     suggestedSentence:
       "If the invoice's purchase order is on hold or closed, assign a task to the AP Matching team requiring AP.Match.",
   },
+  /**
+   * **Decision 0647 — three-way matching.** Both read facts that are
+   * absent for any supplier not marked Receipting required, so neither
+   * sentence needs a supplier condition: it cannot fire on a two-way
+   * supplier. *Awaiting receipt* is the main one; *Credit expected*
+   * also suits AP Review, where a return recorded after Matching is
+   * still caught (each stage visit works the facts out afresh).
+   */
+  {
+    key: "awaiting_receipt",
+    name: "Standard rule: Awaiting receipt",
+    fact: "po.line_receipt_matched",
+    suggestedSentence:
+      "If a line has been invoiced beyond what has been received, assign a task to the AP Matching team requiring AP.Match.",
+  },
+  {
+    key: "credit_expected",
+    name: "Standard rule: Credit expected",
+    fact: "po.line_credit_expected",
+    suggestedSentence:
+      "If goods on a line were returned after it was invoiced, assign a task to the AP Matching team requiring AP.Match.",
+  },
 ] as const;
 
 interface StandardRuleRow {

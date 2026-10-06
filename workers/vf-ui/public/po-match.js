@@ -105,6 +105,25 @@ function lineUseRow(use) {
   ]);
 }
 
+/**
+ * **Three-way matching — decision 0647.** For a supplier marked
+ * Receipting required: whether what is invoiced against this line's PO
+ * line is within what was received and kept, as the receipt rules read
+ * it (`po.line_receipt_matched`, `po.line_credit_expected`).
+ */
+function receiptRow(receipt) {
+  if (!receipt) return null;
+  const n = (v) => Number(v).toLocaleString(currentLocale(), { maximumFractionDigits: 3 });
+  const tone = receipt.matched ? "ok" : "bad";
+  const key = receipt.matched ? "pomatch.receipt.ok" : receipt.creditExpected ? "pomatch.receipt.credit" : "pomatch.receipt.awaiting";
+  return node("div", { class: "pmreceipt sm" }, [
+    node("span", {
+      class: `pmpill ${tone}`,
+      text: fill(key, { received: n(receipt.received), invoiced: n(receipt.invoiced), returned: n(receipt.returned) }),
+    }),
+  ]);
+}
+
 function lineSummary(l) {
   const parts = [];
   if (l.quantity !== null) parts.push(`${l.quantity}${l.unit ? ` ${l.unit}` : ""}`);
@@ -186,6 +205,8 @@ function poSection(view) {
         meta("pomatch.buyer", node("b", { text: view.po.buyerName ?? "—" })),
         meta("pomatch.issued", node("b", { text: view.po.issueDate ?? "—" })),
         meta("pomatch.status", statusPill(view.po.status)),
+        // Decision 0647: its invoices wait for the goods receipt.
+        view.po.receiptingRequired ? meta("pomatch.matching", node("span", { class: "pmpill muted", text: t("suppliers.receipting.short") })) : null,
       ]),
       usageSection(view),
     ]),
@@ -289,12 +310,15 @@ function linesSection(view, onPair) {
         node("div", { class: "sm" }, [how]),
         suggestionBox(l, view, onPair),
         lineUseRow(l.poLine?.use),
+        receiptRow(l.receipt),
       ]),
       node("td", {}, [node("span", { class: `pmpill ${verdict.tone}`, text: verdict.text })]),
     ]);
   });
   const tol = view.tolerance;
+  const awaiting = view.lines.filter((l) => l.receipt && !l.receipt.matched).length;
   return node("section", { class: "pmblock" }, [
+    awaiting > 0 ? node("p", { class: "pmstatuswarn", role: "alert", text: fill("pomatch.awaitingwarn", { n: awaiting }) }) : null,
     node("div", { class: "pmhead" }, [
       node("h4", { text: t("pomatch.lines") }),
       node("span", {

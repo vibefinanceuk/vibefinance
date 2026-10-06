@@ -149,6 +149,15 @@ export const DERIVED_FIELDS = [
   "po.status",
   "po.hold_reason",
   /**
+   * **Decision 0647 — three-way matching.** For a supplier marked
+   * Receipting required: does what is invoiced against this line's PO
+   * line stay within what was received and kept? Absent for any other
+   * supplier, so a receipt rule never fires on a two-way one.
+   */
+  "po.line_receipt_matched",
+  "po.line_receipt_shortfall_pct",
+  "po.line_credit_expected",
+  /**
    * **Decision 0542.** A project's budget, on each line coded to a
    * project that has one: over it, and how much of it is used. Absent on
    * every other line. Warn-only by the operator's choice; a rule decides
@@ -307,6 +316,9 @@ export const INVOICE_FIELD_TYPES: Record<string, FieldType> = {
   "po.line_non_po": "boolean",
   "po.status": "text",
   "po.hold_reason": "text",
+  "po.line_receipt_matched": "boolean",
+  "po.line_receipt_shortfall_pct": "number",
+  "po.line_credit_expected": "boolean",
   "project.over_budget": "boolean",
   "project.budget_used_pct": "number",
   "coding.line_invalid": "text",
@@ -517,6 +529,12 @@ export const DERIVED_FIELD_DESCRIPTIONS: Record<DerivedField, string> = {
     "the status of the purchase order the invoice names (BT-13): active, on_hold or closed. Absent when the invoice names no purchase order held here. An invoice against an on_hold or closed order is never matched (po.matched is false), whatever its amounts. Test it with is: 'po.status is on_hold'.",
   "po.hold_reason":
     "why the purchase order the invoice names is on hold, as recorded on the order. Present only while it is on hold.",
+  "po.line_receipt_matched":
+    "three-way matching: true if everything invoiced against the purchase order line this line answers — by other invoices, and by this invoice's lines on it up to this one — is within what has been received and kept there (received less returned, on goods receipts not cancelled), allowing the supplier's quantity tolerance, or the org-wide default. False when more has been invoiced than is held: the goods are awaited, or were sent back. Only for a supplier marked Receipting required; absent for every other supplier, on a Non-PO line, where no purchase order line was found, or where the line has no quantity — so a rule needs no supplier condition of its own.",
+  "po.line_receipt_shortfall_pct":
+    "three-way matching: how far what is invoiced against this line's purchase order line goes beyond what has been received and kept there, as a percentage of the quantity ordered. 0 when it does not. Present exactly where po.line_receipt_matched is and the order line has a quantity.",
+  "po.line_credit_expected":
+    "three-way matching: true if goods were returned from this line's purchase order line and what is invoiced against it goes beyond what was kept — a credit note is owed for goods paid for, or being paid for, that went back. Present exactly where po.line_receipt_matched is.",
   "project.over_budget":
     "true if this line is coded to a project whose budget is exceeded once this invoice is counted: the net amounts of every other invoice's lines coded to the project (not discarded or returned ones), plus this invoice's lines on it, are more than the project's budget. Absent on a line with no project, or whose project has no budget.",
   "project.budget_used_pct":

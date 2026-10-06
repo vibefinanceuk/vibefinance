@@ -277,6 +277,7 @@ import absenceButtonStringsSql from "../migrations/0286_absence_button_strings.s
 import goodsReceiptSetupStringsSql from "../migrations/0287_goods_receipt_setup_strings.sql?raw";
 import goodsReceiptsStringsSql from "../migrations/0288_goods_receipts_strings.sql?raw";
 import poReceiptsStringsSql from "../migrations/0289_po_receipts_strings.sql?raw";
+import threeWayStringsSql from "../migrations/0290_three_way_strings.sql?raw";
 
 function stripSqlComments(sql: string): string {
   return sql
@@ -587,5 +588,6 @@ export async function applyTestSchema(): Promise<void> {
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(goodsReceiptSetupStringsSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(goodsReceiptsStringsSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(poReceiptsStringsSql)));
+  await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(threeWayStringsSql)));
 
 }

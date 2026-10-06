@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 6 October 2026 (decision 0646). A living document: what
+Last updated 6 October 2026 (decision 0647). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,16 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Three-way matching: receipt facts and rules (0647)
+
+For a supplier marked Receipting required, each invoice line now knows
+whether what is invoiced against its PO line is within what was
+received and kept, by how much it is short, and whether a credit is
+expected after a return. Two standard matching rules, Awaiting receipt
+and Credit expected, are offered on AP Setup, and the PO matching panel
+shows each line's receipt verdict. The re-check when a receipt arrives
+follows.
 
 ### Goods receipts, slice 4: on Purchase Orders (0646)
 
