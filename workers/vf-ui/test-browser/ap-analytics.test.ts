@@ -154,6 +154,7 @@ const STRINGS = {
     "financialperformance.accruals": "Accruals report",
     "financialperformance.accrualssub": "Received, not yet payment-eligible, by stage",
     "financialperformance.noaccruals": "No open liabilities right now",
+    "grni.heading": "Goods received not invoiced",
     "financialperformance.accrued": "{amount} accrued",
     "financialperformance.invoicecount": "{n} invoices",
     // Financial Performance's second real card — decision 0419.
@@ -348,6 +349,7 @@ async function openApAnalytics(
     "/api/workload/queue-depth": { teams: [] },
     "/api/workload/balance": { teams: [] },
     "/api/accruals": { currencies: [] },
+    "/api/grni": { asAt: "2026-09-30", currencies: [], suppliers: [], lines: [] },
     "/api/spend/under-management": { currencies: [] },
     "/api/suppliers/spend": { currencies: [] },
     "/api/suppliers/status-counts": { counts: null },
@@ -547,7 +549,8 @@ describe("real tabs wire to the already-tested module behind them, placeholders 
 
     await switchTab("Financial Performance");
     const headings = [...document.querySelectorAll(".cardhead h3")].map((h) => h.textContent);
-    expect(headings).toEqual(["Accruals report", "Spend under management"]);
+    // Decision 0650: goods received not invoiced, third.
+    expect(headings).toEqual(["Accruals report", "Spend under management", "Goods received not invoiced"]);
     expect(document.body.textContent).toContain("No spend recorded yet");
   });
 

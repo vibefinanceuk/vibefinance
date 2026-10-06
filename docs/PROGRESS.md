@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 6 October 2026 (decision 0649). A living document: what
+Last updated 6 October 2026 (decision 0650). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,14 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Goods received not invoiced (0650)
+
+Month-end accruals for goods in but not yet billed: per purchase order
+line as at a chosen date, at the PO's price, per currency, aged by the
+oldest goods not invoiced, on AP Analytics' Financial Performance tab,
+with a CSV for the accrual journal. The first slice of Goods Receipts
+level 3 (the Warehouse Receipts proposal).
 
 ### Receipt facts at intake (0649)
 

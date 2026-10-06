@@ -423,6 +423,7 @@ describe("the proxy carries every path a screen calls (decision 0131)", () => {
      * added and assumed correct.
      */
     ["GET", "/api/accruals"],
+    ["GET", "/api/grni"],
     /**
      * The Financial Performance tab's own second real metric, spend
      * under management — decision 0419. Checked directly again, the

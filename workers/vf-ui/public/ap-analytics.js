@@ -15,6 +15,8 @@ import { load as loadBalance, renderCard as balanceCard } from "/workload-balanc
 // working module is recoverable in full from commit 7fd97e0.
 import { load as loadSupplierSpend, renderCard as supplierSpendCard } from "/supplier-performance.js";
 import { load as loadAccruals, renderCard as accrualsCard } from "/accruals.js";
+// Decision 0650: goods received not invoiced, beside Accruals.
+import { load as loadGrni, renderCard as grniCard } from "/grni.js";
 import { load as loadSpendUnderManagement, renderCard as spendUnderManagementCard } from "/spend-under-management.js";
 import { load as loadDuplicates, renderCard as duplicatesCard, summary as duplicatesSummary } from "/fraud-duplicates.js";
 import { load as loadUnapprovedSuppliers, renderCard as unapprovedSuppliersCard, summary as unapprovedSummary } from "/fraud-unapproved-suppliers.js";
@@ -232,8 +234,12 @@ async function tabContent(key) {
   if (key === "financial") {
     // Two independent cards, two independent failures — one screen's
     // own fetch failing never hides the other's real data.
-    const [accrualsOk, spendOk] = await Promise.all([loadAccruals(), loadSpendUnderManagement()]);
-    return [accrualsOk ? accrualsCard() : loadErrorCard(), spendOk ? spendUnderManagementCard() : loadErrorCard()];
+    const [accrualsOk, spendOk, grniOk] = await Promise.all([loadAccruals(), loadSpendUnderManagement(), loadGrni()]);
+    return [
+      accrualsOk ? accrualsCard() : loadErrorCard(),
+      spendOk ? spendUnderManagementCard() : loadErrorCard(),
+      grniOk ? grniCard() : loadErrorCard(),
+    ];
   }
   if (key === "supplier") {
     // Eight independent cards, decision 0427's own follow-on to 0416

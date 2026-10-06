@@ -39,6 +39,7 @@ import { handleWorkloadPending } from "./workload-pending-route.js";
 import { handleWorkloadQueueDepth } from "./workload-queue-depth-route.js";
 import { handleWorkloadBalance } from "./workload-balance-route.js";
 import { handleAccruals } from "./accruals-route.js";
+import { grniCsv, grniReport, handleGrni } from "./grni-route.js";
 import { handleOverdueBalance } from "./overdue-balance-route.js";
 import { handleSpendUnderManagement } from "./spend-under-management-route.js";
 import { handleExecutiveConsolidatedSpend } from "./executive-consolidated-spend-route.js";
@@ -2207,6 +2208,30 @@ export default {
       }
       const idMatch = pathname.match(/^\/route-messages\/([^/]+)$/);
       const result = await handleGetRouteMessage(db, decodeURIComponent(idMatch![1]));
+      return json(result.body, result.status);
+    }
+
+    /**
+     * **Goods received not invoiced — decision 0650.** AP.Analysis, as
+     * Accruals. `?asAt=YYYY-MM-DD` (default today), `?format=csv` for the
+     * accrual journal's lines.
+     */
+    if (pathname === "/grni" && request.method === "GET") {
+      const { db } = resolveTenant(request, env);
+      const auth = await authenticatePerson(db, request, env);
+      if (!auth.user) return json({ error: auth.reason }, 401);
+      if (!(await hasPermission(db, auth.user.id, "AP.Analysis"))) {
+        return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
+      }
+      if (url.searchParams.get("format") === "csv") {
+        const report = await grniReport(db, auth.user.id, url.searchParams.get("org"), url.searchParams.get("asAt"));
+        if ("error" in report) return json({ error: report.error, reason: "as_at_invalid" }, 400);
+        return new Response(grniCsv(report), {
+          status: 200,
+          headers: { "Content-Type": "text/csv; charset=utf-8", "Content-Disposition": `attachment; filename="grni-${report.asAt}.csv"` },
+        });
+      }
+      const result = await handleGrni(db, auth.user.id, url.searchParams.get("org"), url.searchParams.get("asAt"));
       return json(result.body, result.status);
     }
 

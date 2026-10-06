@@ -5301,3 +5301,12 @@
 #po-receipts { margin-top: 14px; }
 .pomovements { display: flex; flex-direction: column; gap: 4px; margin-top: 10px; font-size: var(--text-sm); }
 .pomovement.cancelled span:first-child { text-decoration: line-through; }
+/* Decision 0650: goods received not invoiced. */
+.grnicontrols { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 8px 0 12px; }
+.grnicontrols input[type="date"] { width: auto; }
+.grnicontrols .actionlink { margin-left: auto; }
+.grniover { color: var(--text-warning); }
+.grnitiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; margin-bottom: 12px; }
+.grnitile { display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; border: 0.5px solid var(--border); border-radius: var(--radius); background: var(--surface-1); }
+.grnitile b { font-size: var(--text-lg); }
+.grnitable td.num, .grnitable th.num { text-align: right; font-variant-numeric: tabular-nums; }

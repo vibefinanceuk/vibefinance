@@ -107,6 +107,7 @@ export default defineConfig({
       "/workload-balance.js": resolve(__dirname, "public/workload-balance.js"),
       "/supplier-performance.js": resolve(__dirname, "public/supplier-performance.js"),
       "/accruals.js": resolve(__dirname, "public/accruals.js"),
+      "/grni.js": resolve(__dirname, "public/grni.js"),
       "/spend-under-management.js": resolve(__dirname, "public/spend-under-management.js"),
       "/fraud-duplicates.js": resolve(__dirname, "public/fraud-duplicates.js"),
       "/fraud-list.js": resolve(__dirname, "public/fraud-list.js"),

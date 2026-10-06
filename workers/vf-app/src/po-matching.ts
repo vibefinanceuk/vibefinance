@@ -102,8 +102,15 @@ export function poShareSql(h = "h"): string {
 export async function loadPoConsumption(
   db: D1Database,
   orderNumber: string,
-  excludeInvoiceId: string | null
+  excludeInvoiceId: string | null,
+  /**
+   * **As at a date — decision 0650 (GRNI).** Only invoices issued on or
+   * before it (YYYY-MM-DD) count; one with no issue date counts, as it
+   * always has. Absent: every invoice, as before.
+   */
+  asAt?: string
 ): Promise<PoConsumption> {
+  const dateClause = asAt ? ` AND (COALESCE(h.issue_date, json_extract(h.facts_json, '$."BT-2"')) IS NULL OR substr(COALESCE(h.issue_date, json_extract(h.facts_json, '$."BT-2"')), 1, 10) <= ?)` : "";
   const invoices = (
     await db
       .prepare(
@@ -115,10 +122,10 @@ export async function loadPoConsumption(
              SELECT 1 FROM process_instances pi
              WHERE pi.subject_type = 'invoice' AND pi.subject_id = h.id
                AND pi.status IN (${UNPAID_INSTANCE_STATUSES.map(() => "?").join(", ")})
-           )
+           )${dateClause}
          ORDER BY h.created_at, h.id`
       )
-      .bind(orderNumber, excludeInvoiceId ?? "", ...UNPAID_INSTANCE_STATUSES)
+      .bind(orderNumber, excludeInvoiceId ?? "", ...UNPAID_INSTANCE_STATUSES, ...(asAt ? [asAt] : []))
       .all<{ id: string; number: string | null; amount: number | null }>()
   ).results;
 

@@ -376,6 +376,8 @@ const PROXIED_TO_INSTANCE: RegExp[] = [
    * left once.
    */
   /^\/accruals$/,
+  // Decision 0650: goods received not invoiced, and its CSV.
+  /^\/grni$/,
   /**
    * **Spend under management — decision 0419.** Checked directly
    * again, the same discipline decision 0418 already established for
