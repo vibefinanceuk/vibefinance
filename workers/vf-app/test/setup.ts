@@ -144,6 +144,7 @@ import agentQueriesSql from "../../../migrations/0137_agent_queries.sql?raw";
 import absencesSql from "../../../migrations/0138_absences.sql?raw";
 import goodsReturnReasonsSql from "../../../migrations/0139_goods_return_reasons.sql?raw";
 import goodsReceiptsSql from "../../../migrations/0140_goods_receipts.sql?raw";
+import goodsReceiptStatusSql from "../../../migrations/0141_goods_receipt_status.sql?raw";
 
 // Another known divergence from production, on top of the one below:
 // D1's exec() splits its input by newline and executes each non-empty
@@ -486,6 +487,7 @@ export async function applyTestSchema(): Promise<void> {
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(absencesSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(goodsReturnReasonsSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(goodsReceiptsSql)));
+  await env.DB.exec(toOneStatementPerLine(stripSqlComments(goodsReceiptStatusSql)));
 }
 
 /**

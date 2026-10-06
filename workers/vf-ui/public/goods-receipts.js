@@ -34,6 +34,8 @@ let kind = "";
 let counts = null;
 let csvFormat = null;
 let reasons = [];
+/** Decision 0651: the Warehouse Receipts process, when it is set up. */
+let warehouse = null;
 
 async function call(path, init) {
   try {
@@ -97,10 +99,44 @@ async function loadCounts() {
 }
 
 async function loadExtras() {
+  const process = await call("/goods-receipts/process");
+  warehouse = process.ok ? process.body.process ?? null : null;
   if (!canRecord()) return;
   const [format, active] = await Promise.all([call("/goods-receipts/csv-format"), call("/goods-return-reasons")]);
   csvFormat = format.ok ? format.body : null;
   reasons = active.ok ? active.body.reasons ?? [] : [];
+}
+
+const statusPill = (status) => (status === "pending" || status === "rejected" ? el("span", { class: `rmpill ${status === "pending" ? "warn" : "q"}`, text: t(`receipts.status.${status}`) }) : null);
+
+/**
+ * **Where a CSV load goes — decision 0651.** Through the Warehouse
+ * Receipts process once it is set up; otherwise straight in, with a
+ * button for Admin.Configure to set the process up.
+ */
+function processLine() {
+  if (warehouse) return el("p", { class: "sm", id: "receipts-process", text: t("receipts.process.through").replace("{process}", warehouse.name) });
+  const parts = [el("span", { class: "sm muted", text: t("receipts.process.direct") })];
+  if (hasMyPermission("Admin.Configure")) {
+    const button = actionLink("addcard", {
+      label: t("receipts.process.setup"),
+      onclick: async () => {
+        button.disabled = true;
+        const r = await post("/goods-receipts/process", {
+          name: t("receipts.process.name"),
+          stageNames: { intake: t("receipts.process.stage.intake"), matching: t("receipts.process.stage.matching"), complete: t("receipts.process.stage.complete") },
+        });
+        button.disabled = false;
+        if (!r.ok) return note(said(r.body, "receipts.process.failed"));
+        warehouse = r.body.process ?? null;
+        render();
+        note(el("div", { class: "panel" }, [el("div", { text: t("receipts.process.done").replace("{process}", warehouse?.name ?? "") })]));
+      },
+    });
+    button.id = "receipts-setup-process";
+    parts.push(button);
+  }
+  return el("div", { class: "receiptsprocess", id: "receipts-process" }, parts);
 }
 
 async function reload(focusId) {
@@ -181,6 +217,18 @@ function loadOutcome(result) {
     el("div", { text: t("receipts.loaded").replace("{lines}", String(result.linesLoaded)).replace("{receipts}", String(result.receiptsCreated)) }),
   ];
   if (result.linesSkipped > 0) parts.push(el("div", { class: "muted", text: t("receipts.skipped").replace("{n}", String(result.linesSkipped)) }));
+  if (result.process) {
+    const sent = result.process.sent ?? [];
+    parts.push(
+      el("div", {
+        id: "receipts-sent",
+        text: t("receipts.sent")
+          .replace("{process}", result.process.name)
+          .replace("{registered}", String(sent.filter((x) => x.status === "registered").length))
+          .replace("{waiting}", String(sent.filter((x) => x.status === "pending").length)),
+      })
+    );
+  }
   parts.push(...recheckLines(result));
   for (const w of result.warnings ?? []) {
     parts.push(el("div", { class: "warn", text: t("receipts.overrow").replace("{row}", String(w.row)).replace("{order}", w.orderNumber).replace("{line}", String(w.orderLine)).replace("{ordered}", qty(w.ordered)).replace("{held}", qty(w.netAfter)) }));
@@ -214,6 +262,7 @@ function loader() {
   return el("div", { class: "panel" }, [
     el("div", { class: "cardhead" }, [el("h3", { text: t("receipts.loadheading") }), el("div", { class: "statebuttons" }, [template, button])]),
     el("p", { class: "muted", text: t("receipts.loadhelp") }),
+    processLine(),
     picker,
     formatReference(),
   ]);
@@ -232,7 +281,7 @@ function searchRow() {
   const kindPicker = el(
     "select",
     { id: "receiptkind" },
-    ["", "received", "returned", "cancelled"].map((k) => el("option", { value: k, text: t(`receipts.kind.${k || "all"}`) }))
+    ["", "received", "returned", "pending", "rejected", "cancelled"].map((k) => el("option", { value: k, text: t(`receipts.kind.${k || "all"}`) }))
   );
   kindPicker.value = kind;
   kindPicker.onchange = async () => {
@@ -285,7 +334,9 @@ function receiptRows() {
     const kinds = r.movements.map((m) => movementPill(m));
     if (r.returnReason) kinds.push(el("span", { class: "muted sm", text: ` ${r.returnReason}` }));
     if (r.cancelled) kinds.push(el("span", { class: "rmpill q", text: t("receipts.cancelled") }));
-    const row = el("tr", { class: r.cancelled ? "clickable muted" : "clickable", "data-receipt": r.id }, [
+    const status = statusPill(r.status);
+    if (status) kinds.push(status);
+    const row = el("tr", { class: r.cancelled || r.status === "rejected" ? "clickable muted" : "clickable", "data-receipt": r.id }, [
       el("td", { text: r.receiptNumber }),
       el("td", { class: "muted", text: r.receiptDate }),
       el("td", { text: r.orders.map((o) => o.orderNumber).join(", ") }),
@@ -362,13 +413,44 @@ function popout(content, wide = true) {
 async function openReceipt(id) {
   const r = await call(`/goods-receipts/${encodeURIComponent(id)}`);
   if (!r.ok) return note(t("receipts.detailfailed"));
-  const { receipt, lines, orders } = r.body;
+  const { receipt, lines, orders, process } = r.body;
   const problem = el("div", { class: "warn", id: "receipt-problem" });
   let backdrop;
   const close = () => backdrop.remove();
 
   const buttons = [];
-  if (canRecord() && !receipt.cancelled) {
+  // Decision 0651: a pending receipt is rejected, never cancelled; it has not counted yet.
+  if (canRecord() && receipt.status === "pending") {
+    buttons.push(
+      actionLink("close", {
+        label: t("receipts.rejectreceipt"),
+        onclick: () => {
+          const why = el("input", { type: "text", class: "searchbox", id: "receipt-rejectreason", placeholder: t("receipts.rejectwhy") });
+          problem.replaceChildren(
+            el("div", { text: t("receipts.rejectprompt") }),
+            why,
+            el("button", {
+              class: "primary",
+              id: "receipt-rejectconfirm",
+              text: t("receipts.rejectconfirm"),
+              onclick: async () => {
+                const done = await post(`/goods-receipts/${encodeURIComponent(id)}/reject`, { reason: why.value });
+                if (!done.ok) {
+                  problem.replaceChildren(el("div", { text: said(done.body, "receipts.rejectfailed") }));
+                  return;
+                }
+                close();
+                await refreshAll();
+                note(el("div", { class: "panel" }, [el("div", { text: t("receipts.rejected.done").replace("{number}", receipt.receiptNumber) })]));
+              },
+            })
+          );
+          why.focus();
+        },
+      })
+    );
+  }
+  if (canRecord() && !receipt.cancelled && (receipt.status ?? "registered") === "registered") {
     buttons.push(
       actionLink("close", {
         label: t("receipts.cancelreceipt"),
@@ -405,11 +487,24 @@ async function openReceipt(id) {
     receipt.cancelled
       ? el("div", { class: "warn", text: t("receipts.cancelledby").replace("{who}", receipt.cancelledBy ?? "—").replace("{why}", receipt.cancelReason ?? "") })
       : null,
+    receipt.status === "pending"
+      ? el("div", {
+          class: "warn",
+          id: "receipt-pending",
+          text: process?.stageName
+            ? t("receipts.pendingat").replace("{stage}", process.stageName).replace("{process}", process.processName)
+            : t("receipts.pendingnoprocess"),
+        })
+      : null,
+    receipt.status === "rejected"
+      ? el("div", { class: "warn", id: "receipt-rejected", text: t("receipts.rejectedby").replace("{who}", receipt.rejectedBy ?? "—").replace("{why}", receipt.rejectReason ?? "") })
+      : null,
     el("div", { class: "editgrid" }, [
       ...fact("receipts.col.date", receipt.receiptDate),
       ...fact("receipts.deliverynote", receipt.deliveryNote),
       ...fact("receipts.col.by", `${receipt.createdBy ?? "—"} · ${t(`receipts.source.${receipt.source}`)}`),
       ...fact("receipts.note", receipt.note),
+      ...(receipt.status === "registered" && receipt.registeredAt ? fact("receipts.registered", String(receipt.registeredAt).slice(0, 10)) : []),
     ]),
     el("div", { class: "tablewrap" }, [
       el("table", {}, [

@@ -682,8 +682,10 @@ export async function handleCreateDestination(
   if (connector.status !== "available" || (connector.routeId !== HTTPS_OUT && connector.routeId !== "erp-csv" && connector.routeId !== SFTP_OUT)) {
     return { status: 409, body: { error: `${connectorId} is not available yet`, reason: "not_available" } };
   }
-  const process = await db.prepare("SELECT id FROM processes WHERE id = ?").bind(processId).first();
+  const process = await db.prepare("SELECT id, subject_type FROM processes WHERE id = ?").bind(processId).first<{ id: string; subject_type: string }>();
   if (!process) return { status: 404, body: { error: `process ${processId} does not exist` } };
+  // Decision 0651: a destination sends invoices on, so only an invoice process takes one.
+  if (process.subject_type !== "invoice") return { status: 409, body: { error: `process ${processId} does not send invoices`, reason: "process_not_invoices" } };
   const taken = await db
     .prepare("SELECT 1 FROM route_instances WHERE process_id = ? AND source_id IS NULL AND lower(name) = lower(?) AND (status IS NULL OR status != 'retired')")
     .bind(processId, name)

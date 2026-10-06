@@ -24,6 +24,8 @@ import { isWithinScope, scopedToChosenOrg, unitClause, unitsWherePermitted } fro
 
 export type LineState = "not_received" | "partially_received" | "fully_received" | "over_received";
 export type Movement = "received" | "returned";
+/** Decision 0651: a receipt counts only once registered. */
+export type ReceiptStatus = "pending" | "registered" | "rejected";
 
 const EPS = 1e-9;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -110,14 +112,14 @@ async function supplierOf(db: D1Database, sellerPartyId: string | null) {
     .first<{ id: string; name: string; match_option: string | null; quantity_tolerance_pct: number | null }>();
 }
 
-/** Received and returned per order line, on receipts not cancelled. */
+/** Received and returned per order line, on registered receipts not cancelled (0651: a pending one does not count yet). */
 export async function heldByLine(db: D1Database, orderNumber: string): Promise<Map<number, { received: number; returned: number }>> {
   const rows = (
     await db
       .prepare(
         `SELECT l.order_line_number AS line, l.movement, SUM(l.quantity) AS qty
          FROM goods_receipt_lines l JOIN goods_receipts r ON r.id = l.receipt_id
-         WHERE l.order_number = ? AND r.cancelled_at IS NULL
+         WHERE l.order_number = ? AND r.cancelled_at IS NULL AND r.status = 'registered'
          GROUP BY l.order_line_number, l.movement`
       )
       .bind(orderNumber)
@@ -406,15 +408,15 @@ export async function handleCreateGoodsReceipt(db: D1Database, userId: string, b
   await db.batch([
     db
       .prepare(
-        `INSERT INTO goods_receipts (id, receipt_number, receipt_date, delivery_note, note, source, created_by, created_at)
-         VALUES (?, ?, ?, ?, ?, 'screen', ?, ?)`
+        `INSERT INTO goods_receipts (id, receipt_number, receipt_date, delivery_note, note, source, created_by, created_at, status, registered_at)
+         VALUES (?, ?, ?, ?, ?, 'screen', ?, ?, 'registered', ?)`
       )
-      .bind(id, receiptNumber, body.receiptDate as string, text(body.deliveryNote), text(body.note), userId, at),
+      .bind(id, receiptNumber, body.receiptDate as string, text(body.deliveryNote), text(body.note), userId, at, at),
     ...accepted.map((l, i) => lineInsert(db, id, i + 1, l, at)),
   ]);
   // Decision 0648: the orders this touched, for the re-check of receipt-rule tasks.
   const touched = [...new Set(accepted.map((l) => l.orderNumber))].map((orderNumber) => ({ orderNumber, receiptNumber }));
-  return { status: 201, body: { id, receiptNumber, lines: accepted.length, warnings, touched } };
+  return { status: 201, body: { id, receiptNumber, status: "registered", lines: accepted.length, warnings, touched } };
 }
 
 /**
@@ -423,7 +425,10 @@ export async function handleCreateGoodsReceipt(db: D1Database, userId: string, b
  * than it received: cancel that return first.
  */
 export async function handleCancelGoodsReceipt(db: D1Database, userId: string, id: string, body: Record<string, unknown>, now = new Date()): Promise<RouteResult> {
-  const receipt = await db.prepare("SELECT id, receipt_number, cancelled_at FROM goods_receipts WHERE id = ?").bind(id).first<{ id: string; receipt_number: string; cancelled_at: string | null }>();
+  const receipt = await db
+    .prepare("SELECT id, receipt_number, cancelled_at, status FROM goods_receipts WHERE id = ?")
+    .bind(id)
+    .first<{ id: string; receipt_number: string; cancelled_at: string | null; status: ReceiptStatus }>();
   const notFound = { status: 404, body: { error: "no such receipt", reason: "not_found" } };
   if (!receipt) return notFound;
   const lines = (
@@ -438,6 +443,9 @@ export async function handleCancelGoodsReceipt(db: D1Database, userId: string, i
     if (!isWithinScope({ units: scope }, o ? o.org_unit_id : null) && o) return notFound;
   }
   if (receipt.cancelled_at) return { status: 409, body: { error: "that receipt is already cancelled", reason: "already_cancelled" } };
+  // 0651: only a registered receipt counts, so only one can be cancelled. A pending one is rejected instead.
+  if (receipt.status === "pending") return { status: 409, body: { error: "that receipt is not registered yet: reject it instead", reason: "receipt_pending" } };
+  if (receipt.status === "rejected") return { status: 409, body: { error: "that receipt was rejected", reason: "receipt_rejected" } };
   const reason = text(body.reason);
   if (!reason) return { status: 400, body: { error: "say why it is cancelled", reason: "cancel_reason_missing" } };
 
@@ -496,8 +504,16 @@ export async function handleGetGoodsReceiptCsvFormat(): Promise<RouteResult> {
  * loaded is skipped. A row that cannot be loaded is refused with its row
  * number and why; the rest still load. A new line for a receipt already
  * on file is added to it.
+ *
+ * **Through the Warehouse Receipts process — decision 0651.** With
+ * `pending`, a new receipt is stored as pending and its id returned in
+ * `pendingIds`, for the caller to send through the process; it counts
+ * only once registered. Its orders are then not in `touched`: nothing
+ * changed for an invoice yet. A line added to a receipt already on file
+ * takes that receipt's status. Without the process set up, receipts
+ * register at once, as before.
  */
-export async function handleLoadGoodsReceiptsCsv(db: D1Database, userId: string, csv: string, now = new Date()): Promise<RouteResult> {
+export async function handleLoadGoodsReceiptsCsv(db: D1Database, userId: string, csv: string, now = new Date(), options: { pending?: boolean } = {}): Promise<RouteResult> {
   const rows = parseCsv(csv);
   if (rows.length < 2) return { status: 400, body: { error: "the file needs a header row and at least one line", reason: "empty" } };
   const cols = rows[0].map((h) => CSV_COLUMNS[h.trim().toLowerCase()] ?? null);
@@ -508,7 +524,9 @@ export async function handleLoadGoodsReceiptsCsv(db: D1Database, userId: string,
   const at = now.toISOString();
   const refused: { row: number; receiptNumber: string | null; reason: string; message: string }[] = [];
   const warnings: (OverReceipt & { row: number; receiptNumber: string })[] = [];
-  const receipts = new Map<string, { id: string; cancelled: boolean; lines: Set<number>; isNew: boolean }>();
+  const receipts = new Map<string, { id: string; cancelled: boolean; status: ReceiptStatus; lines: Set<number>; isNew: boolean }>();
+  const newStatus: ReceiptStatus = options.pending ? "pending" : "registered";
+  const pendingIds: string[] = [];
   let receiptsCreated = 0;
   let linesLoaded = 0;
   let linesSkipped = 0;
@@ -535,12 +553,15 @@ export async function handleLoadGoodsReceiptsCsv(db: D1Database, userId: string,
 
     let receipt = receipts.get(receiptNumber);
     if (!receipt) {
-      const existing = await db.prepare("SELECT id, cancelled_at FROM goods_receipts WHERE receipt_number = ?").bind(receiptNumber).first<{ id: string; cancelled_at: string | null }>();
+      const existing = await db
+        .prepare("SELECT id, cancelled_at, status FROM goods_receipts WHERE receipt_number = ?")
+        .bind(receiptNumber)
+        .first<{ id: string; cancelled_at: string | null; status: ReceiptStatus }>();
       if (existing) {
         const have = (await db.prepare("SELECT line_number FROM goods_receipt_lines WHERE receipt_id = ?").bind(existing.id).all<{ line_number: number }>()).results;
-        receipt = { id: existing.id, cancelled: existing.cancelled_at !== null, lines: new Set(have.map((h) => h.line_number)), isNew: false };
+        receipt = { id: existing.id, cancelled: existing.cancelled_at !== null, status: existing.status, lines: new Set(have.map((h) => h.line_number)), isNew: false };
       } else {
-        receipt = { id: crypto.randomUUID(), cancelled: false, lines: new Set(), isNew: true };
+        receipt = { id: crypto.randomUUID(), cancelled: false, status: newStatus, lines: new Set(), isNew: true };
       }
       receipts.set(receiptNumber, receipt);
     }
@@ -550,6 +571,10 @@ export async function handleLoadGoodsReceiptsCsv(db: D1Database, userId: string,
     }
     if (receipt.cancelled) {
       refuse("receipt_cancelled", `receipt ${receiptNumber} was cancelled`);
+      continue;
+    }
+    if (receipt.status === "rejected") {
+      refuse("receipt_rejected", `receipt ${receiptNumber} was rejected`);
       continue;
     }
     if (receipt.isNew && !isDate(v.receipt_date)) {
@@ -576,10 +601,10 @@ export async function handleLoadGoodsReceiptsCsv(db: D1Database, userId: string,
       statements.push(
         db
           .prepare(
-            `INSERT INTO goods_receipts (id, receipt_number, receipt_date, delivery_note, note, source, created_by, created_at)
-             VALUES (?, ?, ?, ?, NULL, 'csv', ?, ?)`
+            `INSERT INTO goods_receipts (id, receipt_number, receipt_date, delivery_note, note, source, created_by, created_at, status, registered_at)
+             VALUES (?, ?, ?, ?, NULL, 'csv', ?, ?, ?, ?)`
           )
-          .bind(receipt.id, receiptNumber, v.receipt_date, text(v.delivery_note), userId, at)
+          .bind(receipt.id, receiptNumber, v.receipt_date, text(v.delivery_note), userId, at, receipt.status, receipt.status === "registered" ? at : null)
       );
     }
     statements.push(lineInsert(db, receipt.id, lineNumber, result.line, at));
@@ -587,17 +612,18 @@ export async function handleLoadGoodsReceiptsCsv(db: D1Database, userId: string,
     if (receipt.isNew) {
       receipt.isNew = false;
       receiptsCreated++;
+      if (receipt.status === "pending") pendingIds.push(receipt.id);
     }
     receipt.lines.add(lineNumber);
     checker.commit(result.line.orderNumber, result.line.orderLine, result.line.movement, result.line.quantity);
     linesLoaded++;
-    touched.set(result.line.orderNumber, receiptNumber);
+    if (receipt.status === "registered") touched.set(result.line.orderNumber, receiptNumber);
     if (result.over) warnings.push({ ...result.over, row: rowNo, receiptNumber });
   }
 
   return {
     status: 200,
-    body: { receiptsCreated, linesLoaded, linesSkipped, refused, warnings, touched: [...touched].map(([orderNumber, receiptNumber]) => ({ orderNumber, receiptNumber })) },
+    body: { receiptsCreated, linesLoaded, linesSkipped, refused, warnings, pendingIds, touched: [...touched].map(([orderNumber, receiptNumber]) => ({ orderNumber, receiptNumber })) },
   };
 }
 
@@ -646,6 +672,11 @@ export async function handleListGoodsReceipts(
     binds.push(params.kind);
   }
   if (params.kind === "cancelled") sql += " AND r.cancelled_at IS NOT NULL";
+  // 0651: waiting in the Warehouse Receipts process, or rejected there.
+  if (params.kind === "pending" || params.kind === "rejected") {
+    sql += " AND r.status = ?";
+    binds.push(params.kind);
+  }
 
   const pageSize = PAGE_SIZES.includes(Number(params.pageSize)) ? Number(params.pageSize) : 50;
   const page = Math.max(1, Number.isInteger(Number(params.page)) ? Number(params.page) : 1);
@@ -654,7 +685,7 @@ export async function handleListGoodsReceipts(
     await db
       .prepare(
         `SELECT r.id, r.receipt_number, r.receipt_date, r.delivery_note, r.source, r.created_at, r.cancelled_at, r.cancel_reason,
-                u.name AS created_by_name,
+                r.status, r.reject_reason, u.name AS created_by_name,
                 (SELECT count(*) FROM goods_receipt_lines c WHERE c.receipt_id = r.id) AS line_count,
                 (SELECT group_concat(DISTINCT movement) FROM goods_receipt_lines m WHERE m.receipt_id = r.id) AS movements,
                 (SELECT group_concat(DISTINCT order_number) FROM goods_receipt_lines o WHERE o.receipt_id = r.id) AS orders,
@@ -686,6 +717,8 @@ export async function handleListGoodsReceipts(
       createdBy: r.created_by_name ?? null,
       cancelled: r.cancelled_at !== null,
       cancelReason: r.cancel_reason ?? null,
+      status: r.status,
+      rejectReason: r.reject_reason ?? null,
       lineCount: r.line_count,
       movements: String(r.movements ?? "").split(",").filter(Boolean),
       returnReason: r.first_reason ?? null,
@@ -733,11 +766,11 @@ export function receiptStateJoin(tolerancePct: number, alias = "rs"): string {
         SELECT gl.order_number, gl.order_line_number,
                SUM(CASE gl.movement WHEN 'received' THEN gl.quantity ELSE -gl.quantity END) AS net
         FROM goods_receipt_lines gl JOIN goods_receipts gr ON gr.id = gl.receipt_id
-        WHERE gr.cancelled_at IS NULL
+        WHERE gr.cancelled_at IS NULL AND gr.status = 'registered'
         GROUP BY gl.order_number, gl.order_line_number
       ) n ON n.order_number = o.order_number AND n.order_line_number = l.line_number
       WHERE ${supplier("match_option")} = 'three_way'
-         OR EXISTS (SELECT 1 FROM goods_receipt_lines e WHERE e.order_number = o.order_number)
+         OR EXISTS (SELECT 1 FROM goods_receipt_lines e JOIN goods_receipts er ON er.id = e.receipt_id WHERE e.order_number = o.order_number AND er.status = 'registered')
     ) x
     GROUP BY x.order_number
   ) ${alias} ON ${alias}.order_number = po.order_number`;
@@ -759,7 +792,7 @@ export async function handleGoodsReceiptStatusCounts(db: D1Database, userId: str
       .prepare(
         `SELECT po.order_number, rs.state,
                 EXISTS (SELECT 1 FROM goods_receipt_lines rl JOIN goods_receipts rr ON rr.id = rl.receipt_id
-                        WHERE rr.cancelled_at IS NULL AND rl.order_number = po.order_number AND rl.movement = 'returned') AS has_returns
+                        WHERE rr.cancelled_at IS NULL AND rr.status = 'registered' AND rl.order_number = po.order_number AND rl.movement = 'returned') AS has_returns
          FROM purchase_orders po
          ${receiptStateJoin(config.quantityTolerancePct ?? 0)}
          WHERE po.status <> 'closed' AND rs.state IS NOT NULL ${inScope.sql}`
@@ -781,8 +814,9 @@ export async function handleGetGoodsReceipt(db: D1Database, userId: string, id: 
   const where = receiptScopeClause(scope);
   const receipt = await db
     .prepare(
-      `SELECT r.*, u.name AS created_by_name, cu.name AS cancelled_by_name
+      `SELECT r.*, u.name AS created_by_name, cu.name AS cancelled_by_name, ru.name AS rejected_by_name
        FROM goods_receipts r LEFT JOIN org_users u ON u.id = r.created_by LEFT JOIN org_users cu ON cu.id = r.cancelled_by
+       LEFT JOIN org_users ru ON ru.id = r.rejected_by
        WHERE r.id = ? ${where.sql}`
     )
     .bind(id, ...where.binds)
@@ -820,7 +854,23 @@ export async function handleGetGoodsReceipt(db: D1Database, userId: string, id: 
         cancelledBy: receipt.cancelled_by_name ?? null,
         cancelledAt: receipt.cancelled_at ?? null,
         cancelReason: receipt.cancel_reason ?? null,
+        status: receipt.status,
+        registeredAt: receipt.registered_at ?? null,
+        rejectedBy: receipt.rejected_by_name ?? null,
+        rejectedAt: receipt.rejected_at ?? null,
+        rejectReason: receipt.reject_reason ?? null,
       },
+      // 0651: where it is in the Warehouse Receipts process, when it went through one.
+      process: await db
+        .prepare(
+          `SELECT pi.id AS instanceId, pi.status, p.name AS processName, st.name AS stageName
+           FROM process_instances pi JOIN processes p ON p.id = pi.process_id
+           LEFT JOIN process_stages st ON st.id = pi.current_stage_id
+           WHERE pi.subject_type = 'goods_receipt' AND pi.subject_id = ?
+           ORDER BY pi.created_at DESC LIMIT 1`
+        )
+        .bind(id)
+        .first<{ instanceId: string; status: string; processName: string; stageName: string | null }>(),
       lines: lines.map((l) => ({
         lineNumber: l.line_number,
         orderNumber: l.order_number,
@@ -850,7 +900,7 @@ export async function handleGetOrderReceipts(db: D1Database, userId: string, ord
   const movements = (
     await db
       .prepare(
-        `SELECT r.id AS receipt_id, r.receipt_number, r.receipt_date, r.source, r.cancelled_at, u.name AS created_by,
+        `SELECT r.id AS receipt_id, r.receipt_number, r.receipt_date, r.source, r.cancelled_at, r.status, u.name AS created_by,
                 l.order_line_number, l.movement, l.quantity, gr.label AS return_reason
          FROM goods_receipt_lines l JOIN goods_receipts r ON r.id = l.receipt_id
          LEFT JOIN org_users u ON u.id = r.created_by
@@ -866,6 +916,7 @@ export async function handleGetOrderReceipts(db: D1Database, userId: string, ord
     receiptDate: m.receipt_date,
     source: m.source,
     cancelled: m.cancelled_at !== null,
+    status: m.status,
     createdBy: m.created_by ?? null,
     orderLine: m.order_line_number,
     movement: m.movement,

@@ -658,7 +658,7 @@ export async function mergeReceiptFacts(
         .prepare(
           `SELECT l.order_line_number AS line, l.movement, SUM(l.quantity) AS qty
            FROM goods_receipt_lines l JOIN goods_receipts r ON r.id = l.receipt_id
-           WHERE l.order_number = ? AND r.cancelled_at IS NULL
+           WHERE l.order_number = ? AND r.cancelled_at IS NULL AND r.status = 'registered'
            GROUP BY l.order_line_number, l.movement`
         )
         .bind(orderNumber)

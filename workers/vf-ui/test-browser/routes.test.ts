@@ -409,6 +409,16 @@ describe("Process routes — decision 0557", () => {
     await settle();
     expect(calls.at(-1)).toMatchObject({ path: "/api/process-routes", query: "process=exp" });
   });
+
+  it("shows a process that moves goods receipts as such, with no invoice sources or destinations to add — decision 0651", async () => {
+    strings["processroutes.subject.goods_receipt"] = "Moves goods receipts";
+    strings["processroutes.subject.goods_receipt.note"] = "Receipts reach this process from Goods Receipts.";
+    stub([], { "/api/process-routes": { ...FLOW, process: { ...FLOW.process, name: "Warehouse Receipts", subjectType: "goods_receipt" }, sources: [], destinations: [] } });
+    await openScreen("/process-routes.js");
+    expect(text("#pr-subject")).toBe("Moves goods receipts");
+    expect(text("#pr-subject-note")).toBe("Receipts reach this process from Goods Receipts.");
+    expect(document.querySelector(".prpanel .statebuttons")).toBeNull();
+  });
 });
 
 describe("HTTPS in — decision 0578", () => {

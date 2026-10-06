@@ -160,11 +160,11 @@ export async function handleProcessRoutes(
 ): Promise<RouteResult> {
   const processes = await db
     .prepare(
-      `SELECT p.id, p.name,
+      `SELECT p.id, p.name, p.subject_type,
               (SELECT count(*) FROM sources s WHERE s.process_id = p.id) AS sources
        FROM processes p ORDER BY p.name`
     )
-    .all<{ id: string; name: string; sources: number }>();
+    .all<{ id: string; name: string; subject_type: string; sources: number }>();
 
   // The process asked for, or the first that receives anything.
   const asked = params.get("process");
@@ -232,10 +232,12 @@ export async function handleProcessRoutes(
   return {
     status: 200,
     body: {
-      processes: processes.results.map((p) => ({ id: p.id, name: p.name })),
+      processes: processes.results.map((p) => ({ id: p.id, name: p.name, subjectType: p.subject_type })),
       process: {
         id: chosen.id,
         name: chosen.name,
+        // Decision 0651: what it moves — invoice, supplier or goods receipt.
+        subjectType: chosen.subject_type,
         stages: ends.stages.map((s) => ({ id: s.id, name: s.name, sequence: s.sequence })),
         entryStageId: ends.entryStageId,
         exitStageId: ends.exitStageId,

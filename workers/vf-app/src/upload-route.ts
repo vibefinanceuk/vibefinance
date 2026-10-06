@@ -86,7 +86,7 @@ export async function handleUploadTargets(db: D1Database): Promise<RouteResult> 
        FROM sources s
        JOIN processes p ON p.id = s.process_id
        LEFT JOIN org_units o ON o.id = s.default_org_unit_id
-       WHERE s.mechanism = 'file_import' AND s.status = 'active'
+       WHERE s.mechanism = 'file_import' AND s.status = 'active' AND p.subject_type = 'invoice'
        ORDER BY p.name, s.name`
     )
     .all<{ id: string; name: string; process_id: string; process_name: string; org_name: string | null }>();

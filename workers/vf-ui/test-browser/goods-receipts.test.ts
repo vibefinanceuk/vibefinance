@@ -37,6 +37,21 @@ const STRINGS = {
     "receipts.error.order_line_not_found": "The purchase order has no such line.",
     "receipts.recheck.closed": "Invoice tasks waiting on these goods that have now closed: {n}.",
     "receipts.recheck.open": "Invoice tasks still waiting, as more is invoiced than is in: {n}.",
+    "receipts.status.pending": "Pending",
+    "receipts.status.rejected": "Rejected",
+    "receipts.pendingat": "Pending at {stage} in {process}: it counts once registered.",
+    "receipts.rejectreceipt": "Reject receipt",
+    "receipts.rejectconfirm": "Reject it",
+    "receipts.rejected.done": "Receipt {number} rejected.",
+    "receipts.sent": "Sent through {process}. Registered: {registered}. Waiting: {waiting}.",
+    "receipts.process.direct": "Receipts loaded here register at once.",
+    "receipts.process.through": "Receipts loaded here go through {process} and count once registered.",
+    "receipts.process.setup": "Set up Warehouse Receipts",
+    "receipts.process.name": "Warehouse Receipts",
+    "receipts.process.stage.intake": "Intake",
+    "receipts.process.stage.matching": "Matching",
+    "receipts.process.stage.complete": "Complete",
+    "receipts.process.done": "{process} is set up. Receipts loaded here now go through it.",
     "action.save": "Save",
     "action.close": "Close",
   },
@@ -244,5 +259,67 @@ describe("the Goods Receipts screen", () => {
     expect(outcome).toContain("2 lines loaded, 1 new receipts.");
     expect(outcome).toContain("Row 4: The purchase order has no such line.");
     await settle();
+  });
+});
+
+const WAREHOUSE = { id: "warehouse-receipts", name: "Warehouse Receipts", stages: [] };
+
+describe("Warehouse Receipts — decision 0651", () => {
+  it("says a CSV registers at once until the process is set up, and lets Admin.Configure set it up", async () => {
+    const calls = await openScreen(["AP.Receive", "Admin.Configure"], {
+      "GET /api/goods-receipts/process": [200, { process: null }],
+      "POST /api/goods-receipts/process": [201, { process: WAREHOUSE, created: true }],
+    });
+    expect(document.getElementById("receipts-process")?.textContent).toContain("Receipts loaded here register at once.");
+    button("Set up Warehouse Receipts")!.click();
+    await vi.waitFor(() => expect(document.getElementById("receipts-process")?.textContent).toBe("Receipts loaded here go through Warehouse Receipts and count once registered."));
+    expect(calls.find((c) => c.method === "POST" && c.path === "/api/goods-receipts/process")?.body).toEqual({
+      name: "Warehouse Receipts",
+      stageNames: { intake: "Intake", matching: "Matching", complete: "Complete" },
+    });
+    expect(document.getElementById("receipts-note")?.textContent).toContain("Warehouse Receipts is set up.");
+  });
+
+  it("offers no set-up without Admin.Configure, and says where a load went and what waits", async () => {
+    await openScreen(["AP.Receive"], {
+      "GET /api/goods-receipts/process": [200, { process: null }],
+      "POST /api/goods-receipts/csv-load": [
+        200,
+        { receiptsCreated: 2, linesLoaded: 2, linesSkipped: 0, warnings: [], refused: [], process: { id: "warehouse-receipts", name: "Warehouse Receipts", sent: [{ status: "registered" }, { status: "pending" }] } },
+      ],
+    });
+    expect(button("Set up Warehouse Receipts")).toBeUndefined();
+    const picker = document.getElementById("receiptsfile") as HTMLInputElement;
+    Object.defineProperty(picker, "files", { value: [new File(["receipt_number\nWH-1"], "wh.csv", { type: "text/csv" })] });
+    button("purchaseorders.loadbutton")!.click();
+    await vi.waitFor(() => expect(document.getElementById("receipts-sent")?.textContent).toBe("Sent through Warehouse Receipts. Registered: 1. Waiting: 1."));
+  });
+
+  it("marks a pending receipt, says where it waits, and rejects it with a reason instead of cancelling", async () => {
+    const calls = await openScreen(["AP.Receive"], {
+      "GET /api/goods-receipts/process": [200, { process: WAREHOUSE }],
+      "GET /api/goods-receipts": [200, { ...LIST, receipts: [{ ...LIST.receipts[0], id: "wh-1", receiptNumber: "WH-1", status: "pending", movements: ["received"], returnReason: null }] }],
+      "GET /api/goods-receipts/wh-1": [
+        200,
+        {
+          receipt: { id: "wh-1", receiptNumber: "WH-1", receiptDate: "2026-10-05", source: "csv", createdBy: "Sam", cancelled: false, status: "pending" },
+          lines: [{ lineNumber: 1, orderNumber: "PO-4501", orderLine: 2, movement: "received", quantity: 5, unitCode: "EA", returnReason: null }],
+          orders: [ORDER],
+          process: { instanceId: "pi", status: "in_progress", processName: "Warehouse Receipts", stageName: "Matching" },
+        },
+      ],
+      "POST /api/goods-receipts/wh-1/reject": [200, { id: "wh-1", receiptNumber: "WH-1", status: "rejected" }],
+    });
+    const row = document.querySelector<HTMLElement>('[data-receipt="wh-1"]')!;
+    expect(row.textContent).toContain("Pending");
+    row.click();
+    await vi.waitFor(() => expect(document.getElementById("receipt-pending")).not.toBeNull());
+    expect(document.getElementById("receipt-pending")!.textContent).toBe("Pending at Matching in Warehouse Receipts: it counts once registered.");
+    expect(button("Cancel receipt")).toBeUndefined();
+    button("Reject receipt")!.click();
+    (document.getElementById("receipt-rejectreason") as HTMLInputElement).value = "Not our delivery";
+    document.getElementById("receipt-rejectconfirm")!.click();
+    await vi.waitFor(() => expect(document.getElementById("receipts-note")?.textContent).toContain("Receipt WH-1 rejected."));
+    expect(calls.find((c) => c.path === "/api/goods-receipts/wh-1/reject")?.body).toEqual({ reason: "Not our delivery" });
   });
 });

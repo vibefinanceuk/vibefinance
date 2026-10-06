@@ -10,8 +10,8 @@ import { scopedToChosenOrg, unitClause, unitsWherePermitted } from "./enforce.js
  * Per purchase order line, **as at a date** (Dan agreed both):
  *
  * - **received** — every receipt line dated on or before it (receipt
- *   date), on receipts not cancelled by then, less what was returned by
- *   then. Every receipt counts, not only for suppliers marked Receipting
+ *   date), on registered receipts (0651) not cancelled by then, less
+ *   what was returned by then. Every receipt counts, not only for suppliers marked Receipting
  *   required: a receipt means the goods are in either way;
  * - **invoiced** — invoices against the line issued on or before it,
  *   counted exactly as matching counts them (`loadPoConsumption`);
@@ -77,7 +77,7 @@ export async function grniReport(db: D1Database, userId: string | undefined, org
          FROM goods_receipt_lines l
          JOIN goods_receipts r ON r.id = l.receipt_id
          JOIN purchase_orders po ON po.order_number = l.order_number
-         WHERE r.receipt_date <= ?
+         WHERE r.receipt_date <= ? AND r.status = 'registered'
            AND (r.cancelled_at IS NULL OR substr(r.cancelled_at, 1, 10) > ?) ${scope.sql}
          ORDER BY l.order_number, l.order_line_number, r.receipt_date, r.created_at`
       )

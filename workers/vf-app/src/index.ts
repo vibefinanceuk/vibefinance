@@ -295,6 +295,14 @@ import {
   handleLoadGoodsReceiptsCsv,
 } from "./goods-receipts.js";
 import {
+  continueReceiptInstance,
+  handleGetWarehouseProcess,
+  handleRejectGoodsReceipt,
+  handleSetUpWarehouseProcess,
+  sendReceiptsThroughProcess,
+  warehouseProcess,
+} from "./warehouse-receipts.js";
+import {
   handleGetApTeamEmail,
   handleSetApTeamEmail,
   handleGetApTeamEmailAvailability,
@@ -923,6 +931,20 @@ async function followUpAfterTaskCompletion(
     .prepare("SELECT subject_type, subject_id FROM process_instances WHERE id = ?")
     .bind(instanceId)
     .first<{ subject_type: string; subject_id: string }>();
+  /**
+   * **A goods receipt — decision 0651.** Its instance goes on from where
+   * it stands; reaching the end registers the receipt, and invoices
+   * waiting on those goods are checked again (0648), as the one who
+   * sent it.
+   */
+  if (instanceRow?.subject_type === "goods_receipt") {
+    const touched = await continueReceiptInstance(db, instanceId);
+    if (touched.length > 0) {
+      const by = await db.prepare("SELECT created_by FROM goods_receipts WHERE id = ?").bind(instanceRow.subject_id).first<{ created_by: string | null }>();
+      if (by?.created_by) await recheckReceiptTasks(db, touched, by.created_by, (id) => followUpAfterTaskCompletion(db, id));
+    }
+    return;
+  }
   if (instanceRow?.subject_type !== "invoice") return;
 
   // Decision 0487 pulled the load-facts-header-plus-structured-plus-
@@ -5813,6 +5835,7 @@ export default {
         return { status: result.status, body: { ...(result.body as object), recheck: { closed: outcome.closed.length, stillOpen: outcome.stillOpen } } };
       };
       const orderMatch = pathname.match(/^\/goods-receipts\/order\/([^/]+)$/);
+      const rejectMatch = pathname.match(/^\/goods-receipts\/([^/]+)\/reject$/);
       const cancelMatch = pathname.match(/^\/goods-receipts\/([^/]+)\/cancel$/);
       const oneMatch = pathname.match(/^\/goods-receipts\/([^/]+)$/);
 
@@ -5843,10 +5866,53 @@ export default {
         const result = await handleGetGoodsReceiptCsvFormat();
         return json(result.body, result.status);
       }
+      /**
+       * **Decision 0651: through the Warehouse Receipts process, once it
+       * is set up.** New receipts are stored pending and each is sent
+       * through it; those that reach the end are registered, and only
+       * their orders are re-checked. Without it, they register at once.
+       */
       if (pathname === "/goods-receipts/csv-load" && request.method === "POST") {
         const auth = await record();
         if (!auth.authorized) return forbidden(auth.status);
-        const result = await recheck(await handleLoadGoodsReceiptsCsv(db, auth.user.id, await request.text()), auth.user.id);
+        const process = await warehouseProcess(db);
+        const loaded = await handleLoadGoodsReceiptsCsv(db, auth.user.id, await request.text(), new Date(), { pending: process !== null });
+        if (loaded.status >= 300 || !process) return json((await recheck(loaded, auth.user.id)).body, loaded.status);
+        const body = loaded.body as { pendingIds: string[]; touched: { orderNumber: string; receiptNumber: string }[] };
+        const through = await sendReceiptsThroughProcess(db, body.pendingIds);
+        const result = await recheck(
+          {
+            status: loaded.status,
+            body: {
+              ...body,
+              process: { id: process.id, name: process.name, sent: through.sent },
+              touched: [...body.touched, ...through.touched],
+            },
+          },
+          auth.user.id
+        );
+        return json(result.body, result.status);
+      }
+      if (pathname === "/goods-receipts/process" && request.method === "GET") {
+        const auth = await view();
+        if (!auth.authorized) return forbidden(auth.status);
+        const result = await handleGetWarehouseProcess(db);
+        return json(result.body, result.status);
+      }
+      if (pathname === "/goods-receipts/process" && request.method === "POST") {
+        const auth = await requirePermission(db, request, "Admin.Configure", sessionContext(env));
+        if (!auth.authorized) return forbidden(auth.status);
+        const body = await readJson();
+        if (!body) return json({ error: t("invalidJsonBody", resolveLocale(env.LOCALE)) }, 400);
+        const result = await handleSetUpWarehouseProcess(db, body);
+        return json(result.body, result.status);
+      }
+      if (rejectMatch && request.method === "POST") {
+        const auth = await record();
+        if (!auth.authorized) return forbidden(auth.status);
+        const body = await readJson();
+        if (!body) return json({ error: t("invalidJsonBody", resolveLocale(env.LOCALE)) }, 400);
+        const result = await handleRejectGoodsReceipt(db, auth.user.id, decodeURIComponent(rejectMatch[1]), body);
         return json(result.body, result.status);
       }
       if (orderMatch && request.method === "GET") {
@@ -6678,6 +6744,21 @@ export default {
           // stage ahead) is silently ignored, the same as every other
           // optional field this route already tolerates.
           await followUpAfterTaskCompletion(db, cascade.needsEvaluationAt.instanceId, targetUserId);
+        } else {
+          /**
+           * **A goods receipt's last task — decision 0651.** The cascade
+           * may have completed its instance itself, with no stage left to
+           * evaluate; the follow-up then registers the receipt.
+           */
+          const receiptInstance = await db
+            .prepare(
+              `SELECT pi.id FROM tasks t JOIN stage_visits v ON v.id = t.stage_visit_id
+               JOIN process_instances pi ON pi.id = v.process_instance_id
+               WHERE t.id = ? AND pi.subject_type = 'goods_receipt'`
+            )
+            .bind(taskId)
+            .first<{ id: string }>();
+          if (receiptInstance) await followUpAfterTaskCompletion(db, receiptInstance.id);
         }
       }
       return json(result.body, result.status);

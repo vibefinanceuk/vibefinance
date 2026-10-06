@@ -734,19 +734,25 @@ function render() {
   if (!data.process) {
     body.push(el("div", { class: "panel" }, [el("p", { class: "muted", text: t("sources.noprocess") })]));
   } else {
+    // Decision 0651: a process that moves goods receipts takes no invoice
+    // sources or destinations; receipts reach it from Goods Receipts.
+    const receipts = data.process.subjectType === "goods_receipt";
     body.push(
       el("div", { class: "panel prpanel" }, [
         el("div", { class: "cardhead" }, [
           el("h3", { text: data.process.name }),
-          el("div", { class: "statebuttons" }, [
-            actionLink("addcard", { label: t("processroutes.addsource"), onclick: openAddSource }),
-            // Decision 0585.
-            actionLink("addcard", { label: t("httpsout.adddestination"), onclick: openAddDestination }),
-          ]),
+          receipts
+            ? el("span", { class: "pill", id: "pr-subject", text: t("processroutes.subject.goods_receipt") })
+            : el("div", { class: "statebuttons" }, [
+                actionLink("addcard", { label: t("processroutes.addsource"), onclick: openAddSource }),
+                // Decision 0585.
+                actionLink("addcard", { label: t("httpsout.adddestination"), onclick: openAddDestination }),
+              ]),
         ]),
         processChips(),
+        receipts ? el("p", { class: "sm muted", id: "pr-subject-note", text: t("processroutes.subject.goods_receipt.note") }) : null,
         flow(),
-      ])
+      ].filter(Boolean))
     );
     const chosen =
       selected?.kind === "source"

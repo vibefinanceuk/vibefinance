@@ -85,9 +85,13 @@ export async function handleCreateSource(
   processId: string,
   body: Record<string, unknown>
 ): Promise<RouteResult> {
-  const process = await db.prepare("SELECT id FROM processes WHERE id = ?").bind(processId).first();
+  const process = await db.prepare("SELECT id, subject_type FROM processes WHERE id = ?").bind(processId).first<{ id: string; subject_type: string }>();
   if (!process) {
     return { status: 404, body: { error: `process ${processId} does not exist` } };
+  }
+  // Decision 0651: a source brings invoices in, so only an invoice process takes one.
+  if (process.subject_type !== "invoice") {
+    return { status: 409, body: { error: `process ${processId} does not take invoices`, reason: "process_not_invoices" } };
   }
 
   const { id, name, mechanism } = body;
