@@ -1076,3 +1076,119 @@ describe("currency formatting — the operator's own follow-up", () => {
     expect(row?.textContent).not.toContain("NaN");
   });
 });
+
+describe("receipts on Purchase Orders — decision 0646", () => {
+  const RECEIPT_STRINGS = {
+    "purchaseorders.receipt": "Receipt",
+    "purchaseorders.receiptall": "Any receipt state",
+    "purchaseorders.receipts": "Receipts and returns",
+    "purchaseorders.receipts.movement": "{date} · {number}: {kind} {qty} on line {line}",
+    "purchaseorders.receipts.by": "by {who}",
+    "purchaseorders.receiptwarnheading": "Receipts to check",
+    "purchaseorders.receiptwarn.line_removed": "{order} line {line} is no longer on the order, but {net} was received against it.",
+    "purchaseorders.receiptwarn.below_received": "{order} line {line} now orders {ordered}, less than the {net} received. It shows over-received.",
+    "receipts.state.partially_received": "Partially received",
+    "receipts.state.fully_received": "Fully received",
+    "receipts.movement.received": "Receipt",
+    "receipts.movement.returned": "Return",
+    "receipts.creditexpectedn": "Credit expected {n}",
+  };
+  const FIGURES = {
+    order: {
+      orderNumber: "PO-500",
+      receiptingRequired: true,
+      state: "partially_received",
+      supplier: null,
+      lines: [
+        { lineNumber: 1, itemName: "Pallet handling", onOrder: true, ordered: 15, received: 10, returned: 2, net: 8, outstanding: 7, invoiced: 10, state: "partially_received", creditExpected: 2 },
+        { lineNumber: 2, itemName: "Warehouse storage", onOrder: true, ordered: 3, received: 3, returned: 0, net: 3, outstanding: 0, invoiced: 0, state: "fully_received", creditExpected: 0 },
+      ],
+    },
+    movements: [
+      { receiptId: "g1", receiptNumber: "GR-1", receiptDate: "2026-09-29", source: "csv", cancelled: false, createdBy: "Sam", orderLine: 1, movement: "received", quantity: 10, returnReason: null },
+      { receiptId: "g2", receiptNumber: "GR-2", receiptDate: "2026-10-01", source: "screen", cancelled: false, createdBy: "Priya", orderLine: 1, movement: "returned", quantity: 2, returnReason: "Damaged" },
+    ],
+  };
+
+  beforeEach(() => {
+    Object.assign(STRINGS.strings, RECEIPT_STRINGS);
+  });
+
+  it("shows each order's receipt state in its own column, and filters by it", async () => {
+    const asked: string[] = [];
+    stubFetch({
+      "/api/purchase-orders": {
+        body: { ...ONE_ORDER, purchaseOrders: [{ ...ONE_ORDER.purchaseOrders[0], receipt_state: "partially_received" }, { ...ONE_ORDER.purchaseOrders[0], id: "po-2", order_number: "PO-501", receipt_state: null }] },
+      },
+    });
+    const inner = globalThis.fetch as unknown as (url: string) => Promise<Response>;
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => (asked.push(String(url)), inner(url))));
+    await openScreen();
+    const headers = [...document.querySelectorAll("thead th")].map((th) => th.textContent);
+    expect(headers.at(-1)).toBe("Receipt");
+    const rows = [...document.querySelectorAll("tbody tr")];
+    expect(rows[0].lastElementChild?.textContent).toBe("Partially received");
+    expect(rows[1].lastElementChild?.textContent).toBe("—");
+    const picker = document.getElementById("poreceipt") as HTMLSelectElement;
+    expect(picker.options[0].textContent).toBe("Any receipt state");
+    picker.value = "fully_received";
+    picker.dispatchEvent(new Event("change"));
+    await vi.waitFor(() => expect(asked.some((u) => u.includes("receipt=fully_received"))).toBe(true));
+  });
+
+  it("shows what arrived and went back in the order's pop-out", async () => {
+    stubFetch({
+      "/api/purchase-orders": { body: ONE_ORDER },
+      "/api/purchase-orders/PO-500": { body: PO_500_DETAIL },
+      "/api/goods-receipts/order/PO-500": { body: FIGURES },
+    });
+    await openScreen();
+    (document.querySelector("tbody tr") as HTMLElement).click();
+    await vi.waitFor(() => expect(document.getElementById("po-receipts")).not.toBeNull());
+    const section = document.getElementById("po-receipts")!;
+    expect(section.querySelector("h4")?.textContent).toBe("Receipts and returns");
+    expect(section.querySelector('[data-line="1"]')?.textContent).toContain("Credit expected 2");
+    expect([...section.querySelectorAll(".pomovement")].map((m) => m.textContent)).toEqual([
+      "2026-09-29 · GR-1: Receipt 10 on line 1 · by Sam",
+      "2026-10-01 · GR-2: Return 2 on line 1 · Damaged · by Priya",
+    ]);
+  });
+
+  it("leaves the section out where the register cannot be read", async () => {
+    stubFetch({
+      "/api/purchase-orders": { body: ONE_ORDER },
+      "/api/purchase-orders/PO-500": { body: PO_500_DETAIL },
+      "/api/goods-receipts/order/PO-500": { ok: false, body: {} },
+    });
+    await openScreen();
+    (document.querySelector("tbody tr") as HTMLElement).click();
+    await vi.waitFor(() => expect(document.querySelector(".popout h3")?.textContent).toBe("PO-500"));
+    expect(document.getElementById("po-receipts")).toBeNull();
+    expect(document.querySelector(".popout")?.textContent).not.toContain("null");
+  });
+
+  it("says when a change order meets goods already received", async () => {
+    stubFetch({
+      "/api/purchase-orders": { body: EMPTY_LIST },
+      "/api/purchase-orders/csv-load": {
+        body: {
+          loadId: "l1",
+          ordersLoaded: 1,
+          ordersReplaced: 1,
+          linesLoaded: 1,
+          refused: [],
+          receiptWarnings: [
+            { orderNumber: "PO-500", line: 1, kind: "below_received", net: 8, ordered: 5 },
+            { orderNumber: "PO-500", line: 2, kind: "line_removed", net: 3 },
+          ],
+        },
+      },
+    });
+    await openScreen();
+    chooseFile("order_number,line number,item\nPO-500,1,Pallet");
+    [...document.querySelectorAll("button")].find((b) => b.textContent === "Load CSV")?.click();
+    await vi.waitFor(() => expect(document.body.textContent).toContain("Receipts to check"));
+    expect(document.body.textContent).toContain("PO-500 line 1 now orders 5, less than the 8 received. It shows over-received.");
+    expect(document.body.textContent).toContain("PO-500 line 2 is no longer on the order, but 3 was received against it.");
+  });
+});

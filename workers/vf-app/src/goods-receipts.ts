@@ -111,7 +111,7 @@ async function supplierOf(db: D1Database, sellerPartyId: string | null) {
 }
 
 /** Received and returned per order line, on receipts not cancelled. */
-async function heldByLine(db: D1Database, orderNumber: string): Promise<Map<number, { received: number; returned: number }>> {
+export async function heldByLine(db: D1Database, orderNumber: string): Promise<Map<number, { received: number; returned: number }>> {
   const rows = (
     await db
       .prepare(
@@ -692,6 +692,56 @@ export async function handleListGoodsReceipts(
  * whose supplier is Receipting required, or that have any receipt; not
  * closed ones. Credit expected is counted among orders with returns.
  */
+/**
+ * **Each order's receipt state, in SQL — decision 0646.** The same rule
+ * as `lineState`/`orderState`, for a list that must filter and page in
+ * the database: Purchase Orders' Receipt column and filter, and the
+ * chart's counts. A derived table to `LEFT JOIN … rs ON rs.order_number
+ * = po.order_number`: only orders that matter for receipting have a
+ * row — those whose supplier is Receipting required, or that have any
+ * receipt. `tolerancePct` is the organisation's, used where the
+ * supplier has none; a number, so written in rather than bound.
+ */
+export function receiptStateJoin(tolerancePct: number, alias = "rs"): string {
+  const tol = Number.isFinite(tolerancePct) ? Number(tolerancePct) : 0;
+  const supplier = (col: string) =>
+    `(SELECT s.${col} FROM suppliers s WHERE s.vat_id = o.seller_party_id ORDER BY s.status = 'active' DESC, s.name LIMIT 1)`;
+  return `LEFT JOIN (
+    SELECT x.order_number,
+           CASE WHEN MAX(x.st) = 0 THEN 'not_received'
+                WHEN MAX(x.st) = 3 THEN 'over_received'
+                WHEN MIN(x.st) = 2 THEN 'fully_received'
+                ELSE 'partially_received' END AS state
+    FROM (
+      SELECT o.order_number,
+             CASE WHEN n.net IS NULL OR n.net <= 1e-9 THEN 0
+                  WHEN l.quantity IS NULL OR l.quantity <= 0 THEN 2
+                  WHEN n.net > l.quantity * (1 + COALESCE(${supplier("quantity_tolerance_pct")}, ${tol}) / 100.0) + 1e-9 THEN 3
+                  WHEN n.net >= l.quantity * (1 - COALESCE(${supplier("quantity_tolerance_pct")}, ${tol}) / 100.0) - 1e-9 THEN 2
+                  ELSE 1 END AS st
+      FROM purchase_orders o
+      JOIN purchase_order_lines l ON l.purchase_order_id = o.id
+      LEFT JOIN (
+        SELECT gl.order_number, gl.order_line_number,
+               SUM(CASE gl.movement WHEN 'received' THEN gl.quantity ELSE -gl.quantity END) AS net
+        FROM goods_receipt_lines gl JOIN goods_receipts gr ON gr.id = gl.receipt_id
+        WHERE gr.cancelled_at IS NULL
+        GROUP BY gl.order_number, gl.order_line_number
+      ) n ON n.order_number = o.order_number AND n.order_line_number = l.line_number
+      WHERE ${supplier("match_option")} = 'three_way'
+         OR EXISTS (SELECT 1 FROM goods_receipt_lines e WHERE e.order_number = o.order_number)
+    ) x
+    GROUP BY x.order_number
+  ) ${alias} ON ${alias}.order_number = po.order_number`;
+}
+
+export const RECEIPT_STATES: LineState[] = ["not_received", "partially_received", "fully_received", "over_received"];
+
+/**
+ * How many orders stand where — the chart. The orders counted are those
+ * whose supplier is Receipting required, or that have any receipt; not
+ * closed ones. Credit expected is counted among orders with returns.
+ */
 export async function handleGoodsReceiptStatusCounts(db: D1Database, userId: string, org: string | null): Promise<RouteResult> {
   const scope = await scopedToChosenOrg(db, await receiptViewScope(db, userId), org);
   const inScope = unitClause({ units: scope }, "po.org_unit_id");
@@ -699,32 +749,20 @@ export async function handleGoodsReceiptStatusCounts(db: D1Database, userId: str
   const rows = (
     await db
       .prepare(
-        `SELECT po.order_number, pl.line_number, pl.quantity AS ordered,
-                COALESCE(s.quantity_tolerance_pct, ?) AS tol,
-                COALESCE((SELECT SUM(CASE l.movement WHEN 'received' THEN l.quantity ELSE -l.quantity END)
-                          FROM goods_receipt_lines l JOIN goods_receipts r ON r.id = l.receipt_id
-                          WHERE r.cancelled_at IS NULL AND l.order_number = po.order_number AND l.order_line_number = pl.line_number), 0) AS net,
+        `SELECT po.order_number, rs.state,
                 EXISTS (SELECT 1 FROM goods_receipt_lines rl JOIN goods_receipts rr ON rr.id = rl.receipt_id
                         WHERE rr.cancelled_at IS NULL AND rl.order_number = po.order_number AND rl.movement = 'returned') AS has_returns
          FROM purchase_orders po
-         JOIN purchase_order_lines pl ON pl.purchase_order_id = po.id
-         LEFT JOIN suppliers s ON s.id = (SELECT id FROM suppliers WHERE vat_id = po.seller_party_id ORDER BY status = 'active' DESC, name LIMIT 1)
-         WHERE po.status <> 'closed' ${inScope.sql}
-           AND (s.match_option = 'three_way' OR EXISTS (SELECT 1 FROM goods_receipt_lines gl WHERE gl.order_number = po.order_number))`
+         ${receiptStateJoin(config.quantityTolerancePct ?? 0)}
+         WHERE po.status <> 'closed' AND rs.state IS NOT NULL ${inScope.sql}`
       )
-      .bind(config.quantityTolerancePct ?? 0, ...inScope.binds)
-      .all<{ order_number: string; line_number: number; ordered: number | null; tol: number; net: number; has_returns: number }>()
+      .bind(...inScope.binds)
+      .all<{ order_number: string; state: LineState; has_returns: number }>()
   ).results;
-  const byOrder = new Map<string, { states: LineState[]; returns: boolean }>();
-  for (const r of rows) {
-    const o = byOrder.get(r.order_number) ?? { states: [], returns: r.has_returns === 1 };
-    o.states.push(lineState(r.ordered, r.net, r.tol));
-    byOrder.set(r.order_number, o);
-  }
   const counts: Record<LineState, number> & { credit_expected: number } = { not_received: 0, partially_received: 0, fully_received: 0, over_received: 0, credit_expected: 0 };
-  for (const [orderNumber, o] of byOrder) {
-    counts[orderState(o.states)]++;
-    if (o.returns && (await orderFigures(db, orderNumber))?.creditExpected) counts.credit_expected++;
+  for (const r of rows) {
+    counts[r.state]++;
+    if (r.has_returns === 1 && (await orderFigures(db, r.order_number))?.creditExpected) counts.credit_expected++;
   }
   return { status: 200, body: { counts } };
 }

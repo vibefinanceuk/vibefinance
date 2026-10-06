@@ -4,6 +4,7 @@ import { actionLink } from "/viewer.js";
 import { icon } from "/icons.js";
 import { currentOrgId } from "/orgs.js";
 import { donutChart } from "/charts.js";
+import { statePill, figuresTable } from "/goods-receipts.js";
 
 /**
  * Loading, and now browsing, purchase orders — decisions 0371 and 0372.
@@ -44,6 +45,8 @@ let total = 0;
  */
 let statusCounts = null;
 let statusFilter = null;
+// Decision 0646: the receipt state filter.
+let receiptFilter = "";
 
 const PAGE_SIZES = [25, 50, 100, 200];
 
@@ -80,6 +83,7 @@ async function load() {
     params.set("page", String(page));
     params.set("pageSize", String(pageSize));
     if (statusFilter) params.set("status", statusFilter);
+    if (receiptFilter) params.set("receipt", receiptFilter);
     const response = await fetch(`/api/purchase-orders?${params}`);
     if (!response.ok) return false;
     const body = await response.json();
@@ -139,6 +143,26 @@ function outcome(result) {
   lines.push(
     el("div", { class: "muted", text: t("purchaseorders.linesloaded").replace("{n}", String(result.linesLoaded)) })
   );
+
+  /**
+   * **Change orders meeting goods already received — decision 0646.**
+   * Loaded, as the ERP said, but a person needs to look.
+   */
+  if (result.receiptWarnings?.length > 0) {
+    lines.push(el("h3", { text: t("purchaseorders.receiptwarnheading") }));
+    for (const w of result.receiptWarnings.slice(0, 20)) {
+      lines.push(
+        el("div", {
+          class: "warn",
+          text: t(`purchaseorders.receiptwarn.${w.kind}`)
+            .replace("{order}", w.orderNumber)
+            .replace("{line}", String(w.line))
+            .replace("{net}", String(w.net))
+            .replace("{ordered}", String(w.ordered ?? "")),
+        })
+      );
+    }
+  }
 
   if (result.refused?.length > 0) {
     // Order numbers, because that is what a person can act on in a
@@ -551,16 +575,61 @@ async function openPurchaseOrder(summary) {
   }
 
   backdrop.replaceChildren(
-    el("div", { class: "popout wide" }, [
-      el("div", { class: "cardhead" }, [
-        el("h3", { text: order.order_number }),
-        el("div", { class: "statebuttons" }, [...stateButtons, actionLink("close", { onclick: close })]),
-      ]),
-      order.status === "on_hold" ? el("div", { class: "warn", text: `${t("purchaseorders.hold")}: ${order.hold_reason}` }) : null,
-      header,
-      linesTable,
+    el(
+      "div",
+      { class: "popout wide" },
+      [
+        el("div", { class: "cardhead" }, [
+          el("h3", { text: order.order_number }),
+          el("div", { class: "statebuttons" }, [...stateButtons, actionLink("close", { onclick: close })]),
+        ]),
+        order.status === "on_hold" ? el("div", { class: "warn", text: `${t("purchaseorders.hold")}: ${order.hold_reason}` }) : null,
+        header,
+        linesTable,
+        await receiptsSection(order.order_number),
+      ].filter(Boolean)
+    )
+  );
+}
+
+/**
+ * **What arrived and what went back — decision 0646.** The order's
+ * receipt picture from the Goods Receipts register (0644): each line's
+ * figures and state, and every receipt and return behind them. Left out
+ * when it cannot be read; said plainly when nothing has been received.
+ */
+async function receiptsSection(orderNumber) {
+  let body;
+  try {
+    const response = await fetch(`/api/goods-receipts/order/${encodeURIComponent(orderNumber)}`);
+    if (!response.ok) return null;
+    body = await response.json();
+  } catch {
+    return null;
+  }
+  const { order, movements } = body;
+  const concerned = order.receiptingRequired || movements.length > 0;
+  if (!concerned) return null;
+  const history = movements.map((m) =>
+    el("div", { class: m.cancelled ? "pomovement muted cancelled" : "pomovement" }, [
+      el("span", {
+        text: t("purchaseorders.receipts.movement")
+          .replace("{date}", m.receiptDate)
+          .replace("{number}", m.receiptNumber)
+          .replace("{kind}", t(`receipts.movement.${m.movement}`))
+          .replace("{qty}", String(m.quantity))
+          .replace("{line}", String(m.orderLine)),
+      }),
+      m.returnReason ? el("span", { class: "muted", text: ` · ${m.returnReason}` }) : "",
+      m.createdBy ? el("span", { class: "muted", text: ` · ${t("purchaseorders.receipts.by").replace("{who}", m.createdBy)}` }) : "",
+      m.cancelled ? el("span", { class: "muted", text: ` · ${t("receipts.cancelled")}` }) : "",
     ])
   );
+  return el("div", { id: "po-receipts" }, [
+    el("div", { class: "cardhead" }, [el("h4", { text: t("purchaseorders.receipts") }), statePill(order.state)]),
+    figuresTable(order),
+    movements.length > 0 ? el("div", { class: "pomovements" }, history) : el("p", { class: "muted", text: t("purchaseorders.receipts.none") }),
+  ]);
 }
 
 /**
@@ -628,8 +697,24 @@ function searchAndPaginationRow() {
   const rangeStart = total === 0 ? 0 : (page - 1) * pageSize + 1;
   const rangeEnd = Math.min(page * pageSize, total);
 
+  // Decision 0646: filter by receipt state.
+  const receiptPicker = el(
+    "select",
+    { id: "poreceipt", "aria-label": t("purchaseorders.receipt") },
+    ["", "not_received", "partially_received", "fully_received", "over_received"].map((k) =>
+      el("option", { value: k, text: k ? t(`receipts.state.${k}`) : t("purchaseorders.receiptall") })
+    )
+  );
+  receiptPicker.value = receiptFilter;
+  receiptPicker.onchange = async () => {
+    receiptFilter = receiptPicker.value;
+    page = 1;
+    await reload("poreceipt");
+  };
+
   return el("div", { class: "searchrow" }, [
     search,
+    receiptPicker,
     el("label", { class: "sm muted", text: t("purchaseorders.rows") }),
     sizePicker,
     navButton("chevronsleft", t("purchaseorders.firstpage"), atFirst, async () => {
@@ -674,6 +759,8 @@ function purchaseOrderRows() {
       el("td", { text: po.org_unit_name ?? "—" }),
       el("td", { text: formatCurrency(po.payable_amount, po.currency) }),
       el("td", { class: "muted", text: String(po.line_count) }),
+      // Decision 0646: where the order stands for receipting, if it does.
+      el("td", {}, [po.receipt_state ? statePill(po.receipt_state) : el("span", { class: "muted", text: "—" })]),
     ]);
     // The whole row, not a button in it — the same reasoning
     // suppliers.js already gives: a purchase order is one thing, and
@@ -693,6 +780,7 @@ function purchaseOrderRows() {
           el("th", { text: t("purchaseorders.org") }),
           el("th", { text: t("purchaseorders.total") }),
           el("th", { text: t("purchaseorders.lines") }),
+          el("th", { text: t("purchaseorders.receipt") }),
         ]),
       ]),
       el("tbody", {}, rows),
@@ -732,6 +820,7 @@ export async function open() {
   searchTerm = "";
   page = 1;
   statusFilter = null;
+  receiptFilter = "";
   // render() first, always — decision 0372's own finding: calling
   // note() before the screen has ever rendered writes to an element
   // (#purchaseorders-note) that does not exist yet, and the message

@@ -1,5 +1,6 @@
 import type { RouteResult } from "./org-route.js";
-import { poShareSql } from "./po-matching.js";
+import { getOrgMatchingConfig, poShareSql } from "./po-matching.js";
+import { heldByLine, receiptStateJoin, RECEIPT_STATES } from "./goods-receipts.js";
 import { parseUblOrder, UblOrderParseError, type ParsedOrder } from "@vibefinance/shared";
 import { parseCsv } from "./load-suppliers.js";
 import { matchLegalEntity } from "./derive-org.js";
@@ -24,6 +25,24 @@ export interface StoredOrderResult {
   orderNumber: string;
   lines: number;
   replaced: boolean;
+  /** Decision 0646: what a change order did to lines that already have receipts. */
+  receiptWarnings: ReceiptWarning[];
+}
+
+/**
+ * **A change order meeting goods already received — decision 0646.**
+ * Receipts survive a PO being loaded again (they name the order and
+ * line number, 0644), but two cases need a person to look: a line with
+ * receipts that the new order no longer has, and a line now ordering
+ * less than has been received (it becomes over-received). Said in the
+ * load's result rather than refused: the ERP is the system of truth.
+ */
+export interface ReceiptWarning {
+  orderNumber: string;
+  line: number;
+  kind: "line_removed" | "below_received";
+  net: number;
+  ordered?: number;
 }
 
 /**
@@ -117,6 +136,21 @@ async function storeOrder(
   // exists only while genuinely on hold.
   const holdReason = status === "on_hold" ? rawHoldReason : null;
 
+  const receiptWarnings: ReceiptWarning[] = [];
+  if (existing) {
+    const held = await heldByLine(db, parsed.orderNumber);
+    for (const [line, h] of held) {
+      const net = Math.round((h.received - h.returned) * 1e6) / 1e6;
+      const now = parsed.lines.find((l) => l.lineNumber === line);
+      if (!now) {
+        if (h.received > 0) receiptWarnings.push({ orderNumber: parsed.orderNumber, line, kind: "line_removed", net });
+      } else if (now.quantity !== undefined && net > now.quantity + 1e-9) {
+        receiptWarnings.push({ orderNumber: parsed.orderNumber, line, kind: "below_received", net, ordered: now.quantity });
+      }
+    }
+    receiptWarnings.sort((a, b) => a.line - b.line);
+  }
+
   if (existing) {
     // Replaced, not appended. An order number is unique by construction
     // (migration 0034), and a buyer re-sending an order means a revised
@@ -181,7 +215,7 @@ async function storeOrder(
     );
   }
 
-  return { id, orderNumber: parsed.orderNumber, lines: parsed.lines.length, replaced: existing !== null };
+  return { id, orderNumber: parsed.orderNumber, lines: parsed.lines.length, replaced: existing !== null, receiptWarnings };
 }
 
 export async function handleIngestPurchaseOrder(db: D1Database, xml: string): Promise<RouteResult> {
@@ -438,6 +472,8 @@ export interface PurchaseOrderCsvLoadResult {
    * load rather than discover it one invoice at a time.
    */
   refused: { orderNumber: string; reason: string }[];
+  /** Decision 0646: change orders that met goods already received. */
+  receiptWarnings: ReceiptWarning[];
 }
 
 /**
@@ -509,6 +545,7 @@ export async function handleLoadPurchaseOrdersCsv(db: D1Database, csv: string): 
   let ordersLoaded = 0;
   let ordersReplaced = 0;
   let linesLoaded = 0;
+  const receiptWarnings: ReceiptWarning[] = [];
 
   for (const orderNumber of rowOrder) {
     const groupRows = groups.get(orderNumber)!;
@@ -595,10 +632,11 @@ export async function handleLoadPurchaseOrdersCsv(db: D1Database, csv: string): 
     );
     ordersLoaded++;
     linesLoaded += result.lines;
+    receiptWarnings.push(...result.receiptWarnings);
     if (result.replaced) ordersReplaced++;
   }
 
-  const body: PurchaseOrderCsvLoadResult = { loadId, ordersLoaded, ordersReplaced, linesLoaded, refused };
+  const body: PurchaseOrderCsvLoadResult = { loadId, ordersLoaded, ordersReplaced, linesLoaded, refused, receiptWarnings };
   return { status: 200, body: { ...body } };
 }
 
@@ -853,9 +891,22 @@ export async function handleListPurchaseOrders(
   search: string | null = null,
   pageParam: string | null = null,
   pageSizeParam: string | null = null,
-  statusParam: string | null = null
+  statusParam: string | null = null,
+  receiptParam: string | null = null
 ): Promise<RouteResult> {
   const visible = userId ? await unitsWherePermitted(db, userId, "AP.Validate") : null;
+  /**
+   * **The receipt state — decision 0646.** Each order's, from the same
+   * rule the Goods Receipts screen uses, as a column and a filter. An
+   * order that receipting does not concern has none.
+   */
+  const receiptJoin = receiptStateJoin((await getOrgMatchingConfig(db)).quantityTolerancePct ?? 0);
+  const receipt_ =
+    receiptParam === null || receiptParam === ""
+      ? { sql: "", binds: [] as unknown[] }
+      : (RECEIPT_STATES as string[]).includes(receiptParam)
+        ? { sql: " AND rs.state = ?", binds: [receiptParam] as unknown[] }
+        : { sql: " AND 1 = 0", binds: [] as unknown[] };
   const scopedUnits = await scopedToChosenOrg(db, visible, currentOrg);
   const orgClause = unitClause({ units: scopedUnits }, "po.org_unit_id");
   const search_ = searchClause(search);
@@ -868,9 +919,10 @@ export async function handleListPurchaseOrders(
     .prepare(
       `SELECT count(*) AS n FROM purchase_orders po
        ${INVOICED_AMOUNTS_JOIN}
-       WHERE 1 = 1 ${orgClause.sql} ${search_.sql} ${status_.sql}`
+       ${receiptJoin}
+       WHERE 1 = 1 ${orgClause.sql} ${search_.sql} ${status_.sql} ${receipt_.sql}`
     )
-    .bind(...orgClause.binds, ...search_.binds, ...status_.binds)
+    .bind(...orgClause.binds, ...search_.binds, ...status_.binds, ...receipt_.binds)
     .first<{ n: number }>();
 
   const rows = await db
@@ -879,17 +931,18 @@ export async function handleListPurchaseOrders(
               po.buyer_party_id, po.payable_amount, po.created_at,
               po.org_unit_id, u.name AS org_unit_name, po.status, po.hold_reason,
               (${EFFECTIVE_STATUS_CASE}) AS effective_status,
-              count(pol.id) AS line_count
+              count(pol.id) AS line_count, rs.state AS receipt_state
        FROM purchase_orders po
        LEFT JOIN purchase_order_lines pol ON pol.purchase_order_id = po.id
        LEFT JOIN org_units u ON u.id = po.org_unit_id
        ${INVOICED_AMOUNTS_JOIN}
-       WHERE 1 = 1 ${orgClause.sql} ${search_.sql} ${status_.sql}
+       ${receiptJoin}
+       WHERE 1 = 1 ${orgClause.sql} ${search_.sql} ${status_.sql} ${receipt_.sql}
        GROUP BY po.id
        ORDER BY po.created_at DESC, po.rowid DESC
        LIMIT ? OFFSET ?`
     )
-    .bind(...orgClause.binds, ...search_.binds, ...status_.binds, pageSize, offset)
+    .bind(...orgClause.binds, ...search_.binds, ...status_.binds, ...receipt_.binds, pageSize, offset)
     .all<Record<string, unknown>>();
 
   return {

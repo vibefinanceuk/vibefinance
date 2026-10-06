@@ -5888,7 +5888,9 @@ export default {
         url.searchParams.get("search"),
         url.searchParams.get("page"),
         url.searchParams.get("pageSize"),
-        url.searchParams.get("status")
+        url.searchParams.get("status"),
+        // Decision 0646: the receipt state.
+        url.searchParams.get("receipt")
       );
       return json(result.body, result.status);
     }

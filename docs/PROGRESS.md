@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 6 October 2026 (decision 0645). A living document: what
+Last updated 6 October 2026 (decision 0646). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,13 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Goods receipts, slice 4: on Purchase Orders (0646)
+
+Purchase Orders shows each order's receipt state, filters by it, and
+shows an order's receipts and returns in its pop-out. A change order
+that drops a line with goods received, or orders less than was
+received, still loads but is listed under Receipts to check.
 
 ### Goods receipts, slice 3: the screen (0645)
 

@@ -5297,3 +5297,7 @@
 .receiptscredit { margin-top: 8px; font-size: var(--text-sm); }
 .receiptfigures .qtyinput { width: 7em; text-align: right; }
 .receiptfigures td.num, .receiptfigures th.num, .receiptstable td.num, .receiptstable th.num { text-align: right; font-variant-numeric: tabular-nums; }
+/* Decision 0646: a purchase order's receipts and returns. */
+#po-receipts { margin-top: 14px; }
+.pomovements { display: flex; flex-direction: column; gap: 4px; margin-top: 10px; font-size: var(--text-sm); }
+.pomovement.cancelled span:first-child { text-decoration: line-through; }

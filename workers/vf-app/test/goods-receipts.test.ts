@@ -1,7 +1,7 @@
 import { env, SELF } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
 import { applyTestSchema } from "./setup.js";
-import { handleLoadPurchaseOrdersCsv } from "../src/purchase-order-route.js";
+import { handleIngestPurchaseOrder, handleListPurchaseOrders, handleLoadPurchaseOrdersCsv } from "../src/purchase-order-route.js";
 import {
   handleCancelGoodsReceipt,
   handleCreateGoodsReceipt,
@@ -226,6 +226,54 @@ PO-4501,GB907856452,GB111,2,35,EA,Bubble wrap roll`
       [3, false, "over_received"],
     ]);
     expect(f.state).toBe("partially_received");
+  });
+});
+
+describe("on the Purchase Orders screen — decision 0646", () => {
+  it("gives each order its receipt state, filters by it, and leaves orders receipting does not concern without one", async () => {
+    await receive([{ orderNumber: "PO-4501", orderLine: 2, quantity: 40 }]);
+    const list = async (receipt: string | null) =>
+      ((await handleListPurchaseOrders(env.DB, null, undefined, null, null, null, null, receipt)).body as { purchaseOrders: { order_number: string; receipt_state: string | null }[]; total: number });
+    const all = await list(null);
+    expect(Object.fromEntries(all.purchaseOrders.map((p) => [p.order_number, p.receipt_state]))).toEqual({ "PO-4501": "partially_received", "PO-7000": null });
+    expect((await list("partially_received")).purchaseOrders.map((p) => p.order_number)).toEqual(["PO-4501"]);
+    expect((await list("fully_received")).total).toBe(0);
+    expect((await list("nonsense")).total).toBe(0);
+
+    // Fully received with the supplier's tolerance: 48 of 50 within 5%.
+    await env.DB.prepare("UPDATE suppliers SET quantity_tolerance_pct = 5").run();
+    await receive([{ orderNumber: "PO-4501", orderLine: 1, quantity: 200 }, { orderNumber: "PO-4501", orderLine: 2, quantity: 8 }, { orderNumber: "PO-4501", orderLine: 3, quantity: 120 }], "GR-1009");
+    expect((await list("fully_received")).purchaseOrders.map((p) => p.order_number)).toEqual(["PO-4501"]);
+  });
+
+  it("says when a change order meets goods already received, by CSV and by Peppol order", async () => {
+    await receive([
+      { orderNumber: "PO-4501", orderLine: 2, quantity: 40 },
+      { orderNumber: "PO-4501", orderLine: 3, quantity: 10 },
+    ]);
+    const csv = await handleLoadPurchaseOrdersCsv(
+      env.DB,
+      `order_number,buyer_party_id,seller_party_id,line_number,quantity,unit_code,item_name
+PO-4501,GB907856452,GB111,1,200,EA,Shipping carton
+PO-4501,GB907856452,GB111,2,30,EA,Bubble wrap roll`
+    );
+    expect((csv.body as { receiptWarnings: unknown[] }).receiptWarnings).toEqual([
+      { orderNumber: "PO-4501", line: 2, kind: "below_received", net: 40, ordered: 30 },
+      { orderNumber: "PO-4501", line: 3, kind: "line_removed", net: 10 },
+    ]);
+    // A first load of an order has nothing to warn about.
+    expect((await handleLoadPurchaseOrdersCsv(env.DB, "order_number,buyer_party_id,line_number,quantity,item_name\nPO-NEW,GB907856452,1,5,Thing")).body).toMatchObject({ receiptWarnings: [] });
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<Order xmlns="urn:oasis:names:specification:ubl:schema:xsd:Order-2" xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2" xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">
+  <cbc:ID>PO-4501</cbc:ID><cbc:IssueDate>2026-07-15</cbc:IssueDate>
+  <cac:BuyerCustomerParty><cac:Party><cac:PartyIdentification><cbc:ID>GB907856452</cbc:ID></cac:PartyIdentification></cac:Party></cac:BuyerCustomerParty>
+  <cac:OrderLine><cac:LineItem><cbc:ID>1</cbc:ID><cbc:Quantity unitCode="EA">200</cbc:Quantity><cac:Item><cbc:Name>Shipping carton</cbc:Name></cac:Item></cac:LineItem></cac:OrderLine>
+</Order>`;
+    const ingested = await handleIngestPurchaseOrder(env.DB, xml);
+    expect((ingested.body as { receiptWarnings: { line: number; kind: string }[] }).receiptWarnings.map((w) => [w.line, w.kind])).toEqual([
+      [2, "line_removed"],
+      [3, "line_removed"],
+    ]);
   });
 });
 
