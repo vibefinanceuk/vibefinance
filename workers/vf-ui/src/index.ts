@@ -214,6 +214,11 @@ const PROXIED_TO_INSTANCE: RegExp[] = [
   /^\/goods-return-reasons$/,
   /^\/admin\/goods-return-reasons$/,
   /^\/admin\/goods-return-reasons\/[^/]+$/,
+  // Decision 0644: the goods receipt register.
+  /^\/goods-receipts$/,
+  /^\/goods-receipts\/(status-counts|csv-format|csv-load)$/,
+  /^\/goods-receipts\/order\/[^/]+$/,
+  /^\/goods-receipts\/[^/]+(\/cancel)?$/,
   /^\/admin\/ap-team-email$/,
   // What the Validation viewer needs (decision 0106): the keyed values,
   // and a short-lived signed URL for the retained original.

@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 5 October 2026 (decision 0643). A living document: what
+Last updated 6 October 2026 (decision 0644). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,14 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Goods receipts, slice 2: the register (0644)
+
+What arrived and what went back, against purchase order lines: receipts
+and returns recorded on screen or loaded by CSV (safe to load twice),
+each line's received, returned, outstanding and invoiced figures and
+state, credit expected after a return, and cancelling rather than
+deleting. Routes only; the screen follows.
 
 ### Goods receipts, slice 1 (0643)
 

@@ -283,6 +283,16 @@ import {
   handleUpdateReturnReason,
 } from "./return-reasons-route.js";
 import {
+  handleCancelGoodsReceipt,
+  handleCreateGoodsReceipt,
+  handleGetGoodsReceipt,
+  handleGetGoodsReceiptCsvFormat,
+  handleGetOrderReceipts,
+  handleGoodsReceiptStatusCounts,
+  handleListGoodsReceipts,
+  handleLoadGoodsReceiptsCsv,
+} from "./goods-receipts.js";
+import {
   handleGetApTeamEmail,
   handleSetApTeamEmail,
   handleGetApTeamEmailAvailability,
@@ -5745,6 +5755,83 @@ export default {
       return json(result.body, result.status);
     }
 
+
+    /**
+     * **Goods receipts — decision 0644.** AP.Receive records and
+     * cancels; AP.Receive or AP.Validate sees (Dan: clerks read-only).
+     * Each handler scopes to the units where the permission is held.
+     * The fixed paths are matched before `/goods-receipts/:id`.
+     */
+    if (pathname === "/goods-receipts" || pathname.startsWith("/goods-receipts/")) {
+      const { db } = resolveTenant(request, env);
+      const forbidden = (status: 401 | 403) => json({ error: t(status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, status);
+      const view = () => requireAnyPermission(db, request, ["AP.Receive", "AP.Validate"], sessionContext(env));
+      const record = () => requirePermission(db, request, "AP.Receive", sessionContext(env));
+      const readJson = async (): Promise<Record<string, unknown> | null> => {
+        try {
+          return ((await request.json()) ?? {}) as Record<string, unknown>;
+        } catch {
+          return null;
+        }
+      };
+      const orderMatch = pathname.match(/^\/goods-receipts\/order\/([^/]+)$/);
+      const cancelMatch = pathname.match(/^\/goods-receipts\/([^/]+)\/cancel$/);
+      const oneMatch = pathname.match(/^\/goods-receipts\/([^/]+)$/);
+
+      if (pathname === "/goods-receipts" && request.method === "GET") {
+        const auth = await view();
+        if (!auth.authorized) return forbidden(auth.status);
+        const p = url.searchParams;
+        const result = await handleListGoodsReceipts(db, auth.user.id, { org: p.get("org"), search: p.get("search"), page: p.get("page"), pageSize: p.get("pageSize"), kind: p.get("kind") });
+        return json(result.body, result.status);
+      }
+      if (pathname === "/goods-receipts" && request.method === "POST") {
+        const auth = await record();
+        if (!auth.authorized) return forbidden(auth.status);
+        const body = await readJson();
+        if (!body) return json({ error: t("invalidJsonBody", resolveLocale(env.LOCALE)) }, 400);
+        const result = await handleCreateGoodsReceipt(db, auth.user.id, body);
+        return json(result.body, result.status);
+      }
+      if (pathname === "/goods-receipts/status-counts" && request.method === "GET") {
+        const auth = await view();
+        if (!auth.authorized) return forbidden(auth.status);
+        const result = await handleGoodsReceiptStatusCounts(db, auth.user.id, url.searchParams.get("org"));
+        return json(result.body, result.status);
+      }
+      if (pathname === "/goods-receipts/csv-format" && request.method === "GET") {
+        const auth = await record();
+        if (!auth.authorized) return forbidden(auth.status);
+        const result = await handleGetGoodsReceiptCsvFormat();
+        return json(result.body, result.status);
+      }
+      if (pathname === "/goods-receipts/csv-load" && request.method === "POST") {
+        const auth = await record();
+        if (!auth.authorized) return forbidden(auth.status);
+        const result = await handleLoadGoodsReceiptsCsv(db, auth.user.id, await request.text());
+        return json(result.body, result.status);
+      }
+      if (orderMatch && request.method === "GET") {
+        const auth = await view();
+        if (!auth.authorized) return forbidden(auth.status);
+        const result = await handleGetOrderReceipts(db, auth.user.id, decodeURIComponent(orderMatch[1]));
+        return json(result.body, result.status);
+      }
+      if (cancelMatch && request.method === "POST") {
+        const auth = await record();
+        if (!auth.authorized) return forbidden(auth.status);
+        const body = await readJson();
+        if (!body) return json({ error: t("invalidJsonBody", resolveLocale(env.LOCALE)) }, 400);
+        const result = await handleCancelGoodsReceipt(db, auth.user.id, decodeURIComponent(cancelMatch[1]), body);
+        return json(result.body, result.status);
+      }
+      if (oneMatch && request.method === "GET") {
+        const auth = await view();
+        if (!auth.authorized) return forbidden(auth.status);
+        const result = await handleGetGoodsReceipt(db, auth.user.id, decodeURIComponent(oneMatch[1]));
+        return json(result.body, result.status);
+      }
+    }
 
     // Purchase orders (decision 0081) — reference data, not documents
     // for processing. Admin.Configure rather than an AP permission:
