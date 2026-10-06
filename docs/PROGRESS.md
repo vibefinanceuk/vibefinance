@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 6 October 2026 (decision 0648). A living document: what
+Last updated 6 October 2026 (decision 0649). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,13 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Receipt facts at intake (0649)
+
+Reported live: an invoice for a partly receipted order did not stop at
+Matching. At intake the supplier was matched after the PO facts, so
+Receipting required was not known on the first visit; the receipt facts
+are now worked out again once it is.
 
 ### Three-way matching: the re-check (0648)
 

@@ -591,6 +591,28 @@ export async function receiptingRequired(db: D1Database, invoiceId: string | und
 }
 
 /**
+ * **The receipt facts once the supplier is known — decision 0649.** At
+ * intake the PO facts are merged before the supplier is matched (the
+ * enricher runs after), so the first pass cannot know the supplier is
+ * Receipting required and leaves the receipt facts out. This second
+ * pass, given the enriched header facts (`supplier.matchOption`,
+ * `supplier.quantityTolerancePct`), adds them. Lines are changed in
+ * place; a line that already has them is worked out again, the same way.
+ */
+export async function mergeReceiptFactsForInvoice(
+  db: D1Database,
+  headerFacts: InvoiceFacts,
+  lines: (InvoiceFacts & { lineNumber: number })[],
+  invoiceId: string
+): Promise<void> {
+  const orderNumber = toText(headerFacts["BT-13"]);
+  if (!orderNumber || lines.length === 0) return;
+  const orgConfig = await getOrgMatchingConfig(db);
+  const consumption = await loadPoConsumption(db, orderNumber, invoiceId);
+  await mergeReceiptFacts(db, headerFacts, lines, orderNumber, orgConfig, consumption, invoiceId);
+}
+
+/**
  * **Three-way matching: the receipt facts — decision 0647**, Stage 2 of
  * the Goods Receipts proposal (0643). For an invoice whose supplier is
  * Receipting required, each line that found its PO line gets:

@@ -161,3 +161,46 @@ describe("through cancellation", () => {
     expect(await recheck(done)).toEqual({ closed: [], stillOpen: 0 });
   });
 });
+
+describe("at intake — decision 0649", () => {
+  /**
+   * Reported live: a partly receipted order, an invoice for more, and no
+   * stop at Matching. At intake the PO facts were merged before the
+   * supplier was matched, so the first visit could not know Northwind
+   * is Receipting required. Through the real intake path, with the
+   * supplier known only from the enricher, as the email and route
+   * intake give it.
+   */
+  async function intake(id: string) {
+    const { handleCaptureIntake } = await import("../src/intake-capture-route.js");
+    const { handleCreateIntakeChannel } = await import("../src/intake-channel-route.js");
+    await env.DB.prepare("UPDATE rule_versions SET effective_from = '2026-01-01' WHERE rule_id = 'r-await'").run();
+    await handleCreateProcess(env.DB, { id: "p2", name: "AP intake" });
+    await handleCreateStage(env.DB, "p2", { id: "p2-match", name: "Matching", sequence: 1, ruleSetId: "rs-match", evaluationScope: "line" });
+    await handleCreateStage(env.DB, "p2", { id: "p2-done", name: "Payment-eligible", sequence: 2 });
+    await handleCreateIntakeChannel(env.DB, "p2", { id: "ch2", name: "Email" });
+    return handleCaptureIntake(env.DB, "ch2", {
+      id,
+      facts: { "BT-1": id, "BT-13": "PO-300", "BT-112": 400 },
+      lines: [{ lineNumber: 1, "BT-132": "1", "BT-129": 40, "BT-130": "EA", "BT-131": 400, "BT-146": 10 }],
+      // The supplier, matched by the enricher after the PO facts.
+      enrichFacts: async () => ({ "supplier.matched": true, "supplier.awaitingErp": false, "supplier.matchOption": "three_way" }),
+    } as never);
+  }
+
+  it("stops a Receipting required supplier's invoice at Matching on its first visit when too little is in", async () => {
+    await receive("GR-1", 30);
+    const short = await intake("inv-short");
+    const shortInstance = (short.body as { instanceId: string }).instanceId;
+    const waiting = await env.DB.prepare(
+      "SELECT t.rule_id, t.line_number FROM tasks t JOIN stage_visits v ON v.id = t.stage_visit_id WHERE v.process_instance_id = ? AND t.status = 'open'"
+    )
+      .bind(shortInstance)
+      .all<{ rule_id: string; line_number: number }>();
+    expect(waiting.results).toEqual([{ rule_id: "r-await", line_number: 1 }]);
+    expect(await env.DB.prepare("SELECT current_stage_id, status FROM process_instances WHERE id = ?").bind(shortInstance).first()).toEqual({
+      current_stage_id: "p2-match",
+      status: "in_progress",
+    });
+  });
+});

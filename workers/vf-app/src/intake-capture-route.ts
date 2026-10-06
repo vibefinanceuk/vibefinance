@@ -2,7 +2,7 @@ import type { InvoiceFacts } from "@vibefinance/shared";
 import { formatFacts, readInvoiceXml, UblParseError, type ReadInvoiceXml } from "@vibefinance/shared";
 import type { RouteResult } from "./org-route.js";
 import { handleUpsertInvoice, mergeStructuredInvoiceFacts } from "./invoice-facts-route.js";
-import { mergePoMatchFacts } from "./po-matching.js";
+import { mergePoMatchFacts, mergeReceiptFactsForInvoice } from "./po-matching.js";
 import { mergeCodingValidityForInvoice } from "./coding-validation.js";
 import { handleCreateProcessInstance, visitCurrentStage } from "./workflow-engine.js";
 import { extractEmbeddedInvoiceXml, looksLikePdf, PdfExtractionError } from "./pdf-attachment.js";
@@ -230,6 +230,14 @@ export async function handleCaptureIntake(db: D1Database, channelId: string, bod
   // capture path, most of which have no source at all.
   if (typeof enrichFacts === "function") {
     mergedFacts = { ...mergedFacts, ...(await enrichFacts(mergedFacts)) };
+    /**
+     * **Decision 0649.** The supplier is matched only now, so whether it
+     * is Receipting required (and its quantity tolerance) was not known
+     * when the PO facts were merged above. Without this, an invoice from
+     * such a supplier reached Matching at intake with no receipt facts,
+     * and *Awaiting receipt* could not fire on its first visit.
+     */
+    if (lines) await mergeReceiptFactsForInvoice(db, mergedFacts, lines, id);
   }
   /**
    * **Which source it arrived through is kept — decision 0584.** The
