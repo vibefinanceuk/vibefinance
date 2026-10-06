@@ -168,6 +168,11 @@ function outcomeLine(m) {
       ? t("routemonitor.made.sentone").replace("{number}", m.firstInvoice)
       : t("routemonitor.made.sent").replace("{n}", String(m.invoices));
   }
+  // Decision 0655: goods receipts, and how many wait in the process.
+  if (m.receipts > 0) {
+    const made = t("routemonitor.made.receipts").replace("{n}", String(m.receipts));
+    return m.receiptsWaiting > 0 ? `${made} · ${t("routemonitor.made.receiptswaiting").replace("{n}", String(m.receiptsWaiting))}` : made;
+  }
   if (m.invoices === 1 && m.firstInvoice) return t("routemonitor.made.one").replace("{number}", m.firstInvoice);
   if (m.invoices > 1) return t("routemonitor.made.many").replace("{n}", String(m.invoices));
   return t("routemonitor.made.none");
@@ -506,6 +511,21 @@ function detailPanel() {
             { class: "rmlist" },
             invoices.map((i) =>
               el("li", { text: [i.number ?? i.invoiceId, i.supplierName].filter(Boolean).join(" · ") })
+            )
+          ),
+        ]
+      : []),
+    // Decision 0655: the goods receipts it made, and where each stands.
+    ...(detail.receipts?.length > 0
+      ? [
+          el("h4", { class: "rmh4", text: t("routemonitor.receipts") }),
+          el(
+            "ul",
+            { class: "rmlist", id: "rm-receipts" },
+            detail.receipts.map((r) =>
+              el("li", {
+                text: `${r.number} · ${r.status === "pending" && r.stage ? t("create.gr.status.pending").replace("{n}", r.stage) : t(`receipts.status.${r.status}`)}`,
+              })
             )
           ),
         ]

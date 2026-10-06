@@ -190,7 +190,11 @@ function render(holder, source, data, reload) {
     ]);
   });
   // Decision 0581: the example names no key's start, which looked like a key to paste.
-  const example = `curl -X POST "${data.address}" \\\n  -H "Authorization: Bearer <your key>" \\\n  -H "Content-Type: application/xml" \\\n  -H "X-Filename: Rechnung_88240.xml" \\\n  --data-binary @Rechnung_88240.xml`;
+  const example =
+    data.receives === "receipts"
+      ? // Decision 0655: Receipts in takes JSON, or our receipt CSV as text/csv.
+        `curl -X POST "${data.address}" \\\n  -H "Authorization: Bearer <your key>" \\\n  -H "Content-Type: application/json" \\\n  -H "X-Reference: Delivery 4471" \\\n  -d '{ "receipts": [ { "receiptNumber": "WH-88213", "receiptDate": "2026-10-04",\n        "lines": [ { "orderNumber": "PO-4501", "orderLine": 1, "quantity": 200, "unit": "EA" } ] } ] }'`
+      : `curl -X POST "${data.address}" \\\n  -H "Authorization: Bearer <your key>" \\\n  -H "Content-Type: application/xml" \\\n  -H "X-Filename: Rechnung_88240.xml" \\\n  --data-binary @Rechnung_88240.xml`;
   holder.replaceChildren(
     el("div", { class: "cardhead httpshead" }, [
       el("h4", { text: t("httpsin.heading") }),
@@ -213,7 +217,7 @@ function render(holder, source, data, reload) {
     el("div", { class: "httpsfield" }, [
       el("label", { text: t("httpsin.howto") }),
       el("pre", { class: "httpspre", text: example }),
-      el("div", { class: "muted sm", text: t("httpsin.howtohint") }),
+      el("div", { class: "muted sm", text: t(data.receives === "receipts" ? "receiptsin.howtohint" : "httpsin.howtohint") }),
     ]),
   );
 }

@@ -36,6 +36,9 @@ describe("the standard routes", () => {
       ["edi-in", "source", "standard", false],
       ["email-in", "source", "standard", true],
       ["https-in", "source", "standard", true],
+      // Decision 0655: goods receipts, by HTTPS and by upload.
+      ["receipts-in", "source", "standard", true],
+      ["receipts-file", "source", "standard", true],
       // Decision 0620: SFTP in is live, collecting.
       ["sftp-in", "source", "standard", true],
       ["erp-csv", "destination", "standard", true],

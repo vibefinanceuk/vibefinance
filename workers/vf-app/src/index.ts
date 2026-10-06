@@ -306,6 +306,7 @@ import {
   sendReceiptsThroughProcess,
   warehouseProcess,
 } from "./warehouse-receipts.js";
+import { handleHttpsReceipts, receiptsReport, receiptsSource, receiptsUploadSource, receiveReceipts, RECEIPTS_FILE_ROUTE } from "./receipts-in-route.js";
 import {
   handleGetApTeamEmail,
   handleSetApTeamEmail,
@@ -961,7 +962,8 @@ async function followUpAfterTaskCompletion(
     const touched = await continueReceiptInstance(db, instanceId);
     if (touched.length > 0) {
       const by = await db.prepare("SELECT created_by FROM goods_receipts WHERE id = ?").bind(instanceRow.subject_id).first<{ created_by: string | null }>();
-      if (by?.created_by) await recheckReceiptTasks(db, touched, by.created_by, (id) => followUpAfterTaskCompletion(db, id));
+      // 0655: a receipt a sender's system sent has no person; the re-check then ends tasks as nobody.
+      await recheckReceiptTasks(db, touched, by?.created_by ?? null, (id) => followUpAfterTaskCompletion(db, id));
     }
     return;
   }
@@ -5698,7 +5700,7 @@ export default {
      * became of them. No session and no user key: the source key is the
      * only authority, and it reaches only its own source.
      */
-    const httpsInMatch = pathname.match(/^\/v1\/sources\/([^/]+)\/(invoices|messages\/([^/]+))$/);
+    const httpsInMatch = pathname.match(/^\/v1\/sources\/([^/]+)\/(invoices|receipts|messages\/([^/]+))$/);
     if (httpsInMatch) {
       const { db, documents } = resolveTenant(request, env);
       const sourceId = decodeURIComponent(httpsInMatch[1]);
@@ -5713,8 +5715,25 @@ export default {
         });
         return json(result.body, result.status);
       }
+      /**
+       * **Receipts in — decision 0655.** A warehouse system's goods
+       * receipts, by the same key; what they make goes through the
+       * Warehouse Receipts process, and invoices waiting on goods now
+       * counted are checked again (0648).
+       */
+      if (httpsInMatch[2] === "receipts" && request.method === "POST") {
+        const result = await handleHttpsReceipts(db, key, request, url.origin, { bucket: documents, customerId: env.CUSTOMER_ID });
+        if (result.touched?.length) await recheckReceiptTasks(db, result.touched, null, (id) => followUpAfterTaskCompletion(db, id));
+        return json(result.body, result.status);
+      }
       if (httpsInMatch[3] && request.method === "GET") {
-        const result = await handleHttpsMessageStatus(db, key, decodeURIComponent(httpsInMatch[3]), url.origin);
+        const messageId = decodeURIComponent(httpsInMatch[3]);
+        if (await receiptsSource(db, sourceId)) {
+          const m = await db.prepare("SELECT instance_id FROM route_messages WHERE id = ? AND direction = 'in'").bind(messageId).first<{ instance_id: string | null }>();
+          if (!m || m.instance_id !== sourceId) return json({ error: `there is no message ${messageId} for this source` }, 404);
+          return json(await receiptsReport(db, messageId, `${url.origin}/v1/sources/${encodeURIComponent(sourceId)}/messages/${encodeURIComponent(messageId)}`), 200);
+        }
+        const result = await handleHttpsMessageStatus(db, key, messageId, url.origin);
         return json(result.body, result.status);
       }
       return json({ error: "method not allowed" }, 405);
@@ -5898,7 +5917,42 @@ export default {
         const auth = await record();
         if (!auth.authorized) return forbidden(auth.status);
         const process = await warehouseProcess(db);
-        const loaded = await handleLoadGoodsReceiptsCsv(db, auth.user.id, await request.text(), new Date(), { pending: process !== null });
+        const csvText = await request.text();
+        /**
+         * **One upload is one message of Receipts upload — decision
+         * 0655**, once the process has its upload source: stored first,
+         * from this person, shown in the Route monitor with what it made.
+         */
+        const uploadSource = process ? await receiptsUploadSource(db) : null;
+        if (uploadSource) {
+          const { documents } = resolveTenant(request, env);
+          const name = (url.searchParams.get("name") ?? "receipts.csv").trim().slice(0, 200) || "receipts.csv";
+          const person = auth.user as { id: string; name?: string | null; email?: string | null };
+          const received = await receiveReceipts(db, {
+            sourceId: uploadSource.id,
+            sourceName: uploadSource.name,
+            routeId: RECEIPTS_FILE_ROUTE,
+            counterparty: person.email ? `${person.name ?? person.email} <${person.email}>` : (person.name ?? person.id),
+            subject: `Upload of ${name}`,
+            filename: name,
+            csv: csvText,
+            userId: auth.user.id,
+            event: "upload_opened",
+            bucket: documents,
+            customerId: env.CUSTOMER_ID,
+          });
+          if ("error" in received) return json({ error: received.error }, 500);
+          const failedOutright = received.status === "failed" && !(received.load.receipts?.length);
+          const result = await recheck(
+            {
+              status: failedOutright && (received.load as { reason?: string }).reason ? 400 : 200,
+              body: { ...received.load, messageId: received.messageId, process: received.process ? { ...received.process, sent: received.sent } : null, touched: received.touched },
+            },
+            auth.user.id
+          );
+          return json(result.body, result.status);
+        }
+        const loaded = await handleLoadGoodsReceiptsCsv(db, auth.user.id, csvText, new Date(), { pending: process !== null });
         if (loaded.status >= 300 || !process) return json((await recheck(loaded, auth.user.id)).body, loaded.status);
         const body = loaded.body as { pendingIds: string[]; touched: { orderNumber: string; receiptNumber: string }[] };
         const through = await sendReceiptsThroughProcess(db, body.pendingIds);

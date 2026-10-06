@@ -74,6 +74,7 @@ const STRINGS = {
     "create.gr.status.pending": "Waiting at {n}",
     "create.gr.lineneeds": "Line {line}: {why}",
     "create.gr.sendn": "Send {n} receipts",
+    "create.gr.message": "Route monitor message: {id}",
     "receipts.waiting.line": "Waiting for its PO · days: {days}",
     "receipts.waiting.receipt": "Lines waiting for a PO: {n} · days: {days}",
     "receipts.check.counted": "Counted",
@@ -411,7 +412,7 @@ describe("Create → Goods receipts — decision 0653", () => {
       { receiptId: "d", receiptNumber: "WH-4", receiptDate: null, existing: false, orders: [], lines: 0, attention: [], skipped: 0, refused: 1 },
     ],
   };
-  const LOADED = { ...PREVIEW, dryRun: undefined, receiptsCreated: 2, recheck: { closed: 1, stillOpen: 0 }, process: { ...PREVIEW.process, sent: [{ receiptId: "a", status: "pending", stage: "Matching" }, { receiptId: "b", status: "registered", stage: null }] } };
+  const LOADED = { ...PREVIEW, dryRun: undefined, receiptsCreated: 2, messageId: "MSG-RCPT-0001-0002", recheck: { closed: 1, stillOpen: 0 }, process: { ...PREVIEW.process, sent: [{ receiptId: "a", status: "pending", stage: "Matching" }, { receiptId: "b", status: "registered", stage: null }] } };
 
   async function openCreate(permissions: string[], routes: Record<string, [number, unknown]> = {}) {
     const calls = await openScreen(permissions, { "GET /api/goods-receipts/process": [200, { process: WAREHOUSE }], ...routes });
@@ -465,6 +466,9 @@ describe("Create → Goods receipts — decision 0653", () => {
     ]);
     expect(document.getElementById("create-grresult")!.textContent).toContain("Invoice tasks waiting on these goods that have now closed: 1.");
     expect(document.getElementById("create-gropen-WH-1")).not.toBeNull();
+    // Decision 0655: one upload is one message of Receipts upload, named by the file.
+    expect(document.getElementById("create-grmessage")?.textContent).toBe("Route monitor message: MSG-RCPT-0001-0002");
+    expect(String(globalThis.fetch && (vi.mocked(globalThis.fetch).mock.calls.find((c) => String(c[0]).startsWith("/api/goods-receipts/csv-load"))?.[0]))).toBe("/api/goods-receipts/csv-load?name=wh.csv");
   });
 
   it("keys a receipt with today's form, says what was saved, and has a fresh form ready", async () => {

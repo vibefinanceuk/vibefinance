@@ -46,7 +46,7 @@ export interface ReceiptRecheckResult {
 export async function recheckReceiptTasks(
   db: D1Database,
   touched: { orderNumber: string; receiptNumber: string }[],
-  actorUserId: string,
+  actorUserId: string | null,
   /** Visits the instance's new stage after the last task closed — the same follow-up a person's Complete gets. */
   followUp: (instanceId: string) => Promise<void>,
   now = new Date()

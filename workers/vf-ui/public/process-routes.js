@@ -253,8 +253,10 @@ function sourcePanel(s) {
             : [t("processroutes.noaddress")]
           : [t(`mechanism.${s.mechanism}`)]
       ),
-      el("div", { class: "l", text: t("sources.org") }),
-      el("div", {}, [s.status === "retired" ? el("span", { class: "muted", text: "—" }) : orgPicker(s)]),
+      // Decision 0655: a receipt's unit is its purchase order's, so a receipts source places nothing.
+      ...(data.process?.subjectType === "goods_receipt"
+        ? []
+        : [el("div", { class: "l", text: t("sources.org") }), el("div", {}, [s.status === "retired" ? el("span", { class: "muted", text: "—" }) : orgPicker(s)])]),
       el("div", { class: "l", text: t("processroutes.field.status") }),
       el("div", {}, sourceState(s, true)),
     ]),
@@ -656,7 +658,9 @@ function openAddSource() {
     preview.textContent = slug(nameInput.value);
   };
   const mechanism = el("select", {});
-  for (const value of ["email", "https", "sftp", "file_import", "edi"]) {
+  // Decision 0655: a process that moves goods receipts takes Receipts in, by HTTPS.
+  const receipts = data.process?.subjectType === "goods_receipt";
+  for (const value of receipts ? ["https"] : ["email", "https", "sftp", "file_import", "edi"]) {
     mechanism.append(el("option", { value, text: t(`mechanism.${value}`) }));
   }
   const close = () => backdrop.remove();
@@ -742,7 +746,11 @@ function render() {
         el("div", { class: "cardhead" }, [
           el("h3", { text: data.process.name }),
           receipts
-            ? el("span", { class: "pill", id: "pr-subject", text: t("processroutes.subject.goods_receipt") })
+            ? el("div", { class: "statebuttons" }, [
+                el("span", { class: "pill", id: "pr-subject", text: t("processroutes.subject.goods_receipt") }),
+                // Decision 0655: Receipts in, a warehouse system's source.
+                actionLink("addcard", { label: t("processroutes.addsource"), onclick: openAddSource }),
+              ])
             : el("div", { class: "statebuttons" }, [
                 actionLink("addcard", { label: t("processroutes.addsource"), onclick: openAddSource }),
                 // Decision 0585.

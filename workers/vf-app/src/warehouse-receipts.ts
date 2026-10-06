@@ -2,6 +2,7 @@ import type { RouteResult } from "./org-route.js";
 import { handleCreateProcessInstance, visitCurrentStage } from "./workflow-engine.js";
 import { isWithinScope, unitsWherePermitted } from "./enforce.js";
 import { Checker, type ReceiptStatus } from "./goods-receipts.js";
+import { ensureReceiptsUploadSource } from "./receipts-in-route.js";
 
 /**
  * **The Warehouse Receipts process — decision 0651**, slice 2 of the
@@ -101,6 +102,8 @@ export async function handleSetUpWarehouseProcess(db: D1Database, body: Record<s
     db.prepare("UPDATE processes SET entry_stage_id = ?, exit_stage_id = ? WHERE id = ?").bind(STAGES[0].id, STAGES[2].id, p),
   ]);
   const team = await ensureReceivingTeam(db, typeof body.teamName === "string" && body.teamName.trim() ? body.teamName.trim().slice(0, 60) : "AP Receiving");
+  // 0655: its upload source, so Create's receipt CSV is a message of Receipts upload.
+  await ensureReceiptsUploadSource(db);
   return { status: 201, body: { process: await warehouseProcess(db), created: true, team } };
 }
 

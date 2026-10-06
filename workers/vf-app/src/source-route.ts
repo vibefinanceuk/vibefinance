@@ -89,9 +89,17 @@ export async function handleCreateSource(
   if (!process) {
     return { status: 404, body: { error: `process ${processId} does not exist` } };
   }
-  // Decision 0651: a source brings invoices in, so only an invoice process takes one.
-  if (process.subject_type !== "invoice") {
+  /**
+   * **What a process takes — decisions 0651, 0655.** An invoice process
+   * takes every invoice source. A goods receipt process takes Receipts
+   * in (HTTPS); its upload source is made with it. Any other takes none.
+   */
+  const receipts = process.subject_type === "goods_receipt";
+  if (process.subject_type !== "invoice" && !receipts) {
     return { status: 409, body: { error: `process ${processId} does not take invoices`, reason: "process_not_invoices" } };
+  }
+  if (receipts && body.mechanism !== "https") {
+    return { status: 409, body: { error: `process ${processId} takes goods receipts by HTTPS only`, reason: "receipts_https_only" } };
   }
 
   const { id, name, mechanism } = body;
@@ -133,17 +141,22 @@ export async function handleCreateSource(
     db.prepare("INSERT INTO sources (id, process_id, name, mechanism) VALUES (?, ?, ?, ?)").bind(id, processId, name, mechanism),
     db
       .prepare("INSERT INTO route_instances (id, route_id, process_id, source_id) VALUES (?, ?, ?, ?)")
-      .bind(id, SOURCE_ROUTE_FOR_MECHANISM[mechanism], processId, id),
+      .bind(id, receipts ? "receipts-in" : SOURCE_ROUTE_FOR_MECHANISM[mechanism], processId, id),
     // A process's first source makes it one that receives invoices, and
     // so one with an ERP Destination, as 0107 gave every such process.
-    db
-      .prepare(
-        `INSERT INTO route_instances (id, route_id, process_id, name, status)
-         SELECT ?, 'erp-csv', ?, 'ERP', 'active'
-         WHERE NOT EXISTS (SELECT 1 FROM route_instances i JOIN routes r ON r.id = i.route_id
-                           WHERE i.process_id = ? AND r.direction = 'destination')`
-      )
-      .bind(`erp-${processId}`, processId, processId),
+    // Not a goods receipt process: Complete registers the receipt (0651).
+    ...(receipts
+      ? []
+      : [
+          db
+            .prepare(
+              `INSERT INTO route_instances (id, route_id, process_id, name, status)
+               SELECT ?, 'erp-csv', ?, 'ERP', 'active'
+               WHERE NOT EXISTS (SELECT 1 FROM route_instances i JOIN routes r ON r.id = i.route_id
+                                 WHERE i.process_id = ? AND r.direction = 'destination')`
+            )
+            .bind(`erp-${processId}`, processId, processId),
+        ]),
   ]);
 
   const row = await db.prepare("SELECT * FROM sources WHERE id = ?").bind(id).first<SourceRow>();

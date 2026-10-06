@@ -4,6 +4,8 @@ import destinationStringsSql from "../../vf-licence/migrations/0209_erp_destinat
 import fixStringsSql from "../../vf-licence/migrations/0210_route_fix_and_tell_strings.sql?raw";
 import formatStringsSql from "../../vf-licence/migrations/0211_formats_and_en16931_strings.sql?raw";
 import splitStringsSql from "../../vf-licence/migrations/0225_csv_several_invoices_strings.sql?raw";
+import receiptsInStringsSql from "../../vf-licence/migrations/0297_receipts_in_strings.sql?raw";
+import createReceiptsStringsSql from "../../vf-licence/migrations/0295_create_goods_receipts_strings.sql?raw";
 
 /**
  * The Route monitor — decision 0556. Four counts, the messages with
@@ -16,7 +18,7 @@ import splitStringsSql from "../../vf-licence/migrations/0225_csv_several_invoic
  */
 
 const strings: Record<string, string> = { "action.close": "Close", "action.save": "Save" };
-for (const sql of [stringsSql, destinationStringsSql, fixStringsSql, formatStringsSql, splitStringsSql]) {
+for (const sql of [stringsSql, destinationStringsSql, fixStringsSql, formatStringsSql, splitStringsSql, receiptsInStringsSql, createReceiptsStringsSql]) {
   for (const m of sql.matchAll(/\('([^']+)', 'en', '((?:[^']|'')*)'\)/g)) strings[m[1]] = m[2].replace(/''/g, "'");
 }
 
@@ -572,3 +574,51 @@ describe("the Route monitor opened on one message — decision 0573", () => {
     expect(history[1]).toContain("3 invoices (88250, 88252, 88253)");
   });
 });
+
+describe("goods receipts in the Route monitor — decision 0655", () => {
+  const RECEIPTS_MSG = {
+    ...LIST.messages[1],
+    id: "MSG-RCPT-0001-0002",
+    sourceId: "wh-api",
+    sourceName: "Warehouse API",
+    counterparty: "WMS",
+    subject: "Delivery 4471",
+    attachments: 1,
+    captured: 0,
+    invoices: 0,
+    firstInvoice: null,
+    receipts: 3,
+    receiptsWaiting: 1,
+  };
+
+  it("says what a message made in receipts, and lists them with where each stands", async () => {
+    stub([], { ...LIST, messages: [RECEIPTS_MSG] });
+    const inner = globalThis.fetch as unknown as (url: string, init?: RequestInit) => Promise<Response>;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        if (String(url).split("?")[0] === "/api/route-messages/MSG-RCPT-0001-0002")
+          return {
+            ok: true,
+            json: async () => ({
+              ...DETAIL,
+              message: { ...DETAIL.message, id: RECEIPTS_MSG.id, status: "delivered", failedPart: null, errorCode: null, errorText: null, subject: "Delivery 4471", sourceName: "Warehouse API" },
+              parts: [],
+              events: [],
+              receipts: [
+                { receiptId: "a", number: "WH-1", status: "registered", stage: null },
+                { receiptId: "b", number: "WH-2", status: "pending", stage: "Matching" },
+              ],
+            }),
+          } as Response;
+        return inner(url, init);
+      })
+    );
+    await open();
+    expect(text(".rmtable tbody tr td:nth-child(3) .muted")).toBe("Goods receipts: 3 · waiting: 1");
+    (document.querySelector(".rmtable tbody tr") as HTMLElement).click();
+    await settle();
+    expect([...document.querySelectorAll("#rm-receipts li")].map((li) => li.textContent)).toEqual(["WH-1 · Registered", "WH-2 · Waiting at Matching"]);
+  });
+});
+

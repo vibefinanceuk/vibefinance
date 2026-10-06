@@ -41,6 +41,8 @@ interface ListRow {
   captured: number;
   first_invoice: string | null;
   invoices: number;
+  receipts: number;
+  receipts_waiting: number;
 }
 
 /** The start of the period, as an ISO string: midnight UTC today, less `days`. */
@@ -88,7 +90,10 @@ export async function handleListRouteMessages(
               (SELECT COALESCE(h.invoice_number, i.item_id) FROM route_message_items i
                  LEFT JOIN invoice_headers h ON h.id = i.item_id
                  WHERE i.message_id = m.id ORDER BY i.part_seq LIMIT 1) AS first_invoice,
-              (SELECT count(*) FROM route_message_items i WHERE i.message_id = m.id) AS invoices
+              (SELECT count(*) FROM route_message_items i WHERE i.message_id = m.id) AS invoices,
+              -- Decision 0655: goods receipts it made, and those not yet registered.
+              (SELECT count(*) FROM goods_receipts gr WHERE gr.route_message_id = m.id) AS receipts,
+              (SELECT count(*) FROM goods_receipts gr WHERE gr.route_message_id = m.id AND gr.status = 'pending') AS receipts_waiting
        FROM route_messages m
        LEFT JOIN sources s ON s.id = m.instance_id
        LEFT JOIN route_instances d ON d.id = m.destination_id
@@ -123,7 +128,11 @@ export async function handleListRouteMessages(
     .first<{ received_today: number; delivered_today: number; failed_open: number; waiting: number }>();
 
   const sources = await db
-    .prepare("SELECT id, name, status FROM sources WHERE mechanism = 'email' ORDER BY name")
+    // Decision 0655: and the sources goods receipts arrive by.
+    .prepare(
+      `SELECT s.id, s.name, s.status FROM sources s JOIN processes p ON p.id = s.process_id
+       WHERE s.mechanism = 'email' OR p.subject_type = 'goods_receipt' ORDER BY s.name`
+    )
     .all<{ id: string; name: string; status: string }>();
   // Decision 0558: the Destinations messages go out on, to filter by too.
   const destinations = await db
@@ -167,6 +176,8 @@ export async function handleListRouteMessages(
         captured: r.captured,
         invoices: r.invoices,
         firstInvoice: r.first_invoice,
+        receipts: r.receipts,
+        receiptsWaiting: r.receipts_waiting,
       })),
     },
   };
@@ -315,6 +326,18 @@ export async function handleGetRouteMessage(db: D1Database, id: string): Promise
         number: i.invoice_number,
         supplierName: i.supplier_name,
       })),
+      // Decision 0655: goods receipts it made, each with where it stands.
+      receipts: (
+        await db
+          .prepare(
+            `SELECT r.id, r.receipt_number, r.status,
+                    (SELECT st.name FROM process_instances pi JOIN process_stages st ON st.id = pi.current_stage_id
+                     WHERE pi.subject_type = 'goods_receipt' AND pi.subject_id = r.id AND pi.status = 'in_progress' LIMIT 1) AS stage
+             FROM goods_receipts r WHERE r.route_message_id = ? ORDER BY r.receipt_number`
+          )
+          .bind(id)
+          .all<{ id: string; receipt_number: string; status: string; stage: string | null }>()
+      ).results.map((r) => ({ receiptId: r.id, number: r.receipt_number, status: r.status, stage: r.stage })),
     },
   };
 }

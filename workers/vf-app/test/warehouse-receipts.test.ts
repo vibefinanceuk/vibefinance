@@ -137,7 +137,8 @@ describe("the Warehouse Receipts process — decision 0651", () => {
 
   it("takes no invoice sources and is not offered for uploads", async () => {
     await handleSetUpWarehouseProcess(env.DB, {});
-    expect((await handleCreateSource(env.DB, "warehouse-receipts", { id: "s1", name: "Inbox", mechanism: "email" })).body).toMatchObject({ reason: "process_not_invoices" });
+    // 0655: it takes Receipts in by HTTPS, and nothing else.
+    expect((await handleCreateSource(env.DB, "warehouse-receipts", { id: "s1", name: "Inbox", mechanism: "email" })).body).toMatchObject({ reason: "receipts_https_only" });
     await env.DB.prepare("INSERT INTO sources (id, process_id, name, mechanism, status) VALUES ('up', 'warehouse-receipts', 'Upload', 'file_import', 'active')").run();
     expect(((await handleUploadTargets(env.DB)).body as { targets: unknown[] }).targets).toEqual([]);
   });

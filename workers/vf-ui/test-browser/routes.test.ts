@@ -417,7 +417,13 @@ describe("Process routes — decision 0557", () => {
     await openScreen("/process-routes.js");
     expect(text("#pr-subject")).toBe("Moves goods receipts");
     expect(text("#pr-subject-note")).toBe("Receipts reach this process from Goods Receipts.");
-    expect(document.querySelector(".prpanel .statebuttons")).toBeNull();
+    // Decision 0655: Receipts in, by HTTPS only; no Destination.
+    const add = [...document.querySelectorAll(".prpanel .statebuttons button")].map((b) => b.textContent);
+    expect(add).toEqual([strings["processroutes.addsource"] ?? "processroutes.addsource"]);
+    (document.querySelector(".prpanel .statebuttons button") as HTMLElement).click();
+    await settle();
+    const options = [...document.querySelectorAll(".popout select option")].map((o) => (o as HTMLOptionElement).value);
+    expect(options).toEqual(["https"]);
   });
 });
 
@@ -465,6 +471,16 @@ describe("HTTPS in — decision 0578", () => {
     (document.querySelectorAll(".prcard")[0] as HTMLElement).click();
     await settle();
   }
+
+  it("shows a Receipts in source's receipts address and a JSON example — decision 0655", async () => {
+    stubHttps([], { ...KEYS, address: "https://acme.vibefinance.example/v1/sources/portal/receipts", receives: "receipts" } as typeof KEYS);
+    await openPortal();
+    expect(text("#httpsin-address")).toBe("POST https://acme.vibefinance.example/v1/sources/portal/receipts");
+    const how = text(".httpspre");
+    expect(how).toContain("Content-Type: application/json");
+    expect(how).toContain('"receiptNumber": "WH-88213"');
+    expect(how).not.toContain("X-Filename");
+  });
 
   it("shows an HTTPS source's address, its keys by their start, and how to send", async () => {
     stubHttps([]);

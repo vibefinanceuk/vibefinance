@@ -43,9 +43,14 @@ export async function whyNotReprocess(db: D1Database, m: MessageRow): Promise<st
   if (m.direction !== "in") return "outbound";
   if (m.status !== "failed" && m.status !== "partial" && m.status !== "received") return "not_failed";
   if (!m.instance_id) return "no_original";
-  const source = await db.prepare("SELECT status FROM sources WHERE id = ?").bind(m.instance_id).first<{ status: string }>();
+  const source = await db
+    .prepare("SELECT s.status, p.subject_type FROM sources s JOIN processes p ON p.id = s.process_id WHERE s.id = ?")
+    .bind(m.instance_id)
+    .first<{ status: string; subject_type: string }>();
   if (!source) return "no_original";
   if (source.status === "retired") return "source_retired";
+  // Decision 0655: running again reads invoices. Goods receipts are sent again instead, and what loaded is skipped.
+  if (source.subject_type === "goods_receipt") return "receipts_resend";
   const original = await db
     .prepare("SELECT count(*) AS n FROM route_message_parts WHERE message_id = ?")
     .bind(m.id)

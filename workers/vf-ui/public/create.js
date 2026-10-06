@@ -1077,7 +1077,8 @@ export async function sendReceipts() {
   if (busy || !receiptPreview?.text) return;
   busy = true;
   render();
-  const r = await getJson("/api/goods-receipts/csv-load", { method: "POST", headers: { "Content-Type": "text/csv" }, body: receiptPreview.text });
+  // Decision 0655: the file's name names the upload's message in the Route monitor.
+  const r = await getJson(`/api/goods-receipts/csv-load?name=${encodeURIComponent(receiptPreview.filename)}`, { method: "POST", headers: { "Content-Type": "text/csv" }, body: receiptPreview.text });
   busy = false;
   if (r.ok) {
     receiptResult = r.body;
@@ -1109,6 +1110,7 @@ function receiptResultPanel() {
   return el("div", { class: "panel", id: "create-grresult" }, kids([
     el("div", { class: "cardhead" }, [el("h3", { text: t("create.gr.thisupload") })]),
     el("div", { class: "createmeta", text: t("receipts.loaded").replace("{lines}", String(r.linesLoaded)).replace("{receipts}", String(r.receiptsCreated)) }),
+    r.messageId ? el("div", { class: "createmeta", id: "create-grmessage", text: t("create.gr.message").replace("{id}", r.messageId) }) : null,
     r.linesSkipped > 0 ? el("div", { class: "muted", text: t("receipts.skipped").replace("{n}", String(r.linesSkipped)) }) : null,
     recheck,
     rows.length > 0 ? el("div", { class: "createtablewrap" }, [el("table", { class: "createtable" }, [el("tbody", {}, rows)])]) : null,

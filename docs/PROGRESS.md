@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 6 October 2026 (decision 0654). A living document: what
+Last updated 6 October 2026 (decision 0655). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,15 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Receipts in: goods receipts arrive by a route (0655)
+
+Two standard routes deliver goods receipts to the Warehouse Receipts
+process: Receipts in, where a warehouse system posts JSON or our receipt
+CSV to its source with that source's key, and Receipts upload, which
+Create's receipt CSV now is. Every message is stored first and shows in
+the Route monitor with the receipts it made and how many still wait; the
+sender is told what each receipt became and can ask again later.
 
 ### Receipt lines waiting for their purchase order (0654)
 

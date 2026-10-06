@@ -598,11 +598,13 @@ export interface LoadedReceipt {
 
 export async function handleLoadGoodsReceiptsCsv(
   db: D1Database,
-  userId: string,
+  // 0655: null for a sender's system (Receipts in), which is nobody; then `scope` says what it may reach.
+  userId: string | null,
   csv: string,
   now = new Date(),
   // 0653: `dryRun` checks everything as the load would and writes nothing — Create's preview.
-  options: { pending?: boolean; dryRun?: boolean } = {}
+  // 0655: `routeMessageId`, the message the receipts came in by; `scope`, in place of the person's units.
+  options: { pending?: boolean; dryRun?: boolean; routeMessageId?: string | null; scope?: string[] | null } = {}
 ): Promise<RouteResult> {
   const rows = parseCsv(csv);
   if (rows.length < 2) return { status: 400, body: { error: "the file needs a header row and at least one line", reason: "empty" } };
@@ -610,7 +612,8 @@ export async function handleLoadGoodsReceiptsCsv(
   const missing = RECEIPT_CSV_FIELDS.filter((f) => f.required === "yes" && !cols.includes(f.key)).map((f) => f.key);
   if (missing.length > 0) return { status: 400, body: { error: `the file needs these columns: ${missing.join(", ")}`, reason: "columns_missing", missing } };
 
-  const checker = new Checker(db, await unitsWherePermitted(db, userId, "AP.Receive"));
+  const scope = options.scope !== undefined ? options.scope : userId ? await unitsWherePermitted(db, userId, "AP.Receive") : null;
+  const checker = new Checker(db, scope);
   const at = now.toISOString();
   const refused: { row: number; receiptNumber: string | null; reason: string; message: string }[] = [];
   const warnings: (OverReceipt & { row: number; receiptNumber: string })[] = [];
@@ -709,10 +712,10 @@ export async function handleLoadGoodsReceiptsCsv(
       statements.push(
         db
           .prepare(
-            `INSERT INTO goods_receipts (id, receipt_number, receipt_date, delivery_note, note, source, created_by, created_at, status, registered_at)
-             VALUES (?, ?, ?, ?, NULL, 'csv', ?, ?, ?, ?)`
+            `INSERT INTO goods_receipts (id, receipt_number, receipt_date, delivery_note, note, source, created_by, created_at, status, registered_at, route_message_id)
+             VALUES (?, ?, ?, ?, NULL, 'csv', ?, ?, ?, ?, ?)`
           )
-          .bind(receipt.id, receiptNumber, v.receipt_date, text(v.delivery_note), userId, at, receipt.status, receipt.status === "registered" ? at : null)
+          .bind(receipt.id, receiptNumber, v.receipt_date, text(v.delivery_note), userId, at, receipt.status, receipt.status === "registered" ? at : null, options.routeMessageId ?? null)
       );
     }
     statements.push(lineInsert(db, receipt.id, lineNumber, result.line, at, attention?.reason ?? null));
