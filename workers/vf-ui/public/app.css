@@ -5292,3 +5292,8 @@
 .agentqtried { display: flex; flex-direction: column; gap: 6px; }
 .agentsteps { margin-top: 12px; }
 .agentsteps > summary { cursor: pointer; font-weight: 700; }
+/* Decision 0645: Goods Receipts. */
+.receiptstable td .rmpill, .receiptfigures td .rmpill { margin: 0 4px 2px 0; }
+.receiptscredit { margin-top: 8px; font-size: var(--text-sm); }
+.receiptfigures .qtyinput { width: 7em; text-align: right; }
+.receiptfigures td.num, .receiptfigures th.num, .receiptstable td.num, .receiptstable th.num { text-align: right; font-variant-numeric: tabular-nums; }

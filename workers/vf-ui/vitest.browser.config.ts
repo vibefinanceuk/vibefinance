@@ -150,6 +150,7 @@ export default defineConfig({
       "/agents.js": resolve(__dirname, "public/agents.js"),
       // Absence and cover — decision 0641.
       "/absence.js": resolve(__dirname, "public/absence.js"),
+      "/goods-receipts.js": resolve(__dirname, "public/goods-receipts.js"),
       "/agent-notes.js": resolve(__dirname, "public/agent-notes.js"),
       "/route-library.js": resolve(__dirname, "public/route-library.js"),
       "/outbound-editor.js": resolve(__dirname, "public/outbound-editor.js"),

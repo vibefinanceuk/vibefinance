@@ -735,6 +735,10 @@ async function go(screen) {
   } else if (screen === "suppliers") {
     const { open } = await import("/suppliers.js");
     await open();
+  } else if (screen === "goodsreceipts") {
+    // Goods Receipts — decision 0645.
+    const { open } = await import("/goods-receipts.js");
+    await open();
   } else if (screen === "purchaseorders") {
     const { open } = await import("/purchase-orders.js");
     await open();
@@ -896,6 +900,8 @@ const NAV_PERMISSIONS = {
   create: "AP.Create",
   // Agents — decision 0622: their makers, and administrators who may remove anyone's.
   agents: ["AP.Agents", "Admin.UserManagement"],
+  // Goods Receipts — decision 0645: AP.Receive records, AP.Validate looks (Dan, 0643).
+  goodsreceipts: ["AP.Receive", "AP.Validate"],
   // Absence and cover — decision 0641: anyone who works tasks, and AP Managers for their team.
   absence: ["AP.TaskView", "AP.Manager"],
   /**
@@ -967,6 +973,8 @@ const NAV_GROUPS = [
       // Agents — decision 0622, under Accounts payable.
       ["agents", "agents"],
       ["documents", "documents"],
+      // Goods Receipts — decision 0645, last under Accounts payable.
+      ["goodsreceipts", "goodsreceipts"],
     ],
   },
   {
@@ -1062,7 +1070,8 @@ export function frame(main) {
    * (Tasks, third; Documents, fourth) has.
    */
   // Agents (decision 0622) likewise: between Create (fifth) and Documents (fourth), the first.
-  const FIXED_HUES = new Map([["create", 5], ["agents", 1]]);
+  // Goods Receipts (decision 0645) likewise: between Documents (fourth) and Suppliers (fifth), the second.
+  const FIXED_HUES = new Map([["create", 5], ["agents", 1], ["goodsreceipts", 2]]);
   const HUES = new Map([
     ...NAV_GROUPS.flatMap(({ screens }) => screens)
       .filter(([screen]) => !FIXED_HUES.has(screen))
