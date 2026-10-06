@@ -179,7 +179,24 @@ export async function ruleStillFiresForTask(
   db: D1Database,
   taskId: string
 ): Promise<{ blocked: boolean; ruleName: string | null }> {
-  const notBlocked = { blocked: false, ruleName: null };
+  const check = await checkTaskRule(db, taskId);
+  return check.state === "fires" ? { blocked: true, ruleName: check.ruleName } : { blocked: false, ruleName: null };
+}
+
+/**
+ * **Does the rule that raised this task still fire? — decisions 0487
+ * and 0648.** `fires` or `cleared` when it could be worked out against
+ * the invoice's live facts with the rule version that raised the task;
+ * `unknown` when it could not (no rule, no step, not an invoice). The
+ * Complete guard (0487) treats `unknown` as not blocking; the receipt
+ * re-check (0648) closes a task only on a definite `cleared`.
+ * `compiledJson` lets a caller see which facts the rule reads.
+ */
+export async function checkTaskRule(
+  db: D1Database,
+  taskId: string
+): Promise<{ state: "fires" | "cleared" | "unknown"; ruleName: string | null; compiledJson: string | null }> {
+  const notBlocked = { state: "unknown" as const, ruleName: null, compiledJson: null };
 
   const task = await db
     .prepare("SELECT rule_id, stage_visit_id, line_number FROM tasks WHERE id = ?")
@@ -247,5 +264,5 @@ export async function ruleStillFiresForTask(
   const compiled = JSON.parse(version.compiled_json) as { conditions: RuleNode };
   const stillMatches = evaluateConditions(compiled.conditions, facts);
 
-  return stillMatches ? { blocked: true, ruleName: version.rule_name } : notBlocked;
+  return { state: stillMatches ? "fires" : "cleared", ruleName: version.rule_name, compiledJson: version.compiled_json };
 }

@@ -423,13 +423,44 @@ async function erpExportEvents(db: D1Database, invoiceId: string): Promise<Activ
   ]);
 }
 
+/**
+ * **A task closed because the goods arrived — decision 0648.** The
+ * receipt re-check ends a receipt rule's task that no longer fires as
+ * `cancelled`, with `end_reason` `receipt:<number>` and `ended_by` the
+ * person who recorded the receipt. Derived, as the other ends are.
+ */
+async function receiptClosedEvents(db: D1Database, invoiceId: string): Promise<ActivityItem[]> {
+  const rows = await db
+    .prepare(
+      `SELECT t.ended_at AS at, t.end_reason, t.line_number, u.name AS user_name, r.name AS rule_name
+       FROM tasks t
+       JOIN stage_visits v ON v.id = t.stage_visit_id
+       JOIN process_instances pi ON pi.id = v.process_instance_id
+       LEFT JOIN org_users u ON u.id = t.ended_by
+       LEFT JOIN rules r ON r.id = t.rule_id
+       WHERE pi.subject_type = 'invoice' AND pi.subject_id = ?
+         AND t.status = 'cancelled' AND t.end_reason LIKE 'receipt:%'`
+    )
+    .bind(invoiceId)
+    .all<{ at: string; end_reason: string; line_number: number | null; user_name: string | null; rule_name: string | null }>();
+  return rows.results.map((r) => ({
+    kind: "action_taken",
+    at: r.at,
+    action: "receipt_closed",
+    userName: r.user_name ?? "",
+    receiptNumber: r.end_reason.slice("receipt:".length),
+    ruleName: r.rule_name ?? "",
+    lineNumber: r.line_number,
+  }));
+}
+
 export async function handleGetActivity(db: D1Database, invoiceId: string): Promise<RouteResult> {
   const invoice = await db.prepare("SELECT id FROM invoice_headers WHERE id = ?").bind(invoiceId).first();
   if (!invoice) {
     return { status: 404, body: { error: `document ${invoiceId} does not exist` } };
   }
 
-  const [received, stageCompletions, ruleFirings, comments, taskActions, taskEnded, erpExports, reminders] = await Promise.all([
+  const [received, stageCompletions, ruleFirings, comments, taskActions, taskEnded, erpExports, reminders, receiptClosed] = await Promise.all([
     receivedEvent(db, invoiceId),
     stageCompletedEvents(db, invoiceId),
     ruleFiredEvents(db, invoiceId),
@@ -448,9 +479,10 @@ export async function handleGetActivity(db: D1Database, invoiceId: string): Prom
         targetUserName: r.targetUserName,
       })) as ActivityItem[]
     ),
+    receiptClosedEvents(db, invoiceId),
   ]);
 
-  const items = [...received, ...stageCompletions, ...ruleFirings, ...comments, ...taskActions, ...taskEnded, ...erpExports, ...reminders].sort(
+  const items = [...received, ...stageCompletions, ...ruleFirings, ...comments, ...taskActions, ...taskEnded, ...erpExports, ...reminders, ...receiptClosed].sort(
     (a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0)
   );
 

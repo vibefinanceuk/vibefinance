@@ -116,7 +116,7 @@ function ruleFiredLine(item) {
  * it doubles as the icon lookup key in `itemRow` below.
  */
 /** Actions whose icon is another button's (decision 0553): the export's Download, and Undo's Return. */
-const ACTION_ICONS = { erp_export: "download", erp_export_undone: "return" };
+const ACTION_ICONS = { erp_export: "download", erp_export_undone: "return", receipt_closed: "goodsreceipts" };
 
 function actionTakenLine(item) {
   const who = item.userName;
@@ -158,6 +158,9 @@ function actionTakenLine(item) {
       return t("activity.erpexported").replace("{who}", who);
     case "erp_export_undone":
       return t("activity.erpexportundone").replace("{who}", who);
+    // Decision 0648 — a receipt rule's task closed by itself once the goods arrived.
+    case "receipt_closed":
+      return t("activity.receiptclosed").replace("{rule}", item.ruleName ?? "").replace("{receipt}", item.receiptNumber ?? "").replace("{who}", who);
     default:
       return "";
   }

@@ -5117,6 +5117,32 @@ describe("the document/timeline tabs (decision 0269)", () => {
     expect(icons.every((svg) => svg.innerHTML !== "")).toBe(true);
   });
 
+  it("says when a receipt rule's task closed by itself once the goods arrived (decision 0648)", async () => {
+    const base = BASE_ROUTES["/api/ui-strings"] as { locale: string; strings: Record<string, string> };
+    stubFetch({
+      ...BASE_ROUTES,
+      "/api/ui-strings": {
+        ...base,
+        strings: { ...base.strings, "activity.receiptclosed": "{rule} no longer applies after {receipt}, recorded by {who}. Its task closed by itself." },
+      },
+      "/api/documents/inv-1/activity": {
+        items: [
+          { kind: "action_taken", at: "2026-10-05T10:15:00.000Z", action: "receipt_closed", userName: "Sam", receiptNumber: "GR-1003", ruleName: "Standard rule: Awaiting receipt", lineNumber: 1 },
+        ],
+      },
+    });
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { openViewer } = await import("/viewer.js");
+    await openViewer(TASK, () => {});
+    await new Promise((r) => setTimeout(r, 0));
+    (timelineTabButton() as HTMLButtonElement).click();
+
+    expect(document.body.textContent).toContain("Standard rule: Awaiting receipt no longer applies after GR-1003, recorded by Sam. Its task closed by itself.");
+    const svg = document.querySelector(".activityaction .activityactionicon svg");
+    expect(svg?.innerHTML).not.toBe("");
+  });
+
   it("shows a line pairing, and a cleared one, in words (decision 0532)", async () => {
     stubFetch({
       ...BASE_ROUTES,

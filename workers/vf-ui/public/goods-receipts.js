@@ -163,11 +163,25 @@ function formatReference() {
   ]);
 }
 
+/**
+ * **What the re-check did — decision 0648.** Tasks a receipt rule raised
+ * that closed because the goods are now in, and those still waiting.
+ */
+function recheckLines(result) {
+  const r = result?.recheck;
+  if (!r) return [];
+  return [
+    r.closed > 0 ? el("div", { class: "receiptsrecheck", text: t("receipts.recheck.closed").replace("{n}", String(r.closed)) }) : null,
+    r.stillOpen > 0 ? el("div", { class: "muted", text: t("receipts.recheck.open").replace("{n}", String(r.stillOpen)) }) : null,
+  ].filter(Boolean);
+}
+
 function loadOutcome(result) {
   const parts = [
     el("div", { text: t("receipts.loaded").replace("{lines}", String(result.linesLoaded)).replace("{receipts}", String(result.receiptsCreated)) }),
   ];
   if (result.linesSkipped > 0) parts.push(el("div", { class: "muted", text: t("receipts.skipped").replace("{n}", String(result.linesSkipped)) }));
+  parts.push(...recheckLines(result));
   for (const w of result.warnings ?? []) {
     parts.push(el("div", { class: "warn", text: t("receipts.overrow").replace("{row}", String(w.row)).replace("{order}", w.orderNumber).replace("{line}", String(w.orderLine)).replace("{ordered}", qty(w.ordered)).replace("{held}", qty(w.netAfter)) }));
   }
@@ -374,7 +388,7 @@ async function openReceipt(id) {
                 }
                 close();
                 await refreshAll();
-                note(el("div", { class: "panel", text: t("receipts.cancelled.done").replace("{number}", receipt.receiptNumber) }));
+                note(el("div", { class: "panel" }, [el("div", { text: t("receipts.cancelled.done").replace("{number}", receipt.receiptNumber) }), ...recheckLines(done.body)]));
               },
             })
           );
@@ -508,6 +522,7 @@ export function openRecord(mode = "received") {
     for (const w of r.body.warnings ?? []) {
       done.push(el("div", { class: "warn", text: t("receipts.overline").replace("{order}", w.orderNumber).replace("{line}", String(w.orderLine)).replace("{ordered}", qty(w.ordered)).replace("{held}", qty(w.netAfter)) }));
     }
+    done.push(...recheckLines(r.body));
     note(el("div", { class: "panel", id: "receipts-saved" }, done));
   }
 

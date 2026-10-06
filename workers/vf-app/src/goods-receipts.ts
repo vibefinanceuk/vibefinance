@@ -412,7 +412,9 @@ export async function handleCreateGoodsReceipt(db: D1Database, userId: string, b
       .bind(id, receiptNumber, body.receiptDate as string, text(body.deliveryNote), text(body.note), userId, at),
     ...accepted.map((l, i) => lineInsert(db, id, i + 1, l, at)),
   ]);
-  return { status: 201, body: { id, receiptNumber, lines: accepted.length, warnings } };
+  // Decision 0648: the orders this touched, for the re-check of receipt-rule tasks.
+  const touched = [...new Set(accepted.map((l) => l.orderNumber))].map((orderNumber) => ({ orderNumber, receiptNumber }));
+  return { status: 201, body: { id, receiptNumber, lines: accepted.length, warnings, touched } };
 }
 
 /**
@@ -454,7 +456,8 @@ export async function handleCancelGoodsReceipt(db: D1Database, userId: string, i
     .prepare("UPDATE goods_receipts SET cancelled_at = ?, cancelled_by = ?, cancel_reason = ? WHERE id = ? AND cancelled_at IS NULL")
     .bind(now.toISOString(), userId, reason, id)
     .run();
-  return { status: 200, body: { id, receiptNumber: receipt.receipt_number, cancelled: true } };
+  const touched = [...new Set(lines.map((l) => l.order_number))].map((orderNumber) => ({ orderNumber, receiptNumber: receipt.receipt_number }));
+  return { status: 200, body: { id, receiptNumber: receipt.receipt_number, cancelled: true, touched } };
 }
 
 // ── The CSV ────────────────────────────────────────────────────────────
@@ -509,6 +512,7 @@ export async function handleLoadGoodsReceiptsCsv(db: D1Database, userId: string,
   let receiptsCreated = 0;
   let linesLoaded = 0;
   let linesSkipped = 0;
+  const touched = new Map<string, string>();
 
   for (let i = 1; i < rows.length; i++) {
     const v: Record<string, string> = {};
@@ -587,10 +591,14 @@ export async function handleLoadGoodsReceiptsCsv(db: D1Database, userId: string,
     receipt.lines.add(lineNumber);
     checker.commit(result.line.orderNumber, result.line.orderLine, result.line.movement, result.line.quantity);
     linesLoaded++;
+    touched.set(result.line.orderNumber, receiptNumber);
     if (result.over) warnings.push({ ...result.over, row: rowNo, receiptNumber });
   }
 
-  return { status: 200, body: { receiptsCreated, linesLoaded, linesSkipped, refused, warnings } };
+  return {
+    status: 200,
+    body: { receiptsCreated, linesLoaded, linesSkipped, refused, warnings, touched: [...touched].map(([orderNumber, receiptNumber]) => ({ orderNumber, receiptNumber })) },
+  };
 }
 
 // ── Reading ────────────────────────────────────────────────────────────

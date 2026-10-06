@@ -282,6 +282,7 @@ import {
   handleCreateReturnReason,
   handleUpdateReturnReason,
 } from "./return-reasons-route.js";
+import { recheckReceiptTasks } from "./receipt-recheck.js";
 import {
   handleCancelGoodsReceipt,
   handleCreateGoodsReceipt,
@@ -5774,6 +5775,18 @@ export default {
           return null;
         }
       };
+      /**
+       * **Decision 0648: after goods arrive or go back, the re-check.**
+       * Open tasks a receipt rule raised on invoices naming the orders
+       * touched are checked again; one whose rule no longer fires
+       * closes. Its outcome rides along on the response.
+       */
+      const recheck = async (result: { status: number; body: unknown }, userId: string) => {
+        const touched = (result.body as { touched?: { orderNumber: string; receiptNumber: string }[] }).touched;
+        if (result.status >= 300 || !touched?.length) return result;
+        const outcome = await recheckReceiptTasks(db, touched, userId, (instanceId) => followUpAfterTaskCompletion(db, instanceId));
+        return { status: result.status, body: { ...(result.body as object), recheck: { closed: outcome.closed.length, stillOpen: outcome.stillOpen } } };
+      };
       const orderMatch = pathname.match(/^\/goods-receipts\/order\/([^/]+)$/);
       const cancelMatch = pathname.match(/^\/goods-receipts\/([^/]+)\/cancel$/);
       const oneMatch = pathname.match(/^\/goods-receipts\/([^/]+)$/);
@@ -5790,7 +5803,7 @@ export default {
         if (!auth.authorized) return forbidden(auth.status);
         const body = await readJson();
         if (!body) return json({ error: t("invalidJsonBody", resolveLocale(env.LOCALE)) }, 400);
-        const result = await handleCreateGoodsReceipt(db, auth.user.id, body);
+        const result = await recheck(await handleCreateGoodsReceipt(db, auth.user.id, body), auth.user.id);
         return json(result.body, result.status);
       }
       if (pathname === "/goods-receipts/status-counts" && request.method === "GET") {
@@ -5808,7 +5821,7 @@ export default {
       if (pathname === "/goods-receipts/csv-load" && request.method === "POST") {
         const auth = await record();
         if (!auth.authorized) return forbidden(auth.status);
-        const result = await handleLoadGoodsReceiptsCsv(db, auth.user.id, await request.text());
+        const result = await recheck(await handleLoadGoodsReceiptsCsv(db, auth.user.id, await request.text()), auth.user.id);
         return json(result.body, result.status);
       }
       if (orderMatch && request.method === "GET") {
@@ -5822,7 +5835,7 @@ export default {
         if (!auth.authorized) return forbidden(auth.status);
         const body = await readJson();
         if (!body) return json({ error: t("invalidJsonBody", resolveLocale(env.LOCALE)) }, 400);
-        const result = await handleCancelGoodsReceipt(db, auth.user.id, decodeURIComponent(cancelMatch[1]), body);
+        const result = await recheck(await handleCancelGoodsReceipt(db, auth.user.id, decodeURIComponent(cancelMatch[1]), body), auth.user.id);
         return json(result.body, result.status);
       }
       if (oneMatch && request.method === "GET") {

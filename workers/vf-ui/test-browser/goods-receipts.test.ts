@@ -35,6 +35,8 @@ const STRINGS = {
     "receipts.loaded": "{lines} lines loaded, {receipts} new receipts.",
     "receipts.refusedrow": "Row {row}: {why}",
     "receipts.error.order_line_not_found": "The purchase order has no such line.",
+    "receipts.recheck.closed": "Invoice tasks waiting on these goods that have now closed: {n}.",
+    "receipts.recheck.open": "Invoice tasks still waiting, as more is invoiced than is in: {n}.",
     "action.save": "Save",
     "action.close": "Close",
   },
@@ -178,7 +180,7 @@ describe("the Goods Receipts screen", () => {
 
   it("records a receipt: finds the order, fills in what is outstanding, warns of over-receipt, and says what was saved", async () => {
     const calls = await openScreen(["AP.Receive"], {
-      "POST /api/goods-receipts": [201, { id: "gr-3", receiptNumber: "GR-1003", lines: 1, warnings: [{ orderNumber: "PO-4501", orderLine: 2, ordered: 50, netAfter: 55 }] }],
+      "POST /api/goods-receipts": [201, { id: "gr-3", receiptNumber: "GR-1003", lines: 1, warnings: [{ orderNumber: "PO-4501", orderLine: 2, ordered: 50, netAfter: 55 }], recheck: { closed: 2, stillOpen: 1 } }],
     });
     button("Record a receipt")!.click();
     const order = document.getElementById("record-order") as HTMLInputElement;
@@ -203,7 +205,9 @@ describe("the Goods Receipts screen", () => {
       deliveryNote: "",
       lines: [{ orderNumber: "PO-4501", orderLine: 2, quantity: 20 }],
     });
-    expect(document.getElementById("receipts-saved")?.textContent).toBe("Receipt GR-1003 recorded.PO-4501 line 2 now holds 55, more than the 50 ordered.");
+    expect(document.getElementById("receipts-saved")?.textContent).toBe(
+      "Receipt GR-1003 recorded.PO-4501 line 2 now holds 55, more than the 50 ordered.Invoice tasks waiting on these goods that have now closed: 2.Invoice tasks still waiting, as more is invoiced than is in: 1."
+    );
   });
 
   it("records a return with its reason, and shows the refusal on its line", async () => {
