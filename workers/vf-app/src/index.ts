@@ -5898,6 +5898,18 @@ export default {
         );
         return json(result.body, result.status);
       }
+      /**
+       * **Decision 0653: Create's preview of a receipt CSV.** The same
+       * checks the load makes, through the process when it is set up,
+       * and nothing written.
+       */
+      if (pathname === "/goods-receipts/csv-preview" && request.method === "POST") {
+        const auth = await record();
+        if (!auth.authorized) return forbidden(auth.status);
+        const process = await warehouseProcess(db);
+        const result = await handleLoadGoodsReceiptsCsv(db, auth.user.id, await request.text(), new Date(), { pending: process !== null, dryRun: true });
+        return json(result.status >= 300 ? result.body : { ...(result.body as object), process: process ? { id: process.id, name: process.name } : null }, result.status);
+      }
       if (pathname === "/goods-receipts/process" && request.method === "GET") {
         const auth = await view();
         if (!auth.authorized) return forbidden(auth.status);

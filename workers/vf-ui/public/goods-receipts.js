@@ -52,7 +52,7 @@ const canRecord = () => hasMyPermission("AP.Receive");
 const qty = (n) => (n === null || n === undefined ? "—" : String(Math.round(Number(n) * 1000) / 1000));
 
 /** A refusal or a warning in words: the server's reason code, else its own English. */
-function said(body, fallbackKey) {
+export function said(body, fallbackKey) {
   if (body?.reason) {
     const key = `receipts.error.${body.reason}`;
     const words = t(key);
@@ -96,6 +96,16 @@ async function loadCounts() {
   const org = currentOrgId();
   const r = await call(`/goods-receipts/status-counts${org ? `?org=${encodeURIComponent(org)}` : ""}`);
   counts = r.ok ? r.body.counts ?? null : null;
+}
+
+/**
+ * **What recording needs, for Create too — decision 0653**: the
+ * process, the CSV format and the goods return reasons. Returns the
+ * process (or null).
+ */
+export async function loadRecordingExtras() {
+  await loadExtras();
+  return warehouse;
 }
 
 async function loadExtras() {
@@ -171,7 +181,7 @@ function statusCard() {
 
 // ── Loading a CSV ──────────────────────────────────────────────────────
 
-function downloadTemplate() {
+export function downloadTemplate() {
   if (!csvFormat) return;
   const csv = csvFormat.fields.map((f) => f.columns[0]).join(",") + "\n";
   const url = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
@@ -182,7 +192,7 @@ function downloadTemplate() {
   URL.revokeObjectURL(url);
 }
 
-function formatReference() {
+export function formatReference() {
   if (!csvFormat) return null;
   return el("details", { class: "csvformat" }, [
     el("summary", { text: t("purchaseorders.viewformat") }),
@@ -219,59 +229,25 @@ function recheckLines(result) {
   ].filter(Boolean);
 }
 
-function loadOutcome(result) {
-  const parts = [
-    el("div", { text: t("receipts.loaded").replace("{lines}", String(result.linesLoaded)).replace("{receipts}", String(result.receiptsCreated)) }),
-  ];
-  if (result.linesSkipped > 0) parts.push(el("div", { class: "muted", text: t("receipts.skipped").replace("{n}", String(result.linesSkipped)) }));
-  if (result.process) {
-    const sent = result.process.sent ?? [];
-    parts.push(
-      el("div", {
-        id: "receipts-sent",
-        text: t("receipts.sent")
-          .replace("{process}", result.process.name)
-          .replace("{registered}", String(sent.filter((x) => x.status === "registered").length))
-          .replace("{waiting}", String(sent.filter((x) => x.status === "pending").length)),
-      })
-    );
-  }
-  parts.push(...recheckLines(result));
-  for (const w of result.warnings ?? []) {
-    parts.push(el("div", { class: "warn", text: t("receipts.overrow").replace("{row}", String(w.row)).replace("{order}", w.orderNumber).replace("{line}", String(w.orderLine)).replace("{ordered}", qty(w.ordered)).replace("{held}", qty(w.netAfter)) }));
-  }
-  if (result.refused?.length > 0) {
-    parts.push(el("h3", { text: t("receipts.refusedheading") }));
-    for (const r of result.refused.slice(0, 25)) {
-      parts.push(el("div", { class: "warn", text: t("receipts.refusedrow").replace("{row}", String(r.row)).replace("{why}", said(r, "receipts.loadfailed")) }));
-    }
-    if (result.refused.length > 25) parts.push(el("div", { class: "muted", text: t("purchaseorders.refusedmore").replace("{n}", String(result.refused.length - 25)) }));
-  }
-  return el("div", { class: "panel", id: "receipts-outcome" }, parts);
+/**
+ * **Loading receipts is a shortcut into Create — decision 0653** (Dan
+ * agreed, question 6): warehouse staff think of this screen first, so
+ * Load CSV, Record a receipt and Record a return stay here and open
+ * Create → Goods receipts. Where a load goes (and setting the process
+ * up) is still said here.
+ */
+async function toCreate(which) {
+  const { openCreateReceipts } = await import("/create.js");
+  await openCreateReceipts(which);
 }
 
 function loader() {
-  const picker = el("input", { type: "file", accept: ".csv,text/csv", id: "receiptsfile" });
-  const button = actionLink("load", { primary: true, label: t("purchaseorders.loadbutton"), onclick: () => run() });
-  async function run() {
-    const file = picker.files?.[0];
-    if (!file) return note(t("purchaseorders.nofile"));
-    button.disabled = true;
-    const r = await call("/goods-receipts/csv-load", { method: "POST", headers: { "Content-Type": "text/csv" }, body: await file.text() });
-    button.disabled = false;
-    if (!r.ok) return note(r.status === 0 ? t("receipts.loadfailed") : said(r.body, "receipts.loadfailed"));
-    page = 1;
-    await refreshAll();
-    note(loadOutcome(r.body));
-  }
-  const template = actionLink("download", { label: t("purchaseorders.templatebutton"), onclick: () => downloadTemplate() });
-  template.disabled = !csvFormat;
+  const button = actionLink("load", { primary: true, label: t("receipts.uploadincreate"), onclick: () => toCreate("upload") });
+  button.id = "receipts-toupload";
   return el("div", { class: "panel" }, [
-    el("div", { class: "cardhead" }, [el("h3", { text: t("receipts.loadheading") }), el("div", { class: "statebuttons" }, [template, button])]),
+    el("div", { class: "cardhead" }, [el("h3", { text: t("receipts.loadheading") }), el("div", { class: "statebuttons" }, [button])]),
     el("p", { class: "muted", text: t("receipts.loadhelp") }),
     processLine(),
-    picker,
-    formatReference(),
   ]);
 }
 
@@ -628,7 +604,12 @@ function today() {
  * with what each holds. For a receipt, what is outstanding is filled in:
  * change what differs. For a return, enter what went back and say why.
  */
-export function openRecord(mode = "received") {
+/**
+ * The record form, for a receipt or a return. In a pop-out by default;
+ * with `container`, drawn into it instead (Create → Goods receipts,
+ * decision 0653), and `onSaved(body, done)` says what was saved there.
+ */
+export function openRecord(mode = "received", { container = null, onSaved = null } = {}) {
   const returning = mode === "returned";
   const problem = el("div", { class: "warn", id: "record-problem" });
   const orderInput = el("input", { type: "text", id: "record-order", placeholder: t("receipts.form.orderhint") });
@@ -697,20 +678,25 @@ export function openRecord(mode = "received") {
     if (returning && !reasonPicker.value) return void (problem.textContent = t("receipts.error.return_reason_missing"));
     const r = await post("/goods-receipts", { receiptNumber: numberInput.value, receiptDate: dateInput.value, deliveryNote: noteInput.value, lines });
     if (!r.ok) return void (problem.textContent = said(r.body, "receipts.savefailed"));
-    backdrop.remove();
-    await refreshAll();
     const done = [el("div", { text: t(returning ? "receipts.saved.return" : "receipts.saved.receipt").replace("{number}", r.body.receiptNumber) })];
     for (const w of r.body.warnings ?? []) {
       done.push(el("div", { class: "warn", text: t("receipts.overline").replace("{order}", w.orderNumber).replace("{line}", String(w.orderLine)).replace("{ordered}", qty(w.ordered)).replace("{held}", qty(w.netAfter)) }));
     }
     done.push(...recheckLines(r.body));
-    note(el("div", { class: "panel", id: "receipts-saved" }, done));
+    const saved = el("div", { class: "panel", id: "receipts-saved" }, done);
+    if (onSaved) {
+      await onSaved(r.body, saved);
+      return;
+    }
+    backdrop.remove();
+    await refreshAll();
+    note(saved);
   }
 
-  const backdrop = popout([
+  const content = [
     el("div", { class: "cardhead" }, [
       el("h3", { text: t(returning ? "receipts.form.returnheading" : "receipts.form.receiptheading") }),
-      el("div", { class: "statebuttons" }, [actionLink("save", { primary: true, onclick: () => save() }), actionLink("close", { onclick: () => backdrop.remove() })]),
+      el("div", { class: "statebuttons" }, [actionLink("save", { primary: true, onclick: () => save() }), container ? null : actionLink("close", { onclick: () => backdrop.remove() })].filter(Boolean)),
     ]),
     el("div", { class: "editgrid" }, [
       el("label", { for: "record-order", text: t("receipts.form.order") }),
@@ -725,7 +711,13 @@ export function openRecord(mode = "received") {
     ]),
     linesBox,
     problem,
-  ]);
+  ];
+  if (container) {
+    container.replaceChildren(el("div", { class: "panel", id: "record-panel" }, content));
+    orderInput.focus();
+    return container;
+  }
+  const backdrop = popout(content);
   orderInput.focus();
   return backdrop;
 }
@@ -737,8 +729,8 @@ function render() {
   if (!shell) return;
   const actions = canRecord()
     ? el("div", { class: "statebuttons" }, [
-        actionLink("create", { label: t("receipts.recordreturn"), onclick: () => openRecord("returned") }),
-        actionLink("create", { primary: true, label: t("receipts.recordreceipt"), onclick: () => openRecord("received") }),
+        actionLink("create", { label: t("receipts.recordreturn"), onclick: () => toCreate("return") }),
+        actionLink("create", { primary: true, label: t("receipts.recordreceipt"), onclick: () => toCreate("receipt") }),
       ])
     : null;
   shell.replaceChildren(

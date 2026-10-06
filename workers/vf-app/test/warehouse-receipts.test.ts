@@ -366,3 +366,50 @@ describe("Matching's check and the AP Receiving task — decision 0652", () => {
   });
 });
 
+
+describe("Create's preview of a receipt CSV — decision 0653", () => {
+  const ROWS = ["WH-1,1,2026-10-05,PO-300,1,10", "WH-1,2,2026-10-05,PO-300,9,5", "WH-2,1,2026-10-05,PO-300,1,4", "WH-3,1,2026-10-05,PO-300,1,x"];
+
+  it("says per receipt what the load would do, through the process, and writes nothing", async () => {
+    await handleSetUpWarehouseProcess(env.DB, {});
+    await handleCreateGoodsReceipt(env.DB, "u-sam", { receiptNumber: "WH-2", receiptDate: "2026-10-01", lines: [{ orderNumber: "PO-300", orderLine: 1, quantity: 4 }] });
+    // WH-2 line 1 is on file already (keyed with one line), so it is skipped.
+    const r = await handleLoadGoodsReceiptsCsv(env.DB, "u-sam", CSV(ROWS), new Date(), { pending: true, dryRun: true });
+    const body = r.body as { receipts: Record<string, unknown>[]; refused: { row: number; reason: string }[]; pendingIds: string[]; dryRun: boolean };
+    expect(body.dryRun).toBe(true);
+    expect(body.pendingIds).toEqual([]);
+    expect(body.receipts.map((x) => [x.receiptNumber, x.existing, x.lines, x.attention, x.skipped, x.refused, x.orders])).toEqual([
+      ["WH-1", false, 2, [{ line: 2, reason: "order_line_not_found" }], 0, 0, ["PO-300"]],
+      ["WH-2", true, 0, [], 1, 0, []],
+      ["WH-3", false, 0, [], 0, 1, []],
+    ]);
+    expect(body.refused).toEqual([expect.objectContaining({ row: 5, reason: "quantity_invalid" })]);
+    expect((await env.DB.prepare("SELECT count(*) AS n FROM goods_receipts").first<{ n: number }>())!.n).toBe(1);
+    expect((await env.DB.prepare("SELECT count(*) AS n FROM goods_receipt_lines").first<{ n: number }>())!.n).toBe(1);
+  });
+
+  it("refuses what the screen would refuse when the process is not set up", async () => {
+    const r = await handleLoadGoodsReceiptsCsv(env.DB, "u-sam", CSV(ROWS), new Date(), { dryRun: true });
+    const body = r.body as { receipts: Record<string, unknown>[]; refused: { reason: string }[] };
+    expect(body.receipts.map((x) => [x.receiptNumber, x.lines, x.refused])).toEqual([
+      ["WH-1", 1, 1],
+      ["WH-2", 1, 0],
+      ["WH-3", 0, 1],
+    ]);
+    expect(body.refused.map((x) => x.reason)).toEqual(["order_line_not_found", "quantity_invalid"]);
+  });
+
+  it("through the router: AP.Receive previews, naming the process, and the load then reports each receipt", async () => {
+    await handleSetUpWarehouseProcess(env.DB, {});
+    const key = generateApiKey();
+    await env.DB.prepare("UPDATE org_users SET api_key_hash = ? WHERE id = 'u-sam'").bind(await hashApiKey(key)).run();
+    const post = (path: string) => SELF.fetch(`https://example.com${path}`, { method: "POST", headers: { Authorization: `Bearer ${key}`, "Content-Type": "text/csv" }, body: CSV(ROWS) });
+    const preview = (await (await post("/goods-receipts/csv-preview")).json()) as { process: { name: string }; receipts: unknown[] };
+    expect(preview.process.name).toBe("Warehouse Receipts");
+    expect(preview.receipts).toHaveLength(3);
+    expect((await env.DB.prepare("SELECT count(*) AS n FROM goods_receipts").first<{ n: number }>())!.n).toBe(0);
+    const loaded = (await (await post("/goods-receipts/csv-load")).json()) as { receipts: { receiptId: string; receiptNumber: string }[]; process: { sent: { receiptId: string; status: string }[] } };
+    const statusOf = (n: string) => loaded.process.sent.find((x) => x.receiptId === loaded.receipts.find((r) => r.receiptNumber === n)!.receiptId)?.status;
+    expect([statusOf("WH-1"), statusOf("WH-2")]).toEqual(["pending", "registered"]);
+  });
+});

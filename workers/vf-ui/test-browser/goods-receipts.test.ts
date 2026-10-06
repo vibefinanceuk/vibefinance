@@ -64,6 +64,16 @@ const STRINGS = {
     "receipts.fix.rejectprompt": "Why is line {line} rejected? It will never count.",
     "receipts.error.lines_need_attention": "Some lines still need attention: fix or reject them first.",
     "receipts.process.team": "Matching's tasks go to the {team} team. Members: {n}.",
+    "create.kind.invoices": "Invoices",
+    "create.kind.receipts": "Goods receipts",
+    "create.gr.status.ready": "Ready",
+    "create.gr.status.attention": "Lines needing attention at Matching: {n}",
+    "create.gr.status.skipped": "Already loaded, skipped",
+    "create.gr.status.refused": "Rows refused: {n}",
+    "create.gr.status.registered": "Registered",
+    "create.gr.status.pending": "Waiting at {n}",
+    "create.gr.lineneeds": "Line {line}: {why}",
+    "create.gr.sendn": "Send {n} receipts",
     "action.save": "Save",
     "action.close": "Close",
   },
@@ -209,7 +219,7 @@ describe("the Goods Receipts screen", () => {
     const calls = await openScreen(["AP.Receive"], {
       "POST /api/goods-receipts": [201, { id: "gr-3", receiptNumber: "GR-1003", lines: 1, warnings: [{ orderNumber: "PO-4501", orderLine: 2, ordered: 50, netAfter: 55 }], recheck: { closed: 2, stillOpen: 1 } }],
     });
-    button("Record a receipt")!.click();
+    (await import("/goods-receipts.js")).openRecord("received");
     const order = document.getElementById("record-order") as HTMLInputElement;
     order.value = "PO-4501";
     order.dispatchEvent(new Event("change"));
@@ -241,7 +251,7 @@ describe("the Goods Receipts screen", () => {
     const calls = await openScreen(["AP.Receive"], {
       "POST /api/goods-receipts": [422, { reason: "return_exceeds_received", line: 1 }],
     });
-    button("Record a return")!.click();
+    (await import("/goods-receipts.js")).openRecord("returned");
     const order = document.getElementById("record-order") as HTMLInputElement;
     order.value = "PO-4501";
     order.dispatchEvent(new Event("change"));
@@ -258,18 +268,16 @@ describe("the Goods Receipts screen", () => {
     ]);
   });
 
-  it("loads a CSV and says what it loaded and refused, row by row", async () => {
-    await openScreen(["AP.Receive"], {
-      "POST /api/goods-receipts/csv-load": [200, { receiptsCreated: 1, linesLoaded: 2, linesSkipped: 0, warnings: [], refused: [{ row: 4, receiptNumber: "GR-9", reason: "order_line_not_found", message: "x" }] }],
-    });
-    const picker = document.getElementById("receiptsfile") as HTMLInputElement;
-    const file = new File(["receipt_number\nGR-9"], "gr.csv", { type: "text/csv" });
-    Object.defineProperty(picker, "files", { value: [file] });
-    button("purchaseorders.loadbutton")!.click();
-    await vi.waitFor(() => expect(document.getElementById("receipts-outcome")).not.toBeNull());
-    const outcome = document.getElementById("receipts-outcome")!.textContent;
-    expect(outcome).toContain("2 lines loaded, 1 new receipts.");
-    expect(outcome).toContain("Row 4: The purchase order has no such line.");
+  it("opens Create → Goods receipts from its Load and Record buttons, on the matching tab — decision 0653", async () => {
+    await openScreen(["AP.Receive"]);
+    document.getElementById("receipts-toupload")!.click();
+    await vi.waitFor(() => expect(document.getElementById("create-grdrop")).not.toBeNull());
+    expect(document.getElementById("create-grtab-upload")?.className).toBe("doctab on");
+    const { open } = await import("/goods-receipts.js");
+    await open();
+    button("Record a return")!.click();
+    await vi.waitFor(() => expect(document.getElementById("record-reason")).not.toBeNull());
+    expect(document.getElementById("create-grtab-return")?.className).toBe("doctab on");
     await settle();
   });
 });
@@ -294,19 +302,10 @@ describe("Warehouse Receipts — decision 0651", () => {
     expect(document.getElementById("receipts-team")?.textContent).toBe("Matching's tasks go to the AP Receiving team. Members: 3.");
   });
 
-  it("offers no set-up without Admin.Configure, and says where a load went and what waits", async () => {
-    await openScreen(["AP.Receive"], {
-      "GET /api/goods-receipts/process": [200, { process: null }],
-      "POST /api/goods-receipts/csv-load": [
-        200,
-        { receiptsCreated: 2, linesLoaded: 2, linesSkipped: 0, warnings: [], refused: [], process: { id: "warehouse-receipts", name: "Warehouse Receipts", sent: [{ status: "registered" }, { status: "pending" }] } },
-      ],
-    });
+  it("offers no set-up without Admin.Configure", async () => {
+    await openScreen(["AP.Receive"], { "GET /api/goods-receipts/process": [200, { process: null }] });
+    expect(document.getElementById("receipts-process")?.textContent).toContain("Receipts loaded here register at once.");
     expect(button("Set up Warehouse Receipts")).toBeUndefined();
-    const picker = document.getElementById("receiptsfile") as HTMLInputElement;
-    Object.defineProperty(picker, "files", { value: [new File(["receipt_number\nWH-1"], "wh.csv", { type: "text/csv" })] });
-    button("purchaseorders.loadbutton")!.click();
-    await vi.waitFor(() => expect(document.getElementById("receipts-sent")?.textContent).toBe("Sent through Warehouse Receipts. Registered: 1. Waiting: 1."));
   });
 
   it("marks a pending receipt, says where it waits, and rejects it with a reason instead of cancelling", async () => {
@@ -388,6 +387,97 @@ describe("working a receipt at Matching — decision 0652", () => {
     document.getElementById("receipt-register")!.click();
     await vi.waitFor(() => expect(document.getElementById("receipts-note")?.textContent).toContain("Receipt WH-1 registered."));
     expect(document.getElementById("receipts-note")?.textContent).toContain("Invoice tasks waiting on these goods that have now closed: 1.");
+  });
+});
+
+describe("Create → Goods receipts — decision 0653", () => {
+  const PREVIEW = {
+    receiptsCreated: 0,
+    linesLoaded: 3,
+    linesSkipped: 1,
+    warnings: [],
+    pendingIds: [],
+    dryRun: true,
+    process: { id: "warehouse-receipts", name: "Warehouse Receipts" },
+    refused: [{ row: 6, receiptNumber: "WH-4", reason: "quantity_invalid", message: "x" }],
+    receipts: [
+      { receiptId: "a", receiptNumber: "WH-1", receiptDate: "2026-10-05", existing: false, orders: ["PO-4501"], lines: 2, attention: [{ line: 2, reason: "order_line_not_found" }], skipped: 0, refused: 0 },
+      { receiptId: "b", receiptNumber: "WH-2", receiptDate: "2026-10-05", existing: false, orders: ["PO-4501"], lines: 1, attention: [], skipped: 0, refused: 0 },
+      { receiptId: "c", receiptNumber: "WH-3", receiptDate: "2026-10-01", existing: true, orders: [], lines: 0, attention: [], skipped: 1, refused: 0 },
+      { receiptId: "d", receiptNumber: "WH-4", receiptDate: null, existing: false, orders: [], lines: 0, attention: [], skipped: 0, refused: 1 },
+    ],
+  };
+  const LOADED = { ...PREVIEW, dryRun: undefined, receiptsCreated: 2, recheck: { closed: 1, stillOpen: 0 }, process: { ...PREVIEW.process, sent: [{ receiptId: "a", status: "pending", stage: "Matching" }, { receiptId: "b", status: "registered", stage: null }] } };
+
+  async function openCreate(permissions: string[], routes: Record<string, [number, unknown]> = {}) {
+    const calls = await openScreen(permissions, { "GET /api/goods-receipts/process": [200, { process: WAREHOUSE }], ...routes });
+    const { open } = await import("/create.js");
+    await open();
+    return calls;
+  }
+
+  it("offers Invoices or Goods receipts to someone who may do both, and only receipts to someone who only receives", async () => {
+    await openCreate(["AP.Receive", "AP.Create"]);
+    expect(document.getElementById("create-kind-invoices")?.getAttribute("aria-pressed")).toBe("true");
+    document.getElementById("create-kind-receipts")!.click();
+    await vi.waitFor(() => expect(document.getElementById("create-grdrop")).not.toBeNull());
+    expect(document.getElementById("create-grdest")?.textContent).toBe("Warehouse Receipts");
+
+    document.body.innerHTML = `<main id="shell"></main><main id="viewer" hidden></main>`;
+    vi.resetModules();
+    await openCreate(["AP.Receive"]);
+    expect(document.getElementById("create-kind-invoices")).toBeNull();
+    expect(document.getElementById("create-grdrop")).not.toBeNull();
+  });
+
+  it("previews a CSV receipt by receipt, sends it, and lists what each became with Open", async () => {
+    const calls = await openCreate(["AP.Receive"], {
+      "POST /api/goods-receipts/csv-preview": [200, PREVIEW],
+      "POST /api/goods-receipts/csv-load": [200, LOADED],
+    });
+    const picker = document.getElementById("create-grfile") as HTMLInputElement;
+    Object.defineProperty(picker, "files", { value: [new File(["receipt_number\nWH-1"], "wh.csv", { type: "text/csv" })] });
+    picker.dispatchEvent(new Event("change"));
+    await vi.waitFor(() => expect(document.getElementById("create-grpreview")).not.toBeNull());
+    const rows = [...document.querySelectorAll("#create-grpreview tbody tr")].map((r) => r.children[4]?.textContent);
+    expect(rows).toEqual([
+      "Lines needing attention at Matching: 1Line 2: The purchase order has no such line.",
+      "Ready",
+      "Already loaded, skipped",
+      "Rows refused: 1",
+    ]);
+    expect(document.getElementById("create-grpreview")!.textContent).toContain("Row 6:");
+    expect(document.getElementById("create-grsend")?.textContent).toBe("Send 2 receipts");
+    // Nothing is sent by the preview.
+    expect(calls.some((c) => c.path === "/api/goods-receipts/csv-load")).toBe(false);
+
+    document.getElementById("create-grsend")!.click();
+    await vi.waitFor(() => expect(document.getElementById("create-grresult")).not.toBeNull());
+    expect(calls.find((c) => c.path === "/api/goods-receipts/csv-load")?.body).toBe("receipt_number\nWH-1");
+    const made = [...document.querySelectorAll("#create-grresult tbody tr")].map((r) => [r.children[0].textContent, r.children[2].textContent]);
+    expect(made).toEqual([
+      ["WH-1", "Waiting at Matching"],
+      ["WH-2", "Registered"],
+    ]);
+    expect(document.getElementById("create-grresult")!.textContent).toContain("Invoice tasks waiting on these goods that have now closed: 1.");
+    expect(document.getElementById("create-gropen-WH-1")).not.toBeNull();
+  });
+
+  it("keys a receipt with today's form, says what was saved, and has a fresh form ready", async () => {
+    const calls = await openCreate(["AP.Receive"], {
+      "POST /api/goods-receipts": [201, { id: "gr-3", receiptNumber: "GR-1003", lines: 1, warnings: [] }],
+    });
+    document.getElementById("create-grtab-receipt")!.click();
+    await vi.waitFor(() => expect(document.getElementById("record-panel")).not.toBeNull());
+    const order = document.getElementById("record-order") as HTMLInputElement;
+    order.value = "PO-4501";
+    order.dispatchEvent(new Event("change"));
+    await vi.waitFor(() => expect(document.querySelector('#record-lines input[data-line="2"]')).not.toBeNull());
+    (document.getElementById("record-number") as HTMLInputElement).value = "GR-1003";
+    button("Save")!.click();
+    await vi.waitFor(() => expect(document.getElementById("create-grside")?.textContent).toContain("Receipt GR-1003 recorded."));
+    expect(calls.find((c) => c.method === "POST" && c.path === "/api/goods-receipts")?.body).toMatchObject({ receiptNumber: "GR-1003" });
+    expect((document.getElementById("record-order") as HTMLInputElement).value).toBe("");
   });
 });
 

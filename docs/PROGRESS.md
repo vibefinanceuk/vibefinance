@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 6 October 2026 (decision 0652). A living document: what
+Last updated 6 October 2026 (decision 0653). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,16 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Create → Goods receipts (0653)
+
+Create now brings goods receipts in too: a switch for Invoices or Goods
+receipts for anyone who may do both, and Create in the menu for AP.Receive
+alone. A receipt CSV is previewed receipt by receipt (ready, needing
+attention at Matching, already loaded, refused) before it is sent through
+the Warehouse Receipts process, and the result lists each receipt with
+Open. Keying a receipt or a return uses the same form, in the page. Goods
+Receipts' Load and Record buttons now open Create. Slice 3 is complete.
 
 ### Matching's check and the AP Receiving task (0652)
 

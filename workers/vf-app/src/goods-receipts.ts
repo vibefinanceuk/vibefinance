@@ -575,7 +575,31 @@ export async function handleGetGoodsReceiptCsvFormat(): Promise<RouteResult> {
  * takes that receipt's status. Without the process set up, receipts
  * register at once, as before.
  */
-export async function handleLoadGoodsReceiptsCsv(db: D1Database, userId: string, csv: string, now = new Date(), options: { pending?: boolean } = {}): Promise<RouteResult> {
+/** One receipt in a load or its preview — decision 0653. */
+export interface LoadedReceipt {
+  receiptId: string;
+  receiptNumber: string;
+  receiptDate: string | null;
+  /** On file before this load (lines are added to it). */
+  existing: boolean;
+  orders: string[];
+  lines: number;
+  /** Lines kept for Matching, with why (through the process only). */
+  attention: { line: number; reason: string }[];
+  /** Lines already on file, so skipped. */
+  skipped: number;
+  /** Rows of this receipt refused. */
+  refused: number;
+}
+
+export async function handleLoadGoodsReceiptsCsv(
+  db: D1Database,
+  userId: string,
+  csv: string,
+  now = new Date(),
+  // 0653: `dryRun` checks everything as the load would and writes nothing — Create's preview.
+  options: { pending?: boolean; dryRun?: boolean } = {}
+): Promise<RouteResult> {
   const rows = parseCsv(csv);
   if (rows.length < 2) return { status: 400, body: { error: "the file needs a header row and at least one line", reason: "empty" } };
   const cols = rows[0].map((h) => CSV_COLUMNS[h.trim().toLowerCase()] ?? null);
@@ -593,6 +617,15 @@ export async function handleLoadGoodsReceiptsCsv(db: D1Database, userId: string,
   let linesLoaded = 0;
   let linesSkipped = 0;
   const touched = new Map<string, string>();
+  const summary = new Map<string, LoadedReceipt & { orderSet: Set<string> }>();
+  const summaryOf = (receiptNumber: string, id: string, existing: boolean, date: string | null) => {
+    let s = summary.get(receiptNumber);
+    if (!s) {
+      s = { receiptId: id, receiptNumber, receiptDate: date, existing, orders: [], orderSet: new Set(), lines: 0, attention: [], skipped: 0, refused: 0 };
+      summary.set(receiptNumber, s);
+    }
+    return s;
+  };
 
   for (let i = 1; i < rows.length; i++) {
     const v: Record<string, string> = {};
@@ -627,20 +660,25 @@ export async function handleLoadGoodsReceiptsCsv(db: D1Database, userId: string,
       }
       receipts.set(receiptNumber, receipt);
     }
+    const sum = summaryOf(receiptNumber, receipt.id, !receipt.isNew, isDate(v.receipt_date) ? v.receipt_date : null);
     if (receipt.lines.has(lineNumber)) {
       linesSkipped++;
+      sum.skipped++;
       continue;
     }
     if (receipt.cancelled) {
       refuse("receipt_cancelled", `receipt ${receiptNumber} was cancelled`);
+      sum.refused++;
       continue;
     }
     if (receipt.status === "rejected") {
       refuse("receipt_rejected", `receipt ${receiptNumber} was rejected`);
+      sum.refused++;
       continue;
     }
     if (receipt.isNew && !isDate(v.receipt_date)) {
       refuse("date_invalid", "the receipt date must be YYYY-MM-DD");
+      sum.refused++;
       continue;
     }
 
@@ -657,6 +695,7 @@ export async function handleLoadGoodsReceiptsCsv(db: D1Database, userId: string,
     const result = receipt.status === "pending" ? await checker.checkLenient(input) : await checker.check(input);
     if ("refused" in result) {
       refuse(result.refused.reason, result.refused.message);
+      sum.refused++;
       continue;
     }
     const attention = "attention" in result ? (result as { attention: Refusal | null }).attention : null;
@@ -673,7 +712,13 @@ export async function handleLoadGoodsReceiptsCsv(db: D1Database, userId: string,
       );
     }
     statements.push(lineInsert(db, receipt.id, lineNumber, result.line, at, attention?.reason ?? null));
-    await db.batch(statements);
+    if (!options.dryRun) await db.batch(statements);
+    sum.lines++;
+    if (!sum.orderSet.has(result.line.orderNumber)) {
+      sum.orderSet.add(result.line.orderNumber);
+      sum.orders.push(result.line.orderNumber);
+    }
+    if (attention) sum.attention.push({ line: lineNumber, reason: attention.reason });
     if (receipt.isNew) {
       receipt.isNew = false;
       receiptsCreated++;
@@ -688,7 +733,17 @@ export async function handleLoadGoodsReceiptsCsv(db: D1Database, userId: string,
 
   return {
     status: 200,
-    body: { receiptsCreated, linesLoaded, linesSkipped, refused, warnings, pendingIds, touched: [...touched].map(([orderNumber, receiptNumber]) => ({ orderNumber, receiptNumber })) },
+    body: {
+      receiptsCreated,
+      linesLoaded,
+      linesSkipped,
+      refused,
+      warnings,
+      pendingIds: options.dryRun ? [] : pendingIds,
+      receipts: [...summary.values()].map(({ orderSet: _orders, ...r }) => r),
+      ...(options.dryRun ? { dryRun: true } : {}),
+      touched: options.dryRun ? [] : [...touched].map(([orderNumber, receiptNumber]) => ({ orderNumber, receiptNumber })),
+    },
   };
 }
 

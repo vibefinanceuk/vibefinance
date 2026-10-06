@@ -1,5 +1,6 @@
 import { t } from "/strings.js";
-import { el, frame, topbar, setCurrentScreen, hasMyPermission, openTaskById } from "/tasks.js";
+import { el, frame, topbar, setCurrentScreen, hasMyPermission, openTaskById, goToScreen } from "/tasks.js";
+import { downloadTemplate, formatReference, loadRecordingExtras, openReceipt, openRecord, said } from "/goods-receipts.js";
 import { icon } from "/icons.js";
 
 /**
@@ -35,6 +36,14 @@ let batchMapping = "";
 let batchMappings = null;
 let preview = null; // { kind: "csv"|"xml", filename, layout, rows, counts, invoices, problems, problemsCsv, file, files }
 let includeDuplicates = false;
+// Decision 0653: Create → Goods receipts.
+let kind = "invoices"; // "invoices" | "receipts"
+let receiptTab = "upload"; // "upload" | "receipt" | "return"
+let receiptProcess = null; // the Warehouse Receipts process, when set up
+let receiptPreview = null; // { filename, text, body }
+let receiptResult = null; // the load's body
+let receiptSaved = null; // what a keyed receipt or return saved, as a panel
+let requested = null; // { tab } from Goods Receipts' shortcuts
 
 async function getJson(path, init) {
   try {
@@ -693,12 +702,40 @@ export async function createBatch() {
   render();
 }
 
+const canInvoices = () => hasMyPermission("AP.Create");
+const canReceipts = () => hasMyPermission("AP.Receive");
+
+/** Decision 0653: Invoices or Goods receipts, shown to someone who may create both. */
+function kindChoice() {
+  if (!canInvoices() || !canReceipts()) return null;
+  return el(
+    "div",
+    { class: "createkinds", role: "group", "aria-label": t("create.kind") },
+    [
+      ["invoices", "create.kind.invoices"],
+      ["receipts", "create.kind.receipts"],
+    ].map(([key, label]) =>
+      el("button", { type: "button", class: kind === key ? "createkind on" : "createkind", id: `create-kind-${key}`, "aria-pressed": String(kind === key), onclick: () => chooseKind(key) }, [
+        el("span", { text: t(label) }),
+      ])
+    )
+  );
+}
+
+async function chooseKind(key) {
+  kind = key;
+  if (key === "receipts") receiptProcess = await loadRecordingExtras();
+  render();
+}
+
 function render() {
+  if (kind === "receipts") return renderReceipts();
   const shell = document.getElementById("shell");
   shell.replaceChildren(
     frame(
       el("div", {}, [
         topbar(t("create.heading"), t("create.subtitle")),
+        kindChoice(),
         // Decision 0575: a tab each, as the approved mock-up had.
         el(
           "div",
@@ -717,7 +754,7 @@ function render() {
           tab === "keyed" ? keyedPanel() : tab === "batch" ? batchPanel() : sendPanel(),
           el("div", { id: "create-upload" }, [tab === "batch" && preview ? previewPanel() : uploadPanel()]),
         ]),
-      ])
+      ].filter(Boolean))
     )
   );
 }
@@ -855,8 +892,30 @@ export async function createKeyed() {
   }
 }
 
+/**
+ * **Goods Receipts' shortcuts — decision 0653.** Load CSV, Record a
+ * receipt and Record a return there open Create → Goods receipts on
+ * the matching tab.
+ */
+export async function openCreateReceipts(which = "upload") {
+  requested = { tab: which };
+  await goToScreen("create");
+}
+
 export async function open() {
   setCurrentScreen("create");
+  // Decision 0653: goods receipts for someone who may only receive, or who came from Goods Receipts.
+  kind = requested || (!canInvoices() && canReceipts()) ? "receipts" : "invoices";
+  receiptTab = requested?.tab ?? "upload";
+  requested = null;
+  receiptPreview = null;
+  receiptResult = null;
+  receiptSaved = null;
+  if (kind === "receipts") {
+    receiptProcess = await loadRecordingExtras();
+    render();
+    if (!canInvoices()) return;
+  }
   upload = null;
   busy = false;
   tab = "upload";
@@ -868,5 +927,229 @@ export async function open() {
   targets = result.ok ? result.body?.targets ?? [] : [];
   limits = { maxFiles: result.body?.maxFiles ?? 50, maxBytes: result.body?.maxBytes ?? 15 * 1024 * 1024 };
   if (!targets.some((target) => target.id === chosen)) chosen = targets[0]?.id ?? "";
+  if (kind === "invoices") render();
+}
+
+// ── Create → Goods receipts — decision 0653 ────────────────────────────
+
+/** Strip null children, which `el` would write as text. */
+const kids = (list) => list.filter((c) => c !== null && c !== undefined && c !== false);
+
+/** What a receipt in the preview will do: ready, needs attention at Matching, already on file, or refused. */
+function receiptStatus(r) {
+  if (r.lines === 0) return r.skipped > 0 && r.refused === 0 ? "skipped" : "refused";
+  return r.attention.length > 0 ? "attention" : "ready";
+}
+
+const RECEIPT_PILL = { ready: "ok", attention: "warn", skipped: "q", refused: "bad", registered: "ok", pending: "warn" };
+
+function receiptPill(status, extra = "") {
+  return el("span", { class: `createpill ${RECEIPT_PILL[status] ?? ""}`.trim(), text: t(`create.gr.status.${status}`).replace("{n}", extra) });
+}
+
+function receiptTabs() {
+  return el(
+    "div",
+    { class: "doctabs createtabs" },
+    [
+      ["upload", "create.gr.upload"],
+      ["receipt", "create.gr.keyreceipt"],
+      ["return", "create.gr.keyreturn"],
+    ].map(([key, label]) =>
+      el("button", { class: receiptTab === key ? "doctab on" : "doctab", id: `create-grtab-${key}`, onclick: () => ((receiptTab = key), (receiptSaved = null), render()) }, [el("span", { text: t(label) })])
+    )
+  );
+}
+
+/** Where an upload goes: through the Warehouse Receipts process when it is set up, straight in otherwise. */
+function receiptDestination() {
+  return el("div", { class: "createfield" }, [
+    el("label", { text: t("create.sendto") }),
+    el("div", { class: "createtarget", id: "create-grdest", text: receiptProcess ? receiptProcess.name : t("create.gr.direct") }),
+    el("div", { class: "createmeta", text: receiptProcess ? t("receipts.process.through").replace("{process}", receiptProcess.name) : t("receipts.process.direct") }),
+  ]);
+}
+
+function receiptUploadPanel() {
+  const picker = el("input", { type: "file", id: "create-grfile", accept: ".csv,text/csv", hidden: true, onchange: (e) => previewReceipts(e.target.files) });
+  const drop = el("div", { class: busy ? "createdrop busy" : "createdrop", id: "create-grdrop" }, [
+    el("div", { class: "createdropicon" }, [icon("load")]),
+    el("div", { class: "createdroptitle", text: t("create.gr.drop") }),
+    el("div", { class: "createmeta", text: t("create.gr.dropsub") }),
+    el("button", { class: "actionlink primary", onclick: () => picker.click(), ...(busy ? { disabled: "disabled" } : {}) }, [icon("load"), el("span", { text: t("create.choosefile") })]),
+    picker,
+  ]);
+  drop.addEventListener("dragover", (e) => {
+    e.preventDefault();
+    drop.classList.add("over");
+  });
+  drop.addEventListener("dragleave", () => drop.classList.remove("over"));
+  drop.addEventListener("drop", (e) => {
+    e.preventDefault();
+    drop.classList.remove("over");
+    if (!busy) previewReceipts(e.dataTransfer.files);
+  });
+  const template = el("button", { class: "actionlink", id: "create-grtemplate", onclick: () => downloadTemplate() }, [icon("download"), el("span", { text: t("create.template") })]);
+  return el("div", { class: "panel" }, kids([
+    el("div", { class: "cardhead" }, [el("h3", { text: t("create.gr.upload") }), template]),
+    el("div", { class: "createmeta createintro", text: t("receipts.loadhelp") }),
+    receiptDestination(),
+    drop,
+    formatReference(),
+  ]));
+}
+
+/** Read the CSV and ask the server what loading it would do. Nothing is kept. */
+export async function previewReceipts(fileList) {
+  const file = fileList?.[0];
+  if (busy || !file) return;
+  busy = true;
+  receiptResult = null;
+  const text = await file.text();
+  const r = await getJson("/api/goods-receipts/csv-preview", { method: "POST", headers: { "Content-Type": "text/csv" }, body: text });
+  busy = false;
+  receiptPreview = r.ok ? { filename: file.name, text, body: r.body } : { filename: file.name, text: null, error: said(r.body, "receipts.loadfailed") };
   render();
 }
+
+function refusedRows(refused) {
+  if (!refused?.length) return [];
+  return [
+    el("h4", { text: t("receipts.refusedheading") }),
+    ...refused.slice(0, 25).map((x) => el("div", { class: "warn", text: t("receipts.refusedrow").replace("{row}", String(x.row)).replace("{why}", said(x, "receipts.loadfailed")) })),
+    refused.length > 25 ? el("div", { class: "muted", text: t("purchaseorders.refusedmore").replace("{n}", String(refused.length - 25)) }) : null,
+  ];
+}
+
+function receiptPreviewPanel() {
+  const p = receiptPreview;
+  const cancel = el("button", { class: "actionlink", id: "create-grcancel", onclick: () => ((receiptPreview = null), render()) }, [icon("close"), el("span", { text: t("create.cancel") })]);
+  if (p.error) return el("div", { class: "panel" }, [el("div", { class: "cardhead" }, [el("h3", { text: t("create.preview") }), cancel]), el("div", { class: "warn", text: p.error })]);
+  const list = p.body.receipts ?? [];
+  const sendable = list.filter((r) => r.lines > 0).length;
+  const counts = {};
+  for (const r of list) counts[receiptStatus(r)] = (counts[receiptStatus(r)] ?? 0) + 1;
+  const go = el("button", { class: "actionlink primary", id: "create-grsend", onclick: () => sendReceipts(), ...(sendable === 0 || busy ? { disabled: "disabled" } : {}) }, [
+    icon("create"),
+    el("span", { text: t(sendable === 1 ? "create.gr.sendone" : "create.gr.sendn").replace("{n}", String(sendable)) }),
+  ]);
+  return el("div", { class: "panel", id: "create-grpreview" }, kids([
+    el("div", { class: "cardhead" }, [
+      el("div", {}, [el("h3", { text: t("create.preview") }), el("div", { class: "createmeta", text: t("create.gr.previewmeta").replace("{file}", p.filename).replace("{n}", String(list.length)) })]),
+      cancel,
+    ]),
+    el("div", { class: "createsummary" }, ["ready", "attention", "skipped", "refused"].filter((k) => counts[k]).map((k) => el("span", { class: `createpill ${RECEIPT_PILL[k]}`, text: t(`create.gr.count.${k}`).replace("{n}", String(counts[k])) }))),
+    list.length > 0
+      ? el("div", { class: "createtablewrap" }, [
+          el("table", { class: "createtable" }, [
+            el("thead", {}, [el("tr", {}, ["create.gr.colreceipt", "create.coldate", "create.gr.colorders", "create.collines", null].map((k) => el("th", { class: k === "create.collines" ? "num" : "", text: k ? t(k) : "" })))]),
+            el(
+              "tbody",
+              {},
+              list.map((r) => {
+                const status = receiptStatus(r);
+                const detail =
+                  status === "attention"
+                    ? r.attention.map((a) => t("create.gr.lineneeds").replace("{line}", String(a.line)).replace("{why}", said({ reason: a.reason }, "receipts.check.attention"))).join(" · ")
+                    : r.existing && r.lines > 0
+                      ? t("create.gr.addsto")
+                      : null;
+                return el("tr", { "data-receipt": r.receiptNumber }, [
+                  el("td", { text: r.receiptNumber }),
+                  el("td", { class: "nowrap", text: r.receiptDate ?? "—" }),
+                  el("td", { text: r.orders.join(", ") || "—" }),
+                  el("td", { class: "num", text: String(r.lines) }),
+                  el("td", {}, kids([receiptPill(status, String(status === "attention" ? r.attention.length : r.refused)), detail ? el("div", { class: "createmeta", text: detail }) : null])),
+                ]);
+              })
+            ),
+          ]),
+        ])
+      : null,
+    ...refusedRows(p.body.refused),
+    counts.attention ? el("div", { class: "createmeta", text: t("create.gr.attentionhint") }) : null,
+    el("div", { class: "createfoot" }, [el("div", {}), el("div", { class: "createbtns" }, [go])]),
+  ]));
+}
+
+/** Send the file previewed: the same load as Goods Receipts' CSV, through the process when it is set up. */
+export async function sendReceipts() {
+  if (busy || !receiptPreview?.text) return;
+  busy = true;
+  render();
+  const r = await getJson("/api/goods-receipts/csv-load", { method: "POST", headers: { "Content-Type": "text/csv" }, body: receiptPreview.text });
+  busy = false;
+  if (r.ok) {
+    receiptResult = r.body;
+    receiptPreview = null;
+  } else {
+    receiptPreview = { ...receiptPreview, error: said(r.body, "receipts.loadfailed") };
+  }
+  render();
+}
+
+/** What the upload made: each receipt, registered or waiting at a stage, with Open. */
+function receiptResultPanel() {
+  const r = receiptResult;
+  const sent = new Map((r.process?.sent ?? []).map((x) => [x.receiptId, x]));
+  const made = (r.receipts ?? []).filter((x) => x.lines > 0);
+  const rows = made.map((x) => {
+    const went = sent.get(x.receiptId);
+    const status = went ? went.status : "registered";
+    const pill = status === "pending" ? receiptPill("pending", went?.stage ?? "") : receiptPill(status === "rejected" ? "refused" : "registered");
+    const open = el("button", { class: "actionlink", id: `create-gropen-${x.receiptNumber}`, onclick: () => openReceipt(x.receiptId, { onDone: async () => render() }) }, [icon("expand"), el("span", { text: t("create.open") })]);
+    return el("tr", { "data-receipt": x.receiptNumber }, [
+      el("td", { text: x.receiptNumber }),
+      el("td", { text: x.orders.join(", ") }),
+      el("td", {}, [pill]),
+      el("td", {}, [open]),
+    ]);
+  });
+  const recheck = r.recheck?.closed > 0 ? el("div", { class: "receiptsrecheck", text: t("receipts.recheck.closed").replace("{n}", String(r.recheck.closed)) }) : null;
+  return el("div", { class: "panel", id: "create-grresult" }, kids([
+    el("div", { class: "cardhead" }, [el("h3", { text: t("create.gr.thisupload") })]),
+    el("div", { class: "createmeta", text: t("receipts.loaded").replace("{lines}", String(r.linesLoaded)).replace("{receipts}", String(r.receiptsCreated)) }),
+    r.linesSkipped > 0 ? el("div", { class: "muted", text: t("receipts.skipped").replace("{n}", String(r.linesSkipped)) }) : null,
+    recheck,
+    rows.length > 0 ? el("div", { class: "createtablewrap" }, [el("table", { class: "createtable" }, [el("tbody", {}, rows)])]) : null,
+    ...refusedRows(r.refused),
+  ]));
+}
+
+function receiptSide() {
+  if (receiptTab !== "upload") return receiptSaved ?? el("div", { class: "panel" }, [el("div", { class: "createmeta", text: t("create.gr.keyedhint") })]);
+  if (receiptPreview) return receiptPreviewPanel();
+  if (receiptResult) return receiptResultPanel();
+  return el("div", { class: "panel" }, [el("div", { class: "createmeta", text: t("create.gr.nothingyet") })]);
+}
+
+function renderReceipts() {
+  const shell = document.getElementById("shell");
+  const left = el("div", { id: "create-grleft" });
+  shell.replaceChildren(
+    frame(
+      el("div", {}, kids([
+        topbar(t("create.heading"), t("create.gr.subtitle")),
+        kindChoice(),
+        receiptTabs(),
+        // A keyed receipt's form needs the width: what was saved goes above it.
+        receiptTab === "upload"
+          ? el("div", { class: "creategrid" }, [left, el("div", { id: "create-grside" }, [receiptSide()])])
+          : el("div", { class: "createkeyed" }, [el("div", { id: "create-grside" }, [receiptSide()]), left]),
+      ]))
+    )
+  );
+  if (receiptTab === "upload") {
+    left.append(receiptUploadPanel());
+    return;
+  }
+  // Keyed: today's form, here. Saved, it says so beside, and a fresh form is ready for the next.
+  const mode = receiptTab === "return" ? "returned" : "received";
+  const saved = async (_body, panel) => {
+    receiptSaved = panel;
+    document.getElementById("create-grside")?.replaceChildren(panel);
+    openRecord(mode, { container: left, onSaved: saved });
+  };
+  openRecord(mode, { container: left, onSaved: saved });
+}
+

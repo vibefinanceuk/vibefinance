@@ -730,6 +730,7 @@ describe("the proxy carries every path a screen calls (decision 0131)", () => {
     ["GET", "/api/goods-receipts/status-counts"],
     ["GET", "/api/goods-receipts/csv-format"],
     ["POST", "/api/goods-receipts/csv-load"],
+    ["POST", "/api/goods-receipts/csv-preview"],
     ["GET", "/api/goods-receipts/order/PO-4501"],
     ["GET", "/api/goods-receipts/gr-1"],
     ["POST", "/api/goods-receipts/gr-1/cancel"],

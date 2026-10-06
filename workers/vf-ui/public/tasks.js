@@ -653,6 +653,11 @@ export function setHelpTask(task) {
  * the obvious next question is *"show me those three"* — which the task
  * list could already answer and had no way of being asked.
  */
+/** Go to a screen from another — decision 0653 (Goods Receipts' shortcuts into Create). */
+export async function goToScreen(screen) {
+  await go(screen);
+}
+
 export async function openTasksFiltered(next) {
   filters = { stage: next.stage ?? "", ownership: next.ownership ?? "" };
   // A stale search term or page number from a previous visit means
@@ -903,7 +908,8 @@ const NAV_PERMISSIONS = {
   // The Route monitor — decision 0556: for a customer's own IT team.
   routemonitor: "Integration.Monitor",
   // Create → Upload documents — decision 0573.
-  create: "AP.Create",
+  // Decision 0653: Create brings goods receipts in too, for AP.Receive.
+  create: ["AP.Create", "AP.Receive"],
   // Agents — decision 0622: their makers, and administrators who may remove anyone's.
   agents: ["AP.Agents", "Admin.UserManagement"],
   // Goods Receipts — decision 0645: AP.Receive records, AP.Validate looks (Dan, 0643).

@@ -216,7 +216,7 @@ const PROXIED_TO_INSTANCE: RegExp[] = [
   /^\/admin\/goods-return-reasons\/[^/]+$/,
   // Decision 0644: the goods receipt register.
   /^\/goods-receipts$/,
-  /^\/goods-receipts\/(status-counts|csv-format|csv-load)$/,
+  /^\/goods-receipts\/(status-counts|csv-format|csv-load|csv-preview)$/,
   /^\/goods-receipts\/order\/[^/]+$/,
   /^\/goods-receipts\/[^/]+(\/cancel|\/reject|\/register|\/lines\/\d+)?$/,
   /^\/admin\/ap-team-email$/,
