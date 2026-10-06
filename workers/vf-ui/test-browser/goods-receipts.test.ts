@@ -74,6 +74,10 @@ const STRINGS = {
     "create.gr.status.pending": "Waiting at {n}",
     "create.gr.lineneeds": "Line {line}: {why}",
     "create.gr.sendn": "Send {n} receipts",
+    "receipts.waiting.line": "Waiting for its PO · days: {days}",
+    "receipts.waiting.receipt": "Lines waiting for a PO: {n} · days: {days}",
+    "receipts.check.counted": "Counted",
+    "receipts.heldback": "Registered. Lines held back waiting for their purchase order: {n}. Each counts once its order is loaded and it matches.",
     "action.save": "Save",
     "action.close": "Close",
   },
@@ -478,6 +482,49 @@ describe("Create → Goods receipts — decision 0653", () => {
     await vi.waitFor(() => expect(document.getElementById("create-grside")?.textContent).toContain("Receipt GR-1003 recorded."));
     expect(calls.find((c) => c.method === "POST" && c.path === "/api/goods-receipts")?.body).toMatchObject({ receiptNumber: "GR-1003" });
     expect((document.getElementById("record-order") as HTMLInputElement).value).toBe("");
+  });
+});
+
+describe("Waiting for the PO — decision 0654", () => {
+  const daysAgo = (n: number) => new Date(Date.now() - n * 86400000 - 3600000).toISOString();
+
+  it("marks a receipt with lines waiting, flagged after 7 days, and filters for them", async () => {
+    const calls = await openScreen(["AP.Receive"], {
+      "GET /api/goods-receipts": [200, { ...LIST, receipts: [{ ...LIST.receipts[0], id: "wh-2", receiptNumber: "WH-2", status: "registered", waitingLines: 1, waitingSince: daysAgo(9) }] }],
+    });
+    const pill = [...document.querySelectorAll('[data-receipt="wh-2"] .rmpill')].find((p) => p.textContent?.startsWith("Lines waiting"))!;
+    expect(pill.textContent).toBe("Lines waiting for a PO: 1 · days: 9");
+    expect(pill.className).toBe("rmpill bad");
+    const kind = document.getElementById("receiptkind") as HTMLSelectElement;
+    expect([...kind.options].map((o) => o.value)).toContain("waiting");
+    kind.value = "waiting";
+    kind.dispatchEvent(new Event("change"));
+    await vi.waitFor(() => expect(calls.some((c) => c.path === "/api/goods-receipts" && c.method === "GET" && calls.length > 0)).toBe(true));
+  });
+
+  it("opens a registered receipt with a line held back: which lines count, how long one has waited, and its fix", async () => {
+    await openScreen(["AP.Receive"], {
+      "GET /api/goods-receipts/wh-2": [
+        200,
+        {
+          receipt: { id: "wh-2", receiptNumber: "WH-2", receiptDate: "2026-10-05", source: "csv", createdBy: "Sam", cancelled: false, status: "registered", registeredAt: "2026-10-06T10:00:00Z" },
+          lines: [
+            { lineNumber: 1, orderNumber: "PO-4501", orderLine: 1, movement: "received", quantity: 10, unitCode: "EA", checkReason: null, lineStatus: "active", waitingSince: null },
+            { lineNumber: 2, orderNumber: "PO-800", orderLine: 1, movement: "received", quantity: 3, unitCode: "EA", checkReason: "order_not_loaded", lineStatus: "active", waitingSince: daysAgo(2) },
+          ],
+          orders: [ORDER],
+          process: null,
+        },
+      ],
+    });
+    const { openReceipt } = await import("/goods-receipts.js");
+    await openReceipt("wh-2");
+    expect(document.getElementById("receipt-heldback")?.textContent).toBe("Registered. Lines held back waiting for their purchase order: 1. Each counts once its order is loaded and it matches.");
+    const checks = [...document.querySelector(".popout table")!.querySelectorAll("tbody tr[data-line]")].map((r) => r.children[5]?.textContent);
+    expect(checks).toEqual(["Counted", "Waiting for its PO · days: 2"]);
+    expect(document.getElementById("fix-change-1")).toBeNull();
+    expect(document.getElementById("fix-change-2")).not.toBeNull();
+    expect(button("Register")).toBeUndefined();
   });
 });
 

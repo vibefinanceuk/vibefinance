@@ -282,7 +282,7 @@ describe("Matching's check and the AP Receiving task — decision 0652", () => {
     expect((await env.DB.prepare("SELECT line_number, check_reason FROM goods_receipt_lines WHERE receipt_id = ? ORDER BY line_number").bind(wh1).all()).results).toEqual([
       { line_number: 1, check_reason: null },
       { line_number: 2, check_reason: "order_line_not_found" },
-      { line_number: 3, check_reason: "order_not_found" },
+      { line_number: 3, check_reason: "order_not_loaded" },
     ]);
     expect((await env.DB.prepare("SELECT owner_team_id, required_permission, rule_id, stage_id FROM tasks").all()).results).toEqual([
       { owner_team_id: "ap-receiving", required_permission: "AP.Receive", rule_id: null, stage_id: "warehouse-receipts-matching" },
@@ -302,7 +302,8 @@ describe("Matching's check and the AP Receiving task — decision 0652", () => {
     expect(refused).toMatchObject({ status: 409, body: { reason: "lines_need_attention" } });
 
     const fixed = await handleFixReceiptLine(env.DB, "u-sam", id, 2, { orderNumber: "PO-300", orderLine: 1 });
-    expect((fixed.body as { lines: { reason: string | null }[]; attention: number }).attention).toBe(1);
+    // Line 3's order is not loaded: it waits rather than needing attention (0654).
+    expect(fixed.body).toMatchObject({ attention: 0, waiting: 1 });
     expect((await handleFixReceiptLine(env.DB, "u-sam", id, 3, { reject: true })).body).toMatchObject({ reason: "reject_reason_missing" });
     const rejected = await handleFixReceiptLine(env.DB, "u-sam", id, 3, { reject: true, reason: "Not ours" });
     expect((rejected.body as { lines: { lineNumber: number; status: string }[]; attention: number })).toMatchObject({ attention: 0, active: 2 });
@@ -413,3 +414,89 @@ describe("Create's preview of a receipt CSV — decision 0653", () => {
     expect([statusOf("WH-1"), statusOf("WH-2")]).toEqual(["pending", "registered"]);
   });
 });
+
+describe("Waiting for the PO — decision 0654", () => {
+  const idOf = async (n: string) => (await env.DB.prepare("SELECT id FROM goods_receipts WHERE receipt_number = ?").bind(n).first<{ id: string }>())!.id;
+  async function loadThrough(rows: string[]) {
+    const loaded = await handleLoadGoodsReceiptsCsv(env.DB, "u-sam", CSV(rows), new Date(), { pending: true });
+    return sendReceiptsThroughProcess(env.DB, (loaded.body as { pendingIds: string[] }).pendingIds);
+  }
+  const PO_CSV = `order_number,issue_date,seller vat id,buyer vat id,order total,line number,item,sku,quantity,unit,amount
+PO-800,2026-10-01,GB111,GB907856452,200,1,Pallet wrap,PW-1,20,EA,200`;
+  const loadPo = async () => {
+    const key = generateApiKey();
+    await env.DB.prepare("UPDATE org_users SET api_key_hash = ? WHERE id = 'u-dan'").bind(await hashApiKey(key)).run();
+    const r = await SELF.fetch("https://example.com/purchase-orders/csv-load", { method: "POST", headers: { Authorization: `Bearer ${key}`, "Content-Type": "text/csv" }, body: PO_CSV });
+    return (await r.json()) as { ordersLoaded: number; waitingReceipts?: Record<string, number> };
+  };
+  beforeEach(async () => {
+    await env.DB.prepare("UPDATE org_units SET vat_id = 'GB907856452', kind = 'legal_entity' WHERE id = 'u1'").run();
+    await handleSetUpWarehouseProcess(env.DB, {});
+  });
+
+  it("waits for an order not loaded yet, but not for one outside the sender's units", async () => {
+    await env.DB.prepare("INSERT INTO org_units (id, name) VALUES ('fr', 'Acme France')").run();
+    await env.DB.prepare("INSERT INTO purchase_orders (id, order_number, currency, seller_party_id, status, org_unit_id) VALUES ('p7', 'PO-700', 'EUR', 'GB111', 'active', 'fr')").run();
+    await env.DB.prepare("UPDATE org_user_roles SET unit_id = 'u1' WHERE user_id = 'u-sam'").run();
+    await env.DB.prepare("UPDATE purchase_orders SET org_unit_id = 'u1' WHERE id = 'po'").run();
+    await loadThrough(["WH-1,1,2026-10-05,PO-800,1,5", "WH-1,2,2026-10-05,PO-700,1,5"]);
+    const lines = (await env.DB.prepare("SELECT line_number, check_reason, waiting_since IS NOT NULL AS waiting FROM goods_receipt_lines ORDER BY line_number").all()).results;
+    expect(lines).toEqual([
+      { line_number: 1, check_reason: "order_not_loaded", waiting: 1 },
+      { line_number: 2, check_reason: "order_not_found", waiting: 0 },
+    ]);
+  });
+
+  it("stops at Matching with its task, refuses Register with every line waiting, and registers the matched lines while one waits", async () => {
+    const only = await loadThrough(["WH-1,1,2026-10-05,PO-800,1,5"]);
+    expect(only.sent[0]).toMatchObject({ status: "pending", stage: "Matching" });
+    expect((await handleRegisterGoodsReceipt(env.DB, "u-sam", await idOf("WH-1"))).body).toMatchObject({ reason: "all_waiting" });
+
+    await loadThrough(["WH-2,1,2026-10-05,PO-300,1,10", "WH-2,2,2026-10-05,PO-800,1,5"]);
+    const id = await idOf("WH-2");
+    const done = await handleRegisterGoodsReceipt(env.DB, "u-sam", id);
+    expect(done.body).toMatchObject({ status: "registered", touched: [{ orderNumber: "PO-300", receiptNumber: "WH-2" }] });
+    expect(await env.DB.prepare("SELECT register_partial FROM goods_receipts WHERE id = ?").bind(id).first()).toEqual({ register_partial: 1 });
+    // Line 1 counts; line 2 is held back.
+    expect((await heldByLine(env.DB, "PO-300")).get(1)).toEqual({ received: 10, returned: 0 });
+    expect((await heldByLine(env.DB, "PO-800")).size).toBe(0);
+    const listed = (await handleListGoodsReceipts(env.DB, "u-sam", { kind: "waiting" })).body as { receipts: { receiptNumber: string; waitingLines: number; status: string }[] };
+    expect(listed.receipts.map((r) => [r.receiptNumber, r.status, r.waitingLines])).toEqual([
+      ["WH-2", "registered", 1],
+      ["WH-1", "pending", 1],
+    ]);
+  });
+
+  it("loading the order registers a receipt that only waited, closing its task, and lets a held-back line count", async () => {
+    await loadThrough(["WH-1,1,2026-10-05,PO-800,1,5"]);
+    await loadThrough(["WH-2,1,2026-10-05,PO-300,1,10", "WH-2,2,2026-10-05,PO-800,1,3"]);
+    await handleRegisterGoodsReceipt(env.DB, "u-sam", await idOf("WH-2"));
+
+    const body = await loadPo();
+    expect([body.ordersLoaded, (body as { refused?: unknown }).refused]).toEqual([1, []]);
+    expect(body.waitingReceipts).toEqual({ registered: 1, linesReleased: 1, stillWaiting: 0, invoiceTasksClosed: 0 });
+    expect(await env.DB.prepare("SELECT status FROM goods_receipts WHERE receipt_number = 'WH-1'").first()).toEqual({ status: "registered" });
+    const task = await env.DB.prepare("SELECT t.status, t.end_reason, t.ended_by FROM tasks t JOIN stage_visits v ON v.id = t.stage_visit_id JOIN process_instances pi ON pi.id = v.process_instance_id WHERE pi.subject_id = ?").bind(await idOf("WH-1")).first();
+    expect(task).toEqual({ status: "cancelled", end_reason: "po:PO-800", ended_by: "u-dan" });
+    expect((await heldByLine(env.DB, "PO-800")).get(1)).toEqual({ received: 8, returned: 0 });
+    expect((await env.DB.prepare("SELECT count(*) AS n FROM goods_receipt_lines WHERE waiting_since IS NOT NULL").first<{ n: number }>())!.n).toBe(0);
+  });
+
+  it("keeps waiting, now with a reason, when the order loads without that line; a person re-points the held-back line and it counts", async () => {
+    await loadThrough(["WH-2,1,2026-10-05,PO-300,1,10", "WH-2,2,2026-10-05,PO-800,7,3"]);
+    const id = await idOf("WH-2");
+    await handleRegisterGoodsReceipt(env.DB, "u-sam", id);
+    const body = await loadPo();
+    expect(body.waitingReceipts).toMatchObject({ registered: 0, linesReleased: 0, stillWaiting: 1 });
+    expect(await env.DB.prepare("SELECT check_reason, waiting_since IS NOT NULL AS held FROM goods_receipt_lines WHERE receipt_id = ? AND line_number = 2").bind(id).first()).toEqual({
+      check_reason: "order_line_not_found",
+      held: 1,
+    });
+    // A matched, counted line on a registered receipt cannot be changed this way.
+    expect((await handleFixReceiptLine(env.DB, "u-sam", id, 1, { orderNumber: "PO-300", orderLine: 1 })).body).toMatchObject({ reason: "receipt_registered" });
+    const fixed = await handleFixReceiptLine(env.DB, "u-sam", id, 2, { orderNumber: "PO-800", orderLine: 1 });
+    expect(fixed.body).toMatchObject({ waiting: 0, touched: [{ orderNumber: "PO-800", receiptNumber: "WH-2" }] });
+    expect((await heldByLine(env.DB, "PO-800")).get(1)).toEqual({ received: 3, returned: 0 });
+  });
+});
+

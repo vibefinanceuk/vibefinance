@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 6 October 2026 (decision 0653). A living document: what
+Last updated 6 October 2026 (decision 0654). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,16 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Receipt lines waiting for their purchase order (0654)
+
+A receipt line whose purchase order is not loaded yet now waits rather
+than needing a fix. Register can record the matched lines while it waits;
+the waiting line is held back and never counts until its order is loaded
+and it matches. Loading the order checks the receipts waiting for it: a
+receipt that only waited registers and its task closes itself. A line
+waiting more than 7 days is flagged on Goods Receipts, which can filter
+for them.
 
 ### Create → Goods receipts (0653)
 

@@ -146,6 +146,7 @@ import goodsReturnReasonsSql from "../../../migrations/0139_goods_return_reasons
 import goodsReceiptsSql from "../../../migrations/0140_goods_receipts.sql?raw";
 import goodsReceiptStatusSql from "../../../migrations/0141_goods_receipt_status.sql?raw";
 import receiptMatchingSql from "../../../migrations/0142_receipt_matching.sql?raw";
+import receiptsWaitingSql from "../../../migrations/0143_receipts_waiting_for_po.sql?raw";
 
 // Another known divergence from production, on top of the one below:
 // D1's exec() splits its input by newline and executes each non-empty
@@ -490,6 +491,7 @@ export async function applyTestSchema(): Promise<void> {
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(goodsReceiptsSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(goodsReceiptStatusSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(receiptMatchingSql)));
+  await env.DB.exec(toOneStatementPerLine(stripSqlComments(receiptsWaitingSql)));
 }
 
 /**

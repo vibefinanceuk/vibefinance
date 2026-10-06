@@ -1085,6 +1085,7 @@ describe("receipts on Purchase Orders — decision 0646", () => {
     "purchaseorders.receipts.movement": "{date} · {number}: {kind} {qty} on line {line}",
     "purchaseorders.receipts.by": "by {who}",
     "purchaseorders.receiptwarnheading": "Receipts to check",
+    "purchaseorders.waitingreceipts": "Goods receipts waiting for these orders. Registered: {registered}. Lines now counted: {lines}. Still waiting or needing attention: {still}.",
     "purchaseorders.receiptwarn.line_removed": "{order} line {line} is no longer on the order, but {net} was received against it.",
     "purchaseorders.receiptwarn.below_received": "{order} line {line} now orders {ordered}, less than the {net} received. It shows over-received.",
     "receipts.state.partially_received": "Partially received",
@@ -1190,5 +1191,20 @@ describe("receipts on Purchase Orders — decision 0646", () => {
     await vi.waitFor(() => expect(document.body.textContent).toContain("Receipts to check"));
     expect(document.body.textContent).toContain("PO-500 line 1 now orders 5, less than the 8 received. It shows over-received.");
     expect(document.body.textContent).toContain("PO-500 line 2 is no longer on the order, but 3 was received against it.");
+  });
+
+  it("says what loading the order did for goods receipts waiting for it — decision 0654", async () => {
+    stubFetch({
+      "/api/purchase-orders": { body: EMPTY_LIST },
+      "/api/purchase-orders/csv-load": {
+        body: { loadId: "l1", ordersLoaded: 1, ordersReplaced: 0, linesLoaded: 1, refused: [], receiptWarnings: [], waitingReceipts: { registered: 2, linesReleased: 1, stillWaiting: 1, invoiceTasksClosed: 0 } },
+      },
+    });
+    await openScreen();
+    chooseFile("order_number,line number,item\nPO-800,1,Wrap");
+    [...document.querySelectorAll("button")].find((b) => b.textContent === "Load CSV")?.click();
+    await vi.waitFor(() => expect(document.getElementById("po-waitingreceipts")).not.toBeNull());
+    expect(document.getElementById("po-waitingreceipts")!.textContent).toBe("Goods receipts waiting for these orders. Registered: 2. Lines now counted: 1. Still waiting or needing attention: 1.");
+    expect(document.getElementById("po-waitingreceipts")!.className).toBe("warn");
   });
 });

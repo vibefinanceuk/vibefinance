@@ -301,6 +301,7 @@ import {
   handleRegisterGoodsReceipt,
   handleRejectGoodsReceipt,
   isReceiptMatchingTask,
+  releaseWaitingReceipts,
   handleSetUpWarehouseProcess,
   sendReceiptsThroughProcess,
   warehouseProcess,
@@ -922,6 +923,22 @@ function r2Storage(bucket: R2Bucket): PendingDocumentStorage {
  * subject-agnostic, and nothing here assumes what a non-invoice
  * subject's facts even look like.
  */
+/**
+ * **Receipts waiting for these orders — decision 0654.** Loading a
+ * purchase order checks the goods receipt lines waiting for it; those
+ * that now register or count send invoices waiting on the goods through
+ * the re-check (0648). What happened rides along on the response.
+ */
+async function withWaitingReceipts(db: D1Database, body: unknown, orderNumbers: string[], userId: string): Promise<unknown> {
+  const released = await releaseWaitingReceipts(db, orderNumbers, userId);
+  if (released.registered === 0 && released.linesReleased === 0 && released.stillWaiting === 0) return body;
+  const recheck = released.touched.length > 0 ? await recheckReceiptTasks(db, released.touched, userId, (id) => followUpAfterTaskCompletion(db, id)) : { closed: [], stillOpen: 0 };
+  return {
+    ...(body as object),
+    waitingReceipts: { registered: released.registered, linesReleased: released.linesReleased, stillWaiting: released.stillWaiting, invoiceTasksClosed: recheck.closed.length },
+  };
+}
+
 async function followUpAfterTaskCompletion(
   db: D1Database,
   instanceId: string,
@@ -5936,7 +5953,7 @@ export default {
         if (!auth.authorized) return forbidden(auth.status);
         const body = await readJson();
         if (!body) return json({ error: t("invalidJsonBody", resolveLocale(env.LOCALE)) }, 400);
-        const result = await handleFixReceiptLine(db, auth.user.id, decodeURIComponent(lineMatch[1]), Number(lineMatch[2]), body);
+        const result = await recheck(await handleFixReceiptLine(db, auth.user.id, decodeURIComponent(lineMatch[1]), Number(lineMatch[2]), body), auth.user.id);
         return json(result.body, result.status);
       }
       if (rejectMatch && request.method === "POST") {
@@ -5981,6 +5998,8 @@ export default {
       }
       const xml = await request.text();
       const result = await handleIngestPurchaseOrder(db, xml);
+      const orderNumber = (result.body as { orderNumber?: string }).orderNumber;
+      if (result.status < 300 && orderNumber) return json(await withWaitingReceipts(db, result.body, [orderNumber], auth.user.id), result.status);
       return json(result.body, result.status);
     }
 
@@ -5996,6 +6015,8 @@ export default {
       }
       const csv = await request.text();
       const result = await handleLoadPurchaseOrdersCsv(db, csv);
+      const loaded = (result.body as { orderNumbers?: string[] }).orderNumbers ?? [];
+      if (result.status < 300 && loaded.length > 0) return json(await withWaitingReceipts(db, result.body, loaded, auth.user.id), result.status);
       return json(result.body, result.status);
     }
 

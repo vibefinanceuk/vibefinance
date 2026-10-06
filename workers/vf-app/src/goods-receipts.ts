@@ -119,7 +119,7 @@ export async function heldByLine(db: D1Database, orderNumber: string): Promise<M
       .prepare(
         `SELECT l.order_line_number AS line, l.movement, SUM(l.quantity) AS qty
          FROM goods_receipt_lines l JOIN goods_receipts r ON r.id = l.receipt_id
-         WHERE l.order_number = ? AND r.cancelled_at IS NULL AND r.status = 'registered' AND l.line_status = 'active'
+         WHERE l.order_number = ? AND r.cancelled_at IS NULL AND r.status = 'registered' AND l.line_status = 'active' AND l.waiting_since IS NULL
          GROUP BY l.order_line_number, l.movement`
       )
       .bind(orderNumber)
@@ -396,7 +396,11 @@ export class Checker {
     const attention = (reason: string, message: string) => ({ line, over: null, attention: { reason, message } });
 
     const ctx = await this.context(orderNumber);
-    if (!ctx) return attention("order_not_found", `no purchase order ${orderNumber}`);
+    if (!ctx) {
+      // 0654: not loaded at all waits for it; one outside the sender's units reads as not there (0375) and needs a person.
+      const loaded = await this.db.prepare("SELECT 1 FROM purchase_orders WHERE order_number = ?").bind(orderNumber).first();
+      return loaded ? attention("order_not_found", `no purchase order ${orderNumber}`) : attention("order_not_loaded", `purchase order ${orderNumber} is not loaded yet`);
+    }
     if (ctx.order.status === "closed") return attention("order_closed", `purchase order ${orderNumber} is closed`);
     const po = ctx.lines.get(orderLine);
     if (!po) return attention("order_line_not_found", `purchase order ${orderNumber} has no line ${orderLine}`);
@@ -793,6 +797,8 @@ export async function handleListGoodsReceipts(
   }
   if (params.kind === "cancelled") sql += " AND r.cancelled_at IS NOT NULL";
   // 0651: waiting in the Warehouse Receipts process, or rejected there.
+  // 0654: any line waiting for its purchase order.
+  if (params.kind === "waiting") sql += " AND EXISTS (SELECT 1 FROM goods_receipt_lines wl WHERE wl.receipt_id = r.id AND wl.waiting_since IS NOT NULL AND wl.line_status = 'active')";
   if (params.kind === "pending" || params.kind === "rejected") {
     sql += " AND r.status = ?";
     binds.push(params.kind);
@@ -806,6 +812,8 @@ export async function handleListGoodsReceipts(
       .prepare(
         `SELECT r.id, r.receipt_number, r.receipt_date, r.delivery_note, r.source, r.created_at, r.cancelled_at, r.cancel_reason,
                 r.status, r.reject_reason, u.name AS created_by_name,
+                (SELECT count(*) FROM goods_receipt_lines w WHERE w.receipt_id = r.id AND w.waiting_since IS NOT NULL AND w.line_status = 'active') AS waiting_lines,
+                (SELECT min(w.waiting_since) FROM goods_receipt_lines w WHERE w.receipt_id = r.id AND w.waiting_since IS NOT NULL AND w.line_status = 'active') AS waiting_since,
                 (SELECT count(*) FROM goods_receipt_lines c WHERE c.receipt_id = r.id) AS line_count,
                 (SELECT group_concat(DISTINCT movement) FROM goods_receipt_lines m WHERE m.receipt_id = r.id) AS movements,
                 (SELECT group_concat(DISTINCT order_number) FROM goods_receipt_lines o WHERE o.receipt_id = r.id) AS orders,
@@ -839,6 +847,8 @@ export async function handleListGoodsReceipts(
       cancelReason: r.cancel_reason ?? null,
       status: r.status,
       rejectReason: r.reject_reason ?? null,
+      waitingLines: r.waiting_lines ?? 0,
+      waitingSince: r.waiting_since ?? null,
       lineCount: r.line_count,
       movements: String(r.movements ?? "").split(",").filter(Boolean),
       returnReason: r.first_reason ?? null,
@@ -886,11 +896,11 @@ export function receiptStateJoin(tolerancePct: number, alias = "rs"): string {
         SELECT gl.order_number, gl.order_line_number,
                SUM(CASE gl.movement WHEN 'received' THEN gl.quantity ELSE -gl.quantity END) AS net
         FROM goods_receipt_lines gl JOIN goods_receipts gr ON gr.id = gl.receipt_id
-        WHERE gr.cancelled_at IS NULL AND gr.status = 'registered' AND gl.line_status = 'active'
+        WHERE gr.cancelled_at IS NULL AND gr.status = 'registered' AND gl.line_status = 'active' AND gl.waiting_since IS NULL
         GROUP BY gl.order_number, gl.order_line_number
       ) n ON n.order_number = o.order_number AND n.order_line_number = l.line_number
       WHERE ${supplier("match_option")} = 'three_way'
-         OR EXISTS (SELECT 1 FROM goods_receipt_lines e JOIN goods_receipts er ON er.id = e.receipt_id WHERE e.order_number = o.order_number AND er.status = 'registered' AND e.line_status = 'active')
+         OR EXISTS (SELECT 1 FROM goods_receipt_lines e JOIN goods_receipts er ON er.id = e.receipt_id WHERE e.order_number = o.order_number AND er.status = 'registered' AND e.line_status = 'active' AND e.waiting_since IS NULL)
     ) x
     GROUP BY x.order_number
   ) ${alias} ON ${alias}.order_number = po.order_number`;
@@ -912,7 +922,7 @@ export async function handleGoodsReceiptStatusCounts(db: D1Database, userId: str
       .prepare(
         `SELECT po.order_number, rs.state,
                 EXISTS (SELECT 1 FROM goods_receipt_lines rl JOIN goods_receipts rr ON rr.id = rl.receipt_id
-                        WHERE rr.cancelled_at IS NULL AND rr.status = 'registered' AND rl.line_status = 'active' AND rl.order_number = po.order_number AND rl.movement = 'returned') AS has_returns
+                        WHERE rr.cancelled_at IS NULL AND rr.status = 'registered' AND rl.line_status = 'active' AND rl.waiting_since IS NULL AND rl.order_number = po.order_number AND rl.movement = 'returned') AS has_returns
          FROM purchase_orders po
          ${receiptStateJoin(config.quantityTolerancePct ?? 0)}
          WHERE po.status <> 'closed' AND rs.state IS NOT NULL ${inScope.sql}`
@@ -946,7 +956,7 @@ export async function handleGetGoodsReceipt(db: D1Database, userId: string, id: 
     await db
       .prepare(
         `SELECT l.line_number, l.order_number, l.order_line_number, l.movement, l.quantity, l.unit_code, l.note,
-                l.return_reason_id, gr.label AS return_reason, l.check_reason, l.line_status, l.reject_reason
+                l.return_reason_id, gr.label AS return_reason, l.check_reason, l.line_status, l.reject_reason, l.waiting_since
          FROM goods_receipt_lines l LEFT JOIN goods_return_reasons gr ON gr.id = l.return_reason_id
          WHERE l.receipt_id = ? ORDER BY l.line_number`
       )
@@ -1005,6 +1015,7 @@ export async function handleGetGoodsReceipt(db: D1Database, userId: string, id: 
         checkReason: l.check_reason ?? null,
         lineStatus: l.line_status ?? "active",
         rejectReason: l.reject_reason ?? null,
+        waitingSince: l.waiting_since ?? null,
       })),
       orders,
     },

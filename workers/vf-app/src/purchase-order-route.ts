@@ -463,6 +463,8 @@ function num(value: string | undefined): number | undefined {
 export interface PurchaseOrderCsvLoadResult {
   loadId: string;
   ordersLoaded: number;
+  /** Decision 0654: which orders loaded, for the receipts waiting on them. */
+  orderNumbers: string[];
   ordersReplaced: number;
   linesLoaded: number;
   /**
@@ -543,6 +545,7 @@ export async function handleLoadPurchaseOrdersCsv(db: D1Database, csv: string): 
   const loadId = crypto.randomUUID();
   const refused: { orderNumber: string; reason: string }[] = [];
   let ordersLoaded = 0;
+  const orderNumbers: string[] = [];
   let ordersReplaced = 0;
   let linesLoaded = 0;
   const receiptWarnings: ReceiptWarning[] = [];
@@ -631,12 +634,13 @@ export async function handleLoadPurchaseOrdersCsv(db: D1Database, csv: string): 
       statusResult ? { status: statusResult.status, holdReason: first.hold_reason || null } : undefined
     );
     ordersLoaded++;
+    orderNumbers.push(result.orderNumber);
     linesLoaded += result.lines;
     receiptWarnings.push(...result.receiptWarnings);
     if (result.replaced) ordersReplaced++;
   }
 
-  const body: PurchaseOrderCsvLoadResult = { loadId, ordersLoaded, ordersReplaced, linesLoaded, refused, receiptWarnings };
+  const body: PurchaseOrderCsvLoadResult = { loadId, ordersLoaded, orderNumbers, ordersReplaced, linesLoaded, refused, receiptWarnings };
   return { status: 200, body: { ...body } };
 }
 

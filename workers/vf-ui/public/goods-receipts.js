@@ -117,6 +117,15 @@ async function loadExtras() {
   reasons = active.ok ? active.body.reasons ?? [] : [];
 }
 
+/** Decision 0654: how long a line has waited for its purchase order, flagged after 7 days (Dan agreed). */
+const WAIT_FLAG_DAYS = 7;
+const daysSince = (iso) => Math.max(0, Math.floor((Date.now() - Date.parse(String(iso).replace(" ", "T") + (/[Z+]/.test(String(iso).slice(10)) ? "" : "Z"))) / 86400000));
+const waitingPill = (since, n = null) => {
+  const days = daysSince(since);
+  const text = (n === null ? t("receipts.waiting.line") : t("receipts.waiting.receipt").replace("{n}", String(n))).replace("{days}", String(days));
+  return el("span", { class: `rmpill ${days > WAIT_FLAG_DAYS ? "bad" : "warn"}`, title: days > WAIT_FLAG_DAYS ? t("receipts.waiting.long") : "", text });
+};
+
 const statusPill = (status) => (status === "pending" || status === "rejected" ? el("span", { class: `rmpill ${status === "pending" ? "warn" : "q"}`, text: t(`receipts.status.${status}`) }) : null);
 
 /**
@@ -264,7 +273,7 @@ function searchRow() {
   const kindPicker = el(
     "select",
     { id: "receiptkind" },
-    ["", "received", "returned", "pending", "rejected", "cancelled"].map((k) => el("option", { value: k, text: t(`receipts.kind.${k || "all"}`) }))
+    ["", "received", "returned", "pending", "waiting", "rejected", "cancelled"].map((k) => el("option", { value: k, text: t(`receipts.kind.${k || "all"}`) }))
   );
   kindPicker.value = kind;
   kindPicker.onchange = async () => {
@@ -317,6 +326,7 @@ function receiptRows() {
     const kinds = r.movements.map((m) => movementPill(m));
     if (r.returnReason) kinds.push(el("span", { class: "muted sm", text: ` ${r.returnReason}` }));
     if (r.cancelled) kinds.push(el("span", { class: "rmpill q", text: t("receipts.cancelled") }));
+    if (r.waitingLines > 0 && r.waitingSince) kinds.push(waitingPill(r.waitingSince, r.waitingLines));
     const status = statusPill(r.status);
     if (status) kinds.push(status);
     const row = el("tr", { class: r.cancelled || r.status === "rejected" ? "clickable muted" : "clickable", "data-receipt": r.id }, [
@@ -406,14 +416,23 @@ export async function openReceipt(id, { onDone = null } = {}) {
   let backdrop;
   const close = () => backdrop.remove();
   const pending = receipt.status === "pending";
+  // Decision 0654: lines waiting for their purchase order, on a pending receipt or held back on a registered one.
+  const heldBack = lines.filter((l) => l.waitingSince && l.lineStatus !== "rejected");
+  const checking = pending || heldBack.length > 0;
+  const workable = (l) => canRecord() && l.lineStatus !== "rejected" && (pending ? Boolean(l.checkReason || l.waitingSince) : Boolean(l.waitingSince));
 
   /** Decision 0652: what Matching found on a line. */
   const checkPill = (l) =>
     l.lineStatus === "rejected"
       ? el("span", { class: "rmpill q", title: l.rejectReason ?? "", text: t("receipts.check.rejected") })
-      : l.checkReason
-        ? el("span", { class: "rmpill bad", text: said({ reason: l.checkReason }, "receipts.check.attention") })
-        : el("span", { class: "rmpill ok", text: t("receipts.check.matched") });
+      : l.checkReason === "order_not_loaded" && l.waitingSince
+        ? waitingPill(l.waitingSince)
+        : l.checkReason
+          ? el("span", {}, [
+              el("span", { class: "rmpill bad", text: said({ reason: l.checkReason }, "receipts.check.attention") }),
+              l.waitingSince && !pending ? waitingPill(l.waitingSince) : null,
+            ].filter(Boolean))
+          : el("span", { class: "rmpill ok", text: t("receipts.check.matched") });
 
   /** Point a line needing attention at another order line, or reject it alone; then the pop-out opens again, checked. */
   const fixCell = (l) => {
@@ -548,6 +567,9 @@ export async function openReceipt(id, { onDone = null } = {}) {
             : t("receipts.pendingnoprocess"),
         })
       : null,
+    receipt.status === "registered" && heldBack.length > 0
+      ? el("div", { class: "warn", id: "receipt-heldback", text: t("receipts.heldback").replace("{n}", String(heldBack.length)) })
+      : null,
     receipt.status === "rejected"
       ? el("div", { class: "warn", id: "receipt-rejected", text: t("receipts.rejectedby").replace("{who}", receipt.rejectedBy ?? "—").replace("{why}", receipt.rejectReason ?? "") })
       : null,
@@ -563,7 +585,7 @@ export async function openReceipt(id, { onDone = null } = {}) {
         el("thead", {}, [
           el("tr", {}, [
             ...["receipts.col.line", "receipts.col.order", "receipts.col.kind", "receipts.col.quantity", "receipts.reason"].map((k) => el("th", { text: t(k) })),
-            ...(pending ? [el("th", { text: t("receipts.col.check") })] : []),
+            ...(checking ? [el("th", { text: t("receipts.col.check") })] : []),
           ]),
         ]),
         el(
@@ -576,10 +598,10 @@ export async function openReceipt(id, { onDone = null } = {}) {
               el("td", {}, [movementPill(l.movement)]),
               el("td", { class: "num", text: `${qty(l.quantity)}${l.unitCode ? ` ${l.unitCode}` : ""}` }),
               el("td", { class: "muted", text: l.returnReason ?? "—" }),
-              ...(pending ? [el("td", {}, [checkPill(l)])] : []),
+              ...(checking ? [el("td", {}, [pending || l.waitingSince ? checkPill(l) : el("span", { class: "rmpill ok", text: t("receipts.check.counted") })])] : []),
             ]),
             // Decision 0652: the fix sits under the line it is for.
-            pending && canRecord() && l.lineStatus !== "rejected" && l.checkReason
+            workable(l)
               ? el("tr", { class: "receiptfixrow" }, [el("td", {}), el("td", { colspan: "5" }, fixCell(l))])
               : null,
           ].filter(Boolean))

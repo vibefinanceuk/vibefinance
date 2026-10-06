@@ -145,6 +145,25 @@ function outcome(result) {
   );
 
   /**
+   * **Receipts waiting for these orders — decision 0654.** Loading an
+   * order checks the goods receipt lines waiting for it.
+   */
+  const waiting = result.waitingReceipts;
+  if (waiting) {
+    lines.push(
+      el("div", {
+        id: "po-waitingreceipts",
+        class: waiting.stillWaiting > 0 ? "warn" : "",
+        text: t("purchaseorders.waitingreceipts")
+          .replace("{registered}", String(waiting.registered))
+          .replace("{lines}", String(waiting.linesReleased))
+          .replace("{still}", String(waiting.stillWaiting)),
+      })
+    );
+    if (waiting.invoiceTasksClosed > 0) lines.push(el("div", { class: "muted", text: t("receipts.recheck.closed").replace("{n}", String(waiting.invoiceTasksClosed)) }));
+  }
+
+  /**
    * **Change orders meeting goods already received — decision 0646.**
    * Loaded, as the ERP said, but a person needs to look.
    */

@@ -138,6 +138,21 @@ export interface CheckedLine {
   reason: string | null;
   message: string | null;
   over: { ordered: number; netAfter: number } | null;
+  /** 0654: its order is not loaded yet, or it was held back when the receipt registered; since when. */
+  waitingSince: string | null;
+}
+
+export interface CheckedReceipt {
+  lines: CheckedLine[];
+  /** Lines a person must fix or reject (not those only waiting for their order). */
+  attention: number;
+  /** Lines waiting for their order (0654). */
+  waiting: number;
+  /** Lines that match now. */
+  matched: number;
+  active: number;
+  /** On a registered receipt: orders of lines that waited and now match, so now count. */
+  released: string[];
 }
 
 /**
@@ -146,25 +161,40 @@ export interface CheckedLine {
  * lines in order so a receipt that receives then returns is judged as
  * it reads. A rejected line is left out. What it finds is stored on
  * each line (`check_reason`), for the pop-out and the task.
+ *
+ * **Waiting — decision 0654.** A line whose order is not loaded waits
+ * (`waiting_since`, kept from when it started). On a **registered**
+ * receipt only its held-back lines are checked (the rest already
+ * count, so are in what is held): one that now matches stops waiting
+ * and counts; one that still does not stays held back, whatever the
+ * reason now is.
  */
-export async function checkReceiptLines(db: D1Database, receiptId: string): Promise<{ lines: CheckedLine[]; attention: number; active: number }> {
-  const receipt = await db.prepare("SELECT created_by FROM goods_receipts WHERE id = ?").bind(receiptId).first<{ created_by: string | null }>();
+export async function checkReceiptLines(db: D1Database, receiptId: string, now = new Date()): Promise<CheckedReceipt> {
+  const receipt = await db.prepare("SELECT created_by, status FROM goods_receipts WHERE id = ?").bind(receiptId).first<{ created_by: string | null; status: ReceiptStatus }>();
+  const registered = receipt?.status === "registered";
   const scope = receipt?.created_by ? await unitsWherePermitted(db, receipt.created_by, "AP.Receive") : null;
   const checker = new Checker(db, scope);
   const rows = (
     await db
       .prepare(
-        `SELECT line_number, order_number, order_line_number, movement, quantity, unit_code, return_reason_id, line_status
+        `SELECT line_number, order_number, order_line_number, movement, quantity, unit_code, return_reason_id, line_status, waiting_since
          FROM goods_receipt_lines WHERE receipt_id = ? ORDER BY line_number`
       )
       .bind(receiptId)
-      .all<{ line_number: number; order_number: string; order_line_number: number; movement: string; quantity: number; unit_code: string | null; return_reason_id: string | null; line_status: "active" | "rejected" }>()
+      .all<{ line_number: number; order_number: string; order_line_number: number; movement: string; quantity: number; unit_code: string | null; return_reason_id: string | null; line_status: "active" | "rejected"; waiting_since: string | null }>()
   ).results;
+  const at = now.toISOString();
   const lines: CheckedLine[] = [];
   const updates = [];
+  const released = new Set<string>();
   for (const r of rows) {
     if (r.line_status === "rejected") {
-      lines.push({ lineNumber: r.line_number, status: "rejected", reason: null, message: null, over: null });
+      lines.push({ lineNumber: r.line_number, status: "rejected", reason: null, message: null, over: null, waitingSince: null });
+      continue;
+    }
+    if (registered && !r.waiting_since) {
+      // Already counted: it is in what is held, and is not judged again.
+      lines.push({ lineNumber: r.line_number, status: "active", reason: null, message: null, over: null, waitingSince: null });
       continue;
     }
     const result = await checker.checkLenient({
@@ -178,12 +208,24 @@ export async function checkReceiptLines(db: D1Database, receiptId: string): Prom
     const found = "refused" in result ? result.refused : result.attention;
     if (!found && !("refused" in result)) checker.commit(result.line.orderNumber, result.line.orderLine, result.line.movement, result.line.quantity);
     const over = !("refused" in result) && result.over ? { ordered: result.over.ordered, netAfter: result.over.netAfter } : null;
-    lines.push({ lineNumber: r.line_number, status: "active", reason: found?.reason ?? null, message: found?.message ?? null, over });
-    updates.push(db.prepare("UPDATE goods_receipt_lines SET check_reason = ? WHERE receipt_id = ? AND line_number = ?").bind(found?.reason ?? null, receiptId, r.line_number));
+    const waitingSince = registered ? (found ? r.waiting_since : null) : found?.reason === "order_not_loaded" ? r.waiting_since ?? at : null;
+    if (registered && r.waiting_since && !waitingSince) released.add(r.order_number);
+    lines.push({ lineNumber: r.line_number, status: "active", reason: found?.reason ?? null, message: found?.message ?? null, over, waitingSince });
+    updates.push(
+      db.prepare("UPDATE goods_receipt_lines SET check_reason = ?, waiting_since = ? WHERE receipt_id = ? AND line_number = ?").bind(found?.reason ?? null, waitingSince, receiptId, r.line_number)
+    );
   }
   if (updates.length > 0) await db.batch(updates);
   const active = lines.filter((l) => l.status === "active");
-  return { lines, attention: active.filter((l) => l.reason).length, active: active.length };
+  const waiting = active.filter((l) => l.waitingSince).length;
+  return {
+    lines,
+    attention: active.filter((l) => l.reason && l.reason !== "order_not_loaded").length,
+    waiting,
+    matched: active.filter((l) => !l.reason && !l.waitingSince).length,
+    active: active.length,
+    released: [...released],
+  };
 }
 
 /**
@@ -196,7 +238,9 @@ export async function checkReceiptLines(db: D1Database, receiptId: string): Prom
  */
 export async function receiptMatchingGuard(db: D1Database, stage: { id: string; required_permission: string | null }, receiptId: string, visitId: string): Promise<{ stop: boolean; tasksCreated: number }> {
   const checked = await checkReceiptLines(db, receiptId);
-  if (checked.attention === 0) return { stop: false, tasksCreated: 0 };
+  // 0654: lines only waiting for their order pass when Register asked for the rest (they stay held back).
+  const partial = (await db.prepare("SELECT register_partial FROM goods_receipts WHERE id = ?").bind(receiptId).first<{ register_partial: number }>())?.register_partial === 1;
+  if (checked.attention === 0 && (checked.waiting === 0 || partial)) return { stop: false, tasksCreated: 0 };
   const team =
     (await db.prepare("SELECT id FROM org_teams WHERE id = ?").bind(AP_RECEIVING_TEAM_ID).first<{ id: string }>()) ??
     (await db.prepare("SELECT id FROM org_teams WHERE id = 'ap-team'").first<{ id: string }>());
@@ -223,7 +267,7 @@ async function touchedBy(db: D1Database, receiptId: string): Promise<Touched[]> 
     await db
       .prepare(
         `SELECT DISTINCT l.order_number AS orderNumber, r.receipt_number AS receiptNumber
-         FROM goods_receipt_lines l JOIN goods_receipts r ON r.id = l.receipt_id WHERE r.id = ? AND l.line_status = 'active'`
+         FROM goods_receipt_lines l JOIN goods_receipts r ON r.id = l.receipt_id WHERE r.id = ? AND l.line_status = 'active' AND l.waiting_since IS NULL`
       )
       .bind(receiptId)
       .all<Touched>()
@@ -388,7 +432,7 @@ export async function handleRejectGoodsReceipt(db: D1Database, userId: string, i
 
 // ── Working a receipt at Matching ──────────────────────────────────────
 
-async function pendingInScope(db: D1Database, userId: string, id: string): Promise<RouteResult | { receipt: { id: string; receipt_number: string; status: ReceiptStatus }; scope: string[] | null }> {
+async function pendingInScope(db: D1Database, userId: string, id: string, waitingLine: number | null = null): Promise<RouteResult | { receipt: { id: string; receipt_number: string; status: ReceiptStatus }; scope: string[] | null }> {
   const notFound = { status: 404, body: { error: "no such receipt", reason: "not_found" } };
   const receipt = await db.prepare("SELECT id, receipt_number, status FROM goods_receipts WHERE id = ?").bind(id).first<{ id: string; receipt_number: string; status: ReceiptStatus }>();
   if (!receipt) return notFound;
@@ -400,7 +444,12 @@ async function pendingInScope(db: D1Database, userId: string, id: string): Promi
       .all<{ org_unit_id: string | null }>()
   ).results;
   if (units.some((o) => !isWithinScope({ units: scope }, o.org_unit_id))) return notFound;
-  if (receipt.status !== "pending") return { status: 409, body: { error: `that receipt is ${receipt.status}`, reason: `receipt_${receipt.status}` } };
+  // 0654: a line held back on a registered receipt is still worked, until it counts.
+  const heldBack =
+    receipt.status === "registered" &&
+    waitingLine !== null &&
+    (await db.prepare("SELECT 1 FROM goods_receipt_lines WHERE receipt_id = ? AND line_number = ? AND waiting_since IS NOT NULL AND line_status = 'active'").bind(id, waitingLine).first()) !== null;
+  if (receipt.status !== "pending" && !heldBack) return { status: 409, body: { error: `that receipt is ${receipt.status}`, reason: `receipt_${receipt.status}` } };
   return { receipt, scope };
 }
 
@@ -412,7 +461,7 @@ async function pendingInScope(db: D1Database, userId: string, id: string): Promi
  * checked again and returned. AP.Receive.
  */
 export async function handleFixReceiptLine(db: D1Database, userId: string, id: string, lineNumber: number, body: Record<string, unknown>): Promise<RouteResult> {
-  const found = await pendingInScope(db, userId, id);
+  const found = await pendingInScope(db, userId, id, lineNumber);
   if ("status" in found) return found;
   const line = await db.prepare("SELECT line_status FROM goods_receipt_lines WHERE receipt_id = ? AND line_number = ?").bind(id, lineNumber).first<{ line_status: string }>();
   if (!line) return { status: 404, body: { error: `the receipt has no line ${lineNumber}`, reason: "line_not_found" } };
@@ -431,7 +480,9 @@ export async function handleFixReceiptLine(db: D1Database, userId: string, id: s
     await db.prepare("UPDATE goods_receipt_lines SET order_number = ?, order_line_number = ? WHERE receipt_id = ? AND line_number = ?").bind(orderNumber, orderLine, id, lineNumber).run();
   }
   const checked = await checkReceiptLines(db, id);
-  return { status: 200, body: { id, ...checked } };
+  // 0654: a held-back line that now matches counts, so invoices waiting on it are checked again.
+  const touched = checked.released.map((orderNumber) => ({ orderNumber, receiptNumber: found.receipt.receipt_number }));
+  return { status: 200, body: { id, ...checked, touched } };
 }
 
 /**
@@ -449,6 +500,14 @@ export async function handleRegisterGoodsReceipt(db: D1Database, userId: string,
   const checked = await checkReceiptLines(db, id);
   if (checked.active === 0) return { status: 409, body: { error: "every line is rejected: reject the receipt instead", reason: "no_lines_left" } };
   if (checked.attention > 0) return { status: 409, body: { error: "some lines still need attention", reason: "lines_need_attention", lines: checked.lines } };
+  /**
+   * **Matched lines while one waits — decision 0654** (Dan agreed,
+   * question 4). Those waiting for their order are held back on the
+   * receipt and count once it is loaded; with none matched yet there is
+   * nothing to register.
+   */
+  if (checked.matched === 0) return { status: 409, body: { error: "every line still waits for its purchase order", reason: "all_waiting" } };
+  if (checked.waiting > 0) await db.prepare("UPDATE goods_receipts SET register_partial = 1 WHERE id = ?").bind(id).run();
 
   const instance = await db
     .prepare("SELECT id FROM process_instances WHERE subject_type = 'goods_receipt' AND subject_id = ? AND status = 'in_progress' ORDER BY created_at DESC LIMIT 1")
@@ -479,3 +538,71 @@ export async function isReceiptMatchingTask(db: D1Database, taskId: string): Pro
     .first();
   return row !== null;
 }
+
+/**
+ * **Loading a purchase order checks the receipts waiting for it —
+ * decision 0654**, as goods arriving checks invoices (0648). For each
+ * receipt with a line waiting on one of these orders:
+ *
+ * - **pending at Matching**: every line is checked again. Nothing left
+ *   to fix or wait for: its task closes itself (ended by whoever loaded
+ *   the order, `po:<order>`) and it goes on to be registered;
+ * - **registered with lines held back**: each that now matches counts.
+ *
+ * Returns how many receipts registered, how many lines now count, and
+ * the orders they touch, for the re-check of invoices.
+ */
+export async function releaseWaitingReceipts(
+  db: D1Database,
+  orderNumbers: string[],
+  actorUserId: string,
+  now = new Date()
+): Promise<{ registered: number; linesReleased: number; stillWaiting: number; touched: Touched[] }> {
+  const out = { registered: 0, linesReleased: 0, stillWaiting: 0, touched: [] as Touched[] };
+  const orders = [...new Set(orderNumbers.filter(Boolean))];
+  if (orders.length === 0) return out;
+  const receipts = (
+    await db
+      .prepare(
+        `SELECT DISTINCT r.id, r.receipt_number, r.status FROM goods_receipt_lines l JOIN goods_receipts r ON r.id = l.receipt_id
+         WHERE l.waiting_since IS NOT NULL AND l.line_status = 'active' AND r.status IN ('pending', 'registered')
+           AND l.order_number IN (SELECT value FROM json_each(?))`
+      )
+      .bind(JSON.stringify(orders))
+      .all<{ id: string; receipt_number: string; status: ReceiptStatus }>()
+  ).results;
+  const at = now.toISOString();
+  for (const r of receipts) {
+    if (r.status === "registered") {
+      const before = (await db.prepare("SELECT count(*) AS n FROM goods_receipt_lines WHERE receipt_id = ? AND waiting_since IS NOT NULL").bind(r.id).first<{ n: number }>())?.n ?? 0;
+      const checked = await checkReceiptLines(db, r.id, now);
+      out.linesReleased += before - checked.waiting;
+      if (checked.waiting > 0) out.stillWaiting++;
+      out.touched.push(...checked.released.map((orderNumber) => ({ orderNumber, receiptNumber: r.receipt_number })));
+      continue;
+    }
+    const checked = await checkReceiptLines(db, r.id, now);
+    if (checked.attention > 0 || checked.waiting > 0) {
+      out.stillWaiting++;
+      continue;
+    }
+    const instance = await db
+      .prepare("SELECT id FROM process_instances WHERE subject_type = 'goods_receipt' AND subject_id = ? AND status = 'in_progress' ORDER BY created_at DESC LIMIT 1")
+      .bind(r.id)
+      .first<{ id: string }>();
+    if (!instance) continue;
+    await db
+      .prepare(
+        `UPDATE tasks SET status = 'cancelled', ended_by = ?, ended_at = ?, end_reason = ?
+         WHERE status = 'open' AND stage_visit_id IN (SELECT id FROM stage_visits WHERE process_instance_id = ?)`
+      )
+      .bind(actorUserId, at, `po:${orders.join(",")}`.slice(0, 200), instance.id)
+      .run();
+    const touched = await continueReceiptInstance(db, instance.id, now);
+    const after = await db.prepare("SELECT status FROM goods_receipts WHERE id = ?").bind(r.id).first<{ status: ReceiptStatus }>();
+    if (after?.status === "registered") out.registered++;
+    out.touched.push(...touched);
+  }
+  return out;
+}
+
