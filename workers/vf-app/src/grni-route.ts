@@ -77,7 +77,7 @@ export async function grniReport(db: D1Database, userId: string | undefined, org
          FROM goods_receipt_lines l
          JOIN goods_receipts r ON r.id = l.receipt_id
          JOIN purchase_orders po ON po.order_number = l.order_number
-         WHERE r.receipt_date <= ? AND r.status = 'registered'
+         WHERE r.receipt_date <= ? AND r.status = 'registered' AND l.line_status = 'active'
            AND (r.cancelled_at IS NULL OR substr(r.cancelled_at, 1, 10) > ?) ${scope.sql}
          ORDER BY l.order_number, l.order_line_number, r.receipt_date, r.created_at`
       )

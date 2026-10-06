@@ -5297,6 +5297,13 @@
 .receiptscredit { margin-top: 8px; font-size: var(--text-sm); }
 /* Decision 0651: where a CSV load goes. */
 .receiptsprocess { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 4px 0 10px; }
+/* Decision 0652: fixing a line at Matching. */
+.receiptfix { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.receiptfixrow td { border-top: none; padding-top: 0; }
+.receiptfix input.fixorder { width: 8em; flex: none; }
+.receiptfix input.fixline { width: 4.5em; flex: none; }
+.receiptfix button { white-space: nowrap; }
+.popout td.nowrap { white-space: nowrap; }
 .receiptfigures .qtyinput { width: 7em; text-align: right; }
 .receiptfigures td.num, .receiptfigures th.num, .receiptstable td.num, .receiptstable th.num { text-align: right; font-variant-numeric: tabular-nums; }
 /* Decision 0646: a purchase order's receipts and returns. */

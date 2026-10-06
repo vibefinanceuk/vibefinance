@@ -119,7 +119,7 @@ export async function heldByLine(db: D1Database, orderNumber: string): Promise<M
       .prepare(
         `SELECT l.order_line_number AS line, l.movement, SUM(l.quantity) AS qty
          FROM goods_receipt_lines l JOIN goods_receipts r ON r.id = l.receipt_id
-         WHERE l.order_number = ? AND r.cancelled_at IS NULL AND r.status = 'registered'
+         WHERE l.order_number = ? AND r.cancelled_at IS NULL AND r.status = 'registered' AND l.line_status = 'active'
          GROUP BY l.order_line_number, l.movement`
       )
       .bind(orderNumber)
@@ -260,7 +260,7 @@ interface OrderContext {
  * a file that receives and then returns in the same load is judged in
  * order. Built once per save or load.
  */
-class Checker {
+export class Checker {
   private orders = new Map<string, OrderContext | null>();
   private reasons: { id: string; label: string }[] | null = null;
   constructor(
@@ -358,6 +358,61 @@ class Checker {
     return { line: { orderNumber, orderLine, movement, quantity, unitCode, returnReasonId, note: text(input.note) }, over };
   }
 
+  /**
+   * **Matching's check — decision 0652.** As `check`, but a line whose
+   * order, order line, unit or held quantity is wrong is kept, saying
+   * why (`attention`), for a person to fix at Matching. What cannot be
+   * stored at all (no order number, no line number, no quantity, a
+   * movement or return reason that is not one) is still refused.
+   * Accepting moves no running net: call `commit` for a line with no
+   * attention.
+   */
+  async checkLenient(input: LineInput): Promise<
+    | { refused: Refusal }
+    | {
+        line: { orderNumber: string; orderLine: number; movement: Movement; quantity: number; unitCode: string | null; returnReasonId: string | null; note: string | null };
+        over: OverReceipt | null;
+        attention: Refusal | null;
+      }
+  > {
+    const orderNumber = typeof input.orderNumber === "string" ? input.orderNumber.trim() : "";
+    if (!orderNumber) return { refused: { reason: "order_missing", message: "no order number" } };
+    const orderLine = Number(typeof input.orderLine === "string" ? input.orderLine.trim() : input.orderLine);
+    if (!Number.isInteger(orderLine) || orderLine < 1) return { refused: { reason: "order_line_missing", message: "no order line number" } };
+    const quantity = quantityOf(input.quantity);
+    if (quantity === null) return { refused: { reason: "quantity_invalid", message: "the quantity must be a number above nought" } };
+    const rawMovement = typeof input.movement === "string" ? input.movement.trim().toLowerCase() : "";
+    const movement: Movement | null = rawMovement === "" || rawMovement === "received" || rawMovement === "receipt" ? "received" : rawMovement === "returned" || rawMovement === "return" ? "returned" : null;
+    if (!movement) return { refused: { reason: "movement_invalid", message: "the movement must be received or returned" } };
+    let returnReasonId: string | null = null;
+    if (movement === "returned") {
+      const given = text(input.returnReason);
+      if (!given) return { refused: { reason: "return_reason_missing", message: "a return needs a reason" } };
+      returnReasonId = await this.reasonId(given);
+      if (!returnReasonId) return { refused: { reason: "return_reason_unknown", message: `"${given}" is not a goods return reason` } };
+    }
+    const unitCode = text(input.unitCode);
+    const line = { orderNumber, orderLine, movement, quantity, unitCode, returnReasonId, note: text(input.note) };
+    const attention = (reason: string, message: string) => ({ line, over: null, attention: { reason, message } });
+
+    const ctx = await this.context(orderNumber);
+    if (!ctx) return attention("order_not_found", `no purchase order ${orderNumber}`);
+    if (ctx.order.status === "closed") return attention("order_closed", `purchase order ${orderNumber} is closed`);
+    const po = ctx.lines.get(orderLine);
+    if (!po) return attention("order_line_not_found", `purchase order ${orderNumber} has no line ${orderLine}`);
+    if (unitCode && po.unit_code && unitCode.toLowerCase() !== po.unit_code.toLowerCase())
+      return attention("unit_mismatch", `the order line is in ${po.unit_code}, not ${unitCode}`);
+    const net = ctx.net.get(orderLine) ?? 0;
+    if (movement === "returned" && quantity > net + EPS)
+      return attention("return_exceeds_received", `only ${round(Math.max(0, net))} is held on that line`);
+    const netAfter = movement === "received" ? net + quantity : net - quantity;
+    const over =
+      movement === "received" && po.quantity !== null && netAfter > po.quantity + EPS
+        ? { orderNumber, orderLine, ordered: po.quantity, netAfter: round(netAfter) }
+        : null;
+    return { line, over, attention: null };
+  }
+
   commit(orderNumber: string, orderLine: number, movement: Movement, quantity: number): void {
     const ctx = this.orders.get(orderNumber);
     if (!ctx) return;
@@ -365,13 +420,20 @@ class Checker {
   }
 }
 
-function lineInsert(db: D1Database, receiptId: string, lineNumber: number, l: { orderNumber: string; orderLine: number; movement: Movement; quantity: number; unitCode: string | null; returnReasonId: string | null; note: string | null }, now: string) {
+function lineInsert(
+  db: D1Database,
+  receiptId: string,
+  lineNumber: number,
+  l: { orderNumber: string; orderLine: number; movement: Movement; quantity: number; unitCode: string | null; returnReasonId: string | null; note: string | null },
+  now: string,
+  checkReason: string | null = null
+) {
   return db
     .prepare(
-      `INSERT INTO goods_receipt_lines (id, receipt_id, line_number, order_number, order_line_number, movement, quantity, unit_code, return_reason_id, note, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO goods_receipt_lines (id, receipt_id, line_number, order_number, order_line_number, movement, quantity, unit_code, return_reason_id, note, created_at, check_reason)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
-    .bind(crypto.randomUUID(), receiptId, lineNumber, l.orderNumber, l.orderLine, l.movement, l.quantity, l.unitCode, l.returnReasonId, l.note, now);
+    .bind(crypto.randomUUID(), receiptId, lineNumber, l.orderNumber, l.orderLine, l.movement, l.quantity, l.unitCode, l.returnReasonId, l.note, now, checkReason);
 }
 
 /**
@@ -582,7 +644,7 @@ export async function handleLoadGoodsReceiptsCsv(db: D1Database, userId: string,
       continue;
     }
 
-    const result = await checker.check({
+    const input = {
       orderNumber: v.order_number,
       orderLine: v.order_line,
       quantity: v.quantity,
@@ -590,11 +652,14 @@ export async function handleLoadGoodsReceiptsCsv(db: D1Database, userId: string,
       returnReason: v.return_reason,
       unitCode: v.unit_code,
       note: v.note,
-    });
+    };
+    // 0652: through the process, a line whose order or held quantity is wrong is kept for Matching, not refused.
+    const result = receipt.status === "pending" ? await checker.checkLenient(input) : await checker.check(input);
     if ("refused" in result) {
       refuse(result.refused.reason, result.refused.message);
       continue;
     }
+    const attention = "attention" in result ? (result as { attention: Refusal | null }).attention : null;
 
     const statements = [];
     if (receipt.isNew) {
@@ -607,7 +672,7 @@ export async function handleLoadGoodsReceiptsCsv(db: D1Database, userId: string,
           .bind(receipt.id, receiptNumber, v.receipt_date, text(v.delivery_note), userId, at, receipt.status, receipt.status === "registered" ? at : null)
       );
     }
-    statements.push(lineInsert(db, receipt.id, lineNumber, result.line, at));
+    statements.push(lineInsert(db, receipt.id, lineNumber, result.line, at, attention?.reason ?? null));
     await db.batch(statements);
     if (receipt.isNew) {
       receipt.isNew = false;
@@ -615,7 +680,7 @@ export async function handleLoadGoodsReceiptsCsv(db: D1Database, userId: string,
       if (receipt.status === "pending") pendingIds.push(receipt.id);
     }
     receipt.lines.add(lineNumber);
-    checker.commit(result.line.orderNumber, result.line.orderLine, result.line.movement, result.line.quantity);
+    if (!attention) checker.commit(result.line.orderNumber, result.line.orderLine, result.line.movement, result.line.quantity);
     linesLoaded++;
     if (receipt.status === "registered") touched.set(result.line.orderNumber, receiptNumber);
     if (result.over) warnings.push({ ...result.over, row: rowNo, receiptNumber });
@@ -766,11 +831,11 @@ export function receiptStateJoin(tolerancePct: number, alias = "rs"): string {
         SELECT gl.order_number, gl.order_line_number,
                SUM(CASE gl.movement WHEN 'received' THEN gl.quantity ELSE -gl.quantity END) AS net
         FROM goods_receipt_lines gl JOIN goods_receipts gr ON gr.id = gl.receipt_id
-        WHERE gr.cancelled_at IS NULL AND gr.status = 'registered'
+        WHERE gr.cancelled_at IS NULL AND gr.status = 'registered' AND gl.line_status = 'active'
         GROUP BY gl.order_number, gl.order_line_number
       ) n ON n.order_number = o.order_number AND n.order_line_number = l.line_number
       WHERE ${supplier("match_option")} = 'three_way'
-         OR EXISTS (SELECT 1 FROM goods_receipt_lines e JOIN goods_receipts er ON er.id = e.receipt_id WHERE e.order_number = o.order_number AND er.status = 'registered')
+         OR EXISTS (SELECT 1 FROM goods_receipt_lines e JOIN goods_receipts er ON er.id = e.receipt_id WHERE e.order_number = o.order_number AND er.status = 'registered' AND e.line_status = 'active')
     ) x
     GROUP BY x.order_number
   ) ${alias} ON ${alias}.order_number = po.order_number`;
@@ -792,7 +857,7 @@ export async function handleGoodsReceiptStatusCounts(db: D1Database, userId: str
       .prepare(
         `SELECT po.order_number, rs.state,
                 EXISTS (SELECT 1 FROM goods_receipt_lines rl JOIN goods_receipts rr ON rr.id = rl.receipt_id
-                        WHERE rr.cancelled_at IS NULL AND rr.status = 'registered' AND rl.order_number = po.order_number AND rl.movement = 'returned') AS has_returns
+                        WHERE rr.cancelled_at IS NULL AND rr.status = 'registered' AND rl.line_status = 'active' AND rl.order_number = po.order_number AND rl.movement = 'returned') AS has_returns
          FROM purchase_orders po
          ${receiptStateJoin(config.quantityTolerancePct ?? 0)}
          WHERE po.status <> 'closed' AND rs.state IS NOT NULL ${inScope.sql}`
@@ -826,7 +891,7 @@ export async function handleGetGoodsReceipt(db: D1Database, userId: string, id: 
     await db
       .prepare(
         `SELECT l.line_number, l.order_number, l.order_line_number, l.movement, l.quantity, l.unit_code, l.note,
-                l.return_reason_id, gr.label AS return_reason
+                l.return_reason_id, gr.label AS return_reason, l.check_reason, l.line_status, l.reject_reason
          FROM goods_receipt_lines l LEFT JOIN goods_return_reasons gr ON gr.id = l.return_reason_id
          WHERE l.receipt_id = ? ORDER BY l.line_number`
       )
@@ -881,6 +946,10 @@ export async function handleGetGoodsReceipt(db: D1Database, userId: string, id: 
         note: l.note,
         returnReasonId: l.return_reason_id,
         returnReason: l.return_reason,
+        // 0652: what Matching found, and a line rejected on its own.
+        checkReason: l.check_reason ?? null,
+        lineStatus: l.line_status ?? "active",
+        rejectReason: l.reject_reason ?? null,
       })),
       orders,
     },

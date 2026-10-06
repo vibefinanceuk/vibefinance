@@ -12,7 +12,15 @@ import {
   orderFigures,
 } from "../src/goods-receipts.js";
 import { grniReport } from "../src/grni-route.js";
-import { handleRejectGoodsReceipt, handleSetUpWarehouseProcess, sendReceiptsThroughProcess, warehouseProcess } from "../src/warehouse-receipts.js";
+import {
+  handleFixReceiptLine,
+  handleRegisterGoodsReceipt,
+  handleRejectGoodsReceipt,
+  handleSetUpWarehouseProcess,
+  sendReceiptsThroughProcess,
+  warehouseProcess,
+} from "../src/warehouse-receipts.js";
+import { handleListMyTasks } from "../src/task-list-route.js";
 import { handleCreateSource } from "../src/source-route.js";
 import { handleUploadTargets } from "../src/upload-route.js";
 import { generateApiKey, hashApiKey } from "../src/user-auth.js";
@@ -242,3 +250,119 @@ describe("the Warehouse Receipts process — decision 0651", () => {
     expect((await call(sam, `/goods-receipts/${id}/reject`, "POST", JSON.stringify({ reason: "x" }))).status).toBe(409);
   });
 });
+
+describe("Matching's check and the AP Receiving task — decision 0652", () => {
+  const idOf = async (n: string) => (await env.DB.prepare("SELECT id FROM goods_receipts WHERE receipt_number = ?").bind(n).first<{ id: string }>())!.id;
+  async function loadThrough(rows: string[]) {
+    const loaded = await handleLoadGoodsReceiptsCsv(env.DB, "u-sam", CSV(rows), new Date(), { pending: true });
+    const body = loaded.body as { pendingIds: string[]; refused: { reason: string }[] };
+    return { ...(await sendReceiptsThroughProcess(env.DB, body.pendingIds)), refused: body.refused };
+  }
+
+  it("sets up the AP Receiving team with whoever holds AP.Receive", async () => {
+    const made = await handleSetUpWarehouseProcess(env.DB, { teamName: "AP Receiving" });
+    expect((made.body as { team: unknown }).team).toEqual({ id: "ap-receiving", name: "AP Receiving", members: 1 });
+    expect(await env.DB.prepare("SELECT team_id, user_id FROM org_team_members WHERE team_id = 'ap-receiving'").all().then((r) => r.results)).toEqual([{ team_id: "ap-receiving", user_id: "u-sam" }]);
+    expect(await env.DB.prepare("SELECT required_permission, builtin_check FROM process_stages WHERE id = 'warehouse-receipts-matching'").first()).toEqual({
+      required_permission: "AP.Receive",
+      builtin_check: "receipt_matching",
+    });
+  });
+
+  it("keeps a line its order cannot take for Matching, stops that receipt with one task for AP Receiving, and registers the rest", async () => {
+    await handleSetUpWarehouseProcess(env.DB, {});
+    const through = await loadThrough(["WH-1,1,2026-10-05,PO-300,1,10", "WH-1,2,2026-10-05,PO-300,9,5", "WH-1,3,2026-10-05,PO-999,1,5", "WH-2,1,2026-10-05,PO-300,1,4", "WH-3,1,2026-10-05,PO-300,1,x"]);
+    // Only what cannot be stored at all is refused.
+    expect(through.refused.map((r) => r.reason)).toEqual(["quantity_invalid"]);
+    expect(through.sent.map((x) => [x.status, x.stage])).toEqual([
+      ["pending", "Matching"],
+      ["registered", null],
+    ]);
+    const wh1 = await idOf("WH-1");
+    expect((await env.DB.prepare("SELECT line_number, check_reason FROM goods_receipt_lines WHERE receipt_id = ? ORDER BY line_number").bind(wh1).all()).results).toEqual([
+      { line_number: 1, check_reason: null },
+      { line_number: 2, check_reason: "order_line_not_found" },
+      { line_number: 3, check_reason: "order_not_found" },
+    ]);
+    expect((await env.DB.prepare("SELECT owner_team_id, required_permission, rule_id, stage_id FROM tasks").all()).results).toEqual([
+      { owner_team_id: "ap-receiving", required_permission: "AP.Receive", rule_id: null, stage_id: "warehouse-receipts-matching" },
+    ]);
+    // In Sam's tasks, by its receipt number and supplier.
+    const listed = (await handleListMyTasks(env.DB, "u-sam")).body as { tasks: { subject: Record<string, unknown> }[] };
+    expect(listed.tasks.map((t) => [t.subject.type, t.subject.invoiceNumber, t.subject.supplierName])).toEqual([["goods_receipt", "WH-1", "Northwind"]]);
+    // Only WH-2 counts so far.
+    expect((await heldByLine(env.DB, "PO-300")).get(1)).toEqual({ received: 4, returned: 0 });
+  });
+
+  it("is fixed line by line, refuses Register while anything needs attention, then registers and closes the task", async () => {
+    await handleSetUpWarehouseProcess(env.DB, {});
+    await loadThrough(["WH-1,1,2026-10-05,PO-300,1,10", "WH-1,2,2026-10-05,PO-300,9,5", "WH-1,3,2026-10-05,PO-999,1,5"]);
+    const id = await idOf("WH-1");
+    const refused = await handleRegisterGoodsReceipt(env.DB, "u-sam", id);
+    expect(refused).toMatchObject({ status: 409, body: { reason: "lines_need_attention" } });
+
+    const fixed = await handleFixReceiptLine(env.DB, "u-sam", id, 2, { orderNumber: "PO-300", orderLine: 1 });
+    expect((fixed.body as { lines: { reason: string | null }[]; attention: number }).attention).toBe(1);
+    expect((await handleFixReceiptLine(env.DB, "u-sam", id, 3, { reject: true })).body).toMatchObject({ reason: "reject_reason_missing" });
+    const rejected = await handleFixReceiptLine(env.DB, "u-sam", id, 3, { reject: true, reason: "Not ours" });
+    expect((rejected.body as { lines: { lineNumber: number; status: string }[]; attention: number })).toMatchObject({ attention: 0, active: 2 });
+
+    const done = await handleRegisterGoodsReceipt(env.DB, "u-sam", id, new Date("2026-10-06T12:00:00Z"));
+    expect(done).toMatchObject({ status: 200, body: { status: "registered", touched: [{ orderNumber: "PO-300", receiptNumber: "WH-1" }] } });
+    expect(await env.DB.prepare("SELECT status, completed_by FROM tasks").first()).toEqual({ status: "completed", completed_by: "u-sam" });
+    expect(await env.DB.prepare("SELECT status FROM process_instances WHERE subject_id = ?").bind(id).first()).toEqual({ status: "completed" });
+    // The rejected line never counts: 10 + 5 on line 1.
+    expect((await heldByLine(env.DB, "PO-300")).get(1)).toEqual({ received: 15, returned: 0 });
+    const got = (await handleGetGoodsReceipt(env.DB, "u-sam", id)).body as { lines: Record<string, unknown>[] };
+    expect(got.lines[2]).toMatchObject({ lineStatus: "rejected", rejectReason: "Not ours", checkReason: null });
+    expect((await handleRegisterGoodsReceipt(env.DB, "u-sam", id)).body).toMatchObject({ reason: "receipt_registered" });
+  });
+
+  it("refuses Register with every line rejected, and a fix to an order outside the person's units", async () => {
+    await handleSetUpWarehouseProcess(env.DB, {});
+    await env.DB.prepare("INSERT INTO org_units (id, name) VALUES ('fr', 'Acme France')").run();
+    await env.DB.prepare("INSERT INTO purchase_orders (id, order_number, currency, seller_party_id, status, org_unit_id) VALUES ('p7', 'PO-700', 'EUR', 'GB111', 'active', 'fr')").run();
+    await env.DB.prepare("UPDATE org_user_roles SET unit_id = 'u1' WHERE user_id = 'u-sam'").run();
+    await env.DB.prepare("UPDATE purchase_orders SET org_unit_id = 'u1' WHERE id = 'po'").run();
+    await loadThrough(["WH-1,1,2026-10-05,PO-300,9,5"]);
+    const id = await idOf("WH-1");
+    expect((await handleFixReceiptLine(env.DB, "u-sam", id, 1, { orderNumber: "PO-700", orderLine: 1 })).body).toMatchObject({ reason: "order_not_found" });
+    await handleFixReceiptLine(env.DB, "u-sam", id, 1, { reject: true, reason: "x" });
+    expect((await handleRegisterGoodsReceipt(env.DB, "u-sam", id)).body).toMatchObject({ reason: "no_lines_left" });
+  });
+
+  it("through the router: the task cannot be completed as an ordinary one; Register and a line fix go through, and the waiting invoice moves on", async () => {
+    await handleSetUpWarehouseProcess(env.DB, {});
+    await loadThrough(["WH-1,1,2026-10-05,PO-300,9,40"]);
+    const id = await idOf("WH-1");
+    const task = (await env.DB.prepare("SELECT id FROM tasks").first<{ id: string }>())!.id;
+    const key = generateApiKey();
+    await env.DB.prepare("UPDATE org_users SET api_key_hash = ? WHERE id = 'u-sam'").bind(await hashApiKey(key)).run();
+    const post = (path: string, body: unknown = {}) =>
+      SELF.fetch(`https://example.com${path}`, { method: "POST", headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    expect((await post(`/tasks/${task}/claim`)).status).toBe(200);
+    const complete = await post(`/tasks/${task}/complete`);
+    expect([complete.status, ((await complete.json()) as { reason: string }).reason]).toEqual([409, "register_receipt"]);
+
+    // INV-A waits on Awaiting receipt for 40 of line 1 (0648's set-up).
+    await env.DB.prepare("INSERT INTO invoice_headers (id, facts_json, supplier_id) VALUES ('inv-a', ?, 'nw')").bind(JSON.stringify({ "BT-1": "INV-A", "BT-13": "PO-300", "BT-112": 400 })).run();
+    await env.DB.prepare("INSERT INTO invoice_lines (id, invoice_id, line_number, amount, facts_json) VALUES ('il1', 'inv-a', 1, 400, ?)")
+      .bind(JSON.stringify({ "BT-132": "1", "BT-129": 40, "BT-130": "EA", "BT-131": 400, "BT-146": 10 }))
+      .run();
+    await env.DB.prepare("INSERT INTO rule_sets (id, name, mode, status) VALUES ('rs-match', 'Matching', 'all_matches', 'active')").run();
+    await handleCreateProcess(env.DB, { id: "p1", name: "AP" });
+    await handleCreateStage(env.DB, "p1", { id: "s-match", name: "Matching", sequence: 1, ruleSetId: "rs-match", evaluationScope: "line" });
+    await env.DB.prepare("INSERT INTO process_instances (id, process_id, subject_type, subject_id, current_stage_id, status) VALUES ('pi1', 'p1', 'invoice', 'inv-a', 's-match', 'in_progress')").run();
+    await env.DB.prepare("INSERT INTO stage_visits (id, process_instance_id, stage_id, outcome) VALUES ('sv1', 'pi1', 's-match', 'matched')").run();
+    await env.DB.prepare("INSERT INTO rules (id, rule_set_id, sort_order, enabled, name) VALUES ('r-await', 'rs-match', 0, 1, 'Awaiting receipt')").run();
+    await env.DB.prepare("INSERT INTO rule_versions (rule_id, version, source_text, compiled_json, compiled_by, approved_by, approved_at) VALUES ('r-await', 1, 'x', ?, 'test', 'u-dan', '2026-10-01')").bind(JSON.stringify(AWAITING)).run();
+    await env.DB.prepare("INSERT INTO stage_visit_steps (stage_visit_id, seq, rule_id, rule_version, matched, line_number) VALUES ('sv1', 0, 'r-await', 1, 1, 1)").run();
+    await env.DB.prepare("INSERT INTO tasks (id, stage_id, owner_team_id, required_permission, rule_id, stage_visit_id, line_number, created_at) VALUES ('t-await', 's-match', 'team-match', 'AP.Match', 'r-await', 'sv1', 1, '2026-10-01 10:00:00')").run();
+
+    expect((await post(`/goods-receipts/${id}/lines/1`, { orderNumber: "PO-300", orderLine: 1 })).status).toBe(200);
+    const registered = await post(`/goods-receipts/${id}/register`);
+    expect(await registered.json()).toMatchObject({ status: "registered", recheck: { closed: 1, stillOpen: 0 } });
+    expect(await env.DB.prepare("SELECT status FROM process_instances WHERE id = 'pi1'").first()).toEqual({ status: "completed" });
+  });
+});
+

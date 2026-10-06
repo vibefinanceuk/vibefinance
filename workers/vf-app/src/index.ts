@@ -296,8 +296,11 @@ import {
 } from "./goods-receipts.js";
 import {
   continueReceiptInstance,
+  handleFixReceiptLine,
   handleGetWarehouseProcess,
+  handleRegisterGoodsReceipt,
   handleRejectGoodsReceipt,
+  isReceiptMatchingTask,
   handleSetUpWarehouseProcess,
   sendReceiptsThroughProcess,
   warehouseProcess,
@@ -5836,6 +5839,8 @@ export default {
       };
       const orderMatch = pathname.match(/^\/goods-receipts\/order\/([^/]+)$/);
       const rejectMatch = pathname.match(/^\/goods-receipts\/([^/]+)\/reject$/);
+      const registerMatch = pathname.match(/^\/goods-receipts\/([^/]+)\/register$/);
+      const lineMatch = pathname.match(/^\/goods-receipts\/([^/]+)\/lines\/(\d+)$/);
       const cancelMatch = pathname.match(/^\/goods-receipts\/([^/]+)\/cancel$/);
       const oneMatch = pathname.match(/^\/goods-receipts\/([^/]+)$/);
 
@@ -5905,6 +5910,21 @@ export default {
         const body = await readJson();
         if (!body) return json({ error: t("invalidJsonBody", resolveLocale(env.LOCALE)) }, 400);
         const result = await handleSetUpWarehouseProcess(db, body);
+        return json(result.body, result.status);
+      }
+      // Decision 0652: Register, and fixing or rejecting one line, at Matching.
+      if (registerMatch && request.method === "POST") {
+        const auth = await record();
+        if (!auth.authorized) return forbidden(auth.status);
+        const result = await recheck(await handleRegisterGoodsReceipt(db, auth.user.id, decodeURIComponent(registerMatch[1])), auth.user.id);
+        return json(result.body, result.status);
+      }
+      if (lineMatch && request.method === "POST") {
+        const auth = await record();
+        if (!auth.authorized) return forbidden(auth.status);
+        const body = await readJson();
+        if (!body) return json({ error: t("invalidJsonBody", resolveLocale(env.LOCALE)) }, 400);
+        const result = await handleFixReceiptLine(db, auth.user.id, decodeURIComponent(lineMatch[1]), Number(lineMatch[2]), body);
         return json(result.body, result.status);
       }
       if (rejectMatch && request.method === "POST") {
@@ -6722,6 +6742,14 @@ export default {
         }
       }
 
+      /**
+       * **Matching's receipt task is done by Register — decision 0652.**
+       * Completing it here would move the receipt on without checking its
+       * lines again.
+       */
+      if (completeTaskMatch && (await isReceiptMatchingTask(db, taskId))) {
+        return json({ error: "register the receipt from its pop-out", reason: "register_receipt" }, 409);
+      }
       const result = claimTaskMatch
         ? await handleClaimTask(db, taskId, auth.user.id, comment)
         : await handleCompleteTask(db, taskId, auth.user.id, comment, targetUserId);

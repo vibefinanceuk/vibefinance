@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 6 October 2026 (decision 0651). A living document: what
+Last updated 6 October 2026 (decision 0652). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,16 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Matching's check and the AP Receiving task (0652)
+
+In the Warehouse Receipts process, Matching now checks each line of a
+receipt against its purchase order. A receipt with any line needing
+attention stops there with one task for the AP Receiving team (made when
+the process is set up). The task opens the receipt's pop-out, where a
+line is pointed at the right order line or rejected on its own, and
+Register sends the receipt on to be registered. A rejected line never
+counts. Create → Goods receipts follows as the rest of slice 3.
 
 ### Receipts count once registered; the Warehouse Receipts process (0651)
 

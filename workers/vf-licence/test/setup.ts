@@ -281,6 +281,7 @@ import threeWayStringsSql from "../migrations/0290_three_way_strings.sql?raw";
 import receiptRecheckStringsSql from "../migrations/0291_receipt_recheck_strings.sql?raw";
 import grniStringsSql from "../migrations/0292_grni_strings.sql?raw";
 import warehouseReceiptsStringsSql from "../migrations/0293_warehouse_receipts_strings.sql?raw";
+import receiptMatchingStringsSql from "../migrations/0294_receipt_matching_strings.sql?raw";
 
 function stripSqlComments(sql: string): string {
   return sql
@@ -595,5 +596,6 @@ export async function applyTestSchema(): Promise<void> {
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(receiptRecheckStringsSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(grniStringsSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(warehouseReceiptsStringsSql)));
+  await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(receiptMatchingStringsSql)));
 
 }

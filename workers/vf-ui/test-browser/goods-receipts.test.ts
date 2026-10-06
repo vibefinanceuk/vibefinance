@@ -48,10 +48,22 @@ const STRINGS = {
     "receipts.process.through": "Receipts loaded here go through {process} and count once registered.",
     "receipts.process.setup": "Set up Warehouse Receipts",
     "receipts.process.name": "Warehouse Receipts",
+    "receipts.process.teamname": "AP Receiving",
     "receipts.process.stage.intake": "Intake",
     "receipts.process.stage.matching": "Matching",
     "receipts.process.stage.complete": "Complete",
     "receipts.process.done": "{process} is set up. Receipts loaded here now go through it.",
+    "receipts.register": "Register",
+    "receipts.registered.done": "Receipt {number} registered.",
+    "receipts.col.check": "Check",
+    "receipts.col.fix": "Fix",
+    "receipts.check.matched": "Matched",
+    "receipts.check.rejected": "Rejected",
+    "receipts.fix.change": "Change",
+    "receipts.fix.rejectline": "Reject line",
+    "receipts.fix.rejectprompt": "Why is line {line} rejected? It will never count.",
+    "receipts.error.lines_need_attention": "Some lines still need attention: fix or reject them first.",
+    "receipts.process.team": "Matching's tasks go to the {team} team. Members: {n}.",
     "action.save": "Save",
     "action.close": "Close",
   },
@@ -268,16 +280,18 @@ describe("Warehouse Receipts — decision 0651", () => {
   it("says a CSV registers at once until the process is set up, and lets Admin.Configure set it up", async () => {
     const calls = await openScreen(["AP.Receive", "Admin.Configure"], {
       "GET /api/goods-receipts/process": [200, { process: null }],
-      "POST /api/goods-receipts/process": [201, { process: WAREHOUSE, created: true }],
+      "POST /api/goods-receipts/process": [201, { process: WAREHOUSE, created: true, team: { id: "ap-receiving", name: "AP Receiving", members: 3 } }],
     });
     expect(document.getElementById("receipts-process")?.textContent).toContain("Receipts loaded here register at once.");
     button("Set up Warehouse Receipts")!.click();
     await vi.waitFor(() => expect(document.getElementById("receipts-process")?.textContent).toBe("Receipts loaded here go through Warehouse Receipts and count once registered."));
     expect(calls.find((c) => c.method === "POST" && c.path === "/api/goods-receipts/process")?.body).toEqual({
       name: "Warehouse Receipts",
+      teamName: "AP Receiving",
       stageNames: { intake: "Intake", matching: "Matching", complete: "Complete" },
     });
     expect(document.getElementById("receipts-note")?.textContent).toContain("Warehouse Receipts is set up.");
+    expect(document.getElementById("receipts-team")?.textContent).toBe("Matching's tasks go to the AP Receiving team. Members: 3.");
   });
 
   it("offers no set-up without Admin.Configure, and says where a load went and what waits", async () => {
@@ -323,3 +337,57 @@ describe("Warehouse Receipts — decision 0651", () => {
     expect(calls.find((c) => c.path === "/api/goods-receipts/wh-1/reject")?.body).toEqual({ reason: "Not our delivery" });
   });
 });
+
+describe("working a receipt at Matching — decision 0652", () => {
+  const detail = (lines: unknown[]) => ({
+    receipt: { id: "wh-1", receiptNumber: "WH-1", receiptDate: "2026-10-05", source: "csv", createdBy: "Sam", cancelled: false, status: "pending" },
+    lines,
+    orders: [ORDER],
+    process: { instanceId: "pi", status: "in_progress", processName: "Warehouse Receipts", stageName: "Matching" },
+  });
+  const LINES = [
+    { lineNumber: 1, orderNumber: "PO-4501", orderLine: 1, movement: "received", quantity: 10, unitCode: "EA", checkReason: null, lineStatus: "active" },
+    { lineNumber: 2, orderNumber: "PO-4501", orderLine: 9, movement: "received", quantity: 5, unitCode: "EA", checkReason: "order_line_not_found", lineStatus: "active" },
+  ];
+
+  it("says what each line's check found, refuses Register in words, and points a line at another order line", async () => {
+    const calls = await openScreen(["AP.Receive"], {
+      "GET /api/goods-receipts/wh-1": [200, detail(LINES)],
+      "POST /api/goods-receipts/wh-1/register": [409, { reason: "lines_need_attention" }],
+      "POST /api/goods-receipts/wh-1/lines/2": [200, { attention: 0 }],
+    });
+    const { openReceipt } = await import("/goods-receipts.js");
+    await openReceipt("wh-1");
+    const checks = [...document.querySelector(".popout table")!.querySelectorAll("tbody tr[data-line]")].map((r) => r.children[5]?.textContent);
+    expect(checks).toEqual(["Matched", "The purchase order has no such line."]);
+    expect(document.getElementById("fix-change-1")).toBeNull();
+    button("Register")!.click();
+    await vi.waitFor(() => expect(document.getElementById("receipt-problem")?.textContent).toBe("Some lines still need attention: fix or reject them first."));
+    (document.getElementById("fix-line-2") as HTMLInputElement).value = "2";
+    document.getElementById("fix-change-2")!.click();
+    await vi.waitFor(() => expect(calls.some((c) => c.path === "/api/goods-receipts/wh-1/lines/2")).toBe(true));
+    expect(calls.find((c) => c.path === "/api/goods-receipts/wh-1/lines/2")?.body).toEqual({ orderNumber: "PO-4501", orderLine: 2 });
+    // The pop-out opens again, checked.
+    await vi.waitFor(() => expect(calls.filter((c) => c.path === "/api/goods-receipts/wh-1").length).toBe(2));
+  });
+
+  it("rejects one line with a reason, and registers", async () => {
+    const calls = await openScreen(["AP.Receive"], {
+      "GET /api/goods-receipts/wh-1": [200, detail(LINES)],
+      "POST /api/goods-receipts/wh-1/lines/2": [200, { attention: 0 }],
+      "POST /api/goods-receipts/wh-1/register": [200, { status: "registered", recheck: { closed: 1, stillOpen: 0 } }],
+    });
+    const { openReceipt } = await import("/goods-receipts.js");
+    await openReceipt("wh-1");
+    document.getElementById("fix-reject-2")!.click();
+    expect(document.getElementById("receipt-problem")?.textContent).toContain("Why is line 2 rejected? It will never count.");
+    (document.getElementById("line-rejectreason") as HTMLInputElement).value = "Not ours";
+    document.getElementById("line-rejectconfirm")!.click();
+    await vi.waitFor(() => expect(calls.find((c) => c.path === "/api/goods-receipts/wh-1/lines/2")?.body).toEqual({ reject: true, reason: "Not ours" }));
+    await vi.waitFor(() => expect(document.getElementById("receipt-register")).not.toBeNull());
+    document.getElementById("receipt-register")!.click();
+    await vi.waitFor(() => expect(document.getElementById("receipts-note")?.textContent).toContain("Receipt WH-1 registered."));
+    expect(document.getElementById("receipts-note")?.textContent).toContain("Invoice tasks waiting on these goods that have now closed: 1.");
+  });
+});
+

@@ -198,6 +198,12 @@ const actionLabel = (action) => t(`action.${action}`);
 async function openTask(taskId) {
   const task = lastTasks.find((t) => t.id === taskId);
   if (!task?.subject) return;
+  // Decision 0652: a goods receipt at Matching opens in its own pop-out, worked there and registered.
+  if (task.subject.type === "goods_receipt") {
+    const { openReceipt } = await import("/goods-receipts.js");
+    await openReceipt(task.subject.id, { onDone: () => reload() });
+    return;
+  }
 
   const { openViewer } = await import("/viewer.js");
   document.getElementById("shell").hidden = true;

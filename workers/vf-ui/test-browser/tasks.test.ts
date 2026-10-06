@@ -227,6 +227,34 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+describe("a goods receipt at Matching (decision 0652)", () => {
+  it("opens the receipt's pop-out over the list, not the invoice viewer", async () => {
+    const receiptTask = {
+      id: "t-wh",
+      stageId: "warehouse-receipts-matching",
+      stageName: "Matching",
+      ownership: "available",
+      createdAt: "2026-10-06 09:00:00",
+      actions: ["claim"],
+      subject: { type: "goods_receipt", id: "wh-1", invoiceNumber: "WH-88213", supplierName: "Northwind Packaging", totalWithVat: null },
+    };
+    await openList([receiptTask]);
+    const row = document.querySelector("tbody tr.clickable") as HTMLElement;
+    expect(row.textContent).toContain("WH-88213");
+    stubFetch({
+      "/api/goods-receipts/wh-1": {
+        receipt: { id: "wh-1", receiptNumber: "WH-88213", receiptDate: "2026-10-04", source: "csv", createdBy: "Sam", cancelled: false, status: "pending" },
+        lines: [{ lineNumber: 1, orderNumber: "PO-4501", orderLine: 9, movement: "received", quantity: 5, unitCode: "EA", checkReason: "order_line_not_found", lineStatus: "active" }],
+        orders: [],
+        process: { instanceId: "pi", status: "in_progress", processName: "Warehouse Receipts", stageName: "Matching" },
+      },
+    });
+    row.click();
+    await vi.waitFor(() => expect(document.querySelector(".popout h3")?.textContent).toBe("WH-88213"));
+    expect((document.getElementById("viewer") as HTMLElement).hidden).toBe(true);
+  });
+});
+
 describe("opening a task that cannot be keyed (decision 0142)", () => {
   it("makes the document itself clickable", async () => {
     // **A row names a document**, and looking at one is the first thing

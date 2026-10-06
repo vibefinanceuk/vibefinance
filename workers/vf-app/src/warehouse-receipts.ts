@@ -1,7 +1,7 @@
 import type { RouteResult } from "./org-route.js";
 import { handleCreateProcessInstance, visitCurrentStage } from "./workflow-engine.js";
 import { isWithinScope, unitsWherePermitted } from "./enforce.js";
-import type { ReceiptStatus } from "./goods-receipts.js";
+import { Checker, type ReceiptStatus } from "./goods-receipts.js";
 
 /**
  * **The Warehouse Receipts process — decision 0651**, slice 2 of the
@@ -24,6 +24,16 @@ import type { ReceiptStatus } from "./goods-receipts.js";
  * it.
  */
 export const WAREHOUSE_RECEIPTS_PROCESS_ID = "warehouse-receipts";
+
+/**
+ * **The AP Receiving team — decision 0652**, offered when the process is
+ * set up (Dan agreed, question 3): Matching's task is owned by it and
+ * needs AP.Receive. Where it is missing, the AP team (0480's) stands in.
+ */
+export const AP_RECEIVING_TEAM_ID = "ap-receiving";
+
+/** What Matching's built-in check is called on a stage (`process_stages.builtin_check`). */
+export const RECEIPT_MATCHING_CHECK = "receipt_matching";
 
 const STAGES = [
   { id: "warehouse-receipts-intake", name: "Intake", sequence: 1 },
@@ -83,12 +93,124 @@ export async function handleSetUpWarehouseProcess(db: D1Database, body: Record<s
   await db.batch([
     db.prepare("INSERT INTO processes (id, name, subject_type) VALUES (?, ?, 'goods_receipt')").bind(p, name),
     ...STAGES.map((s) =>
-      db.prepare("INSERT INTO process_stages (id, process_id, name, sequence, rule_set_id, evaluation_scope) VALUES (?, ?, ?, ?, NULL, 'header')").bind(s.id, p, stageName(s), s.sequence)
+      db
+        .prepare("INSERT INTO process_stages (id, process_id, name, sequence, rule_set_id, evaluation_scope, required_permission, builtin_check) VALUES (?, ?, ?, ?, NULL, 'header', ?, ?)")
+        .bind(s.id, p, stageName(s), s.sequence, s.sequence === 2 ? "AP.Receive" : null, s.sequence === 2 ? RECEIPT_MATCHING_CHECK : null)
     ),
     ...STAGES.map((s) => db.prepare("INSERT INTO process_stage_versions (process_id, version, stage_id, sequence) VALUES (?, 1, ?, ?)").bind(p, s.id, s.sequence)),
     db.prepare("UPDATE processes SET entry_stage_id = ?, exit_stage_id = ? WHERE id = ?").bind(STAGES[0].id, STAGES[2].id, p),
   ]);
-  return { status: 201, body: { process: await warehouseProcess(db), created: true } };
+  const team = await ensureReceivingTeam(db, typeof body.teamName === "string" && body.teamName.trim() ? body.teamName.trim().slice(0, 60) : "AP Receiving");
+  return { status: 201, body: { process: await warehouseProcess(db), created: true, team } };
+}
+
+/**
+ * **The AP Receiving team**, made with the process if it is not there:
+ * in the AP team's unit (else the top unit), with everyone who holds
+ * AP.Receive as a member. `null` when there is no unit to put it in.
+ */
+async function ensureReceivingTeam(db: D1Database, name: string): Promise<{ id: string; name: string; members: number } | null> {
+  const existing = await db.prepare("SELECT id, name FROM org_teams WHERE id = ?").bind(AP_RECEIVING_TEAM_ID).first<{ id: string; name: string }>();
+  if (!existing) {
+    const unit =
+      (await db.prepare("SELECT unit_id AS id FROM org_teams WHERE id = 'ap-team'").first<{ id: string }>()) ??
+      (await db.prepare("SELECT id FROM org_units WHERE parent_unit_id IS NULL ORDER BY created_at, id LIMIT 1").first<{ id: string }>());
+    if (!unit) return null;
+    await db.prepare("INSERT INTO org_teams (id, name, unit_id) VALUES (?, ?, ?)").bind(AP_RECEIVING_TEAM_ID, name, unit.id).run();
+    await db
+      .prepare(
+        `INSERT OR IGNORE INTO org_team_members (team_id, user_id)
+         SELECT DISTINCT ?, ur.user_id FROM org_user_roles ur JOIN org_roles r ON r.id = ur.role_id
+         WHERE EXISTS (SELECT 1 FROM json_each(r.permissions_json) p WHERE p.value = 'AP.Receive')`
+      )
+      .bind(AP_RECEIVING_TEAM_ID)
+      .run();
+  }
+  const members = (await db.prepare("SELECT count(*) AS n FROM org_team_members WHERE team_id = ?").bind(AP_RECEIVING_TEAM_ID).first<{ n: number }>())?.n ?? 0;
+  return { id: AP_RECEIVING_TEAM_ID, name: existing?.name ?? name, members };
+}
+
+// ── Matching's check ───────────────────────────────────────────────────
+
+export interface CheckedLine {
+  lineNumber: number;
+  status: "active" | "rejected";
+  reason: string | null;
+  message: string | null;
+  over: { ordered: number; netAfter: number } | null;
+}
+
+/**
+ * **Each line of a receipt checked against its order — decision 0652**,
+ * as the screen checks (`Checker`), in the scope of whoever sent it,
+ * lines in order so a receipt that receives then returns is judged as
+ * it reads. A rejected line is left out. What it finds is stored on
+ * each line (`check_reason`), for the pop-out and the task.
+ */
+export async function checkReceiptLines(db: D1Database, receiptId: string): Promise<{ lines: CheckedLine[]; attention: number; active: number }> {
+  const receipt = await db.prepare("SELECT created_by FROM goods_receipts WHERE id = ?").bind(receiptId).first<{ created_by: string | null }>();
+  const scope = receipt?.created_by ? await unitsWherePermitted(db, receipt.created_by, "AP.Receive") : null;
+  const checker = new Checker(db, scope);
+  const rows = (
+    await db
+      .prepare(
+        `SELECT line_number, order_number, order_line_number, movement, quantity, unit_code, return_reason_id, line_status
+         FROM goods_receipt_lines WHERE receipt_id = ? ORDER BY line_number`
+      )
+      .bind(receiptId)
+      .all<{ line_number: number; order_number: string; order_line_number: number; movement: string; quantity: number; unit_code: string | null; return_reason_id: string | null; line_status: "active" | "rejected" }>()
+  ).results;
+  const lines: CheckedLine[] = [];
+  const updates = [];
+  for (const r of rows) {
+    if (r.line_status === "rejected") {
+      lines.push({ lineNumber: r.line_number, status: "rejected", reason: null, message: null, over: null });
+      continue;
+    }
+    const result = await checker.checkLenient({
+      orderNumber: r.order_number,
+      orderLine: r.order_line_number,
+      quantity: r.quantity,
+      movement: r.movement,
+      returnReason: r.return_reason_id,
+      unitCode: r.unit_code,
+    });
+    const found = "refused" in result ? result.refused : result.attention;
+    if (!found && !("refused" in result)) checker.commit(result.line.orderNumber, result.line.orderLine, result.line.movement, result.line.quantity);
+    const over = !("refused" in result) && result.over ? { ordered: result.over.ordered, netAfter: result.over.netAfter } : null;
+    lines.push({ lineNumber: r.line_number, status: "active", reason: found?.reason ?? null, message: found?.message ?? null, over });
+    updates.push(db.prepare("UPDATE goods_receipt_lines SET check_reason = ? WHERE receipt_id = ? AND line_number = ?").bind(found?.reason ?? null, receiptId, r.line_number));
+  }
+  if (updates.length > 0) await db.batch(updates);
+  const active = lines.filter((l) => l.status === "active");
+  return { lines, attention: active.filter((l) => l.reason).length, active: active.length };
+}
+
+/**
+ * **Matching's built-in check, run by the engine** at a stage marked
+ * `receipt_matching` for a goods receipt. Every line matched: on it
+ * goes. Otherwise it stops here with **one task for the receipt** (Dan:
+ * one task per receipt) for AP Receiving, needing AP.Receive, or for the
+ * AP team where AP Receiving is missing; with neither it still stops,
+ * and the receipt's pop-out is where it is worked.
+ */
+export async function receiptMatchingGuard(db: D1Database, stage: { id: string; required_permission: string | null }, receiptId: string, visitId: string): Promise<{ stop: boolean; tasksCreated: number }> {
+  const checked = await checkReceiptLines(db, receiptId);
+  if (checked.attention === 0) return { stop: false, tasksCreated: 0 };
+  const team =
+    (await db.prepare("SELECT id FROM org_teams WHERE id = ?").bind(AP_RECEIVING_TEAM_ID).first<{ id: string }>()) ??
+    (await db.prepare("SELECT id FROM org_teams WHERE id = 'ap-team'").first<{ id: string }>());
+  if (!team) return { stop: true, tasksCreated: 0 };
+  const taskId = crypto.randomUUID();
+  await db
+    .prepare(
+      // No rule raised it: the stage's own check did (tasks.system_reason's list is closed, 0080).
+      `INSERT INTO tasks (id, stage_id, owner_team_id, required_permission, stage_visit_id, created_at)
+       VALUES (?, ?, ?, ?, ?, strftime('%Y-%m-%d %H:%M:%f', 'now'))`
+    )
+    .bind(taskId, stage.id, team.id, stage.required_permission ?? "AP.Receive", visitId)
+    .run();
+  return { stop: true, tasksCreated: 1 };
 }
 
 export interface Touched {
@@ -101,7 +223,7 @@ async function touchedBy(db: D1Database, receiptId: string): Promise<Touched[]> 
     await db
       .prepare(
         `SELECT DISTINCT l.order_number AS orderNumber, r.receipt_number AS receiptNumber
-         FROM goods_receipt_lines l JOIN goods_receipts r ON r.id = l.receipt_id WHERE r.id = ?`
+         FROM goods_receipt_lines l JOIN goods_receipts r ON r.id = l.receipt_id WHERE r.id = ? AND l.line_status = 'active'`
       )
       .bind(receiptId)
       .all<Touched>()
@@ -262,4 +384,98 @@ export async function handleRejectGoodsReceipt(db: D1Database, userId: string, i
     ]),
   ]);
   return { status: 200, body: { id, receiptNumber: receipt.receipt_number, status: "rejected" } };
+}
+
+// ── Working a receipt at Matching ──────────────────────────────────────
+
+async function pendingInScope(db: D1Database, userId: string, id: string): Promise<RouteResult | { receipt: { id: string; receipt_number: string; status: ReceiptStatus }; scope: string[] | null }> {
+  const notFound = { status: 404, body: { error: "no such receipt", reason: "not_found" } };
+  const receipt = await db.prepare("SELECT id, receipt_number, status FROM goods_receipts WHERE id = ?").bind(id).first<{ id: string; receipt_number: string; status: ReceiptStatus }>();
+  if (!receipt) return notFound;
+  const scope = await unitsWherePermitted(db, userId, "AP.Receive");
+  const units = (
+    await db
+      .prepare("SELECT DISTINCT po.org_unit_id FROM goods_receipt_lines l JOIN purchase_orders po ON po.order_number = l.order_number WHERE l.receipt_id = ?")
+      .bind(id)
+      .all<{ org_unit_id: string | null }>()
+  ).results;
+  if (units.some((o) => !isWithinScope({ units: scope }, o.org_unit_id))) return notFound;
+  if (receipt.status !== "pending") return { status: 409, body: { error: `that receipt is ${receipt.status}`, reason: `receipt_${receipt.status}` } };
+  return { receipt, scope };
+}
+
+/**
+ * `POST /goods-receipts/:id/lines/:line` — **fixing one line of a pending
+ * receipt**: `{ orderNumber, orderLine }` points it at another order or
+ * order line (one in the person's scope), or `{ reject: true, reason }`
+ * rejects that line alone, so it never counts. Then every line is
+ * checked again and returned. AP.Receive.
+ */
+export async function handleFixReceiptLine(db: D1Database, userId: string, id: string, lineNumber: number, body: Record<string, unknown>): Promise<RouteResult> {
+  const found = await pendingInScope(db, userId, id);
+  if ("status" in found) return found;
+  const line = await db.prepare("SELECT line_status FROM goods_receipt_lines WHERE receipt_id = ? AND line_number = ?").bind(id, lineNumber).first<{ line_status: string }>();
+  if (!line) return { status: 404, body: { error: `the receipt has no line ${lineNumber}`, reason: "line_not_found" } };
+
+  if (body.reject === true) {
+    const reason = typeof body.reason === "string" ? body.reason.trim() : "";
+    if (!reason) return { status: 400, body: { error: "say why the line is rejected", reason: "reject_reason_missing" } };
+    await db.prepare("UPDATE goods_receipt_lines SET line_status = 'rejected', reject_reason = ?, check_reason = NULL WHERE receipt_id = ? AND line_number = ?").bind(reason, id, lineNumber).run();
+  } else {
+    if (line.line_status === "rejected") return { status: 409, body: { error: "that line is rejected", reason: "line_rejected" } };
+    const orderNumber = typeof body.orderNumber === "string" ? body.orderNumber.trim() : "";
+    const orderLine = Number(body.orderLine);
+    if (!orderNumber || !Number.isInteger(orderLine) || orderLine < 1) return { status: 400, body: { error: "an order number and order line are needed", reason: "order_line_missing" } };
+    const order = await db.prepare("SELECT org_unit_id FROM purchase_orders WHERE order_number = ?").bind(orderNumber).first<{ org_unit_id: string | null }>();
+    if (!order || !isWithinScope({ units: found.scope }, order.org_unit_id)) return { status: 422, body: { error: `no purchase order ${orderNumber}`, reason: "order_not_found" } };
+    await db.prepare("UPDATE goods_receipt_lines SET order_number = ?, order_line_number = ? WHERE receipt_id = ? AND line_number = ?").bind(orderNumber, orderLine, id, lineNumber).run();
+  }
+  const checked = await checkReceiptLines(db, id);
+  return { status: 200, body: { id, ...checked } };
+}
+
+/**
+ * `POST /goods-receipts/:id/register` — **Register**, from the receipt's
+ * pop-out. Every line still in it is checked again; any needing
+ * attention refuses, saying which. Otherwise the task on it is done (by
+ * this person), the receipt goes on through the process, and on
+ * reaching the end is registered; the orders it names are returned for
+ * the re-check of invoices (0648). A receipt with every line rejected
+ * is rejected instead.
+ */
+export async function handleRegisterGoodsReceipt(db: D1Database, userId: string, id: string, now = new Date()): Promise<RouteResult> {
+  const found = await pendingInScope(db, userId, id);
+  if ("status" in found) return found;
+  const checked = await checkReceiptLines(db, id);
+  if (checked.active === 0) return { status: 409, body: { error: "every line is rejected: reject the receipt instead", reason: "no_lines_left" } };
+  if (checked.attention > 0) return { status: 409, body: { error: "some lines still need attention", reason: "lines_need_attention", lines: checked.lines } };
+
+  const instance = await db
+    .prepare("SELECT id FROM process_instances WHERE subject_type = 'goods_receipt' AND subject_id = ? AND status = 'in_progress' ORDER BY created_at DESC LIMIT 1")
+    .bind(id)
+    .first<{ id: string }>();
+  if (!instance) {
+    // Pending with no process to finish (it was never sent): registered here.
+    return { status: 200, body: { id, receiptNumber: found.receipt.receipt_number, status: "registered", touched: await registerReceipt(db, id, now) } };
+  }
+  const at = now.toISOString();
+  await db
+    .prepare(
+      `UPDATE tasks SET status = 'completed', completed_by = ?, completed_at = ?, claimed_by = COALESCE(claimed_by, ?), claimed_at = COALESCE(claimed_at, ?)
+       WHERE status = 'open' AND stage_visit_id IN (SELECT id FROM stage_visits WHERE process_instance_id = ?)`
+    )
+    .bind(userId, at, userId, at, instance.id)
+    .run();
+  const touched = await continueReceiptInstance(db, instance.id, now);
+  const after = await db.prepare("SELECT status FROM goods_receipts WHERE id = ?").bind(id).first<{ status: ReceiptStatus }>();
+  return { status: 200, body: { id, receiptNumber: found.receipt.receipt_number, status: after?.status ?? "pending", touched } };
+}
+
+/** Whether a task is Matching's own receipt task (raised by the check, not a rule): it is done by Register, not Complete. */
+export async function isReceiptMatchingTask(db: D1Database, taskId: string): Promise<boolean> {
+  const row = await db
+    .prepare("SELECT 1 FROM tasks t JOIN process_stages s ON s.id = t.stage_id WHERE t.id = ? AND t.rule_id IS NULL AND s.builtin_check = ?")
+    .bind(taskId, RECEIPT_MATCHING_CHECK)
+    .first();
+  return row !== null;
 }

@@ -1,4 +1,5 @@
 import { loadSplits, splitAsLineFacts, type CodingSplit } from "./coding-splits.js";
+import { RECEIPT_MATCHING_CHECK, receiptMatchingGuard } from "./warehouse-receipts.js";
 import { evaluateRuleSet } from "@vibefinance/shared";
 import type { InvoiceFacts } from "@vibefinance/shared";
 import {
@@ -74,6 +75,8 @@ interface StageRow {
    * already uses for `sequence` alone.
    */
   uses_approval_hierarchy?: number;
+  /** A check the stage runs itself — decision 0652 (`receipt_matching`). */
+  builtin_check?: string | null;
 }
 
 type LineInput = InvoiceFacts & { lineNumber: number };
@@ -411,7 +414,7 @@ export async function nextStageInSequence(
        * it about the NEXT stage rather than the current one.
        */
       `SELECT s.id, s.process_id, v.sequence, s.rule_set_id, s.evaluation_scope, s.requires_org,
-              s.required_permission, s.uses_approval_hierarchy
+              s.required_permission, s.uses_approval_hierarchy, s.builtin_check
        FROM process_stage_versions v
        JOIN process_stages s ON s.id = v.stage_id
        WHERE v.process_id = ? AND v.version = ? AND v.sequence > ?
@@ -547,7 +550,7 @@ export async function visitCurrentStage(
   for (let i = 0; i < MAX_STAGES_PER_VISIT; i++) {
     const stage = await db
       .prepare(
-        "SELECT id, process_id, sequence, rule_set_id, evaluation_scope, requires_org, required_permission, uses_approval_hierarchy FROM process_stages WHERE id = ?"
+        "SELECT id, process_id, sequence, rule_set_id, evaluation_scope, requires_org, required_permission, uses_approval_hierarchy, builtin_check FROM process_stages WHERE id = ?"
       )
       .bind(currentStageId)
       .first<StageRow>();
@@ -596,6 +599,19 @@ export async function visitCurrentStage(
         .prepare("INSERT INTO stage_visits (id, process_instance_id, stage_id, outcome, created_at) VALUES (?, ?, ?, 'automatic', strftime('%Y-%m-%d %H:%M:%f', 'now'))")
         .bind(visitId, currentInstanceId, stage.id)
         .run();
+
+      /**
+       * **Matching's own check for a goods receipt — decision 0652.**
+       * Every line matched: on it goes. Otherwise it stops here, with
+       * one task for the receipt.
+       */
+      if (instance.subject_type === "goods_receipt" && stage.builtin_check === RECEIPT_MATCHING_CHECK) {
+        const guard = await receiptMatchingGuard(db, stage, instance.subject_id, visitId);
+        if (guard.stop) {
+          visitsThisCall.push({ stageId: stage.id, outcome: "automatic", tasksCreated: guard.tasksCreated });
+          return { status: 200, body: { instanceId: currentInstanceId, status: "in_progress", currentStageId: stage.id, visits: visitsThisCall, correctedFacts } };
+        }
+      }
 
       /**
        * **A chosen approver stops the invoice here — decision 0513.**
@@ -1306,7 +1322,8 @@ export async function onTaskCompleted(
       .prepare("UPDATE process_instances SET current_stage_id = ?, updated_at = ? WHERE id = ?")
       .bind(next.id, new Date().toISOString(), instance.id)
       .run();
-    if (next.rule_set_id || (options.approverChosen && next.uses_approval_hierarchy)) {
+    // Decision 0652: a stage with a built-in check needs a real visit too.
+    if (next.rule_set_id || next.builtin_check || (options.approverChosen && next.uses_approval_hierarchy)) {
       // Stop here — this function never loads facts for a subject, so
       // it cannot evaluate a real rule set itself. Reported, not
       // silently swallowed (decision 0454) — see the caller in

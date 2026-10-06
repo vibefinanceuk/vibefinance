@@ -124,13 +124,20 @@ function processLine() {
         button.disabled = true;
         const r = await post("/goods-receipts/process", {
           name: t("receipts.process.name"),
+          teamName: t("receipts.process.teamname"),
           stageNames: { intake: t("receipts.process.stage.intake"), matching: t("receipts.process.stage.matching"), complete: t("receipts.process.stage.complete") },
         });
         button.disabled = false;
         if (!r.ok) return note(said(r.body, "receipts.process.failed"));
         warehouse = r.body.process ?? null;
         render();
-        note(el("div", { class: "panel" }, [el("div", { text: t("receipts.process.done").replace("{process}", warehouse?.name ?? "") })]));
+        note(
+          el("div", { class: "panel" }, [
+            el("div", { text: t("receipts.process.done").replace("{process}", warehouse?.name ?? "") }),
+            // Decision 0652: who works Matching's tasks.
+            r.body.team ? el("div", { class: "muted", id: "receipts-team", text: t("receipts.process.team").replace("{team}", r.body.team.name).replace("{n}", String(r.body.team.members)) }) : null,
+          ])
+        );
       },
     });
     button.id = "receipts-setup-process";
@@ -410,15 +417,84 @@ function popout(content, wide = true) {
   return backdrop;
 }
 
-async function openReceipt(id) {
+/**
+ * A receipt in its pop-out. `onDone` runs after anything that changes
+ * it (the Goods Receipts screen refreshes; Tasks reloads its list, 0652).
+ */
+export async function openReceipt(id, { onDone = null } = {}) {
+  const after = onDone ?? refreshAll;
   const r = await call(`/goods-receipts/${encodeURIComponent(id)}`);
   if (!r.ok) return note(t("receipts.detailfailed"));
   const { receipt, lines, orders, process } = r.body;
   const problem = el("div", { class: "warn", id: "receipt-problem" });
   let backdrop;
   const close = () => backdrop.remove();
+  const pending = receipt.status === "pending";
+
+  /** Decision 0652: what Matching found on a line. */
+  const checkPill = (l) =>
+    l.lineStatus === "rejected"
+      ? el("span", { class: "rmpill q", title: l.rejectReason ?? "", text: t("receipts.check.rejected") })
+      : l.checkReason
+        ? el("span", { class: "rmpill bad", text: said({ reason: l.checkReason }, "receipts.check.attention") })
+        : el("span", { class: "rmpill ok", text: t("receipts.check.matched") });
+
+  /** Point a line needing attention at another order line, or reject it alone; then the pop-out opens again, checked. */
+  const fixCell = (l) => {
+    const order = el("input", { type: "text", class: "fixorder", id: `fix-order-${l.lineNumber}`, value: l.orderNumber, "aria-label": t("receipts.fix.order") });
+    const line = el("input", { type: "number", min: "1", class: "fixline", id: `fix-line-${l.lineNumber}`, value: String(l.orderLine), "aria-label": t("receipts.fix.line") });
+    const reopen = async (r) => {
+      if (!r.ok) {
+        problem.replaceChildren(el("div", { text: said(r.body, "receipts.fixfailed") }));
+        return;
+      }
+      close();
+      await openReceipt(id, { onDone });
+    };
+    const change = el("button", { type: "button", id: `fix-change-${l.lineNumber}`, text: t("receipts.fix.change") });
+    change.onclick = async () => reopen(await post(`/goods-receipts/${encodeURIComponent(id)}/lines/${l.lineNumber}`, { orderNumber: order.value, orderLine: Number(line.value) }));
+    const reject = el("button", { type: "button", id: `fix-reject-${l.lineNumber}`, text: t("receipts.fix.rejectline") });
+    reject.onclick = () => {
+      const why = el("input", { type: "text", class: "searchbox", id: "line-rejectreason", placeholder: t("receipts.rejectwhy") });
+      const confirm = el("button", { class: "primary", id: "line-rejectconfirm", text: t("receipts.fix.rejectline") });
+      confirm.onclick = async () => reopen(await post(`/goods-receipts/${encodeURIComponent(id)}/lines/${l.lineNumber}`, { reject: true, reason: why.value }));
+      problem.replaceChildren(el("div", { text: t("receipts.fix.rejectprompt").replace("{line}", String(l.lineNumber)) }), why, confirm);
+      why.focus();
+    };
+    return [
+      el("div", { class: "receiptfix" }, [
+        el("label", { for: order.id, class: "sm muted", text: t("receipts.fix.order") }),
+        order,
+        el("label", { for: line.id, class: "sm muted", text: t("receipts.fix.line") }),
+        line,
+        change,
+        reject,
+      ]),
+    ];
+  };
 
   const buttons = [];
+  // Decision 0652: Register, once every line still in it matches.
+  if (canRecord() && receipt.status === "pending") {
+    const register = actionLink("save", {
+      primary: true,
+      label: t("receipts.register"),
+      onclick: async () => {
+        register.disabled = true;
+        const done = await post(`/goods-receipts/${encodeURIComponent(id)}/register`, {});
+        register.disabled = false;
+        if (!done.ok) {
+          problem.replaceChildren(el("div", { text: said(done.body, "receipts.registerfailed") }));
+          return;
+        }
+        close();
+        await after();
+        note(el("div", { class: "panel" }, [el("div", { text: t("receipts.registered.done").replace("{number}", receipt.receiptNumber) }), ...recheckLines(done.body)]));
+      },
+    });
+    register.id = "receipt-register";
+    buttons.push(register);
+  }
   // Decision 0651: a pending receipt is rejected, never cancelled; it has not counted yet.
   if (canRecord() && receipt.status === "pending") {
     buttons.push(
@@ -440,7 +516,7 @@ async function openReceipt(id) {
                   return;
                 }
                 close();
-                await refreshAll();
+                await after();
                 note(el("div", { class: "panel" }, [el("div", { text: t("receipts.rejected.done").replace("{number}", receipt.receiptNumber) })]));
               },
             })
@@ -469,7 +545,7 @@ async function openReceipt(id) {
                   return;
                 }
                 close();
-                await refreshAll();
+                await after();
                 note(el("div", { class: "panel" }, [el("div", { text: t("receipts.cancelled.done").replace("{number}", receipt.receiptNumber) }), ...recheckLines(done.body)]));
               },
             })
@@ -508,19 +584,29 @@ async function openReceipt(id) {
     ]),
     el("div", { class: "tablewrap" }, [
       el("table", {}, [
-        el("thead", {}, [el("tr", {}, ["receipts.col.line", "receipts.col.order", "receipts.col.kind", "receipts.col.quantity", "receipts.reason"].map((k) => el("th", { text: t(k) })))]),
+        el("thead", {}, [
+          el("tr", {}, [
+            ...["receipts.col.line", "receipts.col.order", "receipts.col.kind", "receipts.col.quantity", "receipts.reason"].map((k) => el("th", { text: t(k) })),
+            ...(pending ? [el("th", { text: t("receipts.col.check") })] : []),
+          ]),
+        ]),
         el(
           "tbody",
           {},
-          lines.map((l) =>
-            el("tr", {}, [
+          lines.flatMap((l) => [
+            el("tr", { class: l.lineStatus === "rejected" ? "muted" : "", "data-line": String(l.lineNumber) }, [
               el("td", { text: String(l.lineNumber) }),
-              el("td", { text: `${l.orderNumber} / ${l.orderLine}` }),
+              el("td", { class: "nowrap", text: `${l.orderNumber} / ${l.orderLine}` }),
               el("td", {}, [movementPill(l.movement)]),
               el("td", { class: "num", text: `${qty(l.quantity)}${l.unitCode ? ` ${l.unitCode}` : ""}` }),
               el("td", { class: "muted", text: l.returnReason ?? "—" }),
-            ])
-          )
+              ...(pending ? [el("td", {}, [checkPill(l)])] : []),
+            ]),
+            // Decision 0652: the fix sits under the line it is for.
+            pending && canRecord() && l.lineStatus !== "rejected" && l.checkReason
+              ? el("tr", { class: "receiptfixrow" }, [el("td", {}), el("td", { colspan: "5" }, fixCell(l))])
+              : null,
+          ].filter(Boolean))
         ),
       ]),
     ]),

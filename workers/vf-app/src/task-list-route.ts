@@ -160,6 +160,8 @@ interface Raw {
   stage_sequence: number | null;
   process_version: number | null;
   subject_type: string | null;
+  receipt_number?: string | null;
+  receipt_supplier?: string | null;
   subject_id: string | null;
   supplier_vat_id: string | null;
   facts_json: string | null;
@@ -552,7 +554,10 @@ export async function handleListMyTasks(
        -- Invoice-specific, and only where the subject says so. A
        -- subject of another type simply yields nulls here.
        LEFT JOIN invoice_headers h
-         ON pi.subject_type = 'invoice' AND h.id = pi.subject_id`;
+         ON pi.subject_type = 'invoice' AND h.id = pi.subject_id
+       -- Decision 0652: a goods receipt at Matching.
+       LEFT JOIN goods_receipts gr
+         ON pi.subject_type = 'goods_receipt' AND gr.id = pi.subject_id`;
 
   /**
    * **One `WHERE`, shared by the counts query, the total query, and
@@ -690,7 +695,11 @@ export async function handleListMyTasks(
          v.process_instance_id AS instance_id,
          pi.subject_type, pi.subject_id, pi.process_version,
          h.supplier_vat_id, h.currency, h.issue_date, h.total_with_vat, h.facts_json,
-         h.org_unit_id, h.created_at AS received_at
+         h.org_unit_id, COALESCE(h.created_at, gr.created_at) AS received_at,
+         gr.receipt_number,
+         (SELECT s2.name FROM goods_receipt_lines gl2 JOIN purchase_orders po2 ON po2.order_number = gl2.order_number
+            JOIN suppliers s2 ON s2.vat_id = po2.seller_party_id
+          WHERE gl2.receipt_id = gr.id ORDER BY gl2.line_number, s2.status = 'active' DESC LIMIT 1) AS receipt_supplier
        ${joins}
        ${baseWhereClause}${ownershipClause}
        ORDER BY t.created_at ASC
@@ -877,7 +886,7 @@ export async function handleListMyTasks(
         // BT-27, read from the facts because there is no column for it.
         // **A person expects a company, not a tax number** — and until
         // decision 0112 the seller's name was not read at all.
-        supplierName: sellerNameOf(row.facts_json),
+        supplierName: row.receipt_supplier ?? sellerNameOf(row.facts_json),
         currency: row.currency,
         issueDate: row.issue_date,
         totalWithVat: row.total_with_vat,
@@ -887,7 +896,7 @@ export async function handleListMyTasks(
          * Documents reads it (`documents-route.ts`), and "received" is the
          * header's own `created_at`, the same value Documents shows.
          */
-        invoiceNumber: invoiceNumberOf(row.facts_json),
+        invoiceNumber: row.receipt_number ?? invoiceNumberOf(row.facts_json),
         receivedAt: row.received_at ?? null,
       };
     }
