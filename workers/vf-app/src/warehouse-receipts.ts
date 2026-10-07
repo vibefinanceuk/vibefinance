@@ -1,7 +1,7 @@
 import type { RouteResult } from "./org-route.js";
 import { handleCreateProcessInstance, visitCurrentStage } from "./workflow-engine.js";
 import { isWithinScope, unitsWherePermitted } from "./enforce.js";
-import { Checker, type ReceiptStatus } from "./goods-receipts.js";
+import { Checker, quantityOf, type ReceiptStatus } from "./goods-receipts.js";
 import { ensureReceiptsUploadSource } from "./receipts-in-route.js";
 
 /**
@@ -408,6 +408,8 @@ export async function handleRejectGoodsReceipt(db: D1Database, userId: string, i
   if (receipt.status === "rejected") return { status: 409, body: { error: "that receipt is already rejected", reason: "already_rejected" } };
   const reason = typeof body.reason === "string" ? body.reason.trim() : "";
   if (!reason) return { status: 400, body: { error: "say why it is rejected", reason: "reject_reason_missing" } };
+  const refusal = await receiptTaskRefusal(db, userId, id);
+  if (refusal) return refusal;
 
   const at = now.toISOString();
   const instances = (
@@ -435,6 +437,48 @@ export async function handleRejectGoodsReceipt(db: D1Database, userId: string, i
 
 // ── Working a receipt at Matching ──────────────────────────────────────
 
+/**
+ * **Claim before acting — decision 0657.** Dan found the receipt's
+ * pop-out let anyone with AP.Receive fix, register or reject a receipt
+ * whose task nobody had claimed, where an invoice's task must be claimed
+ * first (0104). The open task on the receipt's instance is held to the
+ * same rule as completing a task:
+ *
+ * - a task for a named person: only that person;
+ * - a team's task: claimed, and by this person.
+ *
+ * A receipt with no open task (pending without a process, or a line
+ * held back on a registered receipt, 0654) has nothing to claim. Null
+ * when the person may act.
+ */
+export async function receiptTaskRefusal(db: D1Database, userId: string, receiptId: string): Promise<RouteResult | null> {
+  const task = await openReceiptTask(db, receiptId);
+  if (!task) return null;
+  if (task.owner_user_id) {
+    if (task.owner_user_id === userId) return null;
+    return { status: 403, body: { error: "this receipt's task is assigned to someone else", reason: "task_not_yours", taskId: task.id } };
+  }
+  if (!task.claimed_by) return { status: 409, body: { error: "claim the receipt's task before acting on it", reason: "task_not_claimed", taskId: task.id } };
+  if (task.claimed_by !== userId)
+    return { status: 403, body: { error: `${task.claimed_by_name ?? "someone else"} has claimed this receipt's task`, reason: "task_claimed_by_other", taskId: task.id, claimedBy: task.claimed_by_name } };
+  return null;
+}
+
+/** The open task on a receipt's instance in progress, with who holds it. */
+export async function openReceiptTask(db: D1Database, receiptId: string) {
+  return db
+    .prepare(
+      `SELECT t.id, t.owner_user_id, t.owner_team_id, t.claimed_by, cu.name AS claimed_by_name, t.claimed_at
+       FROM tasks t JOIN stage_visits v ON v.id = t.stage_visit_id
+       JOIN process_instances pi ON pi.id = v.process_instance_id
+       LEFT JOIN org_users cu ON cu.id = t.claimed_by
+       WHERE pi.subject_type = 'goods_receipt' AND pi.subject_id = ? AND pi.status = 'in_progress' AND t.status = 'open'
+       ORDER BY t.created_at LIMIT 1`
+    )
+    .bind(receiptId)
+    .first<{ id: string; owner_user_id: string | null; owner_team_id: string | null; claimed_by: string | null; claimed_by_name: string | null; claimed_at: string | null }>();
+}
+
 async function pendingInScope(db: D1Database, userId: string, id: string, waitingLine: number | null = null): Promise<RouteResult | { receipt: { id: string; receipt_number: string; status: ReceiptStatus }; scope: string[] | null }> {
   const notFound = { status: 404, body: { error: "no such receipt", reason: "not_found" } };
   const receipt = await db.prepare("SELECT id, receipt_number, status FROM goods_receipts WHERE id = ?").bind(id).first<{ id: string; receipt_number: string; status: ReceiptStatus }>();
@@ -459,7 +503,9 @@ async function pendingInScope(db: D1Database, userId: string, id: string, waitin
 /**
  * `POST /goods-receipts/:id/lines/:line` — **fixing one line of a pending
  * receipt**: `{ orderNumber, orderLine }` points it at another order or
- * order line (one in the person's scope), or `{ reject: true, reason }`
+ * order line (one in the person's scope), `{ unitCode, quantity }`
+ * corrects what was counted (0657; either or both, with or without a new
+ * order line), or `{ reject: true, reason }`
  * rejects that line alone, so it never counts. Then every line is
  * checked again and returned. AP.Receive.
  */
@@ -468,6 +514,8 @@ export async function handleFixReceiptLine(db: D1Database, userId: string, id: s
   if ("status" in found) return found;
   const line = await db.prepare("SELECT line_status FROM goods_receipt_lines WHERE receipt_id = ? AND line_number = ?").bind(id, lineNumber).first<{ line_status: string }>();
   if (!line) return { status: 404, body: { error: `the receipt has no line ${lineNumber}`, reason: "line_not_found" } };
+  const refusal = await receiptTaskRefusal(db, userId, id);
+  if (refusal) return refusal;
 
   if (body.reject === true) {
     const reason = typeof body.reason === "string" ? body.reason.trim() : "";
@@ -475,12 +523,57 @@ export async function handleFixReceiptLine(db: D1Database, userId: string, id: s
     await db.prepare("UPDATE goods_receipt_lines SET line_status = 'rejected', reject_reason = ?, check_reason = NULL WHERE receipt_id = ? AND line_number = ?").bind(reason, id, lineNumber).run();
   } else {
     if (line.line_status === "rejected") return { status: 409, body: { error: "that line is rejected", reason: "line_rejected" } };
-    const orderNumber = typeof body.orderNumber === "string" ? body.orderNumber.trim() : "";
-    const orderLine = Number(body.orderLine);
-    if (!orderNumber || !Number.isInteger(orderLine) || orderLine < 1) return { status: 400, body: { error: "an order number and order line are needed", reason: "order_line_missing" } };
-    const order = await db.prepare("SELECT org_unit_id FROM purchase_orders WHERE order_number = ?").bind(orderNumber).first<{ org_unit_id: string | null }>();
-    if (!order || !isWithinScope({ units: found.scope }, order.org_unit_id)) return { status: 422, body: { error: `no purchase order ${orderNumber}`, reason: "order_not_found" } };
-    await db.prepare("UPDATE goods_receipt_lines SET order_number = ?, order_line_number = ? WHERE receipt_id = ? AND line_number = ?").bind(orderNumber, orderLine, id, lineNumber).run();
+    const repoint = body.orderNumber !== undefined || body.orderLine !== undefined;
+    const correct = body.unitCode !== undefined || body.quantity !== undefined;
+    if (!repoint && !correct) return { status: 400, body: { error: "an order number and order line are needed", reason: "order_line_missing" } };
+    /**
+     * **Correcting the unit and quantity — decision 0657.** 2 BOX against
+     * an order line in EA could only be rejected. The two are corrected
+     * together, since a unit changed alone would count the wrong amount
+     * (2 BOX is 24 EA, not 2). What the warehouse sent is kept the first
+     * time, with who corrected it.
+     */
+    let unitCode: string | null | undefined;
+    let quantity: number | undefined;
+    if (correct) {
+      if (body.unitCode !== undefined) {
+        const u = typeof body.unitCode === "string" ? body.unitCode.trim().toUpperCase() : body.unitCode === null ? "" : null;
+        if (u === null || u.length > 10 || (u !== "" && !/^[A-Z0-9]+$/.test(u))) return { status: 400, body: { error: "the unit must be a short code, such as EA", reason: "unit_invalid" } };
+        unitCode = u === "" ? null : u;
+      }
+      if (body.quantity !== undefined) {
+        const q = quantityOf(body.quantity);
+        if (q === null) return { status: 400, body: { error: "the quantity must be a number above nought", reason: "quantity_invalid" } };
+        quantity = q;
+      }
+    }
+    let orderNumber: string | null = null;
+    let orderLine = 0;
+    if (repoint) {
+      orderNumber = typeof body.orderNumber === "string" ? body.orderNumber.trim() : "";
+      orderLine = Number(body.orderLine);
+      if (!orderNumber || !Number.isInteger(orderLine) || orderLine < 1) return { status: 400, body: { error: "an order number and order line are needed", reason: "order_line_missing" } };
+      const order = await db.prepare("SELECT org_unit_id FROM purchase_orders WHERE order_number = ?").bind(orderNumber).first<{ org_unit_id: string | null }>();
+      if (!order || !isWithinScope({ units: found.scope }, order.org_unit_id)) return { status: 422, body: { error: `no purchase order ${orderNumber}`, reason: "order_not_found" } };
+    }
+    if (orderNumber) await db.prepare("UPDATE goods_receipt_lines SET order_number = ?, order_line_number = ? WHERE receipt_id = ? AND line_number = ?").bind(orderNumber, orderLine, id, lineNumber).run();
+    if (correct) {
+      const now = await db.prepare("SELECT unit_code, quantity FROM goods_receipt_lines WHERE receipt_id = ? AND line_number = ?").bind(id, lineNumber).first<{ unit_code: string | null; quantity: number }>();
+      const nextUnit = unitCode !== undefined ? unitCode : now!.unit_code;
+      const nextQuantity = quantity ?? now!.quantity;
+      if (nextUnit !== now!.unit_code || nextQuantity !== now!.quantity) {
+        await db
+          .prepare(
+            `UPDATE goods_receipt_lines
+             SET original_unit_code = CASE WHEN corrected_at IS NULL THEN unit_code ELSE original_unit_code END,
+                 original_quantity = CASE WHEN corrected_at IS NULL THEN quantity ELSE original_quantity END,
+                 unit_code = ?, quantity = ?, corrected_by = ?, corrected_at = ?
+             WHERE receipt_id = ? AND line_number = ?`
+          )
+          .bind(nextUnit, nextQuantity, userId, new Date().toISOString(), id, lineNumber)
+          .run();
+      }
+    }
   }
   const checked = await checkReceiptLines(db, id);
   // 0654: a held-back line that now matches counts, so invoices waiting on it are checked again.
@@ -500,6 +593,8 @@ export async function handleFixReceiptLine(db: D1Database, userId: string, id: s
 export async function handleRegisterGoodsReceipt(db: D1Database, userId: string, id: string, now = new Date()): Promise<RouteResult> {
   const found = await pendingInScope(db, userId, id);
   if ("status" in found) return found;
+  const refusal = await receiptTaskRefusal(db, userId, id);
+  if (refusal) return refusal;
   const checked = await checkReceiptLines(db, id);
   if (checked.active === 0) return { status: 409, body: { error: "every line is rejected: reject the receipt instead", reason: "no_lines_left" } };
   if (checked.attention > 0) return { status: 409, body: { error: "some lines still need attention", reason: "lines_need_attention", lines: checked.lines } };
@@ -523,10 +618,10 @@ export async function handleRegisterGoodsReceipt(db: D1Database, userId: string,
   const at = now.toISOString();
   await db
     .prepare(
-      `UPDATE tasks SET status = 'completed', completed_by = ?, completed_at = ?, claimed_by = COALESCE(claimed_by, ?), claimed_at = COALESCE(claimed_at, ?)
+      `UPDATE tasks SET status = 'completed', completed_by = ?, completed_at = ?
        WHERE status = 'open' AND stage_visit_id IN (SELECT id FROM stage_visits WHERE process_instance_id = ?)`
     )
-    .bind(userId, at, userId, at, instance.id)
+    .bind(userId, at, instance.id)
     .run();
   const touched = await continueReceiptInstance(db, instance.id, now);
   const after = await db.prepare("SELECT status FROM goods_receipts WHERE id = ?").bind(id).first<{ status: ReceiptStatus }>();

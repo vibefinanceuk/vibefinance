@@ -60,6 +60,16 @@ const STRINGS = {
     "receipts.check.matched": "Matched",
     "receipts.check.rejected": "Rejected",
     "receipts.fix.change": "Change",
+    "receipts.task.mine": "You have claimed this receipt's task. Fix its lines, then Register or Reject.",
+    "receipts.task.other": "{who} has claimed this receipt's task. Only they can work on it.",
+    "receipts.task.none": "Nobody has claimed this receipt's task. Claim it to fix lines, register or reject.",
+    "receipts.task.claim": "Claim",
+    "receipts.task.release": "Release",
+    "receipts.fix.quantity": "Quantity",
+    "receipts.fix.unit": "Unit",
+    "receipts.orderline": "{item} · ordered {qty} {unit}",
+    "receipts.orderline.missing": "Not a line on this order",
+    "receipts.corrected": "Was {was}, corrected by {who}",
     "receipts.fix.rejectline": "Reject line",
     "receipts.fix.rejectprompt": "Why is line {line} rejected? It will never count.",
     "receipts.error.lines_need_attention": "Some lines still need attention: fix or reject them first.",
@@ -529,6 +539,80 @@ describe("Waiting for the PO — decision 0654", () => {
     expect(document.getElementById("fix-change-1")).toBeNull();
     expect(document.getElementById("fix-change-2")).not.toBeNull();
     expect(button("Register")).toBeUndefined();
+  });
+});
+
+describe("claim before acting, and correcting the unit and quantity — decision 0657", () => {
+  const detail = (task: unknown, lines: unknown[]) => ({
+    receipt: { id: "wh-1", receiptNumber: "WH-1", receiptDate: "2026-10-05", source: "csv", createdBy: "Sam", cancelled: false, status: "pending" },
+    lines,
+    orders: [ORDER],
+    process: { instanceId: "pi", status: "in_progress", processName: "Warehouse Receipts", stageName: "Matching" },
+    task,
+  });
+  const BOX = { lineNumber: 1, orderNumber: "PO-4501", orderLine: 2, movement: "received", quantity: 2, unitCode: "BOX", checkReason: "unit_mismatch", lineStatus: "active", correction: null };
+  const NOLINE = { lineNumber: 2, orderNumber: "PO-4501", orderLine: 9, movement: "received", quantity: 5, unitCode: "EA", checkReason: "order_line_not_found", lineStatus: "active", correction: null };
+
+  it("shows nobody holds the task, offers Claim, and hides fixing, Register and Reject until it is claimed", async () => {
+    const calls = await openScreen(["AP.Receive"], {
+      "GET /api/goods-receipts/wh-1": [200, detail({ id: "t-1", claimedBy: null, mine: false, canClaim: true, canRelease: false }, [BOX, NOLINE])],
+      "POST /api/tasks/t-1/claim": [200, { taskId: "t-1" }],
+    });
+    const { openReceipt } = await import("/goods-receipts.js");
+    await openReceipt("wh-1");
+    expect(document.getElementById("receipt-task")?.textContent).toContain("Nobody has claimed this receipt's task.");
+    expect(document.getElementById("fix-change-1")).toBeNull();
+    expect(button("Register")).toBeUndefined();
+    expect(button("Reject receipt")).toBeUndefined();
+    // The order line is shown, so the unit to correct to is plain.
+    const orderCells = [...document.querySelectorAll(".popout [data-orderline]")].map((c) => c.textContent);
+    expect(orderCells).toEqual(["Bubble wrap roll · ordered 50 EA", "Not a line on this order"]);
+    document.getElementById("receipt-claim")!.click();
+    await vi.waitFor(() => expect(calls.some((c) => c.path === "/api/tasks/t-1/claim" && c.method === "POST")).toBe(true));
+    await vi.waitFor(() => expect(calls.filter((c) => c.path === "/api/goods-receipts/wh-1").length).toBe(2));
+  });
+
+  it("says who holds it when someone else does, and offers nothing to act with", async () => {
+    await openScreen(["AP.Receive"], {
+      "GET /api/goods-receipts/wh-1": [200, detail({ id: "t-1", claimedBy: "Ann", mine: false, canClaim: false, canRelease: false }, [BOX])],
+    });
+    const { openReceipt } = await import("/goods-receipts.js");
+    await openReceipt("wh-1");
+    expect(document.getElementById("receipt-task")?.textContent).toBe("Ann has claimed this receipt's task. Only they can work on it.");
+    expect(document.getElementById("receipt-claim")).toBeNull();
+    expect(document.getElementById("fix-change-1")).toBeNull();
+    expect(button("Register")).toBeUndefined();
+  });
+
+  it("for its holder: Release, and 2 BOX corrected to 24 EA sends only the unit and quantity; a corrected line says what was sent", async () => {
+    const calls = await openScreen(["AP.Receive"], {
+      "GET /api/goods-receipts/wh-1": [200, detail({ id: "t-1", claimedBy: "Sam", mine: true, canClaim: false, canRelease: true }, [BOX])],
+      "POST /api/goods-receipts/wh-1/lines/1": [200, { attention: 0 }],
+    });
+    const { openReceipt } = await import("/goods-receipts.js");
+    await openReceipt("wh-1");
+    expect(document.getElementById("receipt-task")?.textContent).toContain("You have claimed this receipt's task.");
+    expect(document.getElementById("receipt-release")).not.toBeNull();
+    expect(button("Register")).not.toBeUndefined();
+    expect((document.getElementById("fix-unit-1") as HTMLInputElement).value).toBe("BOX");
+    (document.getElementById("fix-unit-1") as HTMLInputElement).value = "ea";
+    (document.getElementById("fix-qty-1") as HTMLInputElement).value = "24";
+    document.getElementById("fix-change-1")!.click();
+    await vi.waitFor(() => expect(calls.find((c) => c.path === "/api/goods-receipts/wh-1/lines/1")?.body).toEqual({ unitCode: "ea", quantity: "24" }));
+
+    document.body.innerHTML = `<main id="shell"></main><main id="viewer" hidden></main>`;
+    vi.resetModules();
+    await openScreen(["AP.Receive"], {
+      "GET /api/goods-receipts/wh-1": [
+        200,
+        detail({ id: "t-1", claimedBy: "Sam", mine: true, canClaim: false, canRelease: true }, [
+          { ...BOX, quantity: 24, unitCode: "EA", checkReason: null, correction: { unitCode: "BOX", quantity: 2, by: "Sam", at: "2026-10-07T09:00:00Z" } },
+        ]),
+      ],
+    });
+    const again = await import("/goods-receipts.js");
+    await again.openReceipt("wh-1");
+    expect(document.querySelector(".popout [data-corrected]")?.textContent).toBe("Was 2 BOX, corrected by Sam");
   });
 });
 

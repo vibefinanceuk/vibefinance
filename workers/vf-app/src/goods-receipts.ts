@@ -43,7 +43,7 @@ function text(v: unknown): string | null {
   return s === "" ? null : s.slice(0, NOTE_MAX);
 }
 
-function quantityOf(v: unknown): number | null {
+export function quantityOf(v: unknown): number | null {
   const n = typeof v === "number" ? v : typeof v === "string" && v.trim() !== "" ? Number(v.trim()) : NaN;
   return Number.isFinite(n) && n > 0 ? n : null;
 }
@@ -941,6 +941,36 @@ export async function handleGoodsReceiptStatusCounts(db: D1Database, userId: str
   return { status: 200, body: { counts } };
 }
 
+/**
+ * **The open task on a receipt, and who holds it — decision 0657**, so
+ * the pop-out offers Claim and Release as the invoice viewer does, and
+ * acts only for its holder. Null when nothing is open on it.
+ */
+async function receiptTaskFor(db: D1Database, userId: string, receiptId: string) {
+  const task = await db
+    .prepare(
+      `SELECT t.id, t.owner_user_id, t.owner_team_id, t.claimed_by, cu.name AS claimed_by_name, t.claimed_at,
+              (SELECT 1 FROM org_team_members m WHERE m.team_id = t.owner_team_id AND m.user_id = ?) AS member
+       FROM tasks t JOIN stage_visits v ON v.id = t.stage_visit_id
+       JOIN process_instances pi ON pi.id = v.process_instance_id
+       LEFT JOIN org_users cu ON cu.id = t.claimed_by
+       WHERE pi.subject_type = 'goods_receipt' AND pi.subject_id = ? AND pi.status = 'in_progress' AND t.status = 'open'
+       ORDER BY t.created_at LIMIT 1`
+    )
+    .bind(userId, receiptId)
+    .first<{ id: string; owner_user_id: string | null; owner_team_id: string | null; claimed_by: string | null; claimed_by_name: string | null; claimed_at: string | null; member: number | null }>();
+  if (!task) return null;
+  const mine = task.owner_user_id ? task.owner_user_id === userId : task.claimed_by === userId;
+  return {
+    id: task.id,
+    claimedBy: task.claimed_by_name ?? null,
+    claimedAt: task.claimed_at ?? null,
+    mine,
+    canClaim: !task.owner_user_id && !task.claimed_by && task.member === 1,
+    canRelease: !task.owner_user_id && task.claimed_by === userId,
+  };
+}
+
 /** One receipt, its lines, and where each order it names stands now. 404 outside the person's scope. */
 export async function handleGetGoodsReceipt(db: D1Database, userId: string, id: string): Promise<RouteResult> {
   const scope = await receiptViewScope(db, userId);
@@ -959,8 +989,10 @@ export async function handleGetGoodsReceipt(db: D1Database, userId: string, id: 
     await db
       .prepare(
         `SELECT l.line_number, l.order_number, l.order_line_number, l.movement, l.quantity, l.unit_code, l.note,
-                l.return_reason_id, gr.label AS return_reason, l.check_reason, l.line_status, l.reject_reason, l.waiting_since
+                l.return_reason_id, gr.label AS return_reason, l.check_reason, l.line_status, l.reject_reason, l.waiting_since,
+                l.original_unit_code, l.original_quantity, l.corrected_at, cu.name AS corrected_by_name
          FROM goods_receipt_lines l LEFT JOIN goods_return_reasons gr ON gr.id = l.return_reason_id
+         LEFT JOIN org_users cu ON cu.id = l.corrected_by
          WHERE l.receipt_id = ? ORDER BY l.line_number`
       )
       .bind(id)
@@ -1019,7 +1051,12 @@ export async function handleGetGoodsReceipt(db: D1Database, userId: string, id: 
         lineStatus: l.line_status ?? "active",
         rejectReason: l.reject_reason ?? null,
         waitingSince: l.waiting_since ?? null,
+        // 0657: what the warehouse sent, where the line was corrected.
+        correction: l.corrected_at
+          ? { unitCode: l.original_unit_code ?? null, quantity: l.original_quantity, by: l.corrected_by_name ?? null, at: l.corrected_at }
+          : null,
       })),
+      task: await receiptTaskFor(db, userId, id),
       orders,
     },
   };

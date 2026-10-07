@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 7 October 2026 (decision 0656). A living document: what
+Last updated 7 October 2026 (decision 0657). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,22 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Claim before acting, and correcting a receipt line (0657)
+
+From Dan trying the sample receipt files:
+
+- **A receipt's task is claimed before anyone acts on it.** As with an
+  invoice's, only its holder can fix lines, Register or Reject the
+  receipt. The pop-out says who holds the task, with Claim or Release,
+  and hides the actions from everyone else.
+- **Each line shows its order line**: the item, and what was ordered in
+  which unit. Previously a unit mismatch gave no clue what the unit
+  should be.
+- **A line's unit and quantity can be corrected together** (2 BOX to
+  24 EA). The first value the warehouse sent is kept, with who
+  corrected it, and shown under the quantity.
+- Full reasoning and verification counts are in decision 0657.
 
 ### Goods receipts in questions and agents (0656)
 

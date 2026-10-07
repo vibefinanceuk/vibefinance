@@ -5312,6 +5312,10 @@
 .receiptfixrow td { border-top: none; padding-top: 0; }
 .receiptfix input.fixorder { width: 8em; flex: none; }
 .receiptfix input.fixline { width: 4.5em; flex: none; }
+.receiptfix input.fixqty { width: 6em; flex: none; }
+.receiptfix input.fixunit { width: 5em; flex: none; text-transform: uppercase; }
+#receipt-task { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.popout .receiptcorrected { white-space: normal; max-width: 11em; margin-left: auto; }
 .receiptfix button { white-space: nowrap; }
 .popout td.nowrap { white-space: nowrap; }
 .receiptfigures .qtyinput { width: 7em; text-align: right; }

@@ -411,7 +411,7 @@ export async function openReceipt(id, { onDone = null } = {}) {
   const after = onDone ?? refreshAll;
   const r = await call(`/goods-receipts/${encodeURIComponent(id)}`);
   if (!r.ok) return note(t("receipts.detailfailed"));
-  const { receipt, lines, orders, process } = r.body;
+  const { receipt, lines, orders, process, task = null } = r.body;
   const problem = el("div", { class: "warn", id: "receipt-problem" });
   let backdrop;
   const close = () => backdrop.remove();
@@ -419,7 +419,14 @@ export async function openReceipt(id, { onDone = null } = {}) {
   // Decision 0654: lines waiting for their purchase order, on a pending receipt or held back on a registered one.
   const heldBack = lines.filter((l) => l.waitingSince && l.lineStatus !== "rejected");
   const checking = pending || heldBack.length > 0;
-  const workable = (l) => canRecord() && l.lineStatus !== "rejected" && (pending ? Boolean(l.checkReason || l.waitingSince) : Boolean(l.waitingSince));
+  /**
+   * Decision 0657: the receipt's open task is claimed before anyone acts
+   * on it, as an invoice's is. Without a task (a line held back on a
+   * registered receipt, 0654) there is nothing to claim.
+   */
+  const holding = !task || task.mine;
+  const acts = canRecord() && holding;
+  const workable = (l) => acts && l.lineStatus !== "rejected" && (pending ? Boolean(l.checkReason || l.waitingSince) : Boolean(l.waitingSince));
 
   /** Decision 0652: what Matching found on a line. */
   const checkPill = (l) =>
@@ -434,10 +441,28 @@ export async function openReceipt(id, { onDone = null } = {}) {
             ].filter(Boolean))
           : el("span", { class: "rmpill ok", text: t("receipts.check.matched") });
 
-  /** Point a line needing attention at another order line, or reject it alone; then the pop-out opens again, checked. */
+  /** Decision 0657: the order line a receipt line is against — its item, and what was ordered in which unit. */
+  const orderLineOf = (l) => orders.find((o) => o.orderNumber === l.orderNumber)?.lines.find((x) => x.lineNumber === l.orderLine) ?? null;
+  const orderLineWords = (l) => {
+    const ol = orderLineOf(l);
+    if (!ol) return orders.some((o) => o.orderNumber === l.orderNumber) ? t("receipts.orderline.missing") : null;
+    return t("receipts.orderline")
+      .replace("{item}", ol.itemName ?? "—")
+      .replace("{qty}", ol.ordered === null || ol.ordered === undefined ? "—" : qty(ol.ordered))
+      .replace("{unit}", ol.unitCode ?? "")
+      .trim();
+  };
+
+  /**
+   * Point a line needing attention at another order line, correct its
+   * unit and quantity together (0657), or reject it alone; then the
+   * pop-out opens again, checked.
+   */
   const fixCell = (l) => {
     const order = el("input", { type: "text", class: "fixorder", id: `fix-order-${l.lineNumber}`, value: l.orderNumber, "aria-label": t("receipts.fix.order") });
     const line = el("input", { type: "number", min: "1", class: "fixline", id: `fix-line-${l.lineNumber}`, value: String(l.orderLine), "aria-label": t("receipts.fix.line") });
+    const quantity = el("input", { type: "number", min: "0", step: "any", class: "fixqty", id: `fix-qty-${l.lineNumber}`, value: String(l.quantity), "aria-label": t("receipts.fix.quantity") });
+    const unit = el("input", { type: "text", class: "fixunit", id: `fix-unit-${l.lineNumber}`, value: l.unitCode ?? "", "aria-label": t("receipts.fix.unit") });
     const reopen = async (r) => {
       if (!r.ok) {
         problem.replaceChildren(el("div", { text: said(r.body, "receipts.fixfailed") }));
@@ -447,7 +472,14 @@ export async function openReceipt(id, { onDone = null } = {}) {
       await openReceipt(id, { onDone });
     };
     const change = el("button", { type: "button", id: `fix-change-${l.lineNumber}`, text: t("receipts.fix.change") });
-    change.onclick = async () => reopen(await post(`/goods-receipts/${encodeURIComponent(id)}/lines/${l.lineNumber}`, { orderNumber: order.value, orderLine: Number(line.value) }));
+    change.onclick = async () => {
+      // Only what was changed is sent: a new order line, a corrected unit and quantity, or both.
+      const body = {};
+      if (order.value.trim() !== l.orderNumber || Number(line.value) !== l.orderLine) Object.assign(body, { orderNumber: order.value, orderLine: Number(line.value) });
+      if (unit.value.trim().toUpperCase() !== (l.unitCode ?? "") || Number(quantity.value) !== l.quantity) Object.assign(body, { unitCode: unit.value, quantity: quantity.value });
+      if (Object.keys(body).length === 0) Object.assign(body, { orderNumber: l.orderNumber, orderLine: l.orderLine });
+      reopen(await post(`/goods-receipts/${encodeURIComponent(id)}/lines/${l.lineNumber}`, body));
+    };
     const reject = el("button", { type: "button", id: `fix-reject-${l.lineNumber}`, text: t("receipts.fix.rejectline") });
     reject.onclick = () => {
       const why = el("input", { type: "text", class: "searchbox", id: "line-rejectreason", placeholder: t("receipts.rejectwhy") });
@@ -462,6 +494,10 @@ export async function openReceipt(id, { onDone = null } = {}) {
         order,
         el("label", { for: line.id, class: "sm muted", text: t("receipts.fix.line") }),
         line,
+        el("label", { for: quantity.id, class: "sm muted", text: t("receipts.fix.quantity") }),
+        quantity,
+        el("label", { for: unit.id, class: "sm muted", text: t("receipts.fix.unit") }),
+        unit,
         change,
         reject,
       ]),
@@ -470,7 +506,7 @@ export async function openReceipt(id, { onDone = null } = {}) {
 
   const buttons = [];
   // Decision 0652: Register, once every line still in it matches.
-  if (canRecord() && receipt.status === "pending") {
+  if (acts && receipt.status === "pending") {
     const register = actionLink("save", {
       primary: true,
       label: t("receipts.register"),
@@ -491,7 +527,7 @@ export async function openReceipt(id, { onDone = null } = {}) {
     buttons.push(register);
   }
   // Decision 0651: a pending receipt is rejected, never cancelled; it has not counted yet.
-  if (canRecord() && receipt.status === "pending") {
+  if (acts && receipt.status === "pending") {
     buttons.push(
       actionLink("close", {
         label: t("receipts.rejectreceipt"),
@@ -552,6 +588,31 @@ export async function openReceipt(id, { onDone = null } = {}) {
   }
   buttons.push(actionLink("close", { onclick: () => close() }));
 
+  /** Decision 0657: who holds the receipt's task, with Claim or Release, as on an invoice. */
+  const taskBar = () => {
+    if (!task || !canRecord()) return null;
+    const claimOrRelease = async (what) => {
+      const done = await post(`/tasks/${encodeURIComponent(task.id)}/${what}`, {});
+      if (!done.ok) {
+        problem.replaceChildren(el("div", { text: done.body?.error ?? t("receipts.task.failed") }));
+        return;
+      }
+      close();
+      await openReceipt(id, { onDone });
+      if (onDone) await onDone();
+    };
+    const words = task.mine
+      ? t("receipts.task.mine")
+      : task.claimedBy
+        ? t("receipts.task.other").replace("{who}", task.claimedBy)
+        : t("receipts.task.none");
+    return el("div", { class: "warn", id: "receipt-task" }, [
+      el("span", { text: words }),
+      task.canClaim ? el("button", { type: "button", class: "primary", id: "receipt-claim", text: t("receipts.task.claim"), onclick: () => claimOrRelease("claim") }) : null,
+      task.canRelease ? el("button", { type: "button", id: "receipt-release", text: t("receipts.task.release"), onclick: () => claimOrRelease("release") }) : null,
+    ].filter(Boolean));
+  };
+
   const fact = (k, v) => [el("div", { class: "muted", text: t(k) }), el("div", { text: v || "—" })];
   backdrop = popout([
     el("div", { class: "cardhead" }, [el("h3", { text: receipt.receiptNumber }), el("div", { class: "statebuttons" }, buttons)]),
@@ -567,6 +628,7 @@ export async function openReceipt(id, { onDone = null } = {}) {
             : t("receipts.pendingnoprocess"),
         })
       : null,
+    taskBar(),
     receipt.status === "registered" && heldBack.length > 0
       ? el("div", { class: "warn", id: "receipt-heldback", text: t("receipts.heldback").replace("{n}", String(heldBack.length)) })
       : null,
@@ -594,9 +656,24 @@ export async function openReceipt(id, { onDone = null } = {}) {
           lines.flatMap((l) => [
             el("tr", { class: l.lineStatus === "rejected" ? "muted" : "", "data-line": String(l.lineNumber) }, [
               el("td", { text: String(l.lineNumber) }),
-              el("td", { class: "nowrap", text: `${l.orderNumber} / ${l.orderLine}` }),
+              el("td", {}, [
+                el("div", { class: "nowrap", text: `${l.orderNumber} / ${l.orderLine}` }),
+                // Decision 0657: the order line's item, and what was ordered in which unit.
+                orderLineWords(l) ? el("div", { class: "sm muted", "data-orderline": "", text: orderLineWords(l) }) : null,
+              ].filter(Boolean)),
               el("td", {}, [movementPill(l.movement)]),
-              el("td", { class: "num", text: `${qty(l.quantity)}${l.unitCode ? ` ${l.unitCode}` : ""}` }),
+              el("td", { class: "num" }, [
+                el("div", { text: `${qty(l.quantity)}${l.unitCode ? ` ${l.unitCode}` : ""}` }),
+                l.correction
+                  ? el("div", {
+                      class: "sm muted receiptcorrected",
+                      "data-corrected": "",
+                      text: t("receipts.corrected")
+                        .replace("{was}", `${qty(l.correction.quantity)}${l.correction.unitCode ? ` ${l.correction.unitCode}` : ""}`)
+                        .replace("{who}", l.correction.by ?? "—"),
+                    })
+                  : null,
+              ].filter(Boolean)),
               el("td", { class: "muted", text: l.returnReason ?? "—" }),
               ...(checking ? [el("td", {}, [pending || l.waitingSince ? checkPill(l) : el("span", { class: "rmpill ok", text: t("receipts.check.counted") })])] : []),
             ]),
