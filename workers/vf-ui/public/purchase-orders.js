@@ -1,6 +1,6 @@
 import { t } from "/strings.js";
 import { el, frame, topbar, setCurrentScreen } from "/tasks.js";
-import { actionLink } from "/viewer.js";
+import { actionLink, compactLink } from "/viewer.js";
 import { icon } from "/icons.js";
 import { currentOrgId } from "/orgs.js";
 import { donutChart } from "/charts.js";
@@ -321,7 +321,7 @@ function loader() {
   // The handler goes in at construction — actionLink disables a button
   // with no onclick (decision 0161), and assigning it afterwards
   // leaves the button disabled and looking fine.
-  const button = actionLink("load", { primary: true, onclick: () => runLoad(), label: t("purchaseorders.loadbutton") });
+  const button = compactLink("load", { primary: true, onclick: () => runLoad(), label: t("purchaseorders.loadbutton") });
 
   async function runLoad() {
     const file = picker.files?.[0];
@@ -377,7 +377,7 @@ function loader() {
     }
   }
 
-  const templateButton = actionLink("download", {
+  const templateButton = compactLink("download", {
     onclick: () => downloadTemplate(),
     label: t("purchaseorders.templatebutton"),
   });

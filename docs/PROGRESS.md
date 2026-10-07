@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 7 October 2026 (decision 0672). A living document: what
+Last updated 7 October 2026 (decision 0673). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,13 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Purchase Orders: CSV Template and Load CSV compact (0673)
+
+The *Load purchase orders* card's CSV Template and Load CSV are small
+icon-and-word actions.
+
+Full reasoning is in decision 0673.
 
 ### Return Reasons: AP team email first, lists side by side (0672)
 

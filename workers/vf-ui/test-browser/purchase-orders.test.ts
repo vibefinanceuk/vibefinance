@@ -264,6 +264,21 @@ describe("the screen opens at all", () => {
     expect(cardhead?.querySelector(".statebuttons")).not.toBeNull();
   });
 
+  it("draws CSV Template and Load CSV as a small icon with its word (decision 0673)", async () => {
+    stubFetch({ "/api/purchase-orders": { body: EMPTY_LIST } });
+    await openScreen();
+
+    const cardhead = [...document.querySelectorAll(".cardhead")].find(
+      (c) => c.querySelector("h3")?.textContent === "Load purchase orders"
+    )!;
+    const buttons = [...cardhead.querySelectorAll(".statebuttons button")] as HTMLElement[];
+    expect(buttons.map((b) => b.textContent)).toEqual(["CSV Template", "Load CSV"]);
+    for (const b of buttons) {
+      expect(b.classList.contains("compactlink"), b.textContent ?? "").toBe(true);
+      expect(b.firstElementChild?.tagName.toLowerCase()).toBe("svg");
+    }
+  });
+
   it("reports when the list itself could not be loaded, rather than showing an empty table silently", async () => {
     stubFetch({ "/api/purchase-orders": { ok: false, body: { error: "nope" } } });
     await openScreen();
