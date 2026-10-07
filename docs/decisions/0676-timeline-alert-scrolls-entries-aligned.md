@@ -1,7 +1,7 @@
 # 0676: The Timeline's system alert scrolls with the feed, and the entries line up with the box to write in
 
-**Status: built and tested locally, not yet pushed or deployed.** It is
-`vf-ui` only, with no migration. Deploy vf-ui.
+**Status: live** at `7d88fa9`, pushed and deployed 7 October 2026. It is
+`vf-ui` only, with no migration.
 
 ## What was asked
 
