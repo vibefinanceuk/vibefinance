@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 7 October 2026 (decision 0669). A living document: what
+Last updated 7 October 2026 (decision 0670). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,14 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Approval Hierarchy's override cards side by side (0670)
+
+Supervisor overrides and Approval limit overrides sit side by side at
+half the width each, stacking below 900px. Each card's Add, and each row's Remove, is a
+small icon-and-word action.
+
+Full reasoning is in decision 0670.
 
 ### AP Setup's Save and the coding lists' actions (0669)
 

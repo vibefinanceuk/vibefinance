@@ -548,6 +548,44 @@ describe("Save as a small icon with its word on Matching, Account Coding and App
   });
 });
 
+describe("The two override cards side by side, Add compact (decision 0670)", () => {
+  it("puts Supervisor overrides and Approval limit overrides in one two-column row, each with a compact Add", async () => {
+    await openApSetupAs(["Admin.Configure"]);
+    switchTab("Approval Hierarchy");
+    const pair = document.querySelector(".overridepair") as HTMLElement;
+    expect(pair).not.toBeNull();
+    expect([...pair.children].map((c) => c.id)).toEqual(["supervisoroverrides", "limitoverrides"]);
+    for (const id of ["supervisoroverrides", "limitoverrides"]) {
+      const add = [...document.querySelectorAll(`#${id} .cardhead button`)].find((b) => b.textContent === "Add") as HTMLElement;
+      expect(add, id).toBeTruthy();
+      expect(add.classList.contains("compactlink"), id).toBe(true);
+      expect(add.firstElementChild?.tagName.toLowerCase(), id).toBe("svg");
+    }
+  });
+
+  it("draws each override row's Remove as a small icon with its word", async () => {
+    const config = {
+      ...EMPTY_CONFIG,
+      supervisorOverrides: [{ userId: "u1", userName: "Alice", unitId: "o1", unitName: "Acme", supervisorId: "u2", supervisorName: "Ben" }],
+      limitOverrides: [{ userId: "u1", userName: "Alice", unitId: "o1", unitName: "Acme", currency: "GBP", maxAmount: 100 }],
+    };
+    await openApSetupAs(["Admin.Configure"], EMPTY_OVERVIEW, config);
+    switchTab("Approval Hierarchy");
+    for (const id of ["supervisoroverrides", "limitoverrides"]) {
+      const remove = [...document.querySelectorAll(`#${id} .assignmentrow button`)].find((b) => b.textContent === "Remove") as HTMLElement;
+      expect(remove, id).toBeTruthy();
+      expect(remove.classList.contains("compactlink"), id).toBe(true);
+      expect(remove.firstElementChild?.tagName.toLowerCase(), id).toBe("svg");
+    }
+  });
+
+  it("the stylesheet lays the pair out as two equal columns, one on a narrow window", async () => {
+    const css = (await import("virtual:stylesheets")).default["app.css"];
+    expect(css).toMatch(/\.overridepair \{[^}]*grid-template-columns: repeat\(2, minmax\(0, 1fr\)\)/);
+    expect(css).toMatch(/max-width: 900px\) \{ \.overridepair \{ grid-template-columns: 1fr; \}/);
+  });
+});
+
 describe("Approval Hierarchy — the mode and Default Approver form", () => {
   it("shows the configured mode already selected", async () => {
     await openApSetupAs(["Admin.Configure"], EMPTY_OVERVIEW, { ...EMPTY_CONFIG, mode: "cost_object" });

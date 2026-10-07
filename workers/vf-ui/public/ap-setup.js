@@ -1295,7 +1295,7 @@ function supervisorOverridesSection(problem) {
   const userPicker = el("select", {}, users.map((u) => el("option", { value: u.id, text: u.name })));
   const unitPicker = el("select", {}, units.map((u) => el("option", { value: u.id, text: u.name })));
   const supervisorPicker = el("select", {}, users.map((u) => el("option", { value: u.id, text: u.name })));
-  const addBtn = actionLink("create", {
+  const addBtn = compactLink("addcard", {
     primary: true,
     label: t("apsetup.add"),
     onclick: async () => {
@@ -1318,7 +1318,7 @@ function supervisorOverridesSection(problem) {
     },
   });
 
-  return el("div", { class: "panel" }, [
+  return el("div", { class: "panel", id: "supervisoroverrides" }, [
     el("div", { class: "cardhead" }, [
       el("h3", { text: t("apsetup.supervisoroverrides") }),
       el("div", { class: "statebuttons" }, [addBtn]),
@@ -1347,8 +1347,8 @@ function supervisorOverridesSection(problem) {
         shown.map((o) =>
           el("div", { class: "assignmentrow" }, [
             el("span", { text: `${o.userName} — ${o.unitName} — ${t("apsetup.reportsto")} ${o.supervisorName}` }),
-            el("button", {
-              text: t("roles.remove"),
+            compactLink("discard", {
+              label: t("roles.remove"),
               onclick: async () => {
                 problem.textContent = "";
                 try {
@@ -1383,7 +1383,7 @@ function limitOverridesSection(problem) {
   const unitPicker = el("select", {}, units.map((u) => el("option", { value: u.id, text: u.name })));
   const currencyInput = currencyPicker();
   const amountInput = el("input", { type: "number", min: "0" });
-  const addBtn = actionLink("create", {
+  const addBtn = compactLink("addcard", {
     primary: true,
     label: t("apsetup.add"),
     onclick: async () => {
@@ -1413,7 +1413,7 @@ function limitOverridesSection(problem) {
     },
   });
 
-  return el("div", { class: "panel" }, [
+  return el("div", { class: "panel", id: "limitoverrides" }, [
     el("div", { class: "cardhead" }, [
       el("h3", { text: t("apsetup.limitoverrides") }),
       el("div", { class: "statebuttons" }, [addBtn]),
@@ -1444,8 +1444,8 @@ function limitOverridesSection(problem) {
         shown.map((o) =>
           el("div", { class: "assignmentrow" }, [
             el("span", { text: `${o.userName} — ${o.unitName} — ${o.currency} ${o.maxAmount}` }),
-            el("button", {
-              text: t("roles.remove"),
+            compactLink("discard", {
+              label: t("roles.remove"),
               onclick: async () => {
                 problem.textContent = "";
                 try {
@@ -1595,8 +1595,10 @@ function approvalHierarchyTab() {
   return el("div", {}, [
     modeForm(problem),
     ...(priorityPanel ? [priorityPanel] : []),
-    supervisorOverridesSection(problem),
-    limitOverridesSection(problem),
+    // **Side by side, half the width each — decision 0670.** Each is a
+    // short form and a list, so two columns fit; `.overridepair` drops
+    // to one column on a narrow window.
+    el("div", { class: "overridepair" }, [supervisorOverridesSection(problem), limitOverridesSection(problem)]),
   ]);
 }
 

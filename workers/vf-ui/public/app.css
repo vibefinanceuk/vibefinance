@@ -5414,3 +5414,14 @@
 .newsupplierpop .actionlink:hover:not(:disabled) { color: var(--text-primary); }
 /* Decision 0668: a person's actions together, at the end of the row. */
 .personaction { width: 1%; white-space: nowrap; }
+
+/*
+  Decision 0670 — Approval Hierarchy's Supervisor overrides and Approval
+  limit overrides, side by side at half the width each. The grid spaces
+  them (0179), so the panels lose their own bottom margin, and both
+  stretch to the taller one's height so their borders line up.
+*/
+.overridepair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.overridepair > .panel { margin-bottom: 0; }
+.overridepair .editgrid select, .overridepair .editgrid input { min-width: 0; width: 100%; }
+@media (max-width: 900px) { .overridepair { grid-template-columns: 1fr; } }
