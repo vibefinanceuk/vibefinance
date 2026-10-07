@@ -582,6 +582,39 @@ describe("three-tier severity on key fields (decision 0400)", () => {
     expect(box?.classList.contains("ok")).toBe(false);
   });
 
+  it("lays the line table out in reading order, with no coding columns, and Quantity narrow (decision 0679)", async () => {
+    const all = {
+      fields: [
+        { field: "BT-151", visibility: "edit", type: "text", line: true, description: "VAT category" },
+        { field: "BT-133", visibility: "edit", type: "text", line: true, description: "cost centre" },
+        { field: "BT-131", visibility: "edit", type: "number", line: true, description: "line net" },
+        { field: "BT-129", visibility: "edit", type: "number", line: true, description: "quantity" },
+        { field: "BT-146", visibility: "edit", type: "number", line: true, description: "price" },
+        { field: "BT-130", visibility: "edit", type: "text", line: true, description: "unit" },
+        { field: "BT-154", visibility: "edit", type: "text", line: true, description: "description" },
+        { field: "BT-153", visibility: "edit", type: "text", line: true, description: "name" },
+        { field: "BT-126", visibility: "read", type: "text", line: true, description: "line no" },
+        { field: "coding.gl_code", visibility: "edit", type: "text", line: true, description: "GL" },
+      ],
+    };
+    stubFetch({
+      "/api/code-lists": { fields: {} },
+      "/api/ui-strings": STRINGS,
+      "/api/field-visibility": all,
+      "/api/invoices/inv-1": { facts: {}, lines: [{ lineNumber: 1, facts: { "BT-126": "1" } }], validation: { passed: true, checked: [], failures: [] } },
+    });
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { openViewer } = await import("/viewer.js");
+    await openViewer(TASK, () => {});
+
+    const heads = [...document.querySelectorAll(".linetable thead th")].map((th) => [...th.classList].find((c) => c.startsWith("lf-"))).filter(Boolean);
+    expect(heads).toEqual(["lf-bt-126", "lf-bt-153", "lf-bt-154", "lf-bt-130", "lf-bt-146", "lf-bt-129", "lf-bt-131", "lf-bt-151"]);
+    const css = (await import("virtual:stylesheets")).default["app.css"];
+    expect(css).toContain(".linetable th.lf-bt-129 { width: 6em; }");
+    expect(css).not.toContain(".linetable th:nth-child(4)");
+  });
+
   it("marks the named line field's own cell, not its neighbour", async () => {
     // A regression test for a pre-existing off-by-one in `markOne()`,
     // found while screenshotting this decision's own line-cell
@@ -620,9 +653,10 @@ describe("three-tier severity on key fields (decision 0400)", () => {
     await openViewer(TASK, () => {});
 
     const row = document.querySelector("#lines tr") as HTMLElement;
-    // BT-131 is lineFields position 0 — its own cell, not BT-129's.
-    expect(row.children[0]?.classList.contains("warning")).toBe(true);
-    expect(row.children[1]?.classList.contains("warning")).toBe(false);
+    // Decision 0679: Quantity comes before Line net amount, so BT-131 is
+    // the second column — its own cell is marked, not BT-129's.
+    expect(row.children[1]?.classList.contains("warning")).toBe(true);
+    expect(row.children[0]?.classList.contains("warning")).toBe(false);
     // And not the trailing remove-button cell.
     expect(row.children[2]?.querySelector(".rm")).not.toBeNull();
     expect(row.children[2]?.classList.contains("warning")).toBe(false);
@@ -7753,14 +7787,15 @@ describe("split coding in the Coding pop-out — decision 0548", () => {
   const sentLine = (bodies: { path: string; body: unknown }[]) =>
     (bodies.find((b) => b.path === "/api/invoices/inv-1/key")?.body as { lines: { facts: Record<string, unknown>; splits?: unknown[] }[] }).lines[0];
 
-  it("shows a split line as 'Split · 3', its rows on hover, and 'Split' in its cost centre, project and GL cells", async () => {
+  it("shows a split line as 'Split · 3', with its rows on hover", async () => {
     stubSplit({ facts: {}, splits: ROWS });
     await openViewerOnly();
     const button = document.querySelector("#lines .codingbtn") as HTMLButtonElement;
     expect(button.textContent).toBe("Split · 3");
     expect(button.classList.contains("coded")).toBe(true);
     expect(button.title).toContain("cc1 50% 6,000.00 · PRJ-1 30% 3,600.00 · cc2 20% 2,400.00");
-    expect([...document.querySelectorAll("#lines .splitcell")].map((c) => c.textContent)).toEqual(["Split", "Split", "Split"]);
+    // Decision 0679: cost centre, project and GL code are not line-table columns (they are the Coding pop-out's), so no "Split" cells.
+    expect(document.querySelectorAll("#lines .splitcell")).toHaveLength(0);
   });
 
   it("opens a split line on its rows: the commodity for the whole line, a share and amount per row, balanced", async () => {

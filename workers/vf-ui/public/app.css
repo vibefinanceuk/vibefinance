@@ -3898,7 +3898,17 @@
   .linetable th:last-child, .linetable td:last-child { width: 36px; }
   /* BT-130 is a three-character UN/ECE code, so its column is narrow. */
   .linetable td.short { width: 70px; }
-  .linetable th:nth-child(4) { width: 70px; }
+  /*
+    Decision 0679 — widths by field, not by position: the columns now
+    follow a set order, so "the fourth column" no longer meant the unit.
+    Quantity is narrow; Unit and VAT category are wide enough for their
+    pickers ("EA · Each", "S · Standard rate"); Item name and
+    Description share what is left.
+  */
+  .linetable th.lf-bt-129 { width: 6em; }
+  .linetable th.lf-bt-130 { width: 9em; }
+  .linetable th.lf-bt-151 { width: 11em; }
+  .linetable th.lf-bt-152 { width: 6em; }
 
   /* Decision 0537 — Coding has its own column; the × keeps this one. */
   .lineactions { text-align: right; white-space: nowrap; }
@@ -4026,6 +4036,7 @@
     Coding's own lists** — decision 0511. The coding fields live in the
     pop-out, so the button that opens it is what carries the mark.
   */
+  .codingcol .codingbtn.warning { color: var(--text-warning); }
   .codingcol .codingbtn.danger {
     color: var(--severity-danger-text);
     background: var(--severity-danger-bg);

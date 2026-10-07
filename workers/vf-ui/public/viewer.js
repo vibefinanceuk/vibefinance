@@ -1049,7 +1049,7 @@ function lineRow(line, index) {
   };
 
   return el("tr", {}, [
-    ...lineFields.map(cell),
+    ...lineTableFields().map(cell),
     ...(stored.poMatch ? [matchCell(line)] : []),
     // Its own column — decision 0537. Sharing a cell with the × let it ride over the Match chip.
     el("td", { class: "codingcol" }, [
@@ -1146,6 +1146,28 @@ const CODING_PICKER_FIELDS = [
   // Decision 0543: and by the line's cost centre, where it is linked to GL codes.
   { field: "coding.gl_code", listType: "gl_code", filterKeys: ["company_code", "commodity_code", "cost_centre"] },
 ];
+
+/**
+ * **The line table's columns, in a reading order — decision 0678's
+ * follow-on, 0679.** Dan: *"Line no., Item Name, Description, Unit, Item
+ * Price, Quantity, Line net amount, VAT Category"*, rather than whatever
+ * order the field-visibility API returns. A field not named here (a
+ * customer's own, a line note) sorts after those that are.
+ *
+ * **The coding fields are not columns.** Cost centre (BT-133), project,
+ * commodity code and GL code are chosen in the line's Coding pop-out,
+ * which already shows them; a Cost centre column beside it was the same
+ * value twice. They stay in `lineFields`, so the pop-out, the coded
+ * check and Save still see them.
+ */
+const LINE_TABLE_ORDER = ["BT-126", "BT-153", "BT-154", "BT-130", "BT-146", "BT-129", "BT-131", "BT-151", "BT-152"];
+function lineTableFields() {
+  const rank = (f) => {
+    const i = LINE_TABLE_ORDER.indexOf(f.field);
+    return i === -1 ? LINE_TABLE_ORDER.length : i;
+  };
+  return lineFields.filter((f) => !CODING_PICKER_FIELDS.some((c) => c.field === f.field)).slice().sort((a, b) => rank(a) - rank(b));
+}
 
 /**
  * A `filterKeys` entry's own display label — decision 0459, so a
@@ -2354,10 +2376,11 @@ function linePanel() {
           // **No row counter** — decision 0173. Line no. carries the
           // sequence where a document does not give one, so a second
           // column of the same numbers said nothing.
-          ...lineFields.map((spec) =>
+          ...lineTableFields().map((spec) =>
             el("th", {
               // Decision 0677: a money column is wide enough for "£12,500.20".
-              class: MONEY_FIELDS.has(spec.field) ? "num money" : spec.type === "number" ? "num" : undefined,
+              // Decision 0679: each column also carries its field, for its width.
+              class: [MONEY_FIELDS.has(spec.field) ? "num money" : spec.type === "number" ? "num" : "", `lf-${spec.field.toLowerCase()}`].filter(Boolean).join(" "),
               title: spec.description,
               text: t(`field.${spec.field.toLowerCase()}`),
             })
@@ -3470,7 +3493,18 @@ function markOne(entry, severity, reason) {
       }
     }
 
-    const index = lineFields.findIndex((f) => f.field === code);
+    // Decision 0679: the table's own columns, in their own order.
+    const index = lineTableFields().findIndex((f) => f.field === code);
+    // A coding field is no longer a column (0679), so any other check on it marks the line's Coding button.
+    if (index < 0 && severity !== "ok" && entry.check !== "account_coding" && CODING_PICKER_FIELDS.some((f) => f.field === code)) {
+      for (const [n, row] of rows.entries()) {
+        if (entry.line && entry.line !== n + 1) continue;
+        const button = row.querySelector(".codingbtn");
+        if (!button) continue;
+        button.classList.add(severity);
+        button.title = `${t("action.coding")} — ${reason}`;
+      }
+    }
     if (index >= 0) {
       for (const [n, row] of rows.entries()) {
         if (entry.line && entry.line !== n + 1) continue;
