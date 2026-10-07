@@ -1,8 +1,7 @@
 # 0674: The Timeline in time order, with one way of writing a moment
 
-**Status: built and tested locally, not yet pushed or deployed.** It
-touches `vf-app` and `vf-ui`, with no migration. Deploy vf-app and
-vf-ui.
+**Status: live** at `ba75650`, pushed and deployed 7 October 2026. It
+touches `vf-app` and `vf-ui`, with no migration.
 
 ## What was asked
 
