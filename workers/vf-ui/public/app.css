@@ -5412,3 +5412,5 @@
 */
 .newsupplierpop .actionlink.primary { color: var(--text-secondary); }
 .newsupplierpop .actionlink:hover:not(:disabled) { color: var(--text-primary); }
+/* Decision 0668: a person's actions together, at the end of the row. */
+.personaction { width: 1%; white-space: nowrap; }

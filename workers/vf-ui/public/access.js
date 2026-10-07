@@ -901,37 +901,41 @@ async function sendInvitation(userId) {
   }
 }
 
-/** Where a person stands: invited (until when), accepted, expired, or not yet. */
-function invitationCell(user) {
-  if (invitations === null) return el("td", { class: "sm muted invitecell", text: t("invite.unknown") });
+/**
+ * Where a person stands: invited (until when), accepted, expired, or not
+ * yet — the words only. **Invite / Invite again** is returned apart from
+ * them, to sit with the row's other actions (decision 0668).
+ */
+function invitation(user) {
+  if (invitations === null) return { cell: el("td", { class: "sm muted invitecell", text: t("invite.unknown") }), button: null };
   const i = invitations.get(String(user.email).toLowerCase());
   const status = !i ? "none" : i.status === "pending" && i.sendError ? "notsent" : i.status;
   const words = t(`invite.status.${status}`).replace("{until}", i?.expiresAt ? new Date(i.expiresAt).toLocaleString() : "");
   const note = el("div", { class: "sm muted invitenote" });
   const canInvite = hasMyPermission("Admin.UserManagement") && status !== "accepted";
-  return el("td", { class: "sm invitecell" }, [
+  const cell = el("td", { class: "sm invitecell" }, [
     el("div", { class: status === "accepted" ? "ok" : status === "none" ? "muted" : status === "pending" ? "" : "warn", text: words }),
-    ...(canInvite
-      ? [
-          // Decision 0667: Invite and Invite again, an icon with its word, as the other screens' compact actions.
-          compactLink("post", {
-            label: t(status === "none" ? "invite.send" : "invite.again"),
-            onclick: async () => {
-              const r = await sendInvitation(user.id);
-              await load();
-              render();
-              const again = [...document.querySelectorAll(".invitecell")].find((c) => c.closest("tr")?.dataset.user === user.id);
-              const n = again?.querySelector(".invitenote");
-              if (n) {
-                n.textContent = r.text;
-                n.className = `sm invitenote ${r.ok ? "ok" : "warn"}`;
-              }
-            },
-          }),
-        ]
-      : []),
     note,
   ]);
+  const button = canInvite
+    ? // Decision 0667: Invite and Invite again, an icon with its word, as the other screens' compact actions.
+      compactLink("post", {
+        label: t(status === "none" ? "invite.send" : "invite.again"),
+        onclick: async () => {
+          const r = await sendInvitation(user.id);
+          await load();
+          render();
+          const again = [...document.querySelectorAll(".invitecell")].find((c) => c.closest("tr")?.dataset.user === user.id);
+          const n = again?.querySelector(".invitenote");
+          if (n) {
+            n.textContent = r.text;
+            n.className = `sm invitenote ${r.ok ? "ok" : "warn"}`;
+          }
+        },
+      })
+    : null;
+  if (button) button.classList.add("invitebutton");
+  return { cell, button };
 }
 
 function personRow(user) {
@@ -947,14 +951,27 @@ function personRow(user) {
   const limitText =
     limits.length > 0 ? limits.map((l) => `${l.currency} ${l.maxAmount}`).join("; ") : t("roles.nolimits");
 
+  /**
+   * **Every action at the end of the row — decision 0668** (Dan: "all
+   * button / actions to appear to the right of" the Signing in words).
+   * Roles, Properties and Invite / Invite again together, after where the
+   * person stands, rather than each beside its own column.
+   */
+  const invite = canAssign ? invitation(user) : null;
   return el("tr", { "data-user": user.id }, [
     el("td", {}, [el("div", { text: user.name }), el("div", { class: "sm muted", text: user.email })]),
     el("td", { class: "sm", text: assignmentText }),
-    el("td", {}, canAssign ? [compactLink("roles", { onclick: () => openPersonRolesForm(user) })] : []),
     el("td", { class: "sm", text: limitText }),
-    el("td", {}, canAssign ? [compactLink("properties", { onclick: () => openPersonPropertiesForm(user) })] : []),
     // Decision 0593: signing in, by invitation.
-    ...(canAssign ? [invitationCell(user)] : []),
+    ...(canAssign ? [invite.cell] : []),
+    // Dan: "give each button a column so they are aligned" — Roles, Properties and Invite each in its own cell.
+    ...(canAssign
+      ? [
+          el("td", { class: "personaction" }, [compactLink("roles", { onclick: () => openPersonRolesForm(user) })]),
+          el("td", { class: "personaction" }, [compactLink("properties", { onclick: () => openPersonPropertiesForm(user) })]),
+          el("td", { class: "personaction" }, invite.button ? [invite.button] : []),
+        ]
+      : []),
   ]);
 }
 
@@ -1354,7 +1371,8 @@ function render() {
       section(
         "roles.people",
         "roles.nopeople",
-        ["column.person", "roles.assignments", "", "roles.limits", "", ...(canAssign ? ["invite.column"] : [])],
+        // Decision 0668: the actions in one column, last.
+        ["column.person", "roles.assignments", "roles.limits", ...(canAssign ? ["invite.column", "", "", ""] : [])],
         users.map(personRow),
         canAssign ? compactLink("newperson", { onclick: () => openNewPersonForm() }) : null
       ),

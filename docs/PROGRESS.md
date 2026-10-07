@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 7 October 2026 (decision 0667). A living document: what
+Last updated 7 October 2026 (decision 0668). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,12 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### People tab: actions after Signing in, one column each (0668)
+
+On Access Control's People tab, Roles, Properties and Invite / Invite
+again come after the Signing in words, each in a column of its own so
+they line up row to row. Full reasoning is in decision 0668.
 
 ### Access Control's actions (0667)
 

@@ -1785,6 +1785,8 @@ describe("invitations — decision 0593", () => {
     ],
   };
   const cell = (id: string) => document.querySelector(`tr[data-user="${id}"] .invitecell`) as HTMLElement;
+  // Decision 0668: Invite / Invite again sit in their own column, after the Signing in words.
+  const inviteButton = (id: string) => document.querySelector(`tr[data-user="${id}"] .personaction .invitebutton`) as HTMLElement | null;
   const calls = () => (fetch as unknown as { mock: { calls: unknown[][] } }).mock.calls;
 
   it("shows where each person stands, and offers Invite to all but those who can sign in", async () => {
@@ -1792,13 +1794,27 @@ describe("invitations — decision 0593", () => {
     switchTab("People");
     expect([...document.querySelectorAll("th")].map((th) => th.textContent)).toContain("Signing in");
     expect(cell("u-ana").textContent).toBe("Can sign in");
-    expect(cell("u-ana").querySelector("button")).toBeNull();
+    expect(inviteButton("u-ana")).toBeNull();
     expect(cell("u-ben").textContent).toContain("Invited, until");
-    expect(cell("u-ben").querySelector("button")?.textContent).toBe("Invite again");
+    expect(inviteButton("u-ben")?.textContent).toBe("Invite again");
     expect(cell("u-cy").textContent).toContain("Not invited");
-    expect(cell("u-cy").querySelector("button")?.textContent).toBe("Invite");
+    expect(inviteButton("u-cy")?.textContent).toBe("Invite");
     // Decision 0667: Invite and Invite again, an icon with its word.
-    for (const who of ["u-ben", "u-cy"]) expect(cell(who).querySelector("button")?.classList.contains("compactlink")).toBe(true);
+    for (const who of ["u-ben", "u-cy"]) expect(inviteButton(who)?.classList.contains("compactlink")).toBe(true);
+    // Decision 0668: the Signing in words hold no button; every action is in the last cell, to their right.
+    for (const who of ["u-ana", "u-ben", "u-cy"]) {
+      expect(cell(who).querySelector("button")).toBeNull();
+      const row = document.querySelector(`tr[data-user="${who}"]`)!;
+      const tds = [...row.querySelectorAll("td")];
+      // Each action in its own column, so they line up: Roles, Properties, Invite, after the Signing in words.
+      expect(tds.slice(-3).every((td) => td.classList.contains("personaction"))).toBe(true);
+      expect(tds.indexOf(cell(who) as HTMLTableCellElement)).toBe(tds.length - 4);
+    }
+    const cyCells = [...document.querySelectorAll(`tr[data-user="u-cy"] td.personaction`)];
+    expect(cyCells.map((td) => td.textContent)).toEqual(["Roles", "Properties", "Invite"]);
+    // The header has a column for each.
+    const headerCount = document.querySelectorAll(`tr[data-user="u-cy"]`)[0].closest("table")!.querySelectorAll("thead th").length;
+    expect(headerCount).toBe(document.querySelectorAll(`tr[data-user="u-cy"] td`).length);
   });
 
   it("invites a person, and says it went or why not", async () => {
@@ -1808,11 +1824,11 @@ describe("invitations — decision 0593", () => {
       "POST /api/org/users/u-ben/invite": { ok: false, status: 502, json: async () => ({ reason: "not_sent", error: "x" }) },
     });
     switchTab("People");
-    (cell("u-cy").querySelector("button") as HTMLElement).click();
+    (inviteButton("u-cy") as HTMLElement).click();
     await new Promise((r) => setTimeout(r, 10));
     expect(calls().some(([url, init]) => url === "/api/org/users/u-cy/invite" && (init as RequestInit)?.method === "POST")).toBe(true);
     expect(cell("u-cy").querySelector(".invitenote")?.textContent).toBe("An invitation has been emailed to cy@acme.example.");
-    (cell("u-ben").querySelector("button") as HTMLElement).click();
+    (inviteButton("u-ben") as HTMLElement).click();
     await new Promise((r) => setTimeout(r, 10));
     expect(cell("u-ben").querySelector(".invitenote")?.textContent).toBe("The invitation was made, but its email could not be sent.");
   });
