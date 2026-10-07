@@ -295,6 +295,11 @@ describe("opening a task that cannot be keyed (decision 0142)", () => {
 
     const labels = [...document.querySelectorAll("button.act")].map((b) => b.textContent);
     expect(labels).toContain("Claim");
+    // Decision 0661: an icon with its word to the right, as the Agents screen's actions.
+    const claim = document.querySelector("button.act")!;
+    expect(claim.classList.contains("actionlink")).toBe(true);
+    expect(claim.firstElementChild?.tagName.toLowerCase()).toBe("svg");
+    expect(claim.closest(".dobuttons")).not.toBeNull();
   });
 
   it("clicking an action does not also open the row underneath it", async () => {

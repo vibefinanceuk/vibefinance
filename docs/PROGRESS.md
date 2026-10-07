@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 7 October 2026 (decision 0660). A living document: what
+Last updated 7 October 2026 (decision 0661). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,12 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Claim and Release in the task list (0661)
+
+The task list's Claim and Release are drawn as the Agents screen's
+actions are: a small icon with its word to the right. Full reasoning is
+in decision 0661.
 
 ### Conversations on Tasks (0660)
 

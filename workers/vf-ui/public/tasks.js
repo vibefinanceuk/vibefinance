@@ -318,9 +318,15 @@ function taskRow(task) {
   const actions = task.actions
     .filter((action) => LIST_ACTIONS.includes(action))
     .map((action) =>
+      /**
+       * **A small icon with its word to the right — decision 0661**, as
+       * the Agents screen's own header actions (Dan: "I like the format
+       * exhibited in the Agents window"). The same `claim` and `release`
+       * icons the viewer and the receipt pop-out use (0659).
+       */
       el("button", {
-        class: "act",
-        text: actionLabel(action),
+        class: "actionlink act",
+        title: actionLabel(action),
         // **Every action works now** (decision 0138). This listed three
         // and disabled the rest, which was true until the proxy carried
         // them and three routes accepted a session.
@@ -330,7 +336,7 @@ function taskRow(task) {
           event.stopPropagation();
           act(task.id, action);
         },
-      })
+      }, [icon(action), el("span", { text: actionLabel(action) })])
     );
 
   return el(
@@ -375,7 +381,7 @@ function taskRow(task) {
           : el("span", { class: "muted", text: describe(task.subject) }),
       ]),
       el("td", { text: ownershipLabel(task) }),
-      el("td", {}, actions.length ? actions : [el("span", { class: "muted", text: "—" })]),
+      el("td", {}, actions.length ? [el("div", { class: "dobuttons taskactions" }, actions)] : [el("span", { class: "muted", text: "—" })]),
     ]
   );
 }

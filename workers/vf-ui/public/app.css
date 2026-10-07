@@ -5389,3 +5389,5 @@
 .receiptconversations .receiptconvlist { max-height: 23rem; overflow-y: auto; overscroll-behavior: contain; }
 /* Dan: a small space between the Conversations section and the task search below it. */
 #receiptconversations:not([hidden]) { margin-bottom: 16px; }
+/* Decision 0661: Claim and Release in the task list, an icon with its word, as the Agents screen's actions. */
+.taskactions .actionlink.act { min-height: 0; margin-right: 0; font-size: var(--text-sm); }
