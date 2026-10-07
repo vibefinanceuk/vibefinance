@@ -1,3 +1,4 @@
+import { stamp } from "/timestamp.js";
 import { t } from "/strings.js";
 import { el as make } from "/tasks.js";
 import { icon } from "/icons.js";
@@ -35,11 +36,8 @@ const initials = (name) =>
     .toUpperCase();
 
 /** "7 Oct 2026, 09:12", in the browser's own time. */
-function when(iso) {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return String(iso ?? "");
-  return d.toLocaleString(undefined, { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
-}
+// The same moment, shown the same way as the Document viewer's (decision 0674).
+const when = stamp;
 
 /** A refusal in words: the reason's own, where there is one. */
 function refused(body, fallbackKey) {

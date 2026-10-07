@@ -159,7 +159,7 @@ describe("what the feed contains, per source (decision 0267)", () => {
     await seedInvoice("inv-1", "2026-09-01 09:00:00");
     const result = await handleGetActivity(env.DB, "inv-1");
     const items = (result.body as { items: { kind: string; at: string }[] }).items;
-    expect(items).toEqual([{ kind: "received", at: "2026-09-01 09:00:00" }]);
+    expect(items).toEqual([{ kind: "received", at: "2026-09-01T09:00:00.000Z" }]);
   });
 
   it("names the stage and the person for a completed task", async () => {
@@ -174,7 +174,7 @@ describe("what the feed contains, per source (decision 0267)", () => {
     const completion = items.find((i) => i.kind === "stage_completed");
     expect(completion).toEqual({
       kind: "stage_completed",
-      at: "2026-09-01 11:00:00",
+      at: "2026-09-01T11:00:00.000Z",
       stageName: "Validation",
       userName: "Priya Patel",
     });
@@ -349,7 +349,7 @@ describe("what the feed contains, per source (decision 0267)", () => {
     const items = (result.body as { items: Record<string, unknown>[] }).items;
     expect(items.find((i) => i.kind === "comment")).toEqual({
       kind: "comment",
-      at: "2026-09-01 12:00:00",
+      at: "2026-09-01T12:00:00.000Z",
       id: "c-1",
       body: "Checked with procurement.",
       userName: "Priya Patel",
@@ -386,7 +386,7 @@ describe("task actions — claim/release/return/discard (decision 0488)", () => 
     const items = (result.body as { items: Record<string, unknown>[] }).items;
     expect(items.find((i) => i.kind === "action_taken")).toEqual({
       kind: "action_taken",
-      at: "2026-09-01 09:05:00",
+      at: "2026-09-01T09:05:00.000Z",
       action: "claim",
       userName: "Priya Patel",
       comment: null,
@@ -405,7 +405,7 @@ describe("task actions — claim/release/return/discard (decision 0488)", () => 
     const items = (result.body as { items: Record<string, unknown>[] }).items;
     expect(items.find((i) => i.kind === "action_taken")).toEqual({
       kind: "action_taken",
-      at: "2026-09-01 09:10:00",
+      at: "2026-09-01T09:10:00.000Z",
       action: "release",
       userName: "Priya Patel",
       comment: "Handing this to Sam.",
@@ -425,7 +425,7 @@ describe("task actions — claim/release/return/discard (decision 0488)", () => 
     const items = (result.body as { items: Record<string, unknown>[] }).items;
     expect(items.find((i) => i.kind === "action_taken")).toEqual({
       kind: "action_taken",
-      at: "2026-09-01 09:15:00",
+      at: "2026-09-01T09:15:00.000Z",
       action: "reassign",
       userName: "Priya Patel",
       comment: "She knows this supplier.",
@@ -459,7 +459,7 @@ describe("task actions — claim/release/return/discard (decision 0488)", () => 
     const items = (result.body as { items: Record<string, unknown>[] }).items;
     expect(items.find((i) => i.kind === "action_taken")).toEqual({
       kind: "action_taken",
-      at: "2026-09-01 09:15:00",
+      at: "2026-09-01T09:15:00.000Z",
       action: "route_to_approver",
       userName: "Priya Patel",
       comment: "Please check the VAT rate.",
@@ -507,7 +507,7 @@ describe("task actions — claim/release/return/discard (decision 0488)", () => 
     const items = (result.body as { items: Record<string, unknown>[] }).items;
     expect(items.find((i) => i.kind === "action_taken")).toEqual({
       kind: "action_taken",
-      at: "2026-09-01 09:20:00",
+      at: "2026-09-01T09:20:00.000Z",
       action: "return",
       userName: "Priya Patel",
       comment: "PO amount does not match",
@@ -692,3 +692,27 @@ describe("posting a comment (decision 0267)", () => {
     expect(items.find((i) => i.kind === "comment")?.body).toBe("Noted.");
   });
 });
+
+describe("one clock for the whole feed (decision 0674)", () => {
+  it("orders SQLite and ISO moments as time, and sends every one in the one ISO form", async () => {
+    await seedInvoice("inv-1");
+    await seedStage("validation", "Validation");
+    await seedUser("u-priya", "Priya Patel");
+    // A comment in SQLite's own form, a minute after the invoice arrived.
+    await env.DB.prepare("UPDATE invoice_headers SET created_at = ? WHERE id = ?").bind("2026-10-07 15:37:19", "inv-1").run();
+    await env.DB.prepare("INSERT INTO document_comments (id, invoice_id, author_id, body, created_at) VALUES ('c-1', 'inv-1', 'u-priya', 'chat message', '2026-10-07 15:38:34')").run();
+    // A claim written the way task actions write theirs: ISO, with milliseconds, between the two.
+    await seedVisit("v-1", "inv-1", "validation", "2026-10-07 15:37:19");
+    await seedOpenTask("t-1", "v-1", "validation");
+    await recordTaskAction("e-1", "t-1", "claim", "u-priya", "2026-10-07T15:37:20.848Z");
+
+    const result = await handleGetActivity(env.DB, "inv-1");
+    const items = (result.body as { items: { kind: string; at: string }[] }).items;
+    const ats = items.map((i) => i.at);
+    for (const at of ats) expect(at).toMatch(/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/);
+    expect([...ats].sort()).toEqual(ats);
+    expect(items.map((i) => i.kind)).toEqual(["received", "action_taken", "comment"]);
+    expect(ats).toEqual(["2026-10-07T15:37:19.000Z", "2026-10-07T15:37:20.848Z", "2026-10-07T15:38:34.000Z"]);
+  });
+});
+

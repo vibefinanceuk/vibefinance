@@ -136,7 +136,7 @@ describe("the Timeline names the message an invoice came in", () => {
     const items = (result.body as { items: Record<string, unknown>[] }).items;
     expect(items.find((i) => i.kind === "received")).toEqual({
       kind: "received",
-      at: "2026-09-29 09:15:00",
+      at: "2026-09-29T09:15:00.000Z",
       messageId: MSG,
       source: "AP mailbox",
       sender: "ap@munch.example",
@@ -147,7 +147,7 @@ describe("the Timeline names the message an invoice came in", () => {
   it("says only that it was received when no message holds it", async () => {
     const result = await handleGetActivity(env.DB, "inv-plain");
     const items = (result.body as { items: Record<string, unknown>[] }).items;
-    expect(items).toEqual([{ kind: "received", at: "2026-09-29 09:15:00" }]);
+    expect(items).toEqual([{ kind: "received", at: "2026-09-29T09:15:00.000Z" }]);
   });
 });
 

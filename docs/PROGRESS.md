@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 7 October 2026 (decision 0673). A living document: what
+Last updated 7 October 2026 (decision 0674). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,16 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### The Timeline in time order, one clock (0674)
+
+The document's and the receipt's Timelines order every entry by time,
+not as text. They used to put ISO-written moments (such as *Received*)
+after every SQLite-written one of the same day. Every moment is sent in
+one ISO form and shown as `2026-10-07 16:37:19`, in the viewer's own
+time zone.
+
+Full reasoning is in decision 0674.
 
 ### Purchase Orders: CSV Template and Load CSV compact (0673)
 

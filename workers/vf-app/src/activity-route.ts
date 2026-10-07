@@ -1,3 +1,4 @@
+import { chronological } from "./timeline-time.js";
 import type { RouteResult } from "./examples-route.js";
 import { t } from "./i18n.js";
 import type { Locale } from "./i18n.js";
@@ -482,9 +483,8 @@ export async function handleGetActivity(db: D1Database, invoiceId: string): Prom
     receiptClosedEvents(db, invoiceId),
   ]);
 
-  const items = [...received, ...stageCompletions, ...ruleFirings, ...comments, ...taskActions, ...taskEnded, ...erpExports, ...reminders, ...receiptClosed].sort(
-    (a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0)
-  );
+  // Decision 0674: every moment in one form, ordered as time, not text.
+  const items = chronological([...received, ...stageCompletions, ...ruleFirings, ...comments, ...taskActions, ...taskEnded, ...erpExports, ...reminders, ...receiptClosed]);
 
   return { status: 200, body: { items } };
 }

@@ -1,3 +1,4 @@
+import { stamp } from "/timestamp.js";
 import { t } from "/strings.js";
 import { el } from "/tasks.js";
 import { icon } from "/icons.js";
@@ -215,7 +216,7 @@ function itemRow(item) {
       el("div", { class: "activitybubble" }, [
         el("div", { class: "activitywho" }, [
           el("span", { text: item.userName }),
-          el("span", { class: "activitywhen", text: item.at }),
+          el("span", { class: "activitywhen", text: stamp(item.at) }),
         ]),
         el("div", { class: "activitybody", text: item.body }),
       ]),
@@ -236,7 +237,7 @@ function itemRow(item) {
         [
           el("div", { class: "activitymsgrow" }, [
             el("span", { class: "activitymsg", text: systemMessage(item) }),
-            el("span", { class: "activitywhen", text: item.at }),
+            el("span", { class: "activitywhen", text: stamp(item.at) }),
           ]),
           // A po_link's comment is the order number, already in the line above.
           item.comment && item.action !== "po_link" && item.action !== "po_pair" ? el("div", { class: "activityactioncomment", text: item.comment }) : null,
@@ -257,7 +258,7 @@ function itemRow(item) {
       el("div", { class: "activityactionbody" }, [
         el("div", { class: "activitymsgrow" }, [
           el("span", { class: "activitymsg", text: systemMessage(item) }),
-          el("span", { class: "activitywhen", text: item.at }),
+          el("span", { class: "activitywhen", text: stamp(item.at) }),
         ]),
         item.filename
           ? el("div", { class: "activityactioncomment muted sm", text: t("activity.receivedfile").replace("{file}", item.filename) })
@@ -269,7 +270,7 @@ function itemRow(item) {
   return el("div", { class: "activitysysline" }, [
     el("span", { class: "activitydot" }),
     el("span", { class: "activitymsg", text: systemMessage(item) }),
-    el("span", { class: "activitywhen", text: item.at }),
+    el("span", { class: "activitywhen", text: stamp(item.at) }),
   ]);
 }
 

@@ -1,3 +1,4 @@
+import { toIso, byTime } from "./timeline-time.js";
 import type { RouteResult } from "./org-route.js";
 import { hasPermission, isWithinScope, unitsWherePermitted } from "./enforce.js";
 import { receiptViewScope, receiptScopeClause } from "./goods-receipts.js";
@@ -41,12 +42,8 @@ export interface TimelineDeps {
 const MAX_BODY = 4000;
 const MAX_RECIPIENTS = 50;
 
-/** SQLite's `datetime('now')` and ISO, both as ISO. */
-function iso(at: string | null | undefined): string | null {
-  if (!at) return null;
-  if (at.includes("T")) return at.endsWith("Z") || /[+-]\d\d:\d\d$/.test(at) ? at : `${at}Z`;
-  return `${at.replace(" ", "T")}Z`;
-}
+/** SQLite's `datetime('now')` and ISO, both in the one ISO form (decision 0674). */
+const iso = (at: string | null | undefined): string | null => toIso(at);
 
 interface Access {
   receipt: { id: string; receipt_number: string; status: string; created_by: string | null; cancelled_at: string | null };
@@ -230,7 +227,8 @@ export async function handleGetReceiptTimeline(db: D1Database, userId: string, r
   for (const c of comments) items.push({ kind: "comment", at: iso(c.created_at)!, by: c.author_name, body: c.body, mine: c.author_id === userId });
 
   // Oldest first, as a conversation reads; at the same moment, in the order written above.
-  const ordered = items.map((item, i) => ({ item, i })).sort((a, b) => (a.item.at < b.item.at ? -1 : a.item.at > b.item.at ? 1 : a.i - b.i)).map((x) => x.item);
+  // Ordered as time, not text (decision 0674); `sort` keeps the order written at the same moment.
+  const ordered = items.slice().sort(byTime);
   return {
     status: 200,
     body: {
