@@ -49,12 +49,12 @@ beforeEach(async () => {
   await receive("GR-2", "2026-08-20", "PO-301", 20);
   await receive("GR-R", "2026-09-10", "PO-300", 5, "returned");
   // INV-A invoiced all 40 of PO-300 line 1 on 1 September.
-  await env.DB.prepare("INSERT INTO invoice_headers (id, facts_json, issue_date, org_unit_id, supplier_id, currency, total_with_vat) VALUES ('inv-a', ?, '2026-09-01', 'acme-uk', 'nw', 'GBP', 400)")
+  await env.DB.prepare("INSERT INTO invoice_headers (id, facts_json, org_unit_id, supplier_id) VALUES ('inv-a', json_set(?1, '$.BT-2', '2026-09-01', '$.BT-5', 'GBP', '$.BT-112', 400), 'acme-uk', 'nw')")
     .bind(JSON.stringify({ "BT-1": "INV-A", "BT-13": "PO-300" }))
     .run();
   await env.DB.prepare("INSERT INTO invoice_lines (id, invoice_id, line_number, facts_json) VALUES ('ia1', 'inv-a', 1, ?)").bind(JSON.stringify({ "BT-132": "1", "BT-129": 40 })).run();
   // INV-B waits at Matching on Awaiting receipt since 30 September.
-  await env.DB.prepare("INSERT INTO invoice_headers (id, facts_json, org_unit_id, supplier_id, currency, total_with_vat, invoice_number) VALUES ('inv-b', ?, 'acme-uk', 'nw', 'GBP', 100, 'INV-B')")
+  await env.DB.prepare("INSERT INTO invoice_headers (id, facts_json, org_unit_id, supplier_id) VALUES ('inv-b', json_set(?1, '$.BT-5', 'GBP', '$.BT-112', 100, '$.BT-1', 'INV-B'), 'acme-uk', 'nw')")
     .bind(JSON.stringify({ "BT-1": "INV-B", "BT-13": "PO-302" }))
     .run();
   await env.DB.prepare("INSERT INTO processes (id, name) VALUES ('ap', 'AP')").run();

@@ -74,7 +74,7 @@ async function invoice(opts: { supplierId: string; total: number | null; orderNu
   const n = seq++;
   const id = `inv-${n}`;
   const factsJson = opts.orderNumber ? JSON.stringify({ "BT-13": opts.orderNumber }) : "{}";
-  await env.DB.prepare("INSERT INTO invoice_headers (id, facts_json, supplier_id, total_with_vat) VALUES (?, ?, ?, ?)")
+  await env.DB.prepare("INSERT INTO invoice_headers (id, facts_json, supplier_id) VALUES (?1, json_set(?2, '$.BT-112', ?4), ?3)")
     .bind(id, factsJson, opts.supplierId, opts.total)
     .run();
   return id;

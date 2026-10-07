@@ -264,80 +264,87 @@ export async function handleUpsertInvoice(db: D1Database, body: UpsertInvoiceBod
   const now = new Date().toISOString();
   const existing = await db.prepare("SELECT id FROM invoice_headers WHERE id = ?").bind(id).first();
 
-  const resolvedSupplierVatId = (supplierVatId as string) ?? null;
-  const resolvedInvoiceNumber = (invoiceNumber as string) ?? null;
-  const resolvedTotalWithVat = (totalWithVat as number) ?? null;
-  const resolvedIssueDate = (issueDate as string) ?? null;
+  /**
+   * **One home per value — decision 0681.** The Business Terms in
+   * `facts_json` are the only place a value is stored. The top-level
+   * fields this route has always accepted (`invoiceNumber`, `issueDate`,
+   * `currency`, `supplierVatId`, `totalWithVat`) are written into the
+   * facts as BT-1, BT-2, BT-5, BT-31 and BT-112, where they win as the
+   * column used to; the header columns of the same names are generated
+   * from the facts (migration 0148) and are never written.
+   */
+  const headerFacts: InvoiceFacts = { ...((facts ?? {}) as InvoiceFacts) };
+  const fold = (code: string, value: unknown) => {
+    if (value !== undefined && value !== null && !(typeof value === "string" && value.trim() === "")) headerFacts[code] = value as InvoiceFacts[string];
+  };
+  fold("BT-1", invoiceNumber);
+  fold("BT-2", issueDate);
+  fold("BT-5", currency);
+  fold("BT-31", supplierVatId);
+  fold("BT-112", totalWithVat);
+
+  const textFact = (code: string): string | null => {
+    const v = headerFacts[code];
+    return typeof v === "string" && v.trim() !== "" ? v.trim() : typeof v === "number" ? String(v) : null;
+  };
+  const numberFact = (code: string): number | null => {
+    const v = headerFacts[code];
+    if (typeof v === "number") return v;
+    if (typeof v === "string" && v.trim() !== "" && !Number.isNaN(Number(v.trim()))) return Number(v.trim());
+    return null;
+  };
 
   const duplicateConfidence = await computeDuplicateConfidence(
     db,
     id,
-    resolvedSupplierVatId,
-    resolvedInvoiceNumber,
-    resolvedTotalWithVat,
-    resolvedIssueDate
+    textFact("BT-31"),
+    textFact("BT-1"),
+    numberFact("BT-112"),
+    textFact("BT-2")
   );
+
+  /**
+   * A line's text, amount and cost centre are its BT-153, BT-131 and
+   * BT-133 (decision 0681). `description`, `amount` and `costCentre`
+   * are still accepted and fill those facts where the line's own facts
+   * do not carry them; the line columns are generated from the facts.
+   */
+  const lineFacts = (line: InvoiceLineInput): InvoiceFacts => {
+    const out: InvoiceFacts = { ...((line.facts ?? {}) as InvoiceFacts) };
+    const fill = (code: string, value: unknown) => {
+      const present = out[code] !== undefined && out[code] !== null && !(typeof out[code] === "string" && String(out[code]).trim() === "");
+      if (!present && value !== undefined && value !== null && !(typeof value === "string" && value.trim() === "")) out[code] = value as InvoiceFacts[string];
+    };
+    fill("BT-153", line.description);
+    fill("BT-131", line.amount);
+    fill("BT-133", line.costCentre);
+    return out;
+  };
 
   const statements = [
     existing
       ? db
           .prepare(
             `UPDATE invoice_headers
-             SET supplier_vat_id = ?, currency = ?, issue_date = ?, total_with_vat = ?, mandate_channel = ?,
-                 invoice_number = ?, duplicate_confidence = ?, facts_json = ?, updated_at = ?
+             SET mandate_channel = ?, duplicate_confidence = ?, facts_json = ?, updated_at = ?
              WHERE id = ?`
           )
-          .bind(
-            resolvedSupplierVatId,
-            (currency as string) ?? null,
-            resolvedIssueDate,
-            resolvedTotalWithVat,
-            (mandateChannel as string) ?? null,
-            resolvedInvoiceNumber,
-            duplicateConfidence,
-            JSON.stringify(facts ?? {}),
-            now,
-            id
-          )
+          .bind((mandateChannel as string) ?? null, duplicateConfidence, JSON.stringify(headerFacts), now, id)
       : db
           .prepare(
             `INSERT INTO invoice_headers
-               (id, supplier_vat_id, currency, issue_date, total_with_vat, mandate_channel,
-                invoice_number, duplicate_confidence, facts_json, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+               (id, mandate_channel, duplicate_confidence, facts_json, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?)`
           )
-          .bind(
-            id,
-            resolvedSupplierVatId,
-            (currency as string) ?? null,
-            resolvedIssueDate,
-            resolvedTotalWithVat,
-            (mandateChannel as string) ?? null,
-            resolvedInvoiceNumber,
-            duplicateConfidence,
-            JSON.stringify(facts ?? {}),
-            now,
-            now
-          ),
+          .bind(id, (mandateChannel as string) ?? null, duplicateConfidence, JSON.stringify(headerFacts), now, now),
     // Full replace of the line set — never a partial merge, so a
     // caller can never end up with a mix of old and new lines by
     // accident.
     db.prepare("DELETE FROM invoice_lines WHERE invoice_id = ?").bind(id),
     ...(lineInputs as InvoiceLineInput[]).map((line) =>
       db
-        .prepare(
-          `INSERT INTO invoice_lines (id, invoice_id, line_number, description, amount, cost_centre, facts_json)
-           VALUES (?, ?, ?, ?, ?, ?, ?)`
-        )
-        .bind(
-          crypto.randomUUID(),
-          id,
-          line.lineNumber,
-          (line.description as string) ?? null,
-          (line.amount as number) ?? null,
-          (line.costCentre as string) ?? null,
-          JSON.stringify(line.facts ?? {})
-        )
+        .prepare(`INSERT INTO invoice_lines (id, invoice_id, line_number, facts_json) VALUES (?, ?, ?, ?)`)
+        .bind(crypto.randomUUID(), id, line.lineNumber, JSON.stringify(lineFacts(line)))
     ),
   ];
 

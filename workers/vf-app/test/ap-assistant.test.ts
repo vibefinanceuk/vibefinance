@@ -92,14 +92,14 @@ async function invoice(opts: { id: string; supplierId: string; total: number | n
   const factsJson = JSON.stringify(facts);
   if (opts.createdAt) {
     await env.DB.prepare(
-      "INSERT INTO invoice_headers (id, invoice_number, facts_json, total_with_vat, currency, supplier_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)"
+      "INSERT INTO invoice_headers (id, facts_json, supplier_id, created_at) VALUES (?1, json_set(?3, '$.BT-1', ?2, '$.BT-112', ?4, '$.BT-5', ?5), ?6, ?7)"
     )
       .bind(opts.id, opts.number ?? null, factsJson, opts.total, opts.currency, opts.supplierId, opts.createdAt)
       .run();
     return;
   }
   await env.DB.prepare(
-    "INSERT INTO invoice_headers (id, invoice_number, facts_json, total_with_vat, currency, supplier_id) VALUES (?, ?, ?, ?, ?, ?)"
+    "INSERT INTO invoice_headers (id, facts_json, supplier_id) VALUES (?1, json_set(?3, '$.BT-1', ?2, '$.BT-112', ?4, '$.BT-5', ?5), ?6)"
   )
     .bind(opts.id, opts.number ?? null, factsJson, opts.total, opts.currency, opts.supplierId)
     .run();
@@ -530,7 +530,7 @@ describe("duplicate_invoices", () => {
     await person("alice", ["AP.Assistant", "AP.FraudReview"]);
     await supplier("acme", "Acme Widgets");
     await env.DB.prepare(
-      "INSERT INTO invoice_headers (id, invoice_number, facts_json, total_with_vat, currency, supplier_id, duplicate_confidence) VALUES ('inv-1', 'INV-1', '{}', 400, 'GBP', 'acme', 0.9)"
+      "INSERT INTO invoice_headers (id, facts_json, supplier_id, duplicate_confidence) VALUES ('inv-1', json_set('{}', '$.BT-1', 'INV-1', '$.BT-112', 400, '$.BT-5', 'GBP'), 'acme', 0.9)"
     ).run();
 
     const model = fakeModel('{"tool": "duplicate_invoices", "args": {}}', "One invoice from Acme looks like a duplicate.");

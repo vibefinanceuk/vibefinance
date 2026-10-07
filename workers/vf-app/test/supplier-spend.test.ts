@@ -81,7 +81,7 @@ let seq = 0;
 async function invoice(supplierId: string, opts: { total: number; currency: string | null }) {
   const n = seq++;
   await env.DB.prepare(
-    "INSERT INTO invoice_headers (id, facts_json, supplier_id, total_with_vat, currency) VALUES (?, '{}', ?, ?, ?)"
+    "INSERT INTO invoice_headers (id, facts_json, supplier_id) VALUES (?1, json_set('{}', '$.BT-112', ?3, '$.BT-5', ?4), ?2)"
   )
     .bind(`inv-${n}`, supplierId, opts.total, opts.currency)
     .run();

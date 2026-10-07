@@ -246,34 +246,12 @@ export async function resolveFieldVisibility(
   }
 
   /**
-   * A line's description — decision 0171.
-   *
-   * Stored under a plain `description` key rather than `BT-153`,
-   * deliberately: decision 0052 refused to widen the closed vocabulary
-   * *"purely to carry text no rule tests"*, and `invoice_lines` has its
-   * own column for it.
-   *
-   * **That reasoning holds and its premise changed.** The operator
-   * asked for it as a column, and the viewer renders only what this
-   * resolver lists — so a description extracted from every line was
-   * displayed on none of them.
-   *
-   * A **displayable field, not a vocabulary one**: no rule can test it,
-   * and a person can read it.
-   *
-   * Read, not edit: keying refuses anything outside the closed
-   * vocabulary (decision 0144), so an editable description would render
-   * as a text box and fail on save — worse than not offering it.
+   * **No separate `description` field — decision 0681.** Decision 0171
+   * added a read-only `description` for the text a scanned line was read
+   * with, stored under a plain key. A scanned line's text is now its Item
+   * name, BT-153, as an e-invoice line's is; BT-153 and BT-154 (Item
+   * description) are ordinary editable Business Terms above.
    */
-  resolved.push({
-    field: "description",
-    description: "Description",
-    visibility: "read",
-    type: "text",
-    line: true,
-    decidedBy: "default",
-    sortOrder: 0,
-  });
 
   /**
    * The order somebody reads a line in — decision 0171.
@@ -289,7 +267,9 @@ export async function resolveFieldVisibility(
    */
   const LINE_READING_ORDER = [
     "BT-126",
-    "description",
+    // Decision 0681: the line's text is BT-153 (and BT-154), not a separate field.
+    "BT-153",
+    "BT-154",
     "BT-130",
     "BT-146",
     "BT-129",

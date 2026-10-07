@@ -32,7 +32,7 @@ async function person(id: string, name: string, permissions: string[], unit: str
 }
 
 async function invoiceWithTask(id: string, unit: string, taskCreated: string, claimedBy: string | null) {
-  await env.DB.prepare("INSERT INTO invoice_headers (id, facts_json, org_unit_id, invoice_number, currency, total_with_vat) VALUES (?, ?, ?, ?, 'GBP', 100)")
+  await env.DB.prepare("INSERT INTO invoice_headers (id, facts_json, org_unit_id) VALUES (?1, json_set(?2, '$.BT-1', ?4, '$.BT-5', 'GBP', '$.BT-112', 100), ?3)")
     .bind(id, JSON.stringify({ "BT-1": id.toUpperCase(), "BT-27": "Kingsway Logistics" }), unit, id.toUpperCase())
     .run();
   await env.DB.prepare("INSERT INTO process_instances (id, process_id, subject_type, subject_id, current_stage_id, status) VALUES (?, 'ap', 'invoice', ?, 'approval', 'in_progress')").bind(`pi-${id}`, id).run();

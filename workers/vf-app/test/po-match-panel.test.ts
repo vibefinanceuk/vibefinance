@@ -48,7 +48,7 @@ async function poLine(poId: string, n: number, name: string, qty: number, price:
 async function invoice(id: string, facts: Record<string, unknown>, lines: Record<string, unknown>[] = []) {
   await env.DB.prepare("INSERT INTO invoice_headers (id, facts_json) VALUES (?, ?)").bind(id, JSON.stringify(facts)).run();
   for (const [i, l] of lines.entries()) {
-    await env.DB.prepare("INSERT INTO invoice_lines (id, invoice_id, line_number, amount, facts_json) VALUES (?, ?, ?, ?, ?)")
+    await env.DB.prepare("INSERT INTO invoice_lines (id, invoice_id, line_number, facts_json) VALUES (?1, ?2, ?3, json_set(?5, '$.BT-131', ?4))")
       .bind(crypto.randomUUID(), id, i + 1, l["BT-131"] as number, JSON.stringify(l))
       .run();
   }
@@ -309,7 +309,7 @@ describe("how much of each PO line is used — decision 0533", () => {
 
   it("shows ordered, taken by other invoices, taken by this one, and left, per PO line", async () => {
     // inv-0 takes 4 of paper (PO line 2) as well as its header total.
-    await env.DB.prepare("INSERT INTO invoice_lines (id, invoice_id, line_number, amount, facts_json) VALUES ('l0', 'inv-0', 1, 94, ?)")
+    await env.DB.prepare("INSERT INTO invoice_lines (id, invoice_id, line_number, facts_json) VALUES ('l0', 'inv-0', 1, json_set(?1, '$.BT-131', 94))")
       .bind(JSON.stringify({ "BT-132": "2", "BT-129": 4, "BT-131": 94 }))
       .run();
     const v = await view();

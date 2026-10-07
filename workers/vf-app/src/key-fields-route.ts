@@ -631,16 +631,9 @@ export async function handleKeyInvoiceFields(
       if (!Number.isInteger(lineNumber) || lineNumber < 1) continue;
       const previous = before.get(lineNumber);
 
-      for (const field of ["description", "amount"] as const) {
-        const next = line[field];
-        if (next === undefined) continue;
-        const was = previous?.[field] ?? null;
-        // Only what actually changed. A person opening a line table and
-        // saving without editing should not appear to have typed every
-        // figure on the invoice.
-        if (was === next || (was === null && next === null)) continue;
-        changes.push({ field: `line.${lineNumber}.${field}`, previous: was, next, line: lineNumber });
-      }
+      // Decision 0681: a line's text and amount are its BT-153 and BT-131,
+      // recorded with the rest of its facts below; there is no separate
+      // column to record.
 
       /**
        * The line's own **facts**, which are what a rule can test.
@@ -751,8 +744,11 @@ export async function handleKeyInvoiceFields(
             ? {}
             : previousLineFacts.get(supplied.lineNumber) ?? {};
 
-        // What was sent wins; what was not sent survives.
-        return { ...supplied, facts: { ...previous, ...(supplied.facts ?? {}) } };
+        // What was sent wins; what was not sent survives. Decision 0681:
+        // keying writes Business Terms only — a line's text, amount and
+        // cost centre are its BT-153, BT-131 and BT-133 facts, which the
+        // stage's field permissions above have already checked.
+        return { lineNumber: supplied.lineNumber, facts: { ...previous, ...(supplied.facts ?? {}) } };
       })
     : body.lines;
 
@@ -772,49 +768,22 @@ export async function handleKeyInvoiceFields(
     } catch {
       // Kept as none, exactly as the other readers here do.
     }
-    return {
-      lineNumber: row.line_number,
-      description: row.description ?? undefined,
-      amount: row.amount ?? undefined,
-      costCentre: row.cost_centre ?? undefined,
-      facts,
-    };
+    // Decision 0681: the facts are the line; its columns are generated from them.
+    return { lineNumber: row.line_number, facts };
   });
 
-  // Reuses the ordinary writer, so the structured columns stay in step
-  // with facts_json exactly as they do on every other path.
   /**
-   * **The structured columns go back with the facts — decision 0539.**
-   * `handleUpsertInvoice` writes every column it is not given as NULL,
-   * and keying gave it none, so since 0071 every save in the viewer
-   * blanked the invoice's `supplier_vat_id`, `invoice_number`,
-   * `currency`, `issue_date`, `total_with_vat` and `mandate_channel` —
-   * which duplicate checks, supplier history, reports and coding
-   * suggestions all read. Found when suggestions drew on no history at
-   * all. What a person keyed wins (BT-31, BT-1, BT-5, BT-2, BT-112, the
-   * same pairs `mergeStructuredInvoiceFacts` reads the other way);
-   * otherwise the column keeps what it held.
+   * Reuses the ordinary writer. **The facts are the invoice — decision
+   * 0681.** Decision 0539 sent the structured columns back with the facts
+   * because the writer blanked any it was not given; those columns are
+   * now generated from the facts (migration 0148), so there is nothing
+   * to send back and nothing to blank. `mandate_channel` is not a
+   * Business Term and keeps its own column.
    */
-  const fact = (code: string): unknown => {
-    const v = merged[code];
-    return v === undefined || v === null || v === "" ? undefined : v;
-  };
-  const keyedHere = new Set(entries.map(([field]) => field));
-  const pick = <T,>(code: string, column: T | null, cast: (v: unknown) => T | null): T | null =>
-    keyedHere.has(code) ? cast(fact(code)) : (column ?? cast(fact(code)));
-  const asText = (v: unknown) => (v === undefined || v === null ? null : String(v));
-  const asNumber = (v: unknown) => {
-    const n = typeof v === "number" ? v : typeof v === "string" && v.trim() !== "" ? Number(v) : NaN;
-    return Number.isFinite(n) ? n : null;
-  };
   const upsert = await handleUpsertInvoice(db, {
     id: invoiceId,
-    supplierVatId: pick("BT-31", invoice.supplier_vat_id, asText),
-    invoiceNumber: pick("BT-1", invoice.invoice_number, asText),
-    currency: pick("BT-5", invoice.currency, asText),
-    issueDate: pick("BT-2", invoice.issue_date, asText),
-    totalWithVat: pick("BT-112", invoice.total_with_vat, asNumber),
-    mandateChannel: pick("mandate.channel", invoice.mandate_channel, asText),
+    // Decision 0681: the facts are the invoice; the header columns are generated from them.
+    mandateChannel: invoice.mandate_channel,
     facts: merged,
     lines: body.lines === undefined ? preservedLines : mergedLines,
   } as Parameters<typeof handleUpsertInvoice>[1]);

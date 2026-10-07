@@ -54,13 +54,13 @@ async function seedDocument(
 
   if (createdAt) {
     await env.DB.prepare(
-      "INSERT INTO invoice_headers (id, facts_json, invoice_number, total_with_vat, created_at) VALUES (?, ?, ?, ?, ?)"
+      "INSERT INTO invoice_headers (id, facts_json, created_at) VALUES (?1, json_set(?2, '$.BT-1', ?3, '$.BT-112', ?4), ?5)"
     )
       .bind(id, JSON.stringify(facts), invoiceNumber, totalWithVat, createdAt)
       .run();
   } else {
     await env.DB.prepare(
-      "INSERT INTO invoice_headers (id, facts_json, invoice_number, total_with_vat) VALUES (?, ?, ?, ?)"
+      "INSERT INTO invoice_headers (id, facts_json) VALUES (?1, json_set(?2, '$.BT-1', ?3, '$.BT-112', ?4))"
     )
       .bind(id, JSON.stringify(facts), invoiceNumber, totalWithVat)
       .run();

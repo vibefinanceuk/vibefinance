@@ -505,14 +505,13 @@ export function parseExtractionResponse(
 
     lineNumber += 1;
     const line: ExtractedLine = { lineNumber, "BT-131": amount.value };
-    // The description is deliberately NOT given a BT code. BT-153
-    // exists in EN 16931, but adding it to the closed vocabulary
-    // purely to carry text no rule tests would widen the vocabulary
-    // for nothing — and invoice_lines already has its own
-    // description column for exactly this. Kept under a plain key,
-    // which flows through facts_json to storage without pretending
-    // to be a Business Term.
-    if (descriptionCheck.ok) line.description = descriptionCheck.value;
+    // **The line's text is its Item name, BT-153 — decision 0681.**
+    // It used to be a plain `description` key (decision 0052), from
+    // before BT-153 was in the vocabulary (0110). A scanned line now
+    // carries the same Business Term an e-invoice line does, so the
+    // line table, rules, coding suggestions and the ERP export read one
+    // field whichever way the invoice arrived.
+    if (descriptionCheck.ok) line["BT-153"] = descriptionCheck.value;
     lines.push(line);
   }
   // A line whose AMOUNT could not be coerced means the list is

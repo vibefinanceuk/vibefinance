@@ -435,21 +435,6 @@ async function loadCodeLists() {
 }
 
 
-/**
- * The convenience columns `invoice_lines` also stores.
- *
- * They are **derived from the facts**, not typed separately: the item
- * name is the description a person reads back, and the line net amount
- * is the amount. Letting somebody type them independently is how a
- * column and a fact come to disagree.
- */
-function columnsFor(line) {
-  return {
-    description: String(line["BT-153"] ?? "").trim(),
-    amount: line["BT-131"] === "" || line["BT-131"] === undefined ? null : Number(line["BT-131"]),
-    costCentre: String(line["BT-133"] ?? "").trim() || undefined,
-  };
-}
 
 /**
  * What this stage shows, and what may be edited — decision 0114.
@@ -1160,9 +1145,9 @@ const CODING_PICKER_FIELDS = [
  * value twice. They stay in `lineFields`, so the pop-out, the coded
  * check and Save still see them.
  */
-// Decision 0680: "description" is its own read-only field (the description a scanned
-// invoice's line was read with, decision 0171), not BT-154, so it is named here too.
-const LINE_TABLE_ORDER = ["BT-126", "BT-153", "description", "BT-154", "BT-130", "BT-146", "BT-129", "BT-131", "BT-151", "BT-152"];
+// Decision 0681: a line's text is its Item name (BT-153) and Item description (BT-154),
+// whichever way the invoice arrived; the separate read-only "description" (0171, 0680) is gone.
+const LINE_TABLE_ORDER = ["BT-126", "BT-153", "BT-154", "BT-130", "BT-146", "BT-129", "BT-131", "BT-151", "BT-152"];
 function lineTableFields() {
   const rank = (f) => {
     const i = LINE_TABLE_ORDER.indexOf(f.field);
@@ -3631,7 +3616,8 @@ async function save(close) {
       // identifier — stated rather than left blank.
       facts["BT-126"] = String(index + 1);
 
-      return { lineNumber: index + 1, ...columnsFor(line), facts, ...(anySplit ? { splits: splitPayload(line) } : {}) };
+      // Decision 0681: the facts are the line; the server derives its columns from them.
+      return { lineNumber: index + 1, facts, ...(anySplit ? { splits: splitPayload(line) } : {}) };
     });
   if (usable.length > 0) payload.lines = usable;
 

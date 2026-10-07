@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 7 October 2026 (decision 0680). A living document: what
+Last updated 7 October 2026 (decision 0681). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,19 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### One home per value: the Peppol BIS 3.0 Business Terms (0681)
+
+An invoice's values live only as Business Terms in `facts_json`,
+whichever way it arrived. The header columns (number, issue date,
+currency, supplier VAT, total) and line columns (text, amount, cost
+centre) are generated from them (vf-app `0148`) and cannot be written.
+
+- A scanned line's text is its Item name, BT-153. The separate
+  `description` field is gone.
+- Embedded-XML invoices now reach duplicate checks, lookup and history.
+
+Full reasoning is in decision 0681.
 
 ### Invoice lines: Description after Item name (0680)
 

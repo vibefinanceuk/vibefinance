@@ -52,7 +52,7 @@ async function invoice(opts: { id: string; supplierId: string; createdAt?: strin
 /** Used by both the total-amount and the stageIds describe blocks below. */
 async function invoiceWithAmount(opts: { id: string; supplierId: string; total: number | null; currency: string | null; createdAt?: string }) {
   await env.DB.prepare(
-    "INSERT INTO invoice_headers (id, facts_json, supplier_id, total_with_vat, currency, created_at) VALUES (?, '{}', ?, ?, ?, COALESCE(?, CURRENT_TIMESTAMP))"
+    "INSERT INTO invoice_headers (id, facts_json, supplier_id, created_at) VALUES (?1, json_set('{}', '$.BT-112', ?3, '$.BT-5', ?4), ?2, COALESCE(?5, CURRENT_TIMESTAMP))"
   )
     .bind(opts.id, opts.supplierId, opts.total, opts.currency, opts.createdAt ?? null)
     .run();

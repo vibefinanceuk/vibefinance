@@ -22,7 +22,7 @@ async function person(id: string, permissions: string[], unit: string | null) {
 }
 
 async function invoice(id: string, unit: string, number: string, supplier: string, total: number, status = "in_progress") {
-  await env.DB.prepare("INSERT INTO invoice_headers (id, facts_json, org_unit_id, invoice_number, currency, total_with_vat, supplier_id, created_at) VALUES (?, '{}', ?, ?, 'GBP', ?, ?, '2026-09-28 09:00:00')")
+  await env.DB.prepare("INSERT INTO invoice_headers (id, facts_json, org_unit_id, supplier_id, created_at) VALUES (?1, json_set('{}', '$.BT-1', ?3, '$.BT-5', 'GBP', '$.BT-112', ?4), ?2, ?5, '2026-09-28 09:00:00')")
     .bind(id, unit, number, total, supplier)
     .run();
   await env.DB.prepare("INSERT INTO process_instances (id, process_id, subject_type, subject_id, current_stage_id, status, ended_at, return_reason_id) VALUES (?, 'ap', 'invoice', ?, 'approval', ?, ?, NULL)")
@@ -46,7 +46,7 @@ beforeEach(async () => {
   await invoice("de-1", "acme-de", "LN-1", "sup-ln", 900);
   await invoice("uk-ret", "acme-uk", "K-2", "sup-kw", 300, "returned_manually");
   // Lines and coding: K-1 is two lines, the first split over two GL codes.
-  await env.DB.prepare("INSERT INTO invoice_lines (id, invoice_id, line_number, description, amount, facts_json) VALUES ('l1', 'uk-1', 1, 'Pallets', 800, '{}'), ('l2', 'uk-1', 2, 'Delivery', 200, '{}'), ('l3', 'de-1', 1, 'Lager', 750, '{}')").run();
+  await env.DB.prepare("INSERT INTO invoice_lines (id, invoice_id, line_number, facts_json) VALUES ('l1', 'uk-1', 1, json_set('{}', '$.BT-153', 'Pallets', '$.BT-131', 800)), ('l2', 'uk-1', 2, json_set('{}', '$.BT-153', 'Delivery', '$.BT-131', 200)), ('l3', 'de-1', 1, json_set('{}', '$.BT-153', 'Lager', '$.BT-131', 750))").run();
   await env.DB.prepare(
     "INSERT INTO invoice_line_coding_splits (invoice_id, line_number, seq, cost_centre, project, gl_code, amount) VALUES ('uk-1', 1, 1, 'CC10', NULL, '5000', 500), ('uk-1', 1, 2, 'CC10', NULL, '5100', 300), ('uk-1', 2, 1, 'CC20', NULL, '5100', 200), ('de-1', 1, 1, 'CC90', NULL, '5000', 750)",
   ).run();

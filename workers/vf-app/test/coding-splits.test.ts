@@ -28,7 +28,7 @@ async function seedInvoice(id: string, supplier = "GB-KW", header: Record<string
     `INSERT OR IGNORE INTO process_stage_versions (process_id, version, stage_id, sequence)
      SELECT p.id, p.version, s.id, s.sequence FROM process_stages s JOIN processes p ON p.id = s.process_id`
   ).run();
-  await env.DB.prepare("INSERT INTO invoice_headers (id, supplier_vat_id, invoice_number, facts_json) VALUES (?, ?, ?, ?)")
+  await env.DB.prepare("INSERT INTO invoice_headers (id, facts_json) VALUES (?1, json_set(?4, '$.BT-31', ?2, '$.BT-1', ?3))")
     .bind(id, supplier, id.toUpperCase(), JSON.stringify({ "BT-1": id.toUpperCase(), "BT-31": supplier, ...header }))
     .run();
   await env.DB.prepare(
@@ -81,7 +81,7 @@ beforeEach(async () => {
 
 describe("saving a split — decision 0548", () => {
   it("stores the rows, clears the line's own cost centre, project and GL code, and records the change", async () => {
-    await env.DB.prepare("UPDATE invoice_lines SET cost_centre = 'cc1', facts_json = json_set(facts_json, '$.\"BT-133\"', 'cc1') WHERE invoice_id = 'inv-s'").run();
+    await env.DB.prepare("UPDATE invoice_lines SET facts_json = json_set(facts_json, '$.\"BT-133\"', 'cc1') WHERE invoice_id = 'inv-s'").run();
     const result = await key("inv-s", { splits: SPLIT });
     expect(result.status).toBe(200);
     expect(await stored()).toEqual([

@@ -886,11 +886,9 @@ async function clearManualCoding(db: D1Database, invoiceId: string, lineNumber: 
     changed = true;
   }
   if (!changed) return false;
-  const costCentre = facts["BT-133"];
+  // Decision 0681: the cost centre is BT-133; the line's cost_centre column is generated from it.
   statements.push(
-    db
-      .prepare("UPDATE invoice_lines SET facts_json = ?, cost_centre = ? WHERE invoice_id = ? AND line_number = ?")
-      .bind(JSON.stringify(facts), costCentre === undefined || costCentre === null ? null : String(costCentre), invoiceId, lineNumber)
+    db.prepare("UPDATE invoice_lines SET facts_json = ? WHERE invoice_id = ? AND line_number = ?").bind(JSON.stringify(facts), invoiceId, lineNumber)
   );
   await db.batch(statements);
   return true;

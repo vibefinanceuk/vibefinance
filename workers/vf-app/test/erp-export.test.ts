@@ -21,7 +21,7 @@ async function invoice(
   id: string,
   opts: { stage: string; status?: string; unit?: string; facts?: Record<string, unknown>; lines?: Record<string, unknown>[]; supplier?: string | null }
 ) {
-  await env.DB.prepare("INSERT INTO invoice_headers (id, facts_json, org_unit_id, supplier_id, invoice_number, currency, total_with_vat) VALUES (?, ?, ?, ?, ?, 'GBP', ?)")
+  await env.DB.prepare("INSERT INTO invoice_headers (id, facts_json, org_unit_id, supplier_id) VALUES (?1, json_set(?2, '$.BT-1', ?5, '$.BT-5', 'GBP', '$.BT-112', ?6), ?3, ?4)")
     .bind(
       id,
       JSON.stringify({ "BT-1": id.toUpperCase(), "BT-2": "2026-09-20", "BT-9": "2026-10-20", "BT-5": "GBP", ...opts.facts }),

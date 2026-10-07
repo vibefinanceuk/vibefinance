@@ -47,7 +47,7 @@ async function person(id: string, permissions: string[], unit: string | null) {
 
 async function invoice(id: string, opts: { stage: string; status?: string; unit: string; supplier: string; currency: string; total: number; due: string }) {
   await env.DB.prepare(
-    "INSERT INTO invoice_headers (id, facts_json, org_unit_id, invoice_number, currency, total_with_vat) VALUES (?, ?, ?, ?, ?, ?)"
+    "INSERT INTO invoice_headers (id, facts_json, org_unit_id) VALUES (?1, json_set(?2, '$.BT-1', ?4, '$.BT-5', ?5, '$.BT-112', ?6), ?3)"
   )
     .bind(id, JSON.stringify({ "BT-1": id.toUpperCase(), "BT-9": opts.due, "BT-27": opts.supplier }), opts.unit, id.toUpperCase(), opts.currency, opts.total)
     .run();

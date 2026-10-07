@@ -8,7 +8,7 @@ beforeEach(async () => {
 });
 
 async function seedInvoice(id: string, issueDate?: string) {
-  await env.DB.prepare("INSERT INTO invoice_headers (id, facts_json, issue_date) VALUES (?, '{}', ?)").bind(id, issueDate ?? null).run();
+  await env.DB.prepare("INSERT INTO invoice_headers (id, facts_json) VALUES (?1, json_set('{}', '$.BT-2', ?2))").bind(id, issueDate ?? null).run();
 }
 
 describe("handleUploadDocument", () => {

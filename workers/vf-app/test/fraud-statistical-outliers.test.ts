@@ -55,8 +55,8 @@ async function invoice(opts: {
 }): Promise<string> {
   const id = `inv-${seq++}`;
   await env.DB.prepare(
-    `INSERT INTO invoice_headers (id, facts_json, supplier_id, total_with_vat, currency, issue_date, invoice_number, org_unit_id)
-     VALUES (?, '{}', ?, ?, ?, '2026-01-01', ?, ?)`
+    `INSERT INTO invoice_headers (id, facts_json, supplier_id, org_unit_id)
+     VALUES (?1, json_set('{}', '$.BT-112', ?3, '$.BT-5', ?4, '$.BT-2', '2026-01-01', '$.BT-1', ?5), ?2, ?6)`
   )
     .bind(id, opts.supplierId ?? null, opts.amount, opts.currency ?? "GBP", opts.invoiceNumber ?? id, opts.unit ?? null)
     .run();

@@ -571,12 +571,11 @@ describe("line extraction", () => {
     expect(result.lines[7]).toMatchObject({ lineNumber: 8, "BT-131": 260 });
   });
 
-  it("keeps the description without inventing a Business Term for it", () => {
+  it("keeps a scanned line's text as its Item name, BT-153, as an e-invoice line's (decision 0681)", () => {
     const result = parseExtractionResponse(MORRISON);
-    expect(result.lines[0].description).toBe("International Freight");
-    // BT-153 exists in EN 16931 but is deliberately not added to the
-    // closed vocabulary for text no rule tests.
-    expect(result.lines[0]["BT-153"]).toBeUndefined();
+    expect(result.lines[0]["BT-153"]).toBe("International Freight");
+    // No second home under a plain key.
+    expect(result.lines[0].description).toBeUndefined();
   });
 
   it("produces lines that sum to the invoice's real total", () => {
@@ -1116,6 +1115,6 @@ describe("a line item must have a description (decision 0052)", () => {
     });
     const result = parseExtractionResponse(withGap);
     expect(result.lines.map((l) => l.lineNumber)).toEqual([1, 2]);
-    expect(result.lines.map((l) => l.description)).toEqual(["First", "Third"]);
+    expect(result.lines.map((l) => l["BT-153"])).toEqual(["First", "Third"]);
   });
 });

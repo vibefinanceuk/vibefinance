@@ -44,7 +44,7 @@ beforeEach(async () => {
   await seedStage("ap-eligible", "ap", "Payment Eligible", 2);
   await env.DB.prepare("INSERT INTO org_units (id, name) VALUES ('acme-uk', 'Acme UK')").run();
   await env.DB.prepare("INSERT INTO suppliers (id, name, erp_identifier, erp_site_identifier) VALUES ('sup-1', 'Advanced Network Devices', '1013', 'FRESNO')").run();
-  await env.DB.prepare("INSERT INTO invoice_headers (id, facts_json, invoice_number, supplier_id, org_unit_id) VALUES ('inv-a', ?, 'AND-1', 'sup-1', 'acme-uk')")
+  await env.DB.prepare("INSERT INTO invoice_headers (id, facts_json, supplier_id, org_unit_id) VALUES ('inv-a', json_set(?1, '$.BT-1', 'AND-1'), 'sup-1', 'acme-uk')")
     .bind(JSON.stringify({ "BT-1": "AND-1", "BT-2": "2026-09-29", "BT-5": "GBP", "BT-112": 240, "BT-109": 200, "BT-110": 40 }))
     .run();
   await env.DB.prepare("INSERT INTO invoice_lines (invoice_id, line_number, facts_json) VALUES ('inv-a', 1, ?), ('inv-a', 2, ?)")

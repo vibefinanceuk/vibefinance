@@ -47,7 +47,7 @@ beforeEach(async () => {
   await env.DB.prepare("INSERT INTO org_users (id, email, name) VALUES (?, ?, ?)").bind(DAN.id, DAN.email, DAN.name).run();
   // 7781 from Hanse Logistik was received on 12 September.
   await env.DB.prepare(
-    "INSERT INTO invoice_headers (id, facts_json, invoice_number, supplier_vat_id, created_at) VALUES ('inv-old', '{\"BT-27\":\"Hanse Logistik\"}', '7781', 'DE999', '2026-09-12 10:00:00')"
+    "INSERT INTO invoice_headers (id, facts_json, created_at) VALUES ('inv-old', json_set('{\"BT-27\":\"Hanse Logistik\"}', '$.BT-1', '7781', '$.BT-31', 'DE999'), '2026-09-12 10:00:00')"
   ).run();
 });
 

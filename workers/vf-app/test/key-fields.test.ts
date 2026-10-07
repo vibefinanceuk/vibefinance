@@ -400,7 +400,7 @@ describe("keying lines (decision 0109)", () => {
       [2, "Training", 40],
     ] as [number, string, number][]) {
       await env.DB.prepare(
-        "INSERT INTO invoice_lines (id, invoice_id, line_number, description, amount, facts_json) VALUES (?, 'inv-lines', ?, ?, ?, '{}')"
+        "INSERT INTO invoice_lines (id, invoice_id, line_number, facts_json) VALUES (?1, 'inv-lines', ?2, json_set('{}', '$.BT-153', ?3, '$.BT-131', ?4))"
       )
         .bind(`l-${n}`, n, description, amount)
         .run();
@@ -415,8 +415,8 @@ describe("keying lines (decision 0109)", () => {
       {
         facts: {},
         lines: [
-          { lineNumber: 1, description: "Support", amount: 65 },
-          { lineNumber: 2, description: "Training", amount: 40 },
+          { lineNumber: 1, facts: { "BT-153": "Support", "BT-131": 65 } },
+          { lineNumber: 2, facts: { "BT-153": "Training", "BT-131": 40 } },
         ],
       } as never,
       "u-dan"
@@ -426,7 +426,8 @@ describe("keying lines (decision 0109)", () => {
       "SELECT field, line_number, keyed_by FROM keyed_fields WHERE line_number IS NOT NULL"
     ).first<{ field: string; line_number: number; keyed_by: string }>();
 
-    expect(row?.field).toBe("line.1.amount");
+    // Decision 0681: a line's amount is its BT-131.
+    expect(row?.field).toBe("line.1.BT-131");
     expect(row?.line_number).toBe(1);
     expect(row?.keyed_by).toBe("u-dan");
   });
@@ -441,8 +442,8 @@ describe("keying lines (decision 0109)", () => {
       {
         facts: {},
         lines: [
-          { lineNumber: 1, description: "Support", amount: 60 },
-          { lineNumber: 2, description: "Training", amount: 40 },
+          { lineNumber: 1, facts: { "BT-153": "Support", "BT-131": 60 } },
+          { lineNumber: 2, facts: { "BT-153": "Training", "BT-131": 40 } },
         ],
       } as never,
       "u-dan"
@@ -463,8 +464,8 @@ describe("keying lines (decision 0109)", () => {
       {
         facts: { "BT-1": "INV-9" },
         lines: [
-          { lineNumber: 1, description: "Support", amount: 65 },
-          { lineNumber: 2, description: "Training", amount: 40 },
+          { lineNumber: 1, facts: { "BT-153": "Support", "BT-131": 65 } },
+          { lineNumber: 2, facts: { "BT-153": "Training", "BT-131": 40 } },
         ],
       } as never,
       "u-dan"
@@ -477,7 +478,7 @@ describe("keying lines (decision 0109)", () => {
     const keyed = String(JSON.parse(row!.facts_json)["provenance.keyed"]);
 
     expect(keyed).toContain("BT-1");
-    expect(keyed).toContain("line.1.amount");
+    expect(keyed).toContain("line.1.BT-131");
   });
 
   it("records a line typed where none existed", async () => {
@@ -487,14 +488,14 @@ describe("keying lines (decision 0109)", () => {
     await handleKeyInvoiceFields(
       env.DB,
       "inv-empty",
-      { facts: {}, lines: [{ lineNumber: 1, description: "Consultancy", amount: 500 }] } as never,
+      { facts: {}, lines: [{ lineNumber: 1, facts: { "BT-153": "Consultancy", "BT-131": 500 } }] } as never,
       "u-dan"
     );
 
     const rows = await env.DB.prepare(
       "SELECT field FROM keyed_fields WHERE invoice_id = 'inv-empty' AND line_number = 1 ORDER BY field"
     ).all<{ field: string }>();
-    expect(rows.results.map((r: { field: string }) => r.field)).toEqual(["line.1.amount", "line.1.description"]);
+    expect(rows.results.map((r: { field: string }) => r.field)).toEqual(["line.1.BT-131", "line.1.BT-153"]);
   });
 
   it("leaves header keying unchanged", async () => {
@@ -1280,8 +1281,8 @@ describe("a line keeps the facts nobody sent (decision 0174)", () => {
   async function lineWith(facts: Record<string, unknown>) {
     await seedInvoice("inv-lines", {});
     await env.DB.prepare(
-      `INSERT INTO invoice_lines (id, invoice_id, line_number, description, amount, facts_json)
-       VALUES ('l-1', 'inv-lines', 1, ?, ?, ?)`
+      `INSERT INTO invoice_lines (id, invoice_id, line_number, facts_json)
+       VALUES ('l-1', 'inv-lines', 1, json_set(?3, '$.BT-153', ?1, '$.BT-131', ?2))`
     )
       .bind(
         (facts.description as string) ?? null,
@@ -1329,8 +1330,8 @@ describe("a line keeps the facts nobody sent (decision 0174)", () => {
     // up with a mix of old and new lines.
     await lineWith({ "BT-131": 100, description: "One" });
     await env.DB.prepare(
-      `INSERT INTO invoice_lines (id, invoice_id, line_number, amount, facts_json)
-       VALUES ('l-2', 'inv-lines', 2, 200, '{"BT-131":200}')`
+      `INSERT INTO invoice_lines (id, invoice_id, line_number, facts_json)
+       VALUES ('l-2', 'inv-lines', 2, json_set('{"BT-131":200}', '$.BT-131', 200))`
     ).run();
 
     await handleKeyInvoiceFields(
@@ -1375,7 +1376,7 @@ describe("a header-only edit keeps the lines — decision 0532", () => {
   it("writes the stored lines back unchanged when no lines are sent", async () => {
     await seedInvoice("inv-1");
     await env.DB.prepare(
-      "INSERT INTO invoice_lines (id, invoice_id, line_number, description, amount, cost_centre, facts_json) VALUES ('l-1', 'inv-1', 1, 'Toner', 420, 'CC1', ?), ('l-2', 'inv-1', 2, 'Paper', 90, NULL, ?)"
+      "INSERT INTO invoice_lines (id, invoice_id, line_number, facts_json) VALUES ('l-1', 'inv-1', 1, json_set(?1, '$.BT-153', 'Toner', '$.BT-131', 420, '$.BT-133', 'CC1')), ('l-2', 'inv-1', 2, json_set(?2, '$.BT-153', 'Paper', '$.BT-131', 90))"
     )
       .bind(JSON.stringify({ "BT-131": 420, "BT-132": "1" }), JSON.stringify({ "BT-131": 90 }))
       .run();
@@ -1388,7 +1389,8 @@ describe("a header-only edit keeps the lines — decision 0532", () => {
     ).all<{ line_number: number; description: string; amount: number; cost_centre: string | null; facts_json: string }>();
     expect(lines.results).toHaveLength(2);
     expect(lines.results[0]).toMatchObject({ description: "Toner", amount: 420, cost_centre: "CC1" });
-    expect(JSON.parse(lines.results[0].facts_json)).toEqual({ "BT-131": 420, "BT-132": "1" });
+    // Decision 0681: the columns are generated from these facts, the one home.
+    expect(JSON.parse(lines.results[0].facts_json)).toEqual({ "BT-131": 420, "BT-132": "1", "BT-153": "Toner", "BT-133": "CC1" });
     expect(lines.results[1]).toMatchObject({ description: "Paper", amount: 90, cost_centre: null });
   });
 });
@@ -1415,8 +1417,8 @@ describe("keying keeps the invoice's structured columns (decision 0539)", () => 
     });
     await seedInvoice("inv-cols", { "BT-31": "GB111", "BT-1": "INV-9", "BT-5": "GBP", "BT-2": "2026-09-01", "BT-112": 120 });
     await env.DB.prepare(
-      `UPDATE invoice_headers SET supplier_vat_id = 'GB111', invoice_number = 'INV-9', currency = 'GBP', issue_date = '2026-09-01',
-         total_with_vat = 120, mandate_channel = 'peppol' WHERE id = 'inv-cols'`
+      // Decision 0681: the header columns are generated from the facts seeded above; only mandate_channel is its own.
+      `UPDATE invoice_headers SET mandate_channel = 'peppol' WHERE id = 'inv-cols'`
     ).run();
   });
 
@@ -1463,7 +1465,7 @@ describe("a line carries a cost centre or a project (decision 0540)", () => {
     await env.DB.prepare("INSERT INTO cost_centres (id, name) VALUES ('cc1', 'Marketing'), ('SUPP-CC', 'Supplier said')").run();
     await env.DB.prepare("INSERT INTO coding_list_entries (list_type_id, id, name) VALUES ('project', 'PRJ-1', 'Fit-out')").run();
     await seedInvoice("inv-co");
-    await env.DB.prepare("INSERT INTO invoice_lines (invoice_id, line_number, cost_centre, facts_json) VALUES ('inv-co', 1, 'SUPP-CC', ?)")
+    await env.DB.prepare("INSERT INTO invoice_lines (invoice_id, line_number, facts_json) VALUES ('inv-co', 1, json_set(?1, '$.BT-133', 'SUPP-CC'))")
       .bind(JSON.stringify({ "BT-131": 10, "BT-133": "SUPP-CC" }))
       .run();
   });

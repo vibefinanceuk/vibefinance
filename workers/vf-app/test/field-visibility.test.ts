@@ -323,7 +323,8 @@ describe("line fields in reading order (decision 0171)", () => {
     const fields = await resolveFieldVisibility(env.DB, null);
     const lines = fields.filter((f) => f.line).map((f) => f.field);
 
-    const wanted = ["BT-126", "description", "BT-130", "BT-146", "BT-129", "BT-131"];
+    // Decision 0681: the line's text is BT-153 and BT-154, not a separate "description".
+    const wanted = ["BT-126", "BT-153", "BT-154", "BT-130", "BT-146", "BT-129", "BT-131"];
     expect(lines.slice(0, wanted.length)).toEqual(wanted);
   });
 
@@ -336,18 +337,10 @@ describe("line fields in reading order (decision 0171)", () => {
     expect(lines.indexOf("BT-151")).toBeGreaterThan(lines.indexOf("BT-131"));
   });
 
-  it("includes the description, which was extracted and never shown", async () => {
-    // **Stored under a plain key** (decision 0052), so the viewer --
-    // which renders only what this route lists -- displayed it on no
-    // line at all.
+  it("has no separate read-only description: a line's text is its Item name and Item description (decision 0681)", async () => {
     const fields = await resolveFieldVisibility(env.DB, null);
-    expect(fields.find((f) => f.field === "description")?.line).toBe(true);
-  });
-
-  it("offers the description to read rather than to edit", async () => {
-    // Keying refuses anything outside the closed vocabulary, so an
-    // editable one would render as a text box and fail on save.
-    const fields = await resolveFieldVisibility(env.DB, null);
-    expect(fields.find((f) => f.field === "description")?.visibility).toBe("read");
+    expect(fields.find((f) => f.field === "description")).toBeUndefined();
+    expect(fields.find((f) => f.field === "BT-153")?.line).toBe(true);
+    expect(fields.find((f) => f.field === "BT-154")?.line).toBe(true);
   });
 });

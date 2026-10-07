@@ -20,7 +20,7 @@ async function licence(claims: Record<string, unknown>) {
 }
 
 async function invoice(id: string, number: string, total: number, received: string) {
-  await env.DB.prepare("INSERT INTO invoice_headers (id, facts_json, org_unit_id, invoice_number, currency, total_with_vat, created_at) VALUES (?, '{}', 'acme-uk', ?, 'GBP', ?, ?)").bind(id, number, total, received).run();
+  await env.DB.prepare("INSERT INTO invoice_headers (id, facts_json, org_unit_id, created_at) VALUES (?1, json_set('{}', '$.BT-1', ?2, '$.BT-5', 'GBP', '$.BT-112', ?3), 'acme-uk', ?4)").bind(id, number, total, received).run();
   await env.DB.prepare("INSERT INTO process_instances (id, process_id, subject_type, subject_id, current_stage_id, status) VALUES (?, 'ap', 'invoice', ?, 'approval', 'in_progress')").bind(`pi-${id}`, id).run();
   await env.DB.prepare("INSERT INTO stage_visits (id, process_instance_id, stage_id, outcome, created_at) VALUES (?, ?, 'approval', 'matched', ?)").bind(`sv-${id}`, `pi-${id}`, received).run();
 }

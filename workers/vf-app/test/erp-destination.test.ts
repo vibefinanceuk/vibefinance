@@ -28,7 +28,7 @@ async function processWithStages(id: string) {
 }
 
 async function invoice(id: string, processId: string, stage: string, status = "in_progress") {
-  await env.DB.prepare("INSERT INTO invoice_headers (id, facts_json, invoice_number) VALUES (?, ?, ?)")
+  await env.DB.prepare("INSERT INTO invoice_headers (id, facts_json) VALUES (?1, json_set(?2, '$.BT-1', ?3))")
     .bind(id, JSON.stringify({ "BT-1": id.toUpperCase(), "BT-112": 120, "BT-5": "GBP" }), id.toUpperCase())
     .run();
   await env.DB.prepare(

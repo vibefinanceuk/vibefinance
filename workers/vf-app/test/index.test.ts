@@ -2280,7 +2280,7 @@ describe("process instances and stage visits, through the real router (decision 
    */
   async function atApprovalWithTestUser(): Promise<{ approvalTaskId: string }> {
     const { codingTaskId } = await seedManualCodingToApproval("no-rule-set");
-    await env.DB.prepare("UPDATE invoice_headers SET currency = 'EUR', total_with_vat = 3000 WHERE id = 'real-inv-manual'").run();
+    await env.DB.prepare("UPDATE invoice_headers SET facts_json = json_set(facts_json, '$.BT-5', 'EUR', '$.BT-112', 3000) WHERE id = 'real-inv-manual'").run();
     const routed = await SELF.fetch(`https://example.com/tasks/${codingTaskId}/complete`, {
       method: "POST",
       headers: { ...authHeaders(), "Content-Type": "application/json" },

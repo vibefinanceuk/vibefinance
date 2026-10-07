@@ -24,7 +24,7 @@ async function person(id: string, name: string, permissions: string[]) {
 }
 
 async function returned(id: string, o: { number: string; supplierId: string | null; supplierName: string; country: string; total: number; currency: string; issued: string; returnedAt: string; reason: string; comment?: string }) {
-  await env.DB.prepare("INSERT INTO invoice_headers (id, facts_json, org_unit_id, invoice_number, currency, total_with_vat, issue_date, supplier_id, created_at) VALUES (?, ?, 'ap-uk', ?, ?, ?, ?, ?, '2026-09-20 09:00:00')")
+  await env.DB.prepare("INSERT INTO invoice_headers (id, facts_json, org_unit_id, supplier_id, created_at) VALUES (?1, json_set(?2, '$.BT-1', ?3, '$.BT-5', ?4, '$.BT-112', ?5, '$.BT-2', ?6), 'ap-uk', ?7, '2026-09-20 09:00:00')")
     .bind(id, JSON.stringify({ "BT-1": o.number, "BT-27": o.supplierName, "BT-40": o.country }), o.number, o.currency, o.total, o.issued, o.supplierId)
     .run();
   await env.DB.prepare(
@@ -50,7 +50,7 @@ beforeEach(async () => {
   await returned("new", { number: "N-1", supplierId: "sup-kw", supplierName: "Kingsway", country: "GB", total: 5, currency: "GBP", issued: "2026-10-01", returnedAt: "2026-10-03T10:00:00.000Z", reason: "other" }); // 2 days: too soon
   await returned("fixed", { number: "F-1", supplierId: "sup-kw", supplierName: "Kingsway", country: "GB", total: 9, currency: "GBP", issued: "2026-09-01", returnedAt: "2026-09-20T10:00:00.000Z", reason: "other" });
   // F-1 came back corrected.
-  await env.DB.prepare("INSERT INTO invoice_headers (id, facts_json, org_unit_id, invoice_number, currency, total_with_vat, supplier_id, created_at) VALUES ('fixed-2', '{}', 'ap-uk', 'F-1', 'GBP', 9, 'sup-kw', '2026-09-24 09:00:00')").run();
+  await env.DB.prepare("INSERT INTO invoice_headers (id, facts_json, org_unit_id, supplier_id, created_at) VALUES ('fixed-2', json_set('{}', '$.BT-1', 'F-1', '$.BT-5', 'GBP', '$.BT-112', 9), 'ap-uk', 'sup-kw', '2026-09-24 09:00:00')").run();
   // Kingsway has no address on file; its return went to accounts@kingsway.co.uk.
   await env.DB.prepare("INSERT INTO stage_visits (id, process_instance_id, stage_id, outcome) VALUES ('sv-kw', 'pi-kw', 'approval', 'matched')").run();
   await env.DB.prepare("INSERT INTO tasks (id, stage_id, stage_visit_id, required_permission, status) VALUES ('t-kw', 'approval', 'sv-kw', 'AP.Approve', 'returned')").run();
@@ -152,7 +152,7 @@ describe("chasing a supplier", () => {
     await handleRunAgentNow(env.DB, "dan", id, MONDAY);
     const list = await waiting();
     const { sent, deps } = mailer();
-    await env.DB.prepare("INSERT INTO invoice_headers (id, facts_json, org_unit_id, invoice_number, currency, total_with_vat, supplier_id, created_at) VALUES ('ln-2', '{}', 'ap-uk', '88242', 'EUR', 1240, 'sup-ln', '2026-10-05 08:00:00')").run();
+    await env.DB.prepare("INSERT INTO invoice_headers (id, facts_json, org_unit_id, supplier_id, created_at) VALUES ('ln-2', json_set('{}', '$.BT-1', '88242', '$.BT-5', 'EUR', '$.BT-112', 1240), 'ap-uk', 'sup-ln', '2026-10-05 08:00:00')").run();
     expect((await handleDecideAgentAction(env.DB, "dan", byInvoice(list, "88242").id, "approve", {}, deps, MONDAY)).body).toMatchObject({ reason: "replied" });
     await env.DB.prepare("UPDATE suppliers SET email = 'new@kingsway.co.uk' WHERE id = 'sup-kw'").run();
     expect((await handleDecideAgentAction(env.DB, "dan", byInvoice(list, "K-7").id, "approve", {}, deps, MONDAY)).body).toMatchObject({ reason: "address_changed" });

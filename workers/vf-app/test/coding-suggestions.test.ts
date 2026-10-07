@@ -53,7 +53,7 @@ let seq = 0;
  */
 async function codedLine(supplier: string, description: string, coding: Record<string, string>, opts: { keyed?: boolean } = {}) {
   const id = `hist-${++seq}`;
-  await env.DB.prepare("INSERT INTO invoice_headers (id, supplier_vat_id, facts_json) VALUES (?, ?, '{}')").bind(id, supplier).run();
+  await env.DB.prepare("INSERT INTO invoice_headers (id, facts_json) VALUES (?1, json_set('{}', '$.BT-31', ?2))").bind(id, supplier).run();
   await env.DB.prepare("INSERT INTO invoice_lines (id, invoice_id, line_number, facts_json) VALUES (?, ?, 1, ?)")
     .bind(crypto.randomUUID(), id, JSON.stringify({ "BT-153": description, "BT-131": 10, ...coding }))
     .run();
@@ -71,7 +71,7 @@ async function codedLine(supplier: string, description: string, coding: Record<s
 
 async function target(id: string, supplier: string | null, descriptions: string[], header: Record<string, unknown> = {}) {
   // BT-31 too: keying re-derives `supplier_vat_id` from it.
-  await env.DB.prepare("INSERT INTO invoice_headers (id, supplier_vat_id, facts_json) VALUES (?, ?, ?)")
+  await env.DB.prepare("INSERT INTO invoice_headers (id, facts_json) VALUES (?1, json_set(?3, '$.BT-31', ?2))")
     .bind(id, supplier, JSON.stringify(supplier ? { "BT-31": supplier, ...header } : header))
     .run();
   for (const [i, d] of descriptions.entries()) {

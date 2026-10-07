@@ -48,7 +48,7 @@ async function seedProcess() {
 /** An instance with an invoice behind it, and a visit to hang tasks on. */
 async function seedInstance(invoiceId: string, stageId: string, visitId: string) {
   await env.DB.prepare(
-    "INSERT INTO invoice_headers (id, supplier_vat_id, currency, issue_date, total_with_vat, facts_json) VALUES (?, 'DE813799533', 'EUR', '2026-08-21', 3137.47, '{}')"
+    "INSERT INTO invoice_headers (id, facts_json) VALUES (?1, json_set('{}', '$.BT-31', 'DE813799533', '$.BT-5', 'EUR', '$.BT-2', '2026-08-21', '$.BT-112', 3137.47))"
   )
     .bind(invoiceId)
     .run();
@@ -752,7 +752,7 @@ async function setInvoiceFacts(invoiceId: string, facts: Record<string, unknown>
 }
 
 async function setInvoiceAmount(invoiceId: string, amount: number) {
-  await env.DB.prepare("UPDATE invoice_headers SET total_with_vat = ? WHERE id = ?")
+  await env.DB.prepare("UPDATE invoice_headers SET facts_json = json_set(facts_json, '$.BT-112', ?1) WHERE id = ?2")
     .bind(amount, invoiceId)
     .run();
 }

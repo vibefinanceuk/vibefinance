@@ -103,26 +103,17 @@ async function recordCaptureEvent(
  * BT-* fields plus lineNumber, the same shape a rule condition
  * actually checks against (BT-131, not "amount"). handleUpsertInvoice
  * and visitCurrentStage each need a DIFFERENT derived shape from it,
- * though: storage wants amount/description/costCentre as real,
- * explicit columns; evaluation wants the raw BT-* fields directly, the
- * same way header facts already work. A real gap this bundle's own
- * tests caught: passing the same raw-BT-code lines to both without
- * this conversion silently stored every line's amount as NULL, since
- * handleUpsertInvoice was never looking at "BT-131" at all.
+ * though, once: storage wants `{ lineNumber, facts }`, evaluation the
+ * raw BT-* fields directly. (Until decision 0681 storage also wanted
+ * amount/description/costCentre as columns of their own; those columns
+ * are now generated from the facts.)
  */
 function toStorageLine(line: InvoiceFacts & { lineNumber: number }): Record<string, unknown> {
+  // Decision 0681: the line's facts are the line. Its description,
+  // amount and cost centre columns are generated from BT-153/BT-154,
+  // BT-131 and BT-133 (migration 0148), so nothing is lifted out.
   const { lineNumber, ...rest } = line;
-  return {
-    lineNumber,
-    amount: rest["BT-131"],
-    // invoice_lines has its own description column, and leaving it
-    // null while the text sat in facts_json made a stored line less
-    // readable than it needed to be. Lifted out for the column;
-    // deliberately left in `facts` too, so the fact set a rule sees
-    // is unchanged.
-    description: rest.description,
-    facts: rest,
-  };
+  return { lineNumber, facts: rest };
 }
 
 export async function handleCaptureIntake(db: D1Database, channelId: string, body: CaptureIntakeBody): Promise<RouteResult> {

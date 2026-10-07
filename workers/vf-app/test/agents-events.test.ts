@@ -35,7 +35,7 @@ async function person(id: string, name: string, permissions: string[], unit: str
 
 /** An invoice at Approval since `since`. */
 async function atApproval(id: string, unit: string, since: string, total = 100) {
-  await env.DB.prepare("INSERT INTO invoice_headers (id, facts_json, org_unit_id, invoice_number, currency, total_with_vat) VALUES (?, ?, ?, ?, 'GBP', ?)")
+  await env.DB.prepare("INSERT INTO invoice_headers (id, facts_json, org_unit_id) VALUES (?1, json_set(?2, '$.BT-1', ?4, '$.BT-5', 'GBP', '$.BT-112', ?5), ?3)")
     .bind(id, JSON.stringify({ "BT-1": id.toUpperCase(), "BT-27": "Kingsway" }), unit, id.toUpperCase(), total)
     .run();
   await env.DB.prepare("INSERT INTO process_instances (id, process_id, subject_type, subject_id, current_stage_id, status) VALUES (?, 'ap', 'invoice', ?, 'approval', 'in_progress')")
@@ -132,7 +132,7 @@ describe("an invoice stuck at a stage", () => {
 
 describe("the other three events", () => {
   it("an invoice from a supplier not on file, said in words", async () => {
-    await env.DB.prepare("INSERT INTO invoice_headers (id, facts_json, org_unit_id, invoice_number, currency, total_with_vat, issue_date) VALUES ('x1', '{\"BT-27\":\"Nobody Ltd\"}', 'acme-uk', 'X1', 'GBP', 50, '2026-10-01')").run();
+    await env.DB.prepare("INSERT INTO invoice_headers (id, facts_json, org_unit_id) VALUES ('x1', json_set('{\"BT-27\":\"Nobody Ltd\"}', '$.BT-1', 'X1', '$.BT-5', 'GBP', '$.BT-112', 50, '$.BT-2', '2026-10-01'), 'acme-uk')").run();
     const sent: SendEmailInput[] = [];
     const deps: AgentDeps = { email: { apiKey: "k", from: "a@b.c" }, appUrl: null, bucket: null, send: async (_k, input) => (sent.push(input), { ok: true, messageId: "m" }) };
     await eventAgent("event_unapproved_supplier", { deliver: { task: true, email: true } });

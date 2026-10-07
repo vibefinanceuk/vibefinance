@@ -94,7 +94,7 @@ async function invoiceAt(opts: {
   const invoiceId = `inv-${n}`;
   const piId = `pi-${n}`;
   await env.DB.prepare(
-    "INSERT INTO invoice_headers (id, facts_json, total_with_vat, currency, org_unit_id) VALUES (?, '{}', ?, ?, ?)"
+    "INSERT INTO invoice_headers (id, facts_json, org_unit_id) VALUES (?1, json_set('{}', '$.BT-112', ?2, '$.BT-5', ?3), ?4)"
   )
     .bind(invoiceId, opts.total, opts.currency, opts.unit ?? null)
     .run();

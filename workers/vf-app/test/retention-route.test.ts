@@ -10,7 +10,7 @@ import {
 
 /** An invoice with a chosen issue date, and optionally a stored original. */
 async function seedInvoice(id: string, issueDate: string | null, withDocument = true) {
-  await env.DB.prepare("INSERT INTO invoice_headers (id, issue_date, facts_json) VALUES (?, ?, '{}')")
+  await env.DB.prepare("INSERT INTO invoice_headers (id, facts_json) VALUES (?1, json_set('{}', '$.BT-2', ?2))")
     .bind(id, issueDate)
     .run();
   if (withDocument) {

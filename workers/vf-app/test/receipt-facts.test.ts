@@ -33,7 +33,7 @@ async function invoice(id: string, supplierId: string, lines: [number | null, nu
     .bind(id, JSON.stringify({ "BT-1": id, "BT-13": "PO-300", "BT-112": 100 }), supplierId)
     .run();
   for (const [i, [ref, qty]] of lines.entries()) {
-    await env.DB.prepare("INSERT INTO invoice_lines (id, invoice_id, line_number, amount, facts_json) VALUES (?, ?, ?, ?, ?)")
+    await env.DB.prepare("INSERT INTO invoice_lines (id, invoice_id, line_number, facts_json) VALUES (?1, ?2, ?3, json_set(?5, '$.BT-131', ?4))")
       .bind(crypto.randomUUID(), id, i + 1, qty * 10, JSON.stringify({ ...(ref === null ? {} : { "BT-132": String(ref) }), "BT-129": qty, "BT-130": "EA", "BT-131": qty * 10, "BT-146": 10 }))
       .run();
   }

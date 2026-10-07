@@ -59,7 +59,7 @@ function daysAgo(n: number): string {
 async function invoice(supplierId: string, opts: { total: number; currency: string; issuedDaysAgo: number }) {
   const n = seq++;
   await env.DB.prepare(
-    "INSERT INTO invoice_headers (id, facts_json, supplier_id, total_with_vat, currency, issue_date) VALUES (?, '{}', ?, ?, ?, ?)"
+    "INSERT INTO invoice_headers (id, facts_json, supplier_id) VALUES (?1, json_set('{}', '$.BT-112', ?3, '$.BT-5', ?4, '$.BT-2', ?5), ?2)"
   )
     .bind(`inv-${n}`, supplierId, opts.total, opts.currency, daysAgo(opts.issuedDaysAgo))
     .run();

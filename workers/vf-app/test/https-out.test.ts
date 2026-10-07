@@ -57,7 +57,7 @@ const deps = (fetcher: typeof fetch, now?: Date): DeliveryDeps => ({
 });
 
 async function invoice(id: string, stage: string, status = "in_progress") {
-  await env.DB.prepare("INSERT INTO invoice_headers (id, facts_json, invoice_number) VALUES (?, ?, ?)")
+  await env.DB.prepare("INSERT INTO invoice_headers (id, facts_json) VALUES (?1, json_set(?2, '$.BT-1', ?3))")
     .bind(id, JSON.stringify({ "BT-1": id.toUpperCase(), "BT-2": "2026-09-29", "BT-5": "EUR", "BT-112": 120, "BT-109": 100, "BT-110": 20, "BT-27": "Lager Nord GmbH" }), id.toUpperCase())
     .run();
   await env.DB.prepare("INSERT INTO invoice_lines (invoice_id, line_number, facts_json) VALUES (?, 1, ?)")

@@ -77,7 +77,7 @@ async function invoice(opts: { supplierId: string; issueDate: string; dueDate: s
   const n = seq++;
   const invoiceId = `inv-${n}`;
   const factsJson = opts.dueDate ? JSON.stringify({ "BT-9": opts.dueDate }) : "{}";
-  await env.DB.prepare("INSERT INTO invoice_headers (id, facts_json, supplier_id, issue_date) VALUES (?, ?, ?, ?)")
+  await env.DB.prepare("INSERT INTO invoice_headers (id, facts_json, supplier_id) VALUES (?1, json_set(?2, '$.BT-2', ?4), ?3)")
     .bind(invoiceId, factsJson, opts.supplierId, opts.issueDate)
     .run();
   if (opts.reachedAt) {

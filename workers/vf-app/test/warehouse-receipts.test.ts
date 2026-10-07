@@ -237,7 +237,7 @@ describe("the Warehouse Receipts process — decision 0651", () => {
 
     // INV-A waits at Matching on Awaiting receipt (0648's set-up).
     await env.DB.prepare("INSERT INTO invoice_headers (id, facts_json, supplier_id) VALUES ('inv-a', ?, 'nw')").bind(JSON.stringify({ "BT-1": "INV-A", "BT-13": "PO-300", "BT-112": 400 })).run();
-    await env.DB.prepare("INSERT INTO invoice_lines (id, invoice_id, line_number, amount, facts_json) VALUES ('il1', 'inv-a', 1, 400, ?)")
+    await env.DB.prepare("INSERT INTO invoice_lines (id, invoice_id, line_number, facts_json) VALUES ('il1', 'inv-a', 1, json_set(?1, '$.BT-131', 400))")
       .bind(JSON.stringify({ "BT-132": "1", "BT-129": 40, "BT-130": "EA", "BT-131": 400, "BT-146": 10 }))
       .run();
     await env.DB.prepare("INSERT INTO rule_sets (id, name, mode, status) VALUES ('rs-match', 'Matching', 'all_matches', 'active')").run();
@@ -362,7 +362,7 @@ describe("Matching's check and the AP Receiving task — decision 0652", () => {
 
     // INV-A waits on Awaiting receipt for 40 of line 1 (0648's set-up).
     await env.DB.prepare("INSERT INTO invoice_headers (id, facts_json, supplier_id) VALUES ('inv-a', ?, 'nw')").bind(JSON.stringify({ "BT-1": "INV-A", "BT-13": "PO-300", "BT-112": 400 })).run();
-    await env.DB.prepare("INSERT INTO invoice_lines (id, invoice_id, line_number, amount, facts_json) VALUES ('il1', 'inv-a', 1, 400, ?)")
+    await env.DB.prepare("INSERT INTO invoice_lines (id, invoice_id, line_number, facts_json) VALUES ('il1', 'inv-a', 1, json_set(?1, '$.BT-131', 400))")
       .bind(JSON.stringify({ "BT-132": "1", "BT-129": 40, "BT-130": "EA", "BT-131": 400, "BT-146": 10 }))
       .run();
     await env.DB.prepare("INSERT INTO rule_sets (id, name, mode, status) VALUES ('rs-match', 'Matching', 'all_matches', 'active')").run();

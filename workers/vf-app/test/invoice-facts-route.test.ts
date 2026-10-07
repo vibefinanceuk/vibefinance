@@ -27,11 +27,12 @@ describe("handleUpsertInvoice", () => {
     )
       .bind("inv-1")
       .first();
+    // Decision 0681: the top-level fields are written into the facts, the one home; the columns are generated from them.
     expect(row).toEqual({
       supplier_vat_id: "DE123456789",
       currency: "EUR",
       total_with_vat: 1200,
-      facts_json: JSON.stringify({ "BT-112": 1200 }),
+      facts_json: JSON.stringify({ "BT-112": 1200, "BT-5": "EUR", "BT-31": "DE123456789" }),
     });
   });
 

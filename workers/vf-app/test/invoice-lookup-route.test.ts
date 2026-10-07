@@ -38,7 +38,7 @@ async function supplier(id: string, name: string) {
 
 async function invoice(opts: { id: string; number: string; supplierId: string; total: number; currency: string }) {
   await env.DB.prepare(
-    "INSERT INTO invoice_headers (id, invoice_number, facts_json, total_with_vat, currency, supplier_id) VALUES (?, ?, '{}', ?, ?, ?)"
+    "INSERT INTO invoice_headers (id, facts_json, supplier_id) VALUES (?1, json_set('{}', '$.BT-1', ?2, '$.BT-112', ?3, '$.BT-5', ?4), ?5)"
   )
     .bind(opts.id, opts.number, opts.total, opts.currency, opts.supplierId)
     .run();

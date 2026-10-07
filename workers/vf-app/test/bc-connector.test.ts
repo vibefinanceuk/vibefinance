@@ -49,7 +49,7 @@ beforeEach(async () => {
   await seedStage("ap-intake", "ap", "Intake", 1);
   await seedStage("ap-eligible", "ap", "Payment Eligible", 2);
   await env.DB.prepare("INSERT INTO suppliers (id, name, erp_identifier) VALUES ('sup-1', 'First Up Consultants', '20000')").run();
-  await env.DB.prepare("INSERT INTO invoice_headers (id, facts_json, invoice_number, supplier_id) VALUES ('inv-a', ?, 'INV-2231', 'sup-1')")
+  await env.DB.prepare("INSERT INTO invoice_headers (id, facts_json, supplier_id) VALUES ('inv-a', json_set(?1, '$.BT-1', 'INV-2231'), 'sup-1')")
     .bind(JSON.stringify({ "BT-1": "INV-2231", "BT-2": "2026-09-29", "BT-9": "2026-10-29", "BT-5": "GBP", "BT-112": 360, "BT-109": 300, "BT-110": 60 }))
     .run();
   await env.DB.prepare("INSERT INTO invoice_lines (invoice_id, line_number, facts_json) VALUES ('inv-a', 1, ?), ('inv-a', 2, ?)")

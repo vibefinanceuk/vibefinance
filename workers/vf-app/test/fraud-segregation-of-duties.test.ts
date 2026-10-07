@@ -74,7 +74,7 @@ async function invoice(opts: { unit?: string | null; invoiceNumber?: string } = 
   const n = seq++;
   const invoiceId = `inv-${n}`;
   const piId = `pi-${n}`;
-  await env.DB.prepare("INSERT INTO invoice_headers (id, facts_json, org_unit_id, invoice_number) VALUES (?, '{}', ?, ?)")
+  await env.DB.prepare("INSERT INTO invoice_headers (id, facts_json, org_unit_id) VALUES (?1, json_set('{}', '$.BT-1', ?3), ?2)")
     .bind(invoiceId, opts.unit ?? null, opts.invoiceNumber ?? invoiceId)
     .run();
   await env.DB.prepare(

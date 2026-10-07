@@ -36,7 +36,7 @@ function licence(replies: Record<string, { status: number; body: unknown }>) {
 const PARTNER = { partner: { id: "northwind", name: "Northwind", status: "active" }, customers: [{ id: "acme", name: "Acme Ltd" }], canSubmit: true, connector: null };
 
 async function invoice(id: string) {
-  await env.DB.prepare("INSERT INTO invoice_headers (id, facts_json, invoice_number) VALUES (?, ?, ?)")
+  await env.DB.prepare("INSERT INTO invoice_headers (id, facts_json) VALUES (?1, json_set(?2, '$.BT-1', ?3))")
     .bind(id, JSON.stringify({ "BT-1": "INV-A", "BT-2": "2026-09-29", "BT-5": "EUR", "BT-112": 120, "BT-109": 100, "BT-110": 20, "BT-27": "Lager Nord GmbH" }), "INV-A")
     .run();
   await env.DB.prepare("INSERT INTO invoice_lines (invoice_id, line_number, facts_json) VALUES (?, 1, ?)").bind(id, JSON.stringify({ "BT-153": "Pallets", "BT-131": 100, "coding.gl_code": "620300" })).run();

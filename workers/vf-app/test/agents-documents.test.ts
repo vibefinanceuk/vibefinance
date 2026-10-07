@@ -22,7 +22,7 @@ async function person(id: string, name: string, permissions: string[], unit: str
 }
 
 async function invoice(id: string, unit: string, supplier: string, currency: string, total: number) {
-  await env.DB.prepare("INSERT INTO invoice_headers (id, facts_json, org_unit_id, invoice_number, currency, total_with_vat) VALUES (?, ?, ?, ?, ?, ?)")
+  await env.DB.prepare("INSERT INTO invoice_headers (id, facts_json, org_unit_id) VALUES (?1, json_set(?2, '$.BT-1', ?4, '$.BT-5', ?5, '$.BT-112', ?6), ?3)")
     .bind(id, JSON.stringify({ "BT-1": id, "BT-9": "2026-09-01", "BT-27": supplier }), unit, id, currency, total)
     .run();
   await env.DB.prepare("INSERT INTO process_instances (id, process_id, subject_type, subject_id, current_stage_id, status) VALUES (?, 'ap', 'invoice', ?, 'eligible', 'completed')")
@@ -104,7 +104,7 @@ describe("Open in Documents from the email", () => {
       send: async (_k, input) => (sent.push(input), { ok: true, messageId: "m" }),
     };
     const made = await handleCreateAgent(env.DB, "dan", { name: "Accruals", report: "accruals", orgIds: ["acme-uk"], schedule: MONDAY_8, deliver: { task: false, email: true } }, SATURDAY);
-    await env.DB.prepare("INSERT INTO invoice_headers (id, facts_json, org_unit_id, invoice_number, currency, total_with_vat) VALUES ('acc-1', '{}', 'acme-uk', 'acc-1', 'GBP', 10)").run();
+    await env.DB.prepare("INSERT INTO invoice_headers (id, facts_json, org_unit_id) VALUES ('acc-1', json_set('{}', '$.BT-1', 'acc-1', '$.BT-5', 'GBP', '$.BT-112', 10), 'acme-uk')").run();
     await env.DB.prepare("INSERT INTO process_instances (id, process_id, subject_type, subject_id, current_stage_id, status) VALUES ('pi-acc-1', 'ap', 'invoice', 'acc-1', 'approval', 'in_progress')").run();
     await handleUpdateAgent(env.DB, "dan", (made.body as { id: string }).id, { status: "active" }, SATURDAY);
     await runDueAgents(env.DB, MONDAY, deps);

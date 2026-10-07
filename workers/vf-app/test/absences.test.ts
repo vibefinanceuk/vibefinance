@@ -19,7 +19,7 @@ async function person(id: string, permissions: string[], manager: string | null 
 }
 
 async function invoiceTask(id: string, total: number, task: { claimedBy?: string; ownerUser?: string; permission: string; status?: string }) {
-  await env.DB.prepare("INSERT INTO invoice_headers (id, facts_json, org_unit_id, invoice_number, currency, total_with_vat) VALUES (?, '{}', 'acme-uk', ?, 'GBP', ?)").bind(id, id.toUpperCase(), total).run();
+  await env.DB.prepare("INSERT INTO invoice_headers (id, facts_json, org_unit_id) VALUES (?1, json_set('{}', '$.BT-1', ?2, '$.BT-5', 'GBP', '$.BT-112', ?3), 'acme-uk')").bind(id, id.toUpperCase(), total).run();
   await env.DB.prepare("INSERT INTO process_instances (id, process_id, subject_type, subject_id, current_stage_id, status) VALUES (?, 'ap', 'invoice', ?, 'approval', 'in_progress')").bind(`pi-${id}`, id).run();
   await env.DB.prepare("INSERT INTO stage_visits (id, process_instance_id, stage_id, outcome) VALUES (?, ?, 'approval', 'matched')").bind(`sv-${id}`, `pi-${id}`).run();
   await env.DB.prepare("INSERT INTO tasks (id, stage_id, stage_visit_id, owner_team_id, owner_user_id, claimed_by, required_permission, status) VALUES (?, 'approval', ?, ?, ?, ?, ?, ?)")

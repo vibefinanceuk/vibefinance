@@ -40,7 +40,7 @@ const receive = (n: string, date: string, order: string, line: number, qty: numb
   });
 
 async function invoice(id: string, order: string, issued: string, lines: [number, number][]) {
-  await env.DB.prepare("INSERT INTO invoice_headers (id, facts_json, issue_date) VALUES (?, ?, ?)").bind(id, JSON.stringify({ "BT-13": order }), issued).run();
+  await env.DB.prepare("INSERT INTO invoice_headers (id, facts_json) VALUES (?1, json_set(?2, '$.BT-2', ?3))").bind(id, JSON.stringify({ "BT-13": order }), issued).run();
   for (const [i, [ref, qty]] of lines.entries()) {
     await env.DB.prepare("INSERT INTO invoice_lines (id, invoice_id, line_number, facts_json) VALUES (?, ?, ?, ?)")
       .bind(crypto.randomUUID(), id, i + 1, JSON.stringify({ "BT-132": String(ref), "BT-129": qty }))

@@ -96,9 +96,8 @@ async function invoice(opts: {
   const facts = opts.supplierNameFallback ? { "BT-27": opts.supplierNameFallback } : {};
   await env.DB.prepare(
     `INSERT INTO invoice_headers
-       (id, facts_json, invoice_number, supplier_id, supplier_vat_id, total_with_vat, currency, issue_date,
-        duplicate_confidence, org_unit_id)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+       (id, facts_json, supplier_id, duplicate_confidence, org_unit_id)
+     VALUES (?1, json_set(?2, '$.BT-1', ?3, '$.BT-31', ?5, '$.BT-112', ?6, '$.BT-5', ?7, '$.BT-2', ?8), ?4, ?9, ?10)`
   )
     .bind(
       id,

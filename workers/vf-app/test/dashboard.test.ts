@@ -79,8 +79,8 @@ async function work(
   }
 
   await env.DB.prepare(
-    `INSERT INTO invoice_headers (id, facts_json, org_unit_id, org_assigned_by, total_with_vat)
-     VALUES (?, json_object('BT-1', ?, 'BT-9', ?, 'BT-27', 'A Supplier'), ?, ?, ?)`
+    `INSERT INTO invoice_headers (id, facts_json, org_unit_id, org_assigned_by)
+     VALUES (?1, json_set(json_object('BT-1', ?2, 'BT-9', ?3, 'BT-27', 'A Supplier'), '$.BT-112', ?6), ?4, ?5)`
   )
     .bind(id, id, opts.due ?? null, unit, unit ? "source" : null, opts.value ?? 100)
     .run();

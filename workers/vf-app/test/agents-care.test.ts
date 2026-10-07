@@ -40,7 +40,7 @@ beforeEach(async () => {
   await person("ada", "Ada", ["Admin.UserManagement"], null);
   await env.DB.prepare("INSERT OR IGNORE INTO processes (id, name) VALUES ('ap', 'AP')").run();
   await env.DB.prepare("INSERT INTO process_stages (id, process_id, name, sequence) VALUES ('approval', 'ap', 'Approval', 1), ('eligible', 'ap', 'Payment-eligible', 2)").run();
-  await env.DB.prepare("INSERT INTO invoice_headers (id, facts_json, org_unit_id, invoice_number, currency, total_with_vat) VALUES ('inv-a', ?, 'acme-uk', 'inv-a', 'GBP', 120)")
+  await env.DB.prepare("INSERT INTO invoice_headers (id, facts_json, org_unit_id) VALUES ('inv-a', json_set(?1, '$.BT-1', 'inv-a', '$.BT-5', 'GBP', '$.BT-112', 120), 'acme-uk')")
     .bind(JSON.stringify({ "BT-1": "inv-a", "BT-9": "2026-09-01", "BT-27": "Kingsway" }))
     .run();
   await env.DB.prepare("INSERT INTO process_instances (id, process_id, subject_type, subject_id, current_stage_id, status) VALUES ('pi-a', 'ap', 'invoice', 'inv-a', 'eligible', 'completed')").run();
