@@ -1,7 +1,7 @@
 # 0679: The invoice lines in reading order, without coding columns
 
-**Status: built and tested locally, not yet pushed or deployed.** It is
-`vf-ui` only, with no migration. Deploy vf-ui.
+**Status: live** at `e97b1d5`, pushed and deployed 7 October 2026. It is
+`vf-ui` only, with no migration.
 
 ## What was asked
 
