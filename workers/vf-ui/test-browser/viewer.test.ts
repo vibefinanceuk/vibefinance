@@ -595,6 +595,8 @@ describe("three-tier severity on key fields (decision 0400)", () => {
         { field: "BT-153", visibility: "edit", type: "text", line: true, description: "name" },
         { field: "BT-126", visibility: "read", type: "text", line: true, description: "line no" },
         { field: "coding.gl_code", visibility: "edit", type: "text", line: true, description: "GL" },
+        // Decision 0680: the read-only line description (0171) sits after Item name.
+        { field: "description", visibility: "read", type: "text", line: true, description: "Description" },
       ],
     };
     stubFetch({
@@ -609,7 +611,7 @@ describe("three-tier severity on key fields (decision 0400)", () => {
     await openViewer(TASK, () => {});
 
     const heads = [...document.querySelectorAll(".linetable thead th")].map((th) => [...th.classList].find((c) => c.startsWith("lf-"))).filter(Boolean);
-    expect(heads).toEqual(["lf-bt-126", "lf-bt-153", "lf-bt-154", "lf-bt-130", "lf-bt-146", "lf-bt-129", "lf-bt-131", "lf-bt-151"]);
+    expect(heads).toEqual(["lf-bt-126", "lf-bt-153", "lf-description", "lf-bt-154", "lf-bt-130", "lf-bt-146", "lf-bt-129", "lf-bt-131", "lf-bt-151"]);
     const css = (await import("virtual:stylesheets")).default["app.css"];
     expect(css).toContain(".linetable th.lf-bt-129 { width: 6em; }");
     expect(css).not.toContain(".linetable th:nth-child(4)");

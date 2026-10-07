@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 7 October 2026 (decision 0679). A living document: what
+Last updated 7 October 2026 (decision 0680). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,13 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Invoice lines: Description after Item name (0680)
+
+0679 placed BT-154 but not the read-only `description` field, so
+*Description* fell to the end. It is now third.
+
+Full reasoning is in decision 0680.
 
 ### Invoice lines in reading order (0679)
 

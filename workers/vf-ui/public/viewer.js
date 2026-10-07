@@ -1160,7 +1160,9 @@ const CODING_PICKER_FIELDS = [
  * value twice. They stay in `lineFields`, so the pop-out, the coded
  * check and Save still see them.
  */
-const LINE_TABLE_ORDER = ["BT-126", "BT-153", "BT-154", "BT-130", "BT-146", "BT-129", "BT-131", "BT-151", "BT-152"];
+// Decision 0680: "description" is its own read-only field (the description a scanned
+// invoice's line was read with, decision 0171), not BT-154, so it is named here too.
+const LINE_TABLE_ORDER = ["BT-126", "BT-153", "description", "BT-154", "BT-130", "BT-146", "BT-129", "BT-131", "BT-151", "BT-152"];
 function lineTableFields() {
   const rank = (f) => {
     const i = LINE_TABLE_ORDER.indexOf(f.field);
