@@ -1,7 +1,7 @@
 # 0678: The Header Fields pop-out as a compact list
 
-**Status: built and tested locally, not yet pushed or deployed.** It is
-`vf-ui` only, with no migration. Deploy vf-ui.
+**Status: live** at `042387a`, pushed and deployed 7 October 2026. It is
+`vf-ui` only, with no migration.
 
 ## What was asked
 
