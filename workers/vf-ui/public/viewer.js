@@ -10,6 +10,7 @@
  * `docs/design/mockups/key-from-document.html`.
  */
 
+import { MONEY_FIELDS, formatMoney, moneyInput, parseAmount } from "/money.js";
 import { t, currentLocale } from "/strings.js";
 import { el, frame, topbar, refreshTask, setHelpTask } from "/tasks.js";
 import { icon } from "/icons.js";
@@ -552,14 +553,19 @@ function field(spec, existing, options = {}) {
    * screen editable-looking with nowhere to save the result, which is
    * a worse state than either read-only or genuinely editable.
    */
+  // Decision 0677: an amount is shown as money, in the invoice's own currency.
+  const money = MONEY_FIELDS.has(spec.field);
+  const currency = existing?.["BT-5"] ?? stored.facts?.["BT-5"];
   const control =
     spec.visibility === "read" || !canEditAnything || options.forceReadOnly
       ? el("div", {
-          class: "readonly",
+          class: money ? "readonly money" : "readonly",
           id,
-          text: value === "" ? "—" : String(value),
+          text: value === "" ? "—" : money ? formatMoney(value, currency, spec.field) : String(value),
         })
-      : codeInput(spec.field, id, value) ??
+      : money
+        ? moneyInput(el, { id, value, currency, field: spec.field })
+        : codeInput(spec.field, id, value) ??
         el("input", {
           type: spec.type === "number" ? "number" : spec.type === "date" ? "date" : "text",
           id,
@@ -977,7 +983,10 @@ function note(message, { success = false } = {}) {
  */
 function updateTotals() {
   const summed = lines.reduce((total, line) => total + (Number(line["BT-131"]) || 0), 0);
-  const printed = Number(document.getElementById("f-BT-112")?.value) || 0;
+  const totalControl = document.getElementById("f-BT-112");
+  // Decision 0677: the total is shown as money, an input's value or a read-only field's text.
+  const printed = Number(parseAmount(totalControl ? (totalControl.value ?? totalControl.textContent) : "")) || 0;
+  const currency = stored.facts?.["BT-5"];
 
   const box = document.getElementById("linetotal");
   if (!box) return;
@@ -985,9 +994,9 @@ function updateTotals() {
   const difference = Math.round((summed - printed) * 100) / 100;
   box.textContent =
     printed === 0
-      ? `${t("viewer.linetotal")} ${summed.toFixed(2)}`
-      : `${t("viewer.linetotal")} ${summed.toFixed(2)} · ${
-          difference === 0 ? t("viewer.matches") : `${t("viewer.differs")} ${difference.toFixed(2)}`
+      ? `${t("viewer.linetotal")} ${formatMoney(summed, currency)}`
+      : `${t("viewer.linetotal")} ${formatMoney(summed, currency)} · ${
+          difference === 0 ? t("viewer.matches") : `${t("viewer.differs")} ${formatMoney(difference, currency)}`
         }`;
   box.className = difference === 0 || printed === 0 ? "linetotal" : "linetotal off";
 }
@@ -1006,7 +1015,9 @@ function lineRow(line, index) {
      * header and never carried to the line table.
      */
     if (spec.visibility === "read" || !canEditAnything) {
-      return el("td", {}, [el("div", { class: "readonly", text: line[spec.field] ?? "—" })]);
+      // Decision 0677: an amount as money.
+      const shown = MONEY_FIELDS.has(spec.field) && line[spec.field] !== undefined && line[spec.field] !== "" ? formatMoney(line[spec.field], stored.facts?.["BT-5"], spec.field) : line[spec.field];
+      return el("td", MONEY_FIELDS.has(spec.field) ? { class: "num" } : {}, [el("div", { class: "readonly", text: shown ?? "—" })]);
     }
 
     // Decision 0548 — a split line's cost centre, project and GL code are its rows', changed in the Coding pop-out.
@@ -1016,16 +1027,20 @@ function lineRow(line, index) {
 
     // BT-130 is a UN/ECE code, so the line table picks one too.
     const picker = codeInput(spec.field, undefined, line[spec.field]);
+    const money = !picker && MONEY_FIELDS.has(spec.field);
     const input =
       picker ??
-      el("input", {
-        type: spec.type === "number" ? "number" : "text",
-        step: spec.type === "number" ? "0.01" : undefined,
-        value: line[spec.field] ?? "",
-      });
+      (money
+        ? moneyInput(el, { value: line[spec.field] ?? "", currency: stored.facts?.["BT-5"], field: spec.field })
+        : el("input", {
+            type: spec.type === "number" ? "number" : "text",
+            step: spec.type === "number" ? "0.01" : undefined,
+            value: line[spec.field] ?? "",
+          }));
 
     input.addEventListener(picker ? "change" : "input", (event) => {
-      line[spec.field] = event.target.value;
+      // Decision 0677: an amount is kept as the plain number, whatever it shows.
+      line[spec.field] = money ? parseAmount(event.target.value) : event.target.value;
       updateTotals();
     });
 
@@ -2184,8 +2199,8 @@ async function openLineCodingPopout(line, { lockedNote = null } = {}) {
   // What the line is, as the Match pop-out says it: its name, then quantity × price = amount.
   const amounts = [
     line["BT-129"] ? `${line["BT-129"]}${line["BT-130"] ? ` ${line["BT-130"]}` : ""}` : null,
-    line["BT-146"] ? `× ${line["BT-146"]}` : null,
-    line["BT-131"] ? `= ${line["BT-131"]}` : null,
+    line["BT-146"] ? `× ${formatMoney(line["BT-146"], stored.facts?.["BT-5"], "BT-146")}` : null,
+    line["BT-131"] ? `= ${formatMoney(line["BT-131"], stored.facts?.["BT-5"], "BT-131")}` : null,
   ]
     .filter(Boolean)
     .join(" ");
@@ -2341,7 +2356,8 @@ function linePanel() {
           // column of the same numbers said nothing.
           ...lineFields.map((spec) =>
             el("th", {
-              class: spec.type === "number" ? "num" : undefined,
+              // Decision 0677: a money column is wide enough for "£12,500.20".
+              class: MONEY_FIELDS.has(spec.field) ? "num money" : spec.type === "number" ? "num" : undefined,
               title: spec.description,
               text: t(`field.${spec.field.toLowerCase()}`),
             })
@@ -3518,7 +3534,8 @@ async function save(close) {
   for (const spec of headerFields.filter((f) => f.visibility === "edit")) {
     const control = document.getElementById(`f-${spec.field}`);
     if (!control) continue;
-    const raw = String(control.value ?? "").trim();
+    // Decision 0677: an amount is shown as money, so it is read back to the plain number.
+    const raw = MONEY_FIELDS.has(spec.field) ? parseAmount(control.value) : String(control.value ?? "").trim();
     if (raw === "") continue; // Partial keying is allowed (decision 0071).
     facts[spec.field] = spec.type === "number" ? Number(raw) : raw;
   }

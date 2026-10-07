@@ -80,6 +80,7 @@ export default defineConfig({
     alias: {
       "/strings.js": resolve(__dirname, "public/strings.js"),
       "/timestamp.js": resolve(__dirname, "public/timestamp.js"),
+      "/money.js": resolve(__dirname, "public/money.js"),
       "/timeline-entry.js": resolve(__dirname, "public/timeline-entry.js"),
       "/tasks.js": resolve(__dirname, "public/tasks.js"),
       "/boot.js": resolve(__dirname, "public/boot.js"),

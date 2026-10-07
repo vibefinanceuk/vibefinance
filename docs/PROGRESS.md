@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 7 October 2026 (decision 0676). A living document: what
+Last updated 7 October 2026 (decision 0677). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,14 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### The invoice viewer's amounts as money (0677)
+
+Header, Header Fields and line amounts show in the invoice's currency:
+`£12,500.20` in English and `12.500,20 £` in German. What is stored and
+sent is unchanged.
+
+Full reasoning is in decision 0677.
 
 ### The Timeline's alert scrolls, and its entries line up (0676)
 

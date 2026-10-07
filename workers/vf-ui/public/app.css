@@ -5492,3 +5492,10 @@
 */
 .tlfeed { padding-inline: 14px; }
 .tlfeed > .systemalert { margin-bottom: 0; flex: 0 0 auto; color: var(--text-primary); }
+
+/* Decision 0677 — an amount in the line table lines up on the right, as figures do. */
+#lines .num .readonly,
+#lines .moneyinput { text-align: right; font-variant-numeric: tabular-nums; }
+/* Room for "£12,500.20", which the bare "12500.2" never needed: the table is fixed-layout, so its header sets the width. */
+.linetable th.money { width: 8.5em; }
+#lines .num { white-space: nowrap; }

@@ -267,6 +267,75 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+describe("amounts as money (decision 0677)", () => {
+  const MONEY_FIELDS = {
+    fields: [
+      { field: "BT-5", visibility: "read", type: "text", line: false, description: "currency" },
+      { field: "BT-106", visibility: "read", type: "number", line: false, description: "sum of lines" },
+      { field: "BT-112", visibility: "edit", type: "number", line: false, description: "total with VAT" },
+      { field: "BT-129", visibility: "read", type: "number", line: true, description: "quantity" },
+      { field: "BT-131", visibility: "read", type: "number", line: true, description: "line net" },
+    ],
+  };
+
+  async function openWith(posted: unknown[] = []) {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        const path = String(url).split("?")[0];
+        if (init?.method === "POST" && path.endsWith("/key")) posted.push(JSON.parse(String(init.body)));
+        const bodies: Record<string, unknown> = {
+          "/api/ui-strings": STRINGS,
+          "/api/code-lists": { fields: {} },
+          "/api/field-visibility": MONEY_FIELDS,
+          "/api/invoices/inv-1": {
+            facts: { "BT-5": "GBP", "BT-106": 12500.2, "BT-112": 15000.24 },
+            lines: [{ lineNumber: 1, facts: { "BT-129": 1500, "BT-131": 12500.2 } }],
+            validation: { passed: true, checked: [], failures: [] },
+          },
+          "/api/invoices/inv-1/document-url": { url: null },
+          "/api/invoices/inv-1/progress": { inProcess: false, stages: [] },
+          "/api/invoices/inv-1/key": { facts: {} },
+          "/api/invoices/inv-1/pages": { pages: [] },
+          "/api/documents/inv-1/collaborators": { collaborators: [] },
+        };
+        if (!(path in bodies)) throw new Error(`no stub for ${path}`);
+        return { ok: true, json: async () => bodies[path] } as Response;
+      })
+    );
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { openViewer } = await import("/viewer.js");
+    await openViewer(TASK, () => {});
+    await new Promise((r) => setTimeout(r, 0));
+  }
+
+  it("shows a read-only amount, and a line's net, in the invoice's currency; a quantity stays a plain number", async () => {
+    await openWith();
+    expect(document.getElementById("f-BT-106")?.textContent).toBe("£12,500.20");
+    const cells = [...document.querySelectorAll("#lines .readonly")].map((c) => c.textContent);
+    expect(cells).toContain("£12,500.20");
+    expect(cells).toContain("1500");
+  });
+
+  it("shows an editable amount as money, the plain amount while it is edited, and saves the plain number", async () => {
+    const posted: unknown[] = [];
+    await openWith(posted);
+    const input = document.getElementById("f-BT-112") as HTMLInputElement;
+    expect(input.value).toBe("£15,000.24");
+    input.dispatchEvent(new Event("focus"));
+    expect(input.value).toBe("15000.24");
+    input.value = "16250.5";
+    input.dispatchEvent(new Event("blur"));
+    expect(input.value).toBe("£16,250.50");
+
+    const save = [...document.querySelectorAll(".actionlink")].find((a) => a.querySelector("span")?.textContent === "Save") as HTMLButtonElement;
+    save.click();
+    await new Promise((r) => setTimeout(r, 0));
+    expect((posted[0] as { facts: Record<string, unknown> }).facts["BT-112"]).toBe(16250.5);
+  });
+});
+
 describe("the form shows what was saved (decision 0120)", () => {
   /**
    * Reported: *"I click save, it says saved, I leave the screen and
@@ -291,9 +360,10 @@ describe("the form shows what was saved (decision 0120)", () => {
     const { openViewer } = await import("/viewer.js");
     await openViewer(TASK, () => {});
 
-    expect((document.getElementById("f-BT-106") as HTMLInputElement).value).toBe("100");
-    expect((document.getElementById("f-BT-110") as HTMLInputElement).value).toBe("20");
-    expect((document.getElementById("f-BT-112") as HTMLInputElement).value).toBe("120");
+    // Decision 0677: amounts shown as money (no currency on this invoice, so grouped with two decimals).
+    expect((document.getElementById("f-BT-106") as HTMLInputElement).value).toBe("100.00");
+    expect((document.getElementById("f-BT-110") as HTMLInputElement).value).toBe("20.00");
+    expect((document.getElementById("f-BT-112") as HTMLInputElement).value).toBe("120.00");
   });
 
   it("brings keyed lines back", async () => {
@@ -2320,7 +2390,7 @@ describe("the same screen serves review (decision 0142)", () => {
   it("shows the value being approved", async () => {
     // Read-only is not blank.
     await openApproval();
-    expect(document.getElementById("f-BT-112")?.textContent).toBe("1200");
+    expect(document.getElementById("f-BT-112")?.textContent).toBe("1,200.00");
   });
 
   it("names the document by its reference, not the stage (decision 0312)", async () => {
