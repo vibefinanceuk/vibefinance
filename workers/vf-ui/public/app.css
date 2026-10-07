@@ -5403,3 +5403,5 @@
 */
 .actionlink.compactlink.primary { color: var(--text-secondary); }
 .actionlink.compactlink:hover:not(:disabled) { color: var(--text-primary); }
+/* Decision 0665: the last load's age sits under the file picker, inside the load card. */
+#suppliers-freshness, .supplierhead .panel > .warn:last-child { margin-top: 10px; }

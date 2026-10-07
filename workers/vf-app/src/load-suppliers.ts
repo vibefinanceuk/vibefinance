@@ -112,6 +112,23 @@ const COLUMNS: Record<string, string> = {
   tel: "phone",
 };
 
+/**
+ * **The supplier file's template — decision 0665**: one column per thing
+ * a load reads, under the first name `COLUMNS` gives it (`erp_identifier`
+ * first, the one that is required). Taken from `COLUMNS` itself, so the
+ * template and the load cannot drift apart.
+ */
+export function supplierTemplateCsv(): string {
+  const seen = new Set<string>();
+  const names: string[] = [];
+  for (const [name, field] of Object.entries(COLUMNS)) {
+    if (seen.has(field)) continue;
+    seen.add(field);
+    names.push(name);
+  }
+  return `${names.join(",")}\r\n`;
+}
+
 /** A spreadsheet's idea of true. */
 function flag(value: string | undefined): boolean {
   return ["1", "y", "yes", "true", "x"].includes((value ?? "").trim().toLowerCase());

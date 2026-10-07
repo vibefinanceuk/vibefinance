@@ -24,6 +24,9 @@ const STRINGS = {
     "suppliers.none": "No suppliers have been loaded yet.",
     "suppliers.neverloaded": "No supplier file has ever been loaded.",
     "suppliers.loadedago": "Loaded {days} days ago.",
+    "suppliers.lastload": "Last supplier load occurred {days} days ago.",
+    "suppliers.loadcsv": "Load CSV",
+    "suppliers.templatebutton": "CSV Template",
     "suppliers.loadheading": "Load a supplier file",
     "suppliers.loadhelp": "A CSV exported from your ERP.",
     "suppliers.loadbutton": "Load",
@@ -122,6 +125,8 @@ function stubFetch(body: unknown) {
           json: async () => ({ ...body, suppliers: page_, total: matching.length, page, pageSize }),
         } as Response;
       }
+      if (path === "/api/suppliers/csv-template")
+        return { ok: true, blob: async () => new Blob(["erp_identifier,name\r\n"], { type: "text/csv" }) } as unknown as Response;
       throw new Error(`no stub for ${path}`);
     })
   );
@@ -209,7 +214,7 @@ describe("the screen opens at all", () => {
 
     const buttons = [...document.querySelectorAll("button")].map((b) => b.textContent);
     expect(buttons).toContain("New supplier");
-    expect(buttons).toContain("Load");
+    expect(buttons).toContain("Load CSV");
     expect(document.body.textContent).toContain("Northwind");
   });
 });
@@ -274,7 +279,7 @@ describe("loading a file (decision 0216)", () => {
     await openScreen();
     chooseFile("ERP ID,Name\n40118,Northwind");
 
-    const button = [...document.querySelectorAll("button")].find((b) => b.textContent === "Load");
+    const button = [...document.querySelectorAll("button")].find((b) => b.textContent === "Load CSV");
     button?.click();
     await new Promise((r) => setTimeout(r, 0));
 
@@ -288,7 +293,7 @@ describe("loading a file (decision 0216)", () => {
     await openScreen();
     chooseFile("Name\nNorthwind");
 
-    const button = [...document.querySelectorAll("button")].find((b) => b.textContent === "Load");
+    const button = [...document.querySelectorAll("button")].find((b) => b.textContent === "Load CSV");
     button?.click();
     await new Promise((r) => setTimeout(r, 0));
 
@@ -928,3 +933,46 @@ describe("Receipting required — decision 0643", () => {
     expect(sent[0]).toMatchObject({ matchOption: "three_way", projectOnly: false });
   });
 });
+
+describe("Load CSV, CSV Template and the last load inside the card (decision 0665)", () => {
+  it("draws Load CSV, CSV Template and New supplier as an icon with its word, and downloads the template", async () => {
+    stubFetch({ suppliers: [], lastLoad: null });
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { open } = await import("/suppliers.js");
+    await open();
+    const load = document.getElementById("suppliers-load")!;
+    const template = document.getElementById("suppliers-template")!;
+    const neu = [...document.querySelectorAll("button")].find((b) => b.textContent === "New supplier")!;
+    expect([template.textContent, load.textContent]).toEqual(["CSV Template", "Load CSV"]);
+    for (const b of [load, template, neu]) {
+      expect(b.classList.contains("compactlink")).toBe(true);
+      expect(b.firstElementChild?.tagName.toLowerCase()).toBe("svg");
+    }
+    const clicked: string[] = [];
+    const realCreate = document.createElement.bind(document);
+    vi.spyOn(document, "createElement").mockImplementation((tag: string) => {
+      const node = realCreate(tag);
+      if (tag === "a") node.addEventListener("click", (e) => (e.preventDefault(), clicked.push((node as HTMLAnchorElement).download)));
+      return node;
+    });
+    template.click();
+    await vi.waitFor(() => expect(clicked).toEqual(["suppliers-template.csv"]));
+    vi.restoreAllMocks();
+  });
+
+  it("says when the last load was inside the load card, under the file picker, in the new words", async () => {
+    const loadedAt = new Date(Date.now() - 25 * 86400000 - 3600000).toISOString().replace("T", " ").slice(0, 19);
+    stubFetch({ suppliers: [], lastLoad: { loadedAt, loadedBy: "x", rowCount: 1, refusedCount: 0 } });
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { open } = await import("/suppliers.js");
+    await open();
+    const line = document.getElementById("suppliers-freshness")!;
+    expect(line.textContent).toBe("Last supplier load occurred 25 days ago.");
+    const card = document.getElementById("supplierfile")!.closest(".panel")!;
+    expect(card.contains(line)).toBe(true);
+    expect(document.getElementById("supplierfile")!.compareDocumentPosition(line) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+});
+

@@ -11,6 +11,7 @@ import {
   handleUpdateSupplier,
   handleSetSupplierState,
   parseCsv,
+  supplierTemplateCsv,
 } from "../src/load-suppliers.js";
 import { matchSupplier } from "../src/match-supplier.js";
 import { generateApiKey, hashApiKey } from "../src/user-auth.js";
@@ -2095,3 +2096,37 @@ describe("one supplier by id — decision 0619", () => {
     expect(none.suppliers).toEqual([]);
   });
 });
+
+describe("the supplier CSV template — decision 0665", () => {
+  it("names every column a load reads, once, ERP identifier first, and loads back as written", async () => {
+    const header = supplierTemplateCsv().trim().split(",");
+    expect(header[0]).toBe("erp_identifier");
+    expect(header).toEqual(expect.arrayContaining(["name", "vat_id", "country", "payment_terms", "match_option", "org_unit", "is_pay_site", "email", "phone"]));
+    expect(new Set(header).size).toBe(header.length);
+    // Filled in, the template's own columns are what a load takes.
+    const row = header.map((c) => ({ erp_identifier: "T-1", name: "Template Ltd", vat_id: "GB1", country: "GB" })[c] ?? "");
+    const loaded = await load(`${header.join(",")}\n${row.join(",")}`);
+    expect(loaded.status).toBe(200);
+    expect(await env.DB.prepare("SELECT name, vat_id, country FROM suppliers WHERE erp_identifier = 'T-1'").first()).toEqual({ name: "Template Ltd", vat_id: "GB1", country: "GB" });
+  });
+
+  it("is downloaded as a CSV file by Admin.Configure, and refused to anyone else", async () => {
+    const make = async (permissions: string[]) => {
+      const id = crypto.randomUUID();
+      const apiKey = generateApiKey();
+      await env.DB.prepare("INSERT INTO org_users (id, email, name, api_key_hash) VALUES (?, ?, ?, ?)").bind(id, `${id}@acme.com`, "U", await hashApiKey(apiKey)).run();
+      const roleId = crypto.randomUUID();
+      await env.DB.prepare("INSERT INTO org_roles (id, name, permissions_json) VALUES (?, ?, ?)").bind(roleId, `Role ${roleId}`, JSON.stringify(permissions)).run();
+      await env.DB.prepare("INSERT INTO org_user_roles (user_id, role_id, unit_id) VALUES (?, ?, NULL)").bind(id, roleId).run();
+      return apiKey;
+    };
+    const ok = await SELF.fetch("https://example.com/suppliers/csv-template", { headers: { Authorization: `Bearer ${await make(["Admin.Configure"])}` } });
+    expect(ok.status).toBe(200);
+    expect(ok.headers.get("Content-Type")).toContain("text/csv");
+    expect(ok.headers.get("Content-Disposition")).toContain("suppliers-template.csv");
+    expect((await ok.text()).startsWith("erp_identifier,")).toBe(true);
+    const no = await SELF.fetch("https://example.com/suppliers/csv-template", { headers: { Authorization: `Bearer ${await make(["AP.Supplier"])}` } });
+    expect(no.status).toBe(403);
+  });
+});
+

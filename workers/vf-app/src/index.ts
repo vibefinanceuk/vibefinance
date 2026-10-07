@@ -205,6 +205,7 @@ import {
   handleUpdateSupplier,
   handleSetSupplierState,
   isFedByLoad,
+  supplierTemplateCsv,
 } from "./load-suppliers.js";
 import { handleListDocuments } from "./documents-route.js";
 import { handleGetActivity, handlePostComment } from "./activity-route.js";
@@ -2728,6 +2729,20 @@ export default {
     }
 
     // Loading the customer's supplier master file — decision 0211.
+    // The supplier file's template — decision 0665. Admin.Configure, as loading it is.
+    if (pathname === "/suppliers/csv-template" && request.method === "GET") {
+      const { db } = resolveTenant(request, env);
+      const auth = await authenticatePerson(db, request, env);
+      if (!auth.user) return json({ error: auth.reason }, 401);
+      if (!(await hasPermission(db, auth.user.id, "Admin.Configure"))) {
+        return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
+      }
+      return new Response(supplierTemplateCsv(), {
+        status: 200,
+        headers: { "Content-Type": "text/csv; charset=utf-8", "Content-Disposition": 'attachment; filename="suppliers-template.csv"', "Cache-Control": "no-store" },
+      });
+    }
+
     if (pathname === "/suppliers/load" && request.method === "POST") {
       const { db } = resolveTenant(request, env);
       const auth = await authenticatePerson(db, request, env);

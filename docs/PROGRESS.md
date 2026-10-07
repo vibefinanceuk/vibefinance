@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 7 October 2026 (decision 0664). A living document: what
+Last updated 7 October 2026 (decision 0665). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,18 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Suppliers: Load CSV, CSV Template, last load in the card (0665)
+
+On the Suppliers screen:
+
+- **Load CSV** (renamed from Load), **CSV Template** and **New
+  supplier** are small icon-and-word actions.
+- **CSV Template** downloads the supplier file's columns, as the load
+  reads them.
+- **The last-load line** now reads "Last supplier load occurred N days
+  ago." and sits inside the load card, under the file picker.
+- Full reasoning is in decision 0665.
 
 ### Compact actions: one resting colour, brighter on hover (0664)
 

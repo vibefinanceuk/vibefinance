@@ -1,6 +1,6 @@
 import { t } from "/strings.js";
 import { el, frame, topbar, setCurrentScreen } from "/tasks.js";
-import { actionLink } from "/viewer.js";
+import { actionLink, compactLink } from "/viewer.js";
 import { donutChart } from "/charts.js";
 import { currentOrgId } from "/orgs.js";
 import { icon } from "/icons.js";
@@ -169,7 +169,8 @@ function freshness() {
   const days = Math.floor((Date.now() - new Date(lastLoad.loadedAt + "Z")) / 86400000);
   const line = el("div", {
     class: days > 30 ? "warn" : "muted",
-    text: t("suppliers.loadedago").replace("{days}", String(days)),
+    id: "suppliers-freshness",
+    text: t("suppliers.lastload").replace("{days}", String(days)),
   });
 
   if (lastLoad.refusedCount > 0) {
@@ -270,7 +271,9 @@ function loader() {
    * do says so). Assigning `.onclick` afterwards leaves it disabled and
    * looking fine.
    */
-  const button = actionLink("load", { primary: true, onclick: () => runLoad() });
+  // Decision 0665: an icon with its word, as the other screens' card actions (0662), and named for what it takes.
+  const button = compactLink("load", { primary: true, label: t("suppliers.loadcsv"), onclick: () => runLoad() });
+  button.id = "suppliers-load";
 
   async function runLoad() {
     const file = picker.files?.[0];
@@ -304,7 +307,6 @@ function loader() {
     } catch {
       note(t("suppliers.loadfailed"));
       button.disabled = false;
-      button.textContent = t("suppliers.loadbutton");
       return;
     }
 
@@ -359,7 +361,7 @@ function loader() {
      */
     el("div", { class: "cardhead" }, [
       el("h3", { text: t("suppliers.loadheading") }),
-      el("div", { class: "statebuttons" }, [button, newSupplier()]),
+      el("div", { class: "statebuttons" }, [templateButton(), button, newSupplier()]),
     ]),
     /**
      * **What this is for**, because a file picker with no explanation
@@ -369,6 +371,8 @@ function loader() {
      */
     el("p", { class: "muted", text: t("suppliers.loadhelp") }),
     picker,
+    // Decision 0665: when the last load was, inside the card it is about, under the file picker (Dan).
+    freshness(),
   ]);
 }
 
@@ -379,8 +383,38 @@ function loader() {
  * changed there; this creates one it does not, which is the precursor
  * to a new-supplier process rather than an override of a master.
  */
+/**
+ * **CSV Template — decision 0665.** The supplier file's columns, as the
+ * load reads them (`load-suppliers.ts`'s own list, from vf-app, so the
+ * two cannot drift), ready to fill in. Only the ERP identifier is
+ * required; every other column may be left out.
+ */
+function templateButton() {
+  const button = compactLink("download", {
+    label: t("suppliers.templatebutton"),
+    onclick: async () => {
+      button.disabled = true;
+      try {
+        const response = await fetch("/api/suppliers/csv-template");
+        if (!response.ok) throw new Error(String(response.status));
+        const url = URL.createObjectURL(await response.blob());
+        const anchor = el("a", { href: url, download: "suppliers-template.csv" });
+        document.body.append(anchor);
+        anchor.click();
+        anchor.remove();
+        URL.revokeObjectURL(url);
+      } catch {
+        note(t("suppliers.templatefailed"));
+      }
+      button.disabled = false;
+    },
+  });
+  button.id = "suppliers-template";
+  return button;
+}
+
 function newSupplier() {
-  const button = actionLink("newsupplier", { onclick: () => openNewSupplier() });
+  const button = compactLink("newsupplier", { onclick: () => openNewSupplier() });
 
   function openNewSupplier() {
     const problem = el("div", { class: "warn" });
@@ -959,7 +993,6 @@ function render() {
          */
         topbar(t("suppliers.heading"), t("suppliers.mirror")),
         el("div", { id: "suppliers-note", class: "warn" }),
-        freshness(),
         /**
          * **Half width, beside the status card** — decision 0299,
          * reported live: "the 'Load a supplier file' card is wide,
