@@ -401,6 +401,8 @@ ICONS.away = '<rect x="3" y="5" width="13" height="15" rx="2"/><path d="M3 9h13M
 ICONS.goodsreceipts = '<path d="M11 3 4 6.5v9l7 3.5 2-1"/><path d="M4 6.5l7 3.5 7-3.5L11 3"/><path d="M11 10v9"/><path d="m14.5 18 2 2 4-4.5"/>';
 // A magnifier, for finding an order.
 ICONS.search = '<circle cx="11" cy="11" r="6"/><path d="m20 20-4.5-4.5"/>';
+// Decision 0662: Add line — a list with a plus.
+ICONS.addline = '<path d="M4 6h10M4 11h10M4 16h6"/><path d="M17 13v7M13.5 16.5h7"/>';
 ICONS.agents = '<circle cx="12" cy="13" r="7"/><path d="M12 9.5V13l2.5 1.5M5 4.5 3 6.5M19 4.5l2 2M8.5 20.5 7 22M15.5 20.5 17 22"/>';
 
 export function icon(name) {

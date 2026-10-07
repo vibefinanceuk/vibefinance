@@ -4772,6 +4772,52 @@ describe("an action that labels itself draws itself (decision 0229)", () => {
   });
 });
 
+describe("a card's own actions are small, icon then word, and Add line sits top right of Invoice lines (decision 0662)", () => {
+  it("draws Change Seller, Change Buyer and Expand compactly, and Add line in the lines card's head adds a line", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        const path = String(url).split("?")[0];
+        const bodies: Record<string, unknown> = {
+          "/api/ui-strings": STRINGS,
+          "/api/code-lists": { fields: {} },
+          "/api/field-visibility": FIELDS,
+          "/api/invoices/inv-1": {
+            facts: {},
+            lines: [],
+            supplier: { erpIdentifier: "40118", name: "Northwind", isPaySite: true },
+            buyer: { unitId: "acme-uk", unitName: "Acme UK", entityName: "Acme UK" },
+            validation: { passed: true, checked: [], failures: [] },
+          },
+          "/api/invoices/inv-1/document-url": { url: null },
+          "/api/invoices/inv-1/progress": { inProcess: false, stages: [] },
+        };
+        if (!(path in bodies)) throw new Error(`no stub for ${path}`);
+        return { ok: true, json: async () => bodies[path] } as Response;
+      })
+    );
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { openViewer } = await import("/viewer.js");
+    await openViewer(TASK, () => {});
+    await new Promise((r) => setTimeout(r, 0));
+
+    const compact = [...document.querySelectorAll(".actionlink.compactlink")];
+    const words = compact.map((b) => b.textContent);
+    expect(words).toEqual(expect.arrayContaining(["Change Seller", "Expand"]));
+    // Each is its icon, then its word.
+    for (const b of compact) expect(b.firstElementChild?.tagName.toLowerCase()).toBe("svg");
+
+    const add = document.getElementById("addline")!;
+    expect(add.closest(".cardhead")?.querySelector("h3")).not.toBeNull();
+    expect(add.classList.contains("compactlink")).toBe(true);
+    expect(document.querySelector(".linefoot button")).toBeNull();
+    const before = document.querySelectorAll("#lines tr").length;
+    add.click();
+    expect(document.querySelectorAll("#lines tr").length).toBeGreaterThan(before);
+  });
+});
+
 describe("the document/timeline tabs (decision 0269)", () => {
   const BASE_ROUTES = {
     "/api/code-lists": { fields: {} },

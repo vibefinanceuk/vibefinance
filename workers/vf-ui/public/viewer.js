@@ -2313,7 +2313,26 @@ function renderLines() {
 
 function linePanel() {
   return el("div", { class: "panel" }, [
-    el("h3", { text: t("viewer.lines") }),
+    // Decision 0662: Add line, with its icon, top right of the card, as the other cards' own actions.
+    el("div", { class: "cardhead" }, [
+      el("h3", { text: t("viewer.lines") }),
+      ...(canEditAnything
+        ? [
+            (() => {
+              const add = compactLink("addline", {
+                label: t("viewer.addline"),
+                onclick: () => {
+                  lines.push({});
+                  renderLines();
+                  renderExceptions();
+                },
+              });
+              add.id = "addline";
+              return add;
+            })(),
+          ]
+        : []),
+    ]),
     el("table", { class: "linetable" }, [
       el("thead", {}, [
         el("tr", {}, [
@@ -2337,19 +2356,7 @@ function linePanel() {
       el("tbody", { id: "lines" }),
     ]),
     el("div", { class: "linefoot" }, [
-      // Structure, not a field — decision 0144. See `lineRow`.
-      ...(canEditAnything
-        ? [
-            el("button", {
-              text: t("viewer.addline"),
-              onclick: () => {
-                lines.push({});
-                renderLines();
-                renderExceptions();
-              },
-            }),
-          ]
-        : []),
+      // Add line moved to the card's head — decision 0662 (structure, not a field: 0144).
       el("div", { class: "linetotal", id: "linetotal" }),
     ]),
   ]);
@@ -2970,6 +2977,18 @@ async function openRouteToApproverPicker(task, onClose) {
  * A second copy would drift — and the first thing to drift would be the
  * `title`, which is the part that makes the icon legible.
  */
+/**
+ * **A card's own action, small, its icon left of its word — decision
+ * 0662**, as the Agents screen's actions and the task list's Claim and
+ * Release (0661) are drawn. Dan named Change Seller, Change Buyer, Header
+ * Fields, Expand and Add line.
+ */
+export function compactLink(name, opts = {}) {
+  const node = actionLink(name, opts);
+  node.classList.add("compactlink");
+  return node;
+}
+
 export function actionLink(name, { onclick, primary, label } = {}) {
   // label lets a caller override the shared action.<name> text while
   // still reusing that name's own icon and button styling — decision
@@ -3246,7 +3265,7 @@ function documentPanel(task, onPoppedOutChange) {
    *
    * **Opens a page of our own, not the raw file — decision 0384.**
    */
-  const expandButton = actionLink("expand", { onclick: () => openDocumentWindow(invoiceId) });
+  const expandButton = compactLink("expand", { onclick: () => openDocumentWindow(invoiceId) });
 
   if (!invoiceId) {
     // Nothing to show a timeline for — the old, un-tabbed panel.
@@ -4329,7 +4348,7 @@ export async function openViewer(task, onClose) {
   const cardHead = (title, action, onclick) =>
     el("div", { class: "cardhead" }, [
       el("h3", { text: title }),
-      ...(canEditAnything ? [actionLink(action, { onclick })] : []),
+      ...(canEditAnything ? [compactLink(action, { onclick })] : []),
     ]);
 
   /**
@@ -4509,10 +4528,10 @@ export async function openViewer(task, onClose) {
        */
       const headerActions = canEditAnything
         ? [
-            actionLink("changeseller", { onclick: () => openSupplierSearch() }),
+            compactLink("changeseller", { onclick: () => openSupplierSearch() }),
             ...(hasPoReference
               ? []
-              : [actionLink("newseller", { label: t("viewer.supplier.newseller"), onclick: () => openNewSellerForm() })]),
+              : [compactLink("newseller", { label: t("viewer.supplier.newseller"), onclick: () => openNewSellerForm() })]),
           ]
         : [];
 
@@ -4709,7 +4728,7 @@ export async function openViewer(task, onClose) {
       el("div", { class: "cardhead" }, [
         el("h3", { text: t("viewer.fields") }),
         ...(overflow
-          ? [actionLink("headerfields", { onclick: () => openHeaderFieldsPopout() })]
+          ? [compactLink("headerfields", { onclick: () => openHeaderFieldsPopout() })]
           : []),
       ]),
       el(

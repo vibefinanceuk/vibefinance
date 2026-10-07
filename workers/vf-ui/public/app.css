@@ -5391,3 +5391,6 @@
 #receiptconversations:not([hidden]) { margin-bottom: 16px; }
 /* Decision 0661: Claim and Release in the task list, an icon with its word, as the Agents screen's actions. */
 .taskactions .actionlink.act { min-height: 0; margin-right: 0; font-size: var(--text-sm); }
+/* Decision 0662: a card's own actions in the invoice viewer, small, icon left of the word, as the Agents screen's. */
+.actionlink.compactlink { flex-direction: row; padding: 4px 8px; gap: 4px; }
+.actionlink.compactlink svg { width: 16px; height: 16px; }
