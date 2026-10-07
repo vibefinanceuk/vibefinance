@@ -26,6 +26,7 @@ const STRINGS = {
     "suppliers.loadedago": "Loaded {days} days ago.",
     "suppliers.lastload": "Last supplier load occurred {days} days ago.",
     "suppliers.loadcsv": "Load CSV",
+    "suppliers.create": "Record supplier",
     "suppliers.templatebutton": "CSV Template",
     "suppliers.loadheading": "Load a supplier file",
     "suppliers.loadhelp": "A CSV exported from your ERP.",
@@ -973,6 +974,35 @@ describe("Load CSV, CSV Template and the last load inside the card (decision 066
     const card = document.getElementById("supplierfile")!.closest(".panel")!;
     expect(card.contains(line)).toBe(true);
     expect(document.getElementById("supplierfile")!.compareDocumentPosition(line) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+});
+
+describe("the New supplier pop-out's actions, top right (decision 0666)", () => {
+  it("puts Record supplier and Close beside the heading, as the large square actions", async () => {
+    stubFetch({ suppliers: [], lastLoad: null });
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { open } = await import("/suppliers.js");
+    await open();
+    [...document.querySelectorAll("button")].find((b) => b.textContent === "New supplier")!.click();
+    const record = document.getElementById("supplier-record")!;
+    const close = document.getElementById("supplier-new-close")!;
+    const head = record.closest(".cardhead")!;
+    expect(head.querySelector("h3")).not.toBeNull();
+    expect([...head.querySelectorAll(".statebuttons .actionlink")]).toEqual([record, close]);
+    for (const b of [record, close]) {
+      expect(b.classList.contains("compactlink")).toBe(false);
+      expect(b.firstElementChild?.tagName.toLowerCase()).toBe("svg");
+    }
+    expect(record.textContent).toBe("Record supplier");
+    expect(record.classList.contains("primary")).toBe(true);
+    // Softer at rest, brighter on hover, as the compact actions (0664).
+    const css = ((await import("virtual:stylesheets")).default as Record<string, string>)["app.css"];
+    expect(css).toContain(".newsupplierpop .actionlink.primary { color: var(--text-secondary); }");
+    expect(css).toContain(".newsupplierpop .actionlink:hover:not(:disabled) { color: var(--text-primary); }");
+    expect(record.closest(".popout")!.classList.contains("newsupplierpop")).toBe(true);
+    close.click();
+    expect(document.getElementById("supplier-record")).toBeNull();
   });
 });
 

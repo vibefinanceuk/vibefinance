@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 7 October 2026 (decision 0665). A living document: what
+Last updated 7 October 2026 (decision 0666). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,12 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### The New supplier pop-out's actions (0666)
+
+Record supplier and Close sit top right of the New supplier pop-out, as
+the large square actions with their icons. They rest in the softer
+colour and brighten on hover. Full reasoning is in decision 0666.
 
 ### Suppliers: Load CSV, CSV Template, last load in the card (0665)
 

@@ -442,9 +442,49 @@ function newSupplier() {
       })
     );
 
+    /**
+     * **Record supplier and Close, top right — decision 0666**, as the
+     * other pop-outs' own actions are (the receipt's, a PO's): the large
+     * square action links beside the heading, not a button row under the
+     * form (Dan).
+     */
+    const record = actionLink("recordsupplier", {
+      primary: true,
+      label: t("suppliers.create"),
+      onclick: async () => {
+        problem.textContent = "";
+        try {
+          const response = await fetch("/api/suppliers", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(
+              Object.fromEntries(
+                Object.entries(fields).map(([k, i]) => [k, i.value.trim()])
+              )
+            ),
+          });
+          if (!response.ok) {
+            problem.textContent = (await response.json()).error ?? t("suppliers.changefailed");
+            return;
+          }
+          backdrop.remove();
+          await load();
+          render();
+        } catch {
+          problem.textContent = t("suppliers.changefailed");
+        }
+      },
+    });
+    record.id = "supplier-record";
+    const closeButton = actionLink("close", { onclick: () => backdrop.remove() });
+    closeButton.id = "supplier-new-close";
+
     const backdrop = el("div", { class: "backdrop" }, [
-      el("div", { class: "popout" }, [
-        el("h3", { text: t("suppliers.new") }),
+      el("div", { class: "popout newsupplierpop" }, [
+        el("div", { class: "cardhead" }, [
+          el("h3", { text: t("suppliers.new") }),
+          el("div", { class: "statebuttons" }, [record, closeButton]),
+        ]),
         /**
          * **Why the ERP number may be left blank**, said before
          * somebody wonders whether they are doing it wrong.
@@ -452,36 +492,6 @@ function newSupplier() {
         el("p", { class: "muted", text: t("suppliers.newhelp") }),
         form,
         problem,
-        el("div", { class: "statebuttons" }, [
-          el("button", {
-            class: "primary",
-            text: t("suppliers.create"),
-            onclick: async () => {
-              problem.textContent = "";
-              try {
-                const response = await fetch("/api/suppliers", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify(
-                    Object.fromEntries(
-                      Object.entries(fields).map(([k, i]) => [k, i.value.trim()])
-                    )
-                  ),
-                });
-                if (!response.ok) {
-                  problem.textContent = (await response.json()).error ?? t("suppliers.changefailed");
-                  return;
-                }
-                backdrop.remove();
-                await load();
-                render();
-              } catch {
-                problem.textContent = t("suppliers.changefailed");
-              }
-            },
-          }),
-          actionLink("close", { onclick: () => backdrop.remove() }),
-        ]),
       ]),
     ]);
 

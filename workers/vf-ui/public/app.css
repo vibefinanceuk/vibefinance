@@ -5405,3 +5405,10 @@
 .actionlink.compactlink:hover:not(:disabled) { color: var(--text-primary); }
 /* Decision 0665: the last load's age sits under the file picker, inside the load card. */
 #suppliers-freshness, .supplierhead .panel > .warn:last-child { margin-top: 10px; }
+/*
+  Decision 0666: the New supplier pop-out's Record supplier and Close rest
+  in the softer colour and brighten on hover, as the compact actions do
+  (0664); Record supplier keeps its bolder icon as the one to press (Dan).
+*/
+.newsupplierpop .actionlink.primary { color: var(--text-secondary); }
+.newsupplierpop .actionlink:hover:not(:disabled) { color: var(--text-primary); }
