@@ -261,6 +261,17 @@ const SUPPLIER_MAINTENANCE_PERMISSIONS = ["Supplier.Maintain"] as const;
 const PROCUREMENT_PERMISSIONS = ["Procurement.Collaborate", "Procurement.Approve"] as const;
 
 /**
+ * **Warehouse — decision 0658.** `Warehouse.Collaborate`: see a goods
+ * receipt you, or a team you are in, were added to, and post to its
+ * chat. For warehouse staff AP brings in to resolve a discrepancy
+ * (Dan, 7 October 2026), who otherwise see no receipts: AP.Receive
+ * records them and AP.Validate looks, by unit. Like
+ * Procurement.Collaborate it is checked against the receipt's own
+ * collaborators (`goods_receipt_collaborators`), never derived.
+ */
+const WAREHOUSE_PERMISSIONS = ["Warehouse.Collaborate"] as const;
+
+/**
  * Expense management — added alongside decision 0022's expense field
  * vocabulary, the same "add now, unused, clearly flagged" precedent
  * as AR_PERMISSIONS above. No route in this system approves or
@@ -357,6 +368,7 @@ export const PERMISSIONS = [
   ...EXPENSE_PERMISSIONS,
   ...SUPPLIER_MAINTENANCE_PERMISSIONS,
   ...PROCUREMENT_PERMISSIONS,
+  ...WAREHOUSE_PERMISSIONS,
   ...INTEGRATION_PERMISSIONS,
   ...ADMIN_PERMISSIONS,
   ...SYSTEM_PERMISSIONS,
@@ -419,6 +431,8 @@ export const PERMISSION_DESCRIPTIONS: Record<Permission, string> = {
 
   "Procurement.Collaborate": "View an invoice you've been added to, and post to its chat — decision 0470",
   "Procurement.Approve": "Business Approver — hold and complete an approval task, e.g. a Non-PO invoice routed to its collaborators — decision 0471",
+
+  "Warehouse.Collaborate": "See a goods receipt you or your team were added to, and post to its chat (decision 0658)",
 
   "Integration.Monitor": "See the Route monitor: every message your routes received, where one failed and why, and its original as it arrived (decision 0556)",
 

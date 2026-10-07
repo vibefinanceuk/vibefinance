@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 7 October 2026 (decision 0657). A living document: what
+Last updated 7 October 2026 (decision 0658). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,27 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### A goods receipt's Timeline and Chat, with the Warehouse (0658)
+
+A goods receipt now has a Timeline and Chat, as invoices do. It sits in
+a panel on the right of a widened pop-out.
+
+- **The Timeline** says everything that happened, in words:
+  - how the receipt came in, and where it stopped;
+  - who claimed the task;
+  - every line corrected, re-pointed or rejected;
+  - lines counted when their order loaded;
+  - who registered it, rejected it or cancelled it.
+- **Bringing in the Warehouse.** AP (AP.Receive) adds people or a whole
+  team to the conversation. Anyone added who holds the new
+  **Warehouse.Collaborate** permission sees that receipt and writes in
+  it, but cannot act on it. A Warehouse-only user sees just the receipts
+  they were added to.
+- **Email.** Everyone in the conversation is emailed when added and on
+  every new post, in their own language, with a link that opens the
+  receipt.
+- Full reasoning and verification counts are in decision 0658.
 
 ### Claim before acting, and correcting a receipt line (0657)
 

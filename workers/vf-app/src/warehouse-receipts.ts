@@ -3,6 +3,7 @@ import { handleCreateProcessInstance, visitCurrentStage } from "./workflow-engin
 import { isWithinScope, unitsWherePermitted } from "./enforce.js";
 import { Checker, quantityOf, type ReceiptStatus } from "./goods-receipts.js";
 import { ensureReceiptsUploadSource } from "./receipts-in-route.js";
+import { receiptEvent } from "./receipt-collaborators.js";
 
 /**
  * **The Warehouse Receipts process — decision 0651**, slice 2 of the
@@ -512,7 +513,10 @@ async function pendingInScope(db: D1Database, userId: string, id: string, waitin
 export async function handleFixReceiptLine(db: D1Database, userId: string, id: string, lineNumber: number, body: Record<string, unknown>): Promise<RouteResult> {
   const found = await pendingInScope(db, userId, id, lineNumber);
   if ("status" in found) return found;
-  const line = await db.prepare("SELECT line_status FROM goods_receipt_lines WHERE receipt_id = ? AND line_number = ?").bind(id, lineNumber).first<{ line_status: string }>();
+  const line = await db
+    .prepare("SELECT line_status, order_number, order_line_number, unit_code, quantity FROM goods_receipt_lines WHERE receipt_id = ? AND line_number = ?")
+    .bind(id, lineNumber)
+    .first<{ line_status: string; order_number: string; order_line_number: number; unit_code: string | null; quantity: number }>();
   if (!line) return { status: 404, body: { error: `the receipt has no line ${lineNumber}`, reason: "line_not_found" } };
   const refusal = await receiptTaskRefusal(db, userId, id);
   if (refusal) return refusal;
@@ -520,7 +524,11 @@ export async function handleFixReceiptLine(db: D1Database, userId: string, id: s
   if (body.reject === true) {
     const reason = typeof body.reason === "string" ? body.reason.trim() : "";
     if (!reason) return { status: 400, body: { error: "say why the line is rejected", reason: "reject_reason_missing" } };
-    await db.prepare("UPDATE goods_receipt_lines SET line_status = 'rejected', reject_reason = ?, check_reason = NULL WHERE receipt_id = ? AND line_number = ?").bind(reason, id, lineNumber).run();
+    await db.batch([
+      db.prepare("UPDATE goods_receipt_lines SET line_status = 'rejected', reject_reason = ?, check_reason = NULL WHERE receipt_id = ? AND line_number = ?").bind(reason, id, lineNumber),
+      // 0658: the Timeline says who rejected the line, and why.
+      receiptEvent(db, id, "line_rejected", userId, { reason }, lineNumber),
+    ]);
   } else {
     if (line.line_status === "rejected") return { status: 409, body: { error: "that line is rejected", reason: "line_rejected" } };
     const repoint = body.orderNumber !== undefined || body.orderLine !== undefined;
@@ -556,12 +564,17 @@ export async function handleFixReceiptLine(db: D1Database, userId: string, id: s
       const order = await db.prepare("SELECT org_unit_id FROM purchase_orders WHERE order_number = ?").bind(orderNumber).first<{ org_unit_id: string | null }>();
       if (!order || !isWithinScope({ units: found.scope }, order.org_unit_id)) return { status: 422, body: { error: `no purchase order ${orderNumber}`, reason: "order_not_found" } };
     }
-    if (orderNumber) await db.prepare("UPDATE goods_receipt_lines SET order_number = ?, order_line_number = ? WHERE receipt_id = ? AND line_number = ?").bind(orderNumber, orderLine, id, lineNumber).run();
+    if (orderNumber && (orderNumber !== line.order_number || orderLine !== line.order_line_number))
+      await db.batch([
+        db.prepare("UPDATE goods_receipt_lines SET order_number = ?, order_line_number = ? WHERE receipt_id = ? AND line_number = ?").bind(orderNumber, orderLine, id, lineNumber),
+        receiptEvent(db, id, "line_repointed", userId, { from: { order: line.order_number, line: line.order_line_number }, to: { order: orderNumber, line: orderLine } }, lineNumber),
+      ]);
     if (correct) {
       const now = await db.prepare("SELECT unit_code, quantity FROM goods_receipt_lines WHERE receipt_id = ? AND line_number = ?").bind(id, lineNumber).first<{ unit_code: string | null; quantity: number }>();
       const nextUnit = unitCode !== undefined ? unitCode : now!.unit_code;
       const nextQuantity = quantity ?? now!.quantity;
       if (nextUnit !== now!.unit_code || nextQuantity !== now!.quantity) {
+        await receiptEvent(db, id, "line_corrected", userId, { from: { quantity: now!.quantity, unit: now!.unit_code }, to: { quantity: nextQuantity, unit: nextUnit } }, lineNumber).run();
         await db
           .prepare(
             `UPDATE goods_receipt_lines
@@ -675,11 +688,14 @@ export async function releaseWaitingReceipts(
       const before = (await db.prepare("SELECT count(*) AS n FROM goods_receipt_lines WHERE receipt_id = ? AND waiting_since IS NOT NULL").bind(r.id).first<{ n: number }>())?.n ?? 0;
       const checked = await checkReceiptLines(db, r.id, now);
       out.linesReleased += before - checked.waiting;
+      if (before > checked.waiting) await receiptEvent(db, r.id, "lines_released", actorUserId, { orders, lines: before - checked.waiting, counted: true }, null, at).run();
       if (checked.waiting > 0) out.stillWaiting++;
       out.touched.push(...checked.released.map((orderNumber) => ({ orderNumber, receiptNumber: r.receipt_number })));
       continue;
     }
+    const waitingBefore = (await db.prepare("SELECT count(*) AS n FROM goods_receipt_lines WHERE receipt_id = ? AND waiting_since IS NOT NULL AND line_status = 'active'").bind(r.id).first<{ n: number }>())?.n ?? 0;
     const checked = await checkReceiptLines(db, r.id, now);
+    if (waitingBefore > checked.waiting) await receiptEvent(db, r.id, "lines_released", actorUserId, { orders, lines: waitingBefore - checked.waiting, counted: false }, null, at).run();
     if (checked.attention > 0 || checked.waiting > 0) {
       out.stillWaiting++;
       continue;

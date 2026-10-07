@@ -306,6 +306,13 @@ import {
   sendReceiptsThroughProcess,
   warehouseProcess,
 } from "./warehouse-receipts.js";
+import {
+  handleAddReceiptCollaborator,
+  handleGetReceiptTimeline,
+  handlePostReceiptComment,
+  handleRemoveReceiptCollaborator,
+  handleSearchReceiptPeople,
+} from "./receipt-timeline.js";
 import { handleHttpsReceipts, receiptsReport, receiptsSource, receiptsUploadSource, receiveReceipts, RECEIPTS_FILE_ROUTE } from "./receipts-in-route.js";
 import {
   handleGetApTeamEmail,
@@ -5854,6 +5861,8 @@ export default {
       const forbidden = (status: 401 | 403) => json({ error: t(status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, status);
       const view = () => requireAnyPermission(db, request, ["AP.Receive", "AP.Validate"], sessionContext(env));
       const record = () => requirePermission(db, request, "AP.Receive", sessionContext(env));
+      // 0658: someone added to a receipt's conversation with Warehouse.Collaborate; the handlers check which receipts.
+      const seeOrCollaborate = () => requireAnyPermission(db, request, ["AP.Receive", "AP.Validate", "Warehouse.Collaborate"], sessionContext(env));
       const readJson = async (): Promise<Record<string, unknown> | null> => {
         try {
           return ((await request.json()) ?? {}) as Record<string, unknown>;
@@ -5881,7 +5890,7 @@ export default {
       const oneMatch = pathname.match(/^\/goods-receipts\/([^/]+)$/);
 
       if (pathname === "/goods-receipts" && request.method === "GET") {
-        const auth = await view();
+        const auth = await seeOrCollaborate();
         if (!auth.authorized) return forbidden(auth.status);
         const p = url.searchParams;
         const result = await handleListGoodsReceipts(db, auth.user.id, { org: p.get("org"), search: p.get("search"), page: p.get("page"), pageSize: p.get("pageSize"), kind: p.get("kind") });
@@ -6032,8 +6041,57 @@ export default {
         const result = await recheck(await handleCancelGoodsReceipt(db, auth.user.id, decodeURIComponent(cancelMatch[1]), body), auth.user.id);
         return json(result.body, result.status);
       }
+      /**
+       * **A receipt's Timeline and Chat — decision 0658.** Reading and
+       * posting for whoever may see the receipt (its units, or its
+       * conversation with Warehouse.Collaborate); adding and removing
+       * people and teams for AP.Receive where its orders are.
+       */
+      const timelineMatch = pathname.match(/^\/goods-receipts\/([^/]+)\/timeline$/);
+      const commentsMatch = pathname.match(/^\/goods-receipts\/([^/]+)\/comments$/);
+      const peopleMatch = pathname.match(/^\/goods-receipts\/([^/]+)\/people$/);
+      const collaboratorsMatch = pathname.match(/^\/goods-receipts\/([^/]+)\/collaborators$/);
+      const collaboratorMatch = pathname.match(/^\/goods-receipts\/([^/]+)\/collaborators\/([^/]+)$/);
+      const timelineDeps = () => {
+        const d = agentDeps(env, null);
+        return { email: d.email, appUrl: d.appUrl, defaultLocale: d.defaultLocale ?? null };
+      };
+      if (timelineMatch && request.method === "GET") {
+        const auth = await seeOrCollaborate();
+        if (!auth.authorized) return forbidden(auth.status);
+        const result = await handleGetReceiptTimeline(db, auth.user.id, decodeURIComponent(timelineMatch[1]));
+        return json(result.body, result.status);
+      }
+      if (commentsMatch && request.method === "POST") {
+        const auth = await seeOrCollaborate();
+        if (!auth.authorized) return forbidden(auth.status);
+        const body = await readJson();
+        if (!body) return json({ error: t("invalidJsonBody", resolveLocale(env.LOCALE)) }, 400);
+        const result = await handlePostReceiptComment(db, auth.user.id, decodeURIComponent(commentsMatch[1]), body, timelineDeps());
+        return json(result.body, result.status);
+      }
+      if (peopleMatch && request.method === "GET") {
+        const auth = await record();
+        if (!auth.authorized) return forbidden(auth.status);
+        const result = await handleSearchReceiptPeople(db, auth.user.id, decodeURIComponent(peopleMatch[1]), url.searchParams.get("q"));
+        return json(result.body, result.status);
+      }
+      if (collaboratorsMatch && request.method === "POST") {
+        const auth = await record();
+        if (!auth.authorized) return forbidden(auth.status);
+        const body = await readJson();
+        if (!body) return json({ error: t("invalidJsonBody", resolveLocale(env.LOCALE)) }, 400);
+        const result = await handleAddReceiptCollaborator(db, auth.user.id, decodeURIComponent(collaboratorsMatch[1]), body, timelineDeps());
+        return json(result.body, result.status);
+      }
+      if (collaboratorMatch && request.method === "DELETE") {
+        const auth = await record();
+        if (!auth.authorized) return forbidden(auth.status);
+        const result = await handleRemoveReceiptCollaborator(db, auth.user.id, decodeURIComponent(collaboratorMatch[1]), decodeURIComponent(collaboratorMatch[2]));
+        return json(result.body, result.status);
+      }
       if (oneMatch && request.method === "GET") {
-        const auth = await view();
+        const auth = await seeOrCollaborate();
         if (!auth.authorized) return forbidden(auth.status);
         const result = await handleGetGoodsReceipt(db, auth.user.id, decodeURIComponent(oneMatch[1]));
         return json(result.body, result.status);

@@ -1,7 +1,8 @@
 import type { RouteResult } from "./org-route.js";
 import { parseCsv } from "./load-suppliers.js";
 import { getOrgMatchingConfig, loadPoConsumption } from "./po-matching.js";
-import { isWithinScope, scopedToChosenOrg, unitClause, unitsWherePermitted } from "./enforce.js";
+import { hasPermission, isWithinScope, scopedToChosenOrg, unitClause, unitsWherePermitted } from "./enforce.js";
+import { COLLABORATING_SQL, isReceiptCollaborator } from "./receipt-collaborators.js";
 
 /**
  * **Goods receipts — decision 0644, slice 2 of the Goods Receipts
@@ -759,7 +760,7 @@ export async function handleLoadGoodsReceiptsCsv(
 const PAGE_SIZES = [25, 50, 100, 200];
 
 /** The orders a receipt names, kept to those the scope allows (a null org is everyone's, as elsewhere). */
-function receiptScopeClause(units: string[] | null): { sql: string; binds: unknown[] } {
+export function receiptScopeClause(units: string[] | null): { sql: string; binds: unknown[] } {
   const inner = unitClause({ units }, "po.org_unit_id");
   if (!inner.sql) return { sql: "", binds: [] };
   return {
@@ -783,6 +784,25 @@ export async function handleListGoodsReceipts(
   const where = receiptScopeClause(scope);
   const binds: unknown[] = [...where.binds];
   let sql = where.sql;
+  /**
+   * **0658: the receipts a person was added to**, by name or through a
+   * team, for Warehouse.Collaborate: those beside what their units show,
+   * or only those (`kind=conversations`, and for someone who holds
+   * nothing else).
+   */
+  const collaborates = await hasPermission(db, userId, "Warehouse.Collaborate");
+  const viewsUnits = scope === null || scope.length > 0;
+  if (collaborates && (params.kind === "conversations" || !viewsUnits)) {
+    sql = ` AND ${COLLABORATING_SQL}`;
+    binds.length = 0;
+    binds.push(userId, userId);
+  } else if (collaborates && where.sql) {
+    sql = ` AND ((1 = 1 ${where.sql}) OR ${COLLABORATING_SQL})`;
+    binds.push(userId, userId);
+  } else if (params.kind === "conversations") {
+    sql += ` AND ${COLLABORATING_SQL}`;
+    binds.push(userId, userId);
+  }
   const term = params.search?.trim();
   if (term) {
     const p = `%${term.replace(/[\\%_]/g, "\\$&")}%`;
@@ -974,7 +994,10 @@ async function receiptTaskFor(db: D1Database, userId: string, receiptId: string)
 /** One receipt, its lines, and where each order it names stands now. 404 outside the person's scope. */
 export async function handleGetGoodsReceipt(db: D1Database, userId: string, id: string): Promise<RouteResult> {
   const scope = await receiptViewScope(db, userId);
-  const where = receiptScopeClause(scope);
+  let where = receiptScopeClause(scope);
+  // 0658: someone in the receipt's conversation with Warehouse.Collaborate sees it, wherever its orders are.
+  if ((await hasPermission(db, userId, "Warehouse.Collaborate")) && (await isReceiptCollaborator(db, userId, id))) where = { sql: "", binds: [] };
+  else if (scope !== null && scope.length === 0) return { status: 404, body: { error: "no such receipt", reason: "not_found" } };
   const receipt = await db
     .prepare(
       `SELECT r.*, u.name AS created_by_name, cu.name AS cancelled_by_name, ru.name AS rejected_by_name

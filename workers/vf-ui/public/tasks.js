@@ -913,7 +913,8 @@ const NAV_PERMISSIONS = {
   // Agents — decision 0622: their makers, and administrators who may remove anyone's.
   agents: ["AP.Agents", "Admin.UserManagement"],
   // Goods Receipts — decision 0645: AP.Receive records, AP.Validate looks (Dan, 0643).
-  goodsreceipts: ["AP.Receive", "AP.Validate"],
+  // Decision 0658: and the Warehouse, for the receipts it was added to.
+  goodsreceipts: ["AP.Receive", "AP.Validate", "Warehouse.Collaborate"],
   // Absence and cover — decision 0641: anyone who works tasks, and AP Managers for their team.
   absence: ["AP.TaskView", "AP.Manager"],
   /**
@@ -1503,6 +1504,16 @@ export async function start() {
   if (new URLSearchParams(location.search).has("stopagent")) {
     await import("/agent-notes.js")
       .then((m) => m.stopFromLink(document.getElementById("main") ?? shell))
+      .catch(() => {});
+  }
+  // Decision 0658: "Open the receipt" from a receipt conversation's email.
+  const receiptLink = new URLSearchParams(location.search).get("receipt");
+  if (receiptLink) {
+    const clean = new URL(location.href);
+    clean.searchParams.delete("receipt");
+    history.replaceState(null, "", `${clean.pathname}${clean.search}${clean.hash}`);
+    await import("/goods-receipts.js")
+      .then((m) => m.openReceipt(receiptLink))
       .catch(() => {});
   }
   // Decision 0629: "Open these invoices in Documents" from an agent's email.

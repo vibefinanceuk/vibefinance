@@ -152,6 +152,8 @@ export default defineConfig({
       // Absence and cover — decision 0641.
       "/absence.js": resolve(__dirname, "public/absence.js"),
       "/goods-receipts.js": resolve(__dirname, "public/goods-receipts.js"),
+      // A receipt's Timeline and Chat — decision 0658.
+      "/receipt-timeline.js": resolve(__dirname, "public/receipt-timeline.js"),
       "/agent-notes.js": resolve(__dirname, "public/agent-notes.js"),
       "/route-library.js": resolve(__dirname, "public/route-library.js"),
       "/outbound-editor.js": resolve(__dirname, "public/outbound-editor.js"),

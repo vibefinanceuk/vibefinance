@@ -219,6 +219,9 @@ const PROXIED_TO_INSTANCE: RegExp[] = [
   /^\/goods-receipts\/(status-counts|csv-format|csv-load|csv-preview)$/,
   /^\/goods-receipts\/order\/[^/]+$/,
   /^\/goods-receipts\/[^/]+(\/cancel|\/reject|\/register|\/lines\/\d+)?$/,
+  // Decision 0658: a receipt's Timeline and Chat, and who is in it.
+  /^\/goods-receipts\/[^/]+\/(timeline|comments|people|collaborators)$/,
+  /^\/goods-receipts\/[^/]+\/collaborators\/[^/]+$/,
   /^\/admin\/ap-team-email$/,
   // What the Validation viewer needs (decision 0106): the keyed values,
   // and a short-lived signed URL for the retained original.

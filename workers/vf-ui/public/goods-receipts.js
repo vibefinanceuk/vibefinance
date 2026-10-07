@@ -4,6 +4,7 @@ import { actionLink } from "/viewer.js";
 import { icon } from "/icons.js";
 import { currentOrgId } from "/orgs.js";
 import { donutChart } from "/charts.js";
+import { buildReceiptTimeline } from "/receipt-timeline.js";
 
 /**
  * **Goods Receipts — decision 0645, slice 3 of the Goods Receipts
@@ -49,6 +50,8 @@ async function call(path, init) {
 
 const post = (path, body) => call(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
 const canRecord = () => hasMyPermission("AP.Receive");
+/** Decision 0658: someone in receipts' conversations with Warehouse.Collaborate and nothing else here sees only those. */
+const onlyConversations = () => !hasMyPermission("AP.Receive") && !hasMyPermission("AP.Validate") && hasMyPermission("Warehouse.Collaborate");
 const qty = (n) => (n === null || n === undefined ? "—" : String(Math.round(Number(n) * 1000) / 1000));
 
 /** A refusal or a warning in words: the server's reason code, else its own English. */
@@ -109,6 +112,7 @@ export async function loadRecordingExtras() {
 }
 
 async function loadExtras() {
+  if (onlyConversations()) return;
   const process = await call("/goods-receipts/process");
   warehouse = process.ok ? process.body.process ?? null : null;
   if (!canRecord()) return;
@@ -394,8 +398,8 @@ function orderHeading(order) {
 
 // ── A receipt ──────────────────────────────────────────────────────────
 
-function popout(content, wide = true) {
-  const backdrop = el("div", { class: "backdrop" }, [el("div", { class: wide ? "popout wide" : "popout" }, content)]);
+function popout(content, wide = true, extra = "") {
+  const backdrop = el("div", { class: "backdrop" }, [el("div", { class: `${wide ? "popout wide" : "popout"}${extra ? ` ${extra}` : ""}` }, content)]);
   backdrop.onclick = (e) => {
     if (e.target === backdrop) backdrop.remove();
   };
@@ -614,7 +618,14 @@ export async function openReceipt(id, { onDone = null } = {}) {
   };
 
   const fact = (k, v) => [el("div", { class: "muted", text: t(k) }), el("div", { text: v || "—" })];
-  backdrop = popout([
+  /**
+   * **The Timeline and Chat on the right — decision 0658**, as the
+   * invoice viewer and Document window have theirs (Dan: "a panel on the
+   * right of the page ... the pop-out can be widened"). The receipt
+   * scrolls on the left; the conversation keeps its own height on the
+   * right, its box to write in always in view.
+   */
+  backdrop = popout([el("div", { class: "receiptmain" }, [
     el("div", { class: "cardhead" }, [el("h3", { text: receipt.receiptNumber }), el("div", { class: "statebuttons" }, buttons)]),
     receipt.cancelled
       ? el("div", { class: "warn", text: t("receipts.cancelledby").replace("{who}", receipt.cancelledBy ?? "—").replace("{why}", receipt.cancelReason ?? "") })
@@ -685,10 +696,13 @@ export async function openReceipt(id, { onDone = null } = {}) {
         ),
       ]),
     ]),
+    problem,
     el("h4", { text: t("receipts.ordersnow") }),
     ...orders.flatMap((o) => [orderHeading(o), figuresTable(o)]),
-    problem,
-  ]);
+  ]),
+    // Decision 0658: what happened to it, and the conversation, with whoever AP brings in.
+    el("aside", { class: "receiptside" }, [buildReceiptTimeline(id)]),
+  ], true, "receiptpop");
 }
 
 // ── Recording ──────────────────────────────────────────────────────────
@@ -826,6 +840,23 @@ export function openRecord(mode = "received", { container = null, onSaved = null
 function render() {
   const shell = document.getElementById("shell");
   if (!shell) return;
+  // Decision 0658: the receipts this person was added to, and nothing else.
+  if (onlyConversations()) {
+    shell.replaceChildren(
+      frame(
+        el("div", {}, [
+          topbar(t("nav.goodsreceipts"), t("receipts.conversations.subtitle")),
+          el("div", { id: "receipts-note" }),
+          el("div", { class: "panel" }, [
+            el("div", { class: "cardhead" }, [el("h3", { text: t("receipts.conversations.heading") })]),
+            el("p", { class: "muted", text: t("receipts.conversations.help") }),
+          ]),
+          el("div", { class: "panel", id: "receipts-conversations" }, [receipts.length ? receiptRows() : el("p", { class: "muted", text: t("receipts.conversations.none") })]),
+        ])
+      )
+    );
+    return;
+  }
   const actions = canRecord()
     ? el("div", { class: "statebuttons" }, [
         actionLink("create", { label: t("receipts.recordreturn"), onclick: () => toCreate("return") }),
@@ -850,7 +881,7 @@ export async function open() {
   searchTerm = "";
   kind = "";
   page = 1;
-  const [ok] = await Promise.all([load(), loadCounts(), loadExtras()]);
+  const [ok] = await Promise.all([load(), onlyConversations() ? null : loadCounts(), loadExtras()]);
   render();
   if (!ok) note(t("receipts.failed"));
 }

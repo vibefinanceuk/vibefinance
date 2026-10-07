@@ -5333,3 +5333,41 @@
 .grnitile { display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; border: 0.5px solid var(--border); border-radius: var(--radius); background: var(--surface-1); }
 .grnitile b { font-size: var(--text-lg); }
 .grnitable td.num, .grnitable th.num { text-align: right; font-variant-numeric: tabular-nums; }
+
+/*
+  Decision 0658: a receipt's pop-out, widened, with its Timeline and Chat
+  in a panel on the right, as the invoice viewer has. The receipt scrolls
+  on the left; the panel keeps the pop-out's height, its feed scrolls and
+  the box to write in stays at the bottom. Stacked on a narrow screen.
+*/
+.popout.receiptpop {
+  width: min(1440px, 96vw);
+  height: min(900px, 90vh);
+  max-height: 90vh;
+  overflow: hidden;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 400px);
+  gap: 0;
+  padding: 0;
+}
+.popout.receiptpop .receiptmain { overflow: auto; padding: 16px; min-width: 0; }
+.popout.receiptpop .receiptside {
+  border-left: 0.5px solid var(--border);
+  padding: 16px;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.receiptside .receipttimeline { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }
+.receiptside .receipttimeline > h4 { margin-top: 0; }
+.receiptside .receipttimeline .activityfeed { flex: 1 1 auto; min-height: 0; overflow: auto; }
+.receiptside .receipttimeline .activityinput { flex: none; }
+.receiptside .receipttimeline .collabbar { flex-wrap: wrap; }
+/* A line of what happened: the dot, the words, and when under them, so a narrow panel wraps cleanly. */
+.receiptside .activitysysline { display: grid; grid-template-columns: 12px minmax(0, 1fr); column-gap: 6px; align-items: start; }
+.receiptside .activitysysline .activitydot { margin-top: 7px; }
+.receiptside .activitysysline .activitywhen { grid-column: 2; }
+@media (max-width: 900px) {
+  .popout.receiptpop { display: block; height: auto; overflow: auto; }
+  .popout.receiptpop .receiptside { border-left: none; border-top: 0.5px solid var(--border); }
+}
