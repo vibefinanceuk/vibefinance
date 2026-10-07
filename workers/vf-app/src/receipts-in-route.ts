@@ -103,6 +103,8 @@ export async function receiveReceipts(
     eventDetail?: string;
     bucket?: R2Bucket | null;
     customerId?: string | null;
+    /** Decision 0659: what was sent, where it was not our CSV (a JSON body), kept beside the CSV read from it. */
+    original?: { filename: string; contentType: string; text: string } | null;
   },
   now = new Date()
 ): Promise<ReceivedReceipts | { error: string }> {
@@ -131,6 +133,18 @@ export async function receiveReceipts(
       key: routePartKey(params.customerId, params.sourceId, messageId, receivedAt, 1, params.filename),
     });
     if ("reason" in part) await addRouteEvent(db, messageId, "attachment_not_stored", { partSeq: 1, detail: part.reason });
+    if (params.original) {
+      const sent = await storeRoutePart(params.bucket, db, {
+        messageId,
+        seq: 2,
+        role: "original",
+        filename: params.original.filename,
+        contentType: params.original.contentType,
+        bytes: new TextEncoder().encode(params.original.text),
+        key: routePartKey(params.customerId, params.sourceId, messageId, receivedAt, 2, params.original.filename),
+      });
+      if ("reason" in sent) await addRouteEvent(db, messageId, "attachment_not_stored", { partSeq: 2, detail: sent.reason });
+    }
   }
 
   const process = await warehouseProcess(db);
@@ -262,6 +276,7 @@ export async function handleHttpsReceipts(
   if (source.status !== "active") return { status: 410, body: { error: `${source.name} is retired and no longer receives receipts` } };
   const type = (request.headers.get("Content-Type") ?? "").toLowerCase();
   let csv: string;
+  let original: { filename: string; contentType: string; text: string } | null = null;
   if (type.startsWith("application/json")) {
     let json: unknown;
     try {
@@ -272,6 +287,7 @@ export async function handleHttpsReceipts(
     const converted = receiptsJsonToCsv(json);
     if ("error" in converted) return { status: 400, body: { error: converted.error, reason: "not_receipts" } };
     csv = converted.csv;
+    original = { filename: "receipts.json", contentType: "application/json", text: JSON.stringify(json, null, 2) };
   } else if (type.startsWith("text/csv") || type.startsWith("text/plain")) {
     csv = await request.text();
     if (!csv.trim()) return { status: 400, body: { error: "the body is empty", reason: "empty" } };
@@ -293,6 +309,7 @@ export async function handleHttpsReceipts(
     eventDetail: `key ${key.key_prefix}… (${key.name})`,
     bucket: deps.bucket,
     customerId: deps.customerId,
+    original,
   });
   if ("error" in received) return { status: 500, body: { error: received.error } };
   const check = `${origin}/v1/sources/${encodeURIComponent(source.id)}/messages/${encodeURIComponent(received.messageId)}`;

@@ -99,7 +99,7 @@ export function describe(item) {
  * false only where the page knows the person cannot post (never today:
  * whoever can open a receipt may write in it).
  */
-export function buildReceiptTimeline(receiptId) {
+export function buildReceiptTimeline(receiptId, { countBadge = null } = {}) {
   const root = el("div", { class: "receipttimeline", id: "receipt-timeline" });
   const s = { loading: true, error: null, items: [], collaborators: [], canManage: false, posting: false, sentNote: null, addOpen: false, problem: null, results: null, generation: 0 };
   const box = el("textarea", { id: "receipt-chat-input", placeholder: t("receipts.tl.placeholder") });
@@ -219,6 +219,11 @@ export function buildReceiptTimeline(receiptId) {
   }
 
   function render() {
+    // Decision 0659: the count on the Timeline / Chat tab, as the invoice viewer's.
+    if (countBadge) {
+      countBadge.textContent = s.loading ? "" : String(s.items.length);
+      countBadge.hidden = s.loading;
+    }
     const addButton = s.canManage
       ? el("button", { type: "button", class: "collabaddbtn", id: "receipt-addpeople", onclick: () => {
           s.addOpen = !s.addOpen;
@@ -229,7 +234,6 @@ export function buildReceiptTimeline(receiptId) {
     const postButton = el("button", { type: "button", id: "receipt-chat-post", class: "activitypost", onclick: post }, [icon("post"), el("span", { text: t("receipts.tl.post") })]);
     root.replaceChildren(
       ...[
-        el("h4", { text: t("receipts.tl.heading") }),
         el("div", { class: "collabbar" }, [
           el("div", { class: "collabchips" }, s.collaborators.length ? s.collaborators.map(chip) : [el("span", { class: "muted sm", text: t(s.canManage ? "receipts.tl.nobodyhint" : "receipts.tl.nobody") })]),
           addButton,

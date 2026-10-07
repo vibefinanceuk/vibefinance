@@ -312,6 +312,12 @@ import {
   handlePostReceiptComment,
   handleRemoveReceiptCollaborator,
   handleSearchReceiptPeople,
+  handleReceiptAttachments,
+  handleListReceiptConversations,
+  handleReceiptConversationDone,
+  partForReceipt,
+  receiptAccess,
+  RECEIPT_TOKEN_PREFIX,
 } from "./receipt-timeline.js";
 import { handleHttpsReceipts, receiptsReport, receiptsSource, receiptsUploadSource, receiveReceipts, RECEIPTS_FILE_ROUTE } from "./receipts-in-route.js";
 import {
@@ -4223,7 +4229,10 @@ export default {
       if (!verified.valid) {
         return json({ error: `document link ${verified.reason}` }, 403);
       }
-      const part = await partForInvoice(db, verified.invoiceId, verified.messageId, verified.seq);
+      // Decision 0659: a receipt's file names the receipt, not an invoice.
+      const part = verified.invoiceId.startsWith(RECEIPT_TOKEN_PREFIX)
+        ? await partForReceipt(db, verified.invoiceId.slice(RECEIPT_TOKEN_PREFIX.length), verified.messageId, verified.seq)
+        : await partForInvoice(db, verified.invoiceId, verified.messageId, verified.seq);
       const object = part ? await documents.get(part.r2Key) : null;
       if (!part || !object) {
         return json({ error: "this file is no longer retained" }, 404);
@@ -5856,6 +5865,27 @@ export default {
      * Each handler scopes to the units where the permission is held.
      * The fixed paths are matched before `/goods-receipts/:id`.
      */
+    /**
+     * **Conversations — decision 0660**: the receipts a person was added
+     * to, or that have new messages for them, on Tasks. Anyone signed in;
+     * the handler offers only receipts they may see.
+     */
+    if (pathname === "/receipt-conversations" && request.method === "GET") {
+      const { db } = resolveTenant(request, env);
+      const auth = await authenticatePerson(db, request, env);
+      if (!auth.user) return json({ error: auth.reason }, 401);
+      const result = await handleListReceiptConversations(db, auth.user.id);
+      return json(result.body, result.status);
+    }
+    const conversationDoneMatch = pathname.match(/^\/receipt-conversations\/([^/]+)\/done$/);
+    if (conversationDoneMatch && request.method === "POST") {
+      const { db } = resolveTenant(request, env);
+      const auth = await authenticatePerson(db, request, env);
+      if (!auth.user) return json({ error: auth.reason }, 401);
+      const result = await handleReceiptConversationDone(db, auth.user.id, decodeURIComponent(conversationDoneMatch[1]));
+      return json(result.body, result.status);
+    }
+
     if (pathname === "/goods-receipts" || pathname.startsWith("/goods-receipts/")) {
       const { db } = resolveTenant(request, env);
       const forbidden = (status: 401 | 403) => json({ error: t(status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, status);
@@ -6089,6 +6119,29 @@ export default {
         if (!auth.authorized) return forbidden(auth.status);
         const result = await handleRemoveReceiptCollaborator(db, auth.user.id, decodeURIComponent(collaboratorMatch[1]), decodeURIComponent(collaboratorMatch[2]));
         return json(result.body, result.status);
+      }
+      /**
+       * **A receipt's Attachments — decision 0659**: what its route
+       * message kept, listed and opened by a signed link, as an invoice's
+       * (0571). Whoever may see the receipt may see what it came with.
+       */
+      const receiptAttachmentsMatch = pathname.match(/^\/goods-receipts\/([^/]+)\/attachments(?:\/([^/]+)\/(\d+)\/url)?$/);
+      if (receiptAttachmentsMatch && ((receiptAttachmentsMatch[2] === undefined && request.method === "GET") || (receiptAttachmentsMatch[2] !== undefined && request.method === "POST"))) {
+        const auth = await seeOrCollaborate();
+        if (!auth.authorized) return forbidden(auth.status);
+        const receiptId = decodeURIComponent(receiptAttachmentsMatch[1]);
+        if (receiptAttachmentsMatch[2] === undefined) {
+          const result = await handleReceiptAttachments(db, auth.user.id, receiptId);
+          return json(result.body, result.status);
+        }
+        if (!(await receiptAccess(db, auth.user.id, receiptId))) return json({ error: "no such receipt", reason: "not_found" }, 404);
+        if (!env.DOCUMENT_URL_SECRET) return json({ error: "DOCUMENT_URL_SECRET is not configured" }, 500);
+        const messageId = decodeURIComponent(receiptAttachmentsMatch[2]);
+        const seq = Number(receiptAttachmentsMatch[3]);
+        const part = await partForReceipt(db, receiptId, messageId, seq);
+        if (!part) return json({ error: `receipt ${receiptId} received no part ${seq} in message ${messageId}` }, 404);
+        const minted = await mintPartToken(env.DOCUMENT_URL_SECRET, `${RECEIPT_TOKEN_PREFIX}${receiptId}`, messageId, seq);
+        return json({ url: `${url.origin}/received-files/${minted.token}`, expiresAt: new Date(minted.expiresAt * 1000).toISOString(), contentType: part.contentType, view: viewFor(part.contentType, part.filename) }, 200);
       }
       if (oneMatch && request.method === "GET") {
         const auth = await seeOrCollaborate();

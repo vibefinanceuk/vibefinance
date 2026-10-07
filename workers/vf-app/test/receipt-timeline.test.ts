@@ -22,6 +22,10 @@ import {
 import { handleClaimTask, handleReleaseTask } from "../src/task-route.js";
 import { generateApiKey, hashApiKey } from "../src/user-auth.js";
 import type { SendEmailInput } from "../src/resend-client.js";
+import { receiptContext, handleListReceiptConversations, handleReceiptConversationDone } from "../src/receipt-timeline.js";
+import { receiveReceipts } from "../src/receipts-in-route.js";
+import worker from "../src/index.js";
+import type { Env } from "../src/index.js";
 
 /**
  * **A goods receipt's Timeline and Chat — decision 0658.**
@@ -220,3 +224,165 @@ describe("the email — decision 0658", () => {
     expect(de.text).not.toContain("http");
   });
 });
+
+describe("the email names the organisation — decision 0659", () => {
+  beforeEach(async () => {
+    await env.DB.prepare("UPDATE org_units SET kind = 'legal_entity', name = 'Acme UK Ltd' WHERE id = 'u1'").run();
+    await env.DB.prepare("INSERT INTO org_units (id, name, parent_unit_id) VALUES ('mcr', 'Manchester DC', 'u1')").run();
+    await env.DB.prepare("UPDATE purchase_orders SET org_unit_id = 'mcr' WHERE id = 'po'").run();
+  });
+
+  it("works out the receipt's organisation, supplier and orders", async () => {
+    await loadThrough(["WH-1,1,2026-10-06,PO-300,1,2,BOX"]);
+    expect(await receiptContext(env.DB, await idOf("WH-1"))).toEqual({
+      organisation: "Acme UK Ltd (Manchester DC)",
+      supplier: "Northwind",
+      orders: ["PO-300"],
+      deliveryNote: null,
+      receiptDate: "2026-10-06",
+    });
+  });
+
+  it("says it in the subject and beside the message, in the reader's language", async () => {
+    await loadThrough(["WH-1,1,2026-10-06,PO-300,1,2,BOX"]);
+    const id = await idOf("WH-1");
+    await handleAddReceiptCollaborator(env.DB, "u-sam", id, { userId: "u-wendy" }, deps());
+    expect(sent[0].subject).toBe("[Acme UK Ltd (Manchester DC)] Wareneingang WH-1: Sam hat Sie zur Unterhaltung hinzugefügt");
+    expect(sent[0].text).toContain("Organisation: Acme UK Ltd (Manchester DC)\nLieferant: Northwind\nBestellung: PO-300\nEingangsdatum: 2026-10-06\n");
+    expect(sent[0].html).toContain("Acme UK Ltd (Manchester DC)");
+    await handlePostReceiptComment(env.DB, "u-wendy", id, { body: "8 per box." }, deps());
+    expect(sent.at(-1)!.subject).toBe("[Acme UK Ltd (Manchester DC)] Goods receipt WH-1: Wendy wrote");
+    expect(sent.at(-1)!.text).toContain("Organisation: Acme UK Ltd (Manchester DC)\nSupplier: Northwind\nPurchase order: PO-300");
+  });
+});
+
+describe("a receipt's Attachments — decision 0659", () => {
+  const SECRET = "test-secret-0659";
+  const withSecret = (): Env => ({ ...env, DOCUMENT_URL_SECRET: SECRET }) as Env;
+  const call = (path: string, apiKey: string, method = "GET") =>
+    worker.fetch(new Request(`https://example.com${path}`, { method, headers: { Authorization: `Bearer ${apiKey}` } }), withSecret());
+  const keyFor = async (user: string) => {
+    const k = generateApiKey();
+    await env.DB.prepare("UPDATE org_users SET api_key_hash = ? WHERE id = ?").bind(await hashApiKey(k), user).run();
+    return k;
+  };
+
+  it("lists what the route kept (the CSV, and the JSON it was read from), opens each by a signed link, and only for whoever may see the receipt", async () => {
+    const json = { receipts: [{ receiptNumber: "WH-J", receiptDate: "2026-10-06", lines: [{ orderNumber: "PO-300", orderLine: 1, quantity: 4 }] }] };
+    const received = await receiveReceipts(env.DB, {
+      sourceId: "upload-warehouse-receipts",
+      sourceName: "Receipts upload",
+      routeId: "receipts-file",
+      counterparty: "WMS",
+      subject: "Week 41",
+      filename: "receipts.csv",
+      csv: "receipt_number,receipt_line,receipt_date,order_number,order_line,quantity\nWH-J,1,2026-10-06,PO-300,1,4",
+      userId: null,
+      scope: null,
+      event: "https_received",
+      bucket: env.DOCUMENTS,
+      customerId: "c1",
+      original: { filename: "receipts.json", contentType: "application/json", text: JSON.stringify(json, null, 2) },
+    });
+    expect("messageId" in received).toBe(true);
+    const id = await idOf("WH-J");
+    const sam = await keyFor("u-sam");
+    const listed = await call(`/goods-receipts/${id}/attachments`, sam);
+    expect(listed.status).toBe(200);
+    const body = (await listed.json()) as { messages: { id: string; source: string; sender: string; subject: string }[]; files: { seq: number; role: string; filename: string; view: string }[] };
+    expect(body.messages).toEqual([expect.objectContaining({ source: "Receipts upload", sender: "WMS", subject: "Week 41" })]);
+    expect(body.files.map((f) => [f.seq, f.role, f.filename, f.view])).toEqual([
+      [1, "attachment", "receipts.csv", "inline"],
+      [2, "original", "receipts.json", "inline"],
+    ]);
+
+    const msg = body.messages[0].id;
+    const link = (await (await call(`/goods-receipts/${id}/attachments/${msg}/2/url`, sam, "POST")).json()) as { url: string };
+    const shown = await worker.fetch(new Request(link.url), withSecret());
+    expect(shown.status).toBe(200);
+    expect(await shown.text()).toContain('"receiptNumber": "WH-J"');
+    const csvLink = (await (await call(`/goods-receipts/${id}/attachments/${msg}/1/url`, sam, "POST")).json()) as { url: string };
+    expect(await (await worker.fetch(new Request(`${csvLink.url}?download=1`), withSecret())).text()).toContain("WH-J,1,2026-10-06");
+
+    // Not in the conversation, not in its units: nothing; added, the Warehouse sees them too.
+    const wendy = await keyFor("u-wendy");
+    expect((await call(`/goods-receipts/${id}/attachments`, wendy)).status).toBe(404);
+    await handleAddReceiptCollaborator(env.DB, "u-sam", id, { userId: "u-wendy" }, deps());
+    expect((await call(`/goods-receipts/${id}/attachments`, wendy)).status).toBe(200);
+    // A part of another message is not this receipt's.
+    expect((await call(`/goods-receipts/${id}/attachments/MSG-0000-0000-0000/1/url`, sam, "POST")).status).toBe(404);
+  });
+
+  it("a receipt keyed on the screen came with nothing, and says so with an empty list", async () => {
+    await loadThrough(["WH-1,1,2026-10-06,PO-300,1,2,EA"]);
+    const sam = await keyFor("u-sam");
+    expect(await (await call(`/goods-receipts/${await idOf("WH-1")}/attachments`, sam)).json()).toEqual({ messages: [], files: [] });
+  });
+});
+
+describe("Conversations on Tasks — decision 0660", () => {
+  const at = (h: number, m = 0) => new Date(Date.UTC(2026, 0, 5, h, m));
+  const list = async (who: string) => ((await handleListReceiptConversations(env.DB, who)).body as { conversations: Record<string, unknown>[] }).conversations;
+
+  it("says who added you and quotes the latest message; reading the Timeline catches you up; a new message brings it back", async () => {
+    await loadThrough(["WH-1,1,2026-10-06,PO-300,1,2,BOX"]);
+    const id = await idOf("WH-1");
+    await handlePostReceiptComment(env.DB, "u-sam", id, { body: "How many per box?" }, deps(), at(9));
+    await handleAddReceiptCollaborator(env.DB, "u-sam", id, { userId: "u-wendy" }, deps(), at(9, 5));
+    expect(await list("u-wendy")).toEqual([
+      expect.objectContaining({
+        receiptId: id,
+        receiptNumber: "WH-1",
+        supplier: "Northwind",
+        orders: ["PO-300"],
+        added: { by: "Sam", team: null, at: at(9, 5).toISOString() },
+        newMessages: 0,
+        latest: { by: "Sam", body: "How many per box?", at: at(9).toISOString() },
+      }),
+    ]);
+    // Sam added her and wrote: nothing new for him.
+    expect(await list("u-sam")).toEqual([]);
+
+    await handleGetReceiptTimeline(env.DB, "u-wendy", id);
+    expect(await list("u-wendy")).toEqual([]);
+    await handlePostReceiptComment(env.DB, "u-wendy", id, { body: "8 per box." }, deps());
+    // Her reply is new for Sam, who added her.
+    expect(await list("u-sam")).toEqual([expect.objectContaining({ receiptNumber: "WH-1", added: null, newMessages: 1, latest: expect.objectContaining({ by: "Wendy", body: "8 per box." }) })]);
+    expect((await handleReceiptConversationDone(env.DB, "u-sam", id)).status).toBe(200);
+    expect(await list("u-sam")).toEqual([]);
+  });
+
+  it("through a team, says which; counts only others' messages since; Done is per person; gone once removed", async () => {
+    await loadThrough(["WH-1,1,2026-10-06,PO-300,1,2,BOX"]);
+    const id = await idOf("WH-1");
+    await handleAddReceiptCollaborator(env.DB, "u-sam", id, { teamId: "team-wh" }, deps(), at(8));
+    await handlePostReceiptComment(env.DB, "u-sam", id, { body: "One" }, deps(), at(8, 10));
+    await handlePostReceiptComment(env.DB, "u-sam", id, { body: "Two" }, deps(), at(8, 20));
+    expect(await list("u-wendy")).toEqual([expect.objectContaining({ added: { by: "Sam", team: "Warehouse", at: at(8).toISOString() }, newMessages: 2 })]);
+    // Will is in the team but may not open receipts: nothing for him.
+    expect(await list("u-will")).toEqual([]);
+    await handleReceiptConversationDone(env.DB, "u-wendy", id, at(9));
+    expect(await list("u-wendy")).toEqual([]);
+    await handlePostReceiptComment(env.DB, "u-sam", id, { body: "Three" }, deps(), at(10));
+    expect(await list("u-wendy")).toEqual([expect.objectContaining({ added: null, newMessages: 1 })]);
+    const collab = ((await handleGetReceiptTimeline(env.DB, "u-sam", id)).body as { collaborators: { id: string }[] }).collaborators[0].id;
+    await handleRemoveReceiptCollaborator(env.DB, "u-sam", id, collab);
+    expect(await list("u-wendy")).toEqual([]);
+    expect((await handleReceiptConversationDone(env.DB, "u-wendy", id)).status).toBe(404);
+  });
+
+  it("through the router, for whoever is signed in", async () => {
+    await loadThrough(["WH-1,1,2026-10-06,PO-300,1,2,BOX"]);
+    const id = await idOf("WH-1");
+    await handleAddReceiptCollaborator(env.DB, "u-sam", id, { userId: "u-wendy" }, deps(), at(8));
+    const k = generateApiKey();
+    await env.DB.prepare("UPDATE org_users SET api_key_hash = ? WHERE id = 'u-wendy'").bind(await hashApiKey(k)).run();
+    const call = (path: string, method = "GET") => SELF.fetch(`https://example.com${path}`, { method, headers: { Authorization: `Bearer ${k}` } });
+    const got = (await (await call("/receipt-conversations")).json()) as { conversations: { receiptId: string }[] };
+    expect(got.conversations.map((c) => c.receiptId)).toEqual([id]);
+    expect((await call(`/receipt-conversations/${id}/done`, "POST")).status).toBe(200);
+    expect(((await (await call("/receipt-conversations")).json()) as { conversations: unknown[] }).conversations).toEqual([]);
+    expect((await SELF.fetch("https://example.com/receipt-conversations")).status).toBe(401);
+  });
+});
+

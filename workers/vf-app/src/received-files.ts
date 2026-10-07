@@ -101,6 +101,8 @@ export function viewFor(contentType: string, filename: string | null): "inline" 
   if (type.includes("xml") || /\.xml$/i.test(filename ?? "")) return "inline";
   if (type.includes("csv") || /\.csv$/i.test(filename ?? "")) return "inline";
   if (type === "message/rfc822" || /\.eml$/i.test(filename ?? "")) return "inline";
+  // Decision 0659: a JSON body a route received (Receipts in) is text this app shows, as plain text is.
+  if (type.includes("json") || /\.json$/i.test(filename ?? "")) return "inline";
   if (type === "text/plain" || type === "application/pdf" || IMAGE.test(type)) return "inline";
   return "download";
 }
@@ -375,7 +377,7 @@ export function partResponse(
     const table = renderCsvTable(bytes, part.filename);
     if (table.html) return page(table.html);
   }
-  if (type.includes("xml") || type === "text/plain" || /\.(xml|csv)$/i.test(part.filename)) {
+  if (type.includes("xml") || type.includes("json") || type === "text/plain" || /\.(xml|csv|json)$/i.test(part.filename)) {
     return page(renderXmlForDisplay(bytes.slice().buffer as ArrayBuffer));
   }
   return new Response(bytes.slice().buffer as ArrayBuffer, {

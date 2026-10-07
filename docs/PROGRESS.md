@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 7 October 2026 (decision 0658). A living document: what
+Last updated 7 October 2026 (decision 0660). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,37 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Conversations on Tasks (0660)
+
+Someone added to a receipt's chat now sees it in the app, not only by
+email. A **Conversations** section sits at the top of Tasks, or of Goods
+Receipts for the Warehouse, as agreed against a mock-up.
+
+- **What it lists:** each receipt they were added to (by whom, through
+  which team), or with new messages for them. The latest message is
+  quoted.
+- **Actions:** **Open** shows the receipt and catches them up. **Done**
+  catches them up without opening it.
+- **Layout:** about four rows show; more scroll inside the section, so
+  the tasks below stay in view.
+- **The menu** shows how many there are.
+- Full reasoning and verification counts are in decision 0660.
+
+### Receipt emails, Claim, tabs and Attachments (0659)
+
+From Dan trying the receipt chat:
+
+- **Emails** name the organisation in the subject, and list the
+  organisation, supplier, orders, delivery note and date. Whoever added
+  people hears their replies.
+- **Claim and Release** are actions with icons, top right beside Close,
+  as on an invoice.
+- **The side panel** has the invoice viewer's tabs: **Attachments** and
+  **Timeline / Chat** with its count.
+- **Attachments** show what the receipt came with: the uploaded CSV, or
+  the JSON a warehouse system sent and the CSV read from it.
+- Full reasoning and verification counts are in decision 0659.
 
 ### A goods receipt's Timeline and Chat, with the Warehouse (0658)
 

@@ -91,6 +91,8 @@ const STRINGS = {
     "receipts.heldback": "Registered. Lines held back waiting for their purchase order: {n}. Each counts once its order is loaded and it matches.",
     "action.save": "Save",
     "action.close": "Close",
+    "action.claim": "Claim",
+    "action.release": "Release",
   },
 };
 
@@ -561,6 +563,10 @@ describe("claim before acting, and correcting the unit and quantity — decision
     const { openReceipt } = await import("/goods-receipts.js");
     await openReceipt("wh-1");
     expect(document.getElementById("receipt-task")?.textContent).toContain("Nobody has claimed this receipt's task.");
+    // Decision 0659: Claim with the other actions, top right, just left of Close, with its icon.
+    const actions = [...document.querySelectorAll(".popout .cardhead .statebuttons .actionlink")];
+    expect(actions.map((a) => a.textContent)).toEqual(["Claim", "Close"]);
+    expect(document.getElementById("receipt-claim")?.querySelector("svg")).not.toBeNull();
     expect(document.getElementById("fix-change-1")).toBeNull();
     expect(button("Register")).toBeUndefined();
     expect(button("Reject receipt")).toBeUndefined();
@@ -593,6 +599,7 @@ describe("claim before acting, and correcting the unit and quantity — decision
     await openReceipt("wh-1");
     expect(document.getElementById("receipt-task")?.textContent).toContain("You have claimed this receipt's task.");
     expect(document.getElementById("receipt-release")).not.toBeNull();
+    expect([...document.querySelectorAll(".popout .cardhead .statebuttons .actionlink")].map((a) => a.textContent)).toEqual(["Register", "Reject receipt", "Release", "Close"]);
     expect(button("Register")).not.toBeUndefined();
     expect((document.getElementById("fix-unit-1") as HTMLInputElement).value).toBe("BOX");
     (document.getElementById("fix-unit-1") as HTMLInputElement).value = "ea";

@@ -5,6 +5,7 @@ import { icon } from "/icons.js";
 import { currentOrgId } from "/orgs.js";
 import { donutChart } from "/charts.js";
 import { buildReceiptTimeline } from "/receipt-timeline.js";
+import { buildAttachmentsTab } from "/attachments.js";
 
 /**
  * **Goods Receipts — decision 0645, slice 3 of the Goods Receipts
@@ -590,32 +591,75 @@ export async function openReceipt(id, { onDone = null } = {}) {
       })
     );
   }
+  /**
+   * **Claim and Release with the other actions, top right — decision
+   * 0659** (Dan: "inconsistent with others ... give it an icon, and place
+   * in the top right, to the left of the Close icon"), as the invoice
+   * viewer's are. The line under the heading still says who holds it.
+   */
+  const claimOrRelease = async (what) => {
+    const done = await post(`/tasks/${encodeURIComponent(task.id)}/${what}`, {});
+    if (!done.ok) {
+      problem.replaceChildren(el("div", { text: done.body?.error ?? t("receipts.task.failed") }));
+      return;
+    }
+    close();
+    await openReceipt(id, { onDone });
+    if (onDone) await onDone();
+  };
+  if (task && canRecord() && task.canClaim) {
+    const claim = actionLink("claim", { primary: true, onclick: () => claimOrRelease("claim") });
+    claim.id = "receipt-claim";
+    buttons.push(claim);
+  }
+  if (task && canRecord() && task.canRelease) {
+    const release = actionLink("release", { onclick: () => claimOrRelease("release") });
+    release.id = "receipt-release";
+    buttons.push(release);
+  }
   buttons.push(actionLink("close", { onclick: () => close() }));
 
   /** Decision 0657: who holds the receipt's task, with Claim or Release, as on an invoice. */
   const taskBar = () => {
     if (!task || !canRecord()) return null;
-    const claimOrRelease = async (what) => {
-      const done = await post(`/tasks/${encodeURIComponent(task.id)}/${what}`, {});
-      if (!done.ok) {
-        problem.replaceChildren(el("div", { text: done.body?.error ?? t("receipts.task.failed") }));
-        return;
-      }
-      close();
-      await openReceipt(id, { onDone });
-      if (onDone) await onDone();
-    };
     const words = task.mine
       ? t("receipts.task.mine")
       : task.claimedBy
         ? t("receipts.task.other").replace("{who}", task.claimedBy)
         : t("receipts.task.none");
-    return el("div", { class: "warn", id: "receipt-task" }, [
-      el("span", { text: words }),
-      task.canClaim ? el("button", { type: "button", class: "primary", id: "receipt-claim", text: t("receipts.task.claim"), onclick: () => claimOrRelease("claim") }) : null,
-      task.canRelease ? el("button", { type: "button", id: "receipt-release", text: t("receipts.task.release"), onclick: () => claimOrRelease("release") }) : null,
-    ].filter(Boolean));
+    return el("div", { class: "warn", id: "receipt-task" }, [el("span", { text: words })]);
   };
+
+  /**
+   * **Attachments and Timeline / Chat, as tabs — decision 0659**, as the
+   * invoice viewer's panel has them (Dan: "'Timeline / Chat <count>' ...
+   * in a pillbox and highlighted", and "an Attachments tab next to it").
+   * Timeline / Chat is shown first; Attachments loads when first opened.
+   */
+  function sidePanel() {
+    const countBadge = el("span", { class: "activitycount", hidden: "hidden" });
+    const attachments = buildAttachmentsTab(id, { base: `/api/goods-receipts/${encodeURIComponent(id)}`, id: "receipt-attachments", subject: "receipt" });
+    const tabs = [
+      { key: "attachments", label: t("viewer.attachmentstab"), pane: attachments.content, onSelect: attachments.open },
+      { key: "timeline", label: t("activity.timelinetab"), pane: buildReceiptTimeline(id, { countBadge }), badge: countBadge },
+    ];
+    const select = (which) => {
+      for (const tab of tabs) {
+        tab.button.className = tab.key === which ? "doctab on" : "doctab";
+        tab.button.setAttribute("aria-selected", String(tab.key === which));
+        tab.pane.hidden = tab.key !== which;
+      }
+      tabs.find((tab) => tab.key === which)?.onSelect?.();
+    };
+    for (const tab of tabs) {
+      tab.button = el("button", { type: "button", role: "tab", class: "doctab", id: `receipt-tab-${tab.key}`, onclick: () => select(tab.key) }, [el("span", { text: tab.label }), tab.badge ?? null]);
+    }
+    select("timeline");
+    return el("aside", { class: "receiptside" }, [
+      el("div", { class: "doctabs receipttabs", role: "tablist" }, tabs.map((tab) => tab.button)),
+      ...tabs.map((tab) => tab.pane),
+    ]);
+  }
 
   const fact = (k, v) => [el("div", { class: "muted", text: t(k) }), el("div", { text: v || "—" })];
   /**
@@ -701,7 +745,7 @@ export async function openReceipt(id, { onDone = null } = {}) {
     ...orders.flatMap((o) => [orderHeading(o), figuresTable(o)]),
   ]),
     // Decision 0658: what happened to it, and the conversation, with whoever AP brings in.
-    el("aside", { class: "receiptside" }, [buildReceiptTimeline(id)]),
+    sidePanel(),
   ], true, "receiptpop");
 }
 
@@ -847,6 +891,8 @@ function render() {
         el("div", {}, [
           topbar(t("nav.goodsreceipts"), t("receipts.conversations.subtitle")),
           el("div", { id: "receipts-note" }),
+          // Decision 0660: what is new for them, as on Tasks.
+          el("div", { id: "receiptconversations", hidden: "hidden" }),
           el("div", { class: "panel" }, [
             el("div", { class: "cardhead" }, [el("h3", { text: t("receipts.conversations.heading") })]),
             el("p", { class: "muted", text: t("receipts.conversations.help") }),
@@ -883,5 +929,9 @@ export async function open() {
   page = 1;
   const [ok] = await Promise.all([load(), onlyConversations() ? null : loadCounts(), loadExtras()]);
   render();
+  if (onlyConversations())
+    import("/receipt-conversations.js")
+      .then((m) => m.fill(document.getElementById("receiptconversations"), { navScreen: "goodsreceipts" }))
+      .catch(() => {});
   if (!ok) note(t("receipts.failed"));
 }

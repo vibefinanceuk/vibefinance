@@ -3,6 +3,7 @@ import { hasPermission, isWithinScope, unitsWherePermitted } from "./enforce.js"
 import { receiptViewScope, receiptScopeClause } from "./goods-receipts.js";
 import { isReceiptCollaborator, receiptEvent } from "./receipt-collaborators.js";
 import { sendEmailViaResend } from "./resend-client.js";
+import { viewFor, type ReceivedFile, type ReceivedMessage } from "./received-files.js";
 
 /**
  * **A goods receipt's Timeline and Chat — decision 0658.** Dan, 7
@@ -129,6 +130,8 @@ async function collaboratorsOf(db: D1Database, receiptId: string) {
 export async function handleGetReceiptTimeline(db: D1Database, userId: string, receiptId: string): Promise<RouteResult> {
   const access = await receiptAccess(db, userId, receiptId);
   if (!access) return notFound;
+  // 0660: reading the Timeline / Chat is catching up with it.
+  await markReceiptSeen(db, userId, receiptId);
   const items: TimelineItem[] = [];
   const r = await db
     .prepare(
@@ -368,8 +371,9 @@ async function latestComment(db: D1Database, receiptId: string): Promise<{ by: s
 
 /**
  * Everyone a new post goes to: the people and members of the teams in
- * the conversation, whoever holds the receipt's open task, and anyone
- * who has written in it, but not its author, and only those who could
+ * the conversation, whoever added them (0659: AP hears the Warehouse's
+ * reply), whoever holds the receipt's open task, and anyone who has
+ * written in it, but not its author, and only those who could
  * open it.
  */
 async function conversationPeople(db: D1Database, receiptId: string, authorId: string): Promise<string[]> {
@@ -378,6 +382,7 @@ async function conversationPeople(db: D1Database, receiptId: string, authorId: s
       .prepare(
         `SELECT c.user_id AS id FROM goods_receipt_collaborators c WHERE c.receipt_id = ?1 AND c.removed_at IS NULL AND c.user_id IS NOT NULL
          UNION SELECT m.user_id FROM goods_receipt_collaborators c JOIN org_team_members m ON m.team_id = c.team_id WHERE c.receipt_id = ?1 AND c.removed_at IS NULL
+         UNION SELECT c.added_by FROM goods_receipt_collaborators c WHERE c.receipt_id = ?1 AND c.removed_at IS NULL
          UNION SELECT t.claimed_by FROM tasks t JOIN stage_visits v ON v.id = t.stage_visit_id JOIN process_instances pi ON pi.id = v.process_instance_id
                WHERE pi.subject_type = 'goods_receipt' AND pi.subject_id = ?1 AND t.status = 'open' AND t.claimed_by IS NOT NULL
          UNION SELECT author_id FROM goods_receipt_comments WHERE receipt_id = ?1`
@@ -428,6 +433,11 @@ const WORDS: Record<Locale, Record<string, string>> = {
     postedLine: "{actor} wrote on goods receipt {number}:",
     latest: "The latest message, from {by}:",
     open: "Open the receipt",
+    organisation: "Organisation",
+    supplier: "Supplier",
+    orders: "Purchase order",
+    deliveryNote: "Delivery note",
+    receiptDate: "Receipt date",
     footer: "You get this because you are in this receipt's conversation in VibeFinance.",
   },
   de: {
@@ -439,6 +449,11 @@ const WORDS: Record<Locale, Record<string, string>> = {
     postedLine: "{actor} hat zu Wareneingang {number} geschrieben:",
     latest: "Die letzte Nachricht, von {by}:",
     open: "Wareneingang öffnen",
+    organisation: "Organisation",
+    supplier: "Lieferant",
+    orders: "Bestellung",
+    deliveryNote: "Lieferschein",
+    receiptDate: "Eingangsdatum",
     footer: "Sie erhalten dies, weil Sie in der Unterhaltung zu diesem Wareneingang in VibeFinance sind.",
   },
 };
@@ -452,19 +467,114 @@ function escapeHtml(s: string): string {
 }
 
 /** What the email says, in the reader's language. Exported for its test. */
+/**
+ * **What the receipt is, for the email — decision 0659.** Dan: the email
+ * "does not specify the Organisation". The organisation is the legal
+ * entity of the units its orders belong to (with the unit, where that is
+ * an operating unit beneath it); with the supplier, the orders, the
+ * delivery note and the date beside it, a reader knows which receipt
+ * this is before opening it.
+ */
+export interface ReceiptContext {
+  organisation: string | null;
+  supplier: string | null;
+  orders: string[];
+  deliveryNote: string | null;
+  receiptDate: string | null;
+}
+
+export async function receiptContext(db: D1Database, receiptId: string): Promise<ReceiptContext> {
+  const r = await db.prepare("SELECT receipt_date, delivery_note FROM goods_receipts WHERE id = ?").bind(receiptId).first<{ receipt_date: string | null; delivery_note: string | null }>();
+  const orders = (
+    await db
+      .prepare(
+        `SELECT DISTINCT l.order_number, po.org_unit_id, s.name AS supplier
+         FROM goods_receipt_lines l LEFT JOIN purchase_orders po ON po.order_number = l.order_number
+         LEFT JOIN suppliers s ON s.vat_id = po.seller_party_id AND s.status = 'active'
+         WHERE l.receipt_id = ? AND l.line_status = 'active' ORDER BY l.order_number`
+      )
+      .bind(receiptId)
+      .all<{ order_number: string; org_unit_id: string | null; supplier: string | null }>()
+  ).results;
+  const names: string[] = [];
+  for (const unitId of [...new Set(orders.map((o) => o.org_unit_id).filter((u): u is string => Boolean(u)))]) {
+    // Up from the order's unit to its legal entity.
+    const chain = (
+      await db
+        .prepare(
+          `WITH RECURSIVE up(id, name, kind, parent_unit_id, depth) AS (
+             SELECT id, name, kind, parent_unit_id, 0 FROM org_units WHERE id = ?
+             UNION ALL SELECT u.id, u.name, u.kind, u.parent_unit_id, up.depth + 1 FROM org_units u JOIN up ON u.id = up.parent_unit_id WHERE up.depth < 20
+           ) SELECT name, kind FROM up ORDER BY depth`
+        )
+        .bind(unitId)
+        .all<{ name: string; kind: string | null }>()
+    ).results;
+    if (chain.length === 0) continue;
+    const entity = chain.find((u) => u.kind === "legal_entity") ?? chain[chain.length - 1];
+    const name = entity.name === chain[0].name ? entity.name : `${entity.name} (${chain[0].name})`;
+    if (!names.includes(name)) names.push(name);
+  }
+  if (names.length === 0) {
+    // Orders with no unit are everyone's (0375); one legal entity is still the organisation.
+    const entities = (await db.prepare("SELECT name FROM org_units WHERE kind = 'legal_entity' LIMIT 2").all<{ name: string }>()).results;
+    if (entities.length === 1) names.push(entities[0].name);
+  }
+  const suppliers = [...new Set(orders.map((o) => o.supplier).filter((x): x is string => Boolean(x)))];
+  return {
+    organisation: names.length ? names.join(", ") : null,
+    supplier: suppliers.length ? suppliers.join(", ") : null,
+    orders: orders.map((o) => o.order_number),
+    deliveryNote: r?.delivery_note ?? null,
+    receiptDate: r?.receipt_date ?? null,
+  };
+}
+
 export function receiptEmail(
   locale: Locale,
-  input: { kind: "added" | "posted"; actor: string; team: string | null; number: string; latest: { by: string; body: string } | null; link: string | null }
+  input: {
+    kind: "added" | "posted";
+    actor: string;
+    team: string | null;
+    number: string;
+    latest: { by: string; body: string } | null;
+    link: string | null;
+    context?: ReceiptContext | null;
+  }
 ): { subject: string; text: string; html: string } {
   const w = WORDS[locale];
+  const c = input.context ?? null;
   const v = { actor: input.actor, number: input.number, team: input.team ?? "", by: input.latest?.by ?? "" };
-  const subject = fill(input.kind === "posted" ? w.postedSubject : input.team ? w.addedTeamSubject : w.addedSubject, v);
+  const bare = fill(input.kind === "posted" ? w.postedSubject : input.team ? w.addedTeamSubject : w.addedSubject, v);
+  const subject = c?.organisation ? `[${c.organisation}] ${bare}` : bare;
   const lead = fill(input.kind === "posted" ? w.postedLine : input.team ? w.addedTeamLine : w.addedLine, v);
   const quote = input.latest ? [...(input.kind === "added" ? [fill(w.latest, v)] : []), input.latest.body] : [];
-  const text = [lead, "", ...quote.flatMap((q) => [q, ""]), ...(input.link ? [`${w.open}: ${input.link}`, ""] : []), w.footer].join("\n");
+  const facts: [string, string][] = c
+    ? ([
+        [w.organisation, c.organisation],
+        [w.supplier, c.supplier],
+        [w.orders, c.orders.length ? c.orders.join(", ") : null],
+        [w.deliveryNote, c.deliveryNote],
+        [w.receiptDate, c.receiptDate],
+      ].filter(([, value]) => value) as [string, string][])
+    : [];
+  const text = [
+    lead,
+    "",
+    ...quote.flatMap((q) => [q, ""]),
+    ...(facts.length ? [...facts.map(([k, value]) => `${k}: ${value}`), ""] : []),
+    ...(input.link ? [`${w.open}: ${input.link}`, ""] : []),
+    w.footer,
+  ].join("\n");
+  const factsHtml = facts.length
+    ? `<table style="border-collapse:collapse;margin:0 0 12px;font-size:13px">${facts
+        .map(([k, value]) => `<tr><td style="padding:2px 12px 2px 0;color:#5b6675">${escapeHtml(k)}</td><td style="padding:2px 0">${escapeHtml(value)}</td></tr>`)
+        .join("")}</table>`
+    : "";
   const html = `<div style="font-family:Calibri,Carlito,'Segoe UI',Arial,sans-serif;color:#121a26;font-size:14px;line-height:1.5">
 <p style="margin:0 0 12px">${escapeHtml(lead)}</p>
 ${input.latest ? `${input.kind === "added" ? `<p style="margin:0 0 6px;color:#5b6675">${escapeHtml(fill(w.latest, v))}</p>` : ""}<blockquote style="margin:0 0 12px;padding:8px 12px;border-left:3px solid #c7d2e0;background:#f5f7fa">${escapeHtml(input.latest.body).replace(/\n/g, "<br>")}</blockquote>` : ""}
+${factsHtml}
 ${input.link ? `<p style="margin:0 0 12px"><a href="${escapeHtml(input.link)}" style="color:#185fa5">${escapeHtml(w.open)}</a></p>` : ""}
 <p style="margin:16px 0 0;color:#5b6675;font-size:12px">${escapeHtml(w.footer)}</p></div>`;
   return { subject, text, html };
@@ -494,14 +604,176 @@ async function notify(
       .all<{ id: string; email: string | null; locale: string | null }>()
   ).results;
   const link = deps.appUrl ? `${deps.appUrl}/?receipt=${encodeURIComponent(receiptId)}` : null;
+  const context = await receiptContext(db, receiptId);
   const send = deps.send ?? sendEmailViaResend;
   for (const p of people) {
     if (!p.email || !(await couldSee(db, p.id))) continue;
     const locale: Locale = (p.locale ?? deps.defaultLocale ?? "en").toLowerCase().startsWith("de") ? "de" : "en";
-    const mail = receiptEmail(locale, { ...what, number, link });
+    const mail = receiptEmail(locale, { ...what, number, link, context });
     const result = await send(deps.email.apiKey, { from: deps.email.from, to: p.email, subject: mail.subject, text: mail.text, html: mail.html });
     if (result.ok) out.sent++;
     else out.failed++;
   }
   return out;
+}
+
+// ── Attachments ────────────────────────────────────────────────────────
+
+/**
+ * **What a receipt came with — decision 0659.** Dan: "an Attachments tab
+ * next to 'Timeline / Chat', with any associated attachments received
+ * from the Source Route / Import." A receipt names the message it came
+ * in by (`goods_receipts.route_message_id`, 0655): Create's upload (the
+ * CSV as sent) or Receipts in (the CSV read from the JSON, and the JSON
+ * itself, kept from this decision on). The same shapes as an invoice's
+ * Attachments tab (0571), so the panel is the same panel.
+ */
+export async function receiptMessages(db: D1Database, receiptId: string): Promise<ReceivedMessage[]> {
+  const m = await db
+    .prepare(
+      `SELECT m.id, s.name AS source, m.counterparty AS sender, m.subject, m.received_at
+       FROM goods_receipts r JOIN route_messages m ON m.id = r.route_message_id LEFT JOIN sources s ON s.id = m.instance_id
+       WHERE r.id = ?`
+    )
+    .bind(receiptId)
+    .first<{ id: string; source: string | null; sender: string | null; subject: string | null; received_at: string }>();
+  return m ? [{ id: m.id, source: m.source, sender: m.sender, subject: m.subject, receivedAt: m.received_at, partSeq: null, filename: null, keyed: false }] : [];
+}
+
+export async function receiptFiles(db: D1Database, receiptId: string): Promise<ReceivedFile[]> {
+  const files: ReceivedFile[] = [];
+  for (const m of await receiptMessages(db, receiptId)) {
+    const parts = (
+      await db
+        .prepare("SELECT seq, role, filename, content_type, bytes FROM route_message_parts WHERE message_id = ? AND role IN ('original', 'attachment') ORDER BY seq")
+        .bind(m.id)
+        .all<{ seq: number; role: string; filename: string; content_type: string; bytes: number }>()
+    ).results;
+    for (const p of parts)
+      files.push({ kind: "part", messageId: m.id, seq: p.seq, role: p.role, filename: p.filename, contentType: p.content_type, bytes: p.bytes, thisInvoice: false, view: viewFor(p.content_type, p.filename) });
+  }
+  return files;
+}
+
+/** One received part, if its message is the one this receipt came in by. */
+export async function partForReceipt(db: D1Database, receiptId: string, messageId: string, seq: number): Promise<{ r2Key: string; filename: string; contentType: string } | null> {
+  if (!(await receiptMessages(db, receiptId)).some((m) => m.id === messageId)) return null;
+  const row = await db
+    .prepare("SELECT r2_key, filename, content_type FROM route_message_parts WHERE message_id = ? AND seq = ? AND role IN ('original', 'attachment')")
+    .bind(messageId, seq)
+    .first<{ r2_key: string; filename: string; content_type: string }>();
+  return row ? { r2Key: row.r2_key, filename: row.filename, contentType: row.content_type } : null;
+}
+
+/** `GET /goods-receipts/:id/attachments` — for whoever may see the receipt, as its Timeline. */
+export async function handleReceiptAttachments(db: D1Database, userId: string, receiptId: string): Promise<RouteResult> {
+  if (!(await receiptAccess(db, userId, receiptId))) return notFound;
+  return { status: 200, body: { messages: await receiptMessages(db, receiptId), files: await receiptFiles(db, receiptId) } };
+}
+
+/** The subject a part token names for a receipt's file: never an invoice id, which has no `receipt:` in it. */
+export const RECEIPT_TOKEN_PREFIX = "receipt:";
+
+// ── Conversations, on Tasks ────────────────────────────────────────────
+
+/**
+ * **What a person has to catch up on — decision 0660.** Dan: added to a
+ * chat, someone "would not know that they have been added" but for the
+ * email; "similar behaviour to the Agents alert in the task manager".
+ * Agreed against a mock-up (7 October 2026): a **Conversations** section
+ * at the top of Tasks (and of Goods Receipts for the Warehouse), one row
+ * per receipt with something new for this person:
+ *
+ * - **added**: they, or a team they are in, were added since they last
+ *   caught up — by whom, through which team, when;
+ * - **new messages**: others wrote since then (since they were added,
+ *   where they never caught up), with the latest one quoted.
+ *
+ * Catching up is opening the receipt's Timeline / Chat, or **Done**
+ * (`goods_receipt_reads`); both move `seen_at` on, so a row comes back
+ * only when something new happens. Only receipts the person may see are
+ * offered, and those of the conversation as the email reckons it: the
+ * people and teams in it, whoever added them, the task's holder, and
+ * anyone who wrote.
+ */
+export async function markReceiptSeen(db: D1Database, userId: string, receiptId: string, now = new Date()): Promise<void> {
+  await db
+    .prepare(
+      `INSERT INTO goods_receipt_reads (receipt_id, user_id, seen_at) VALUES (?, ?, ?)
+       ON CONFLICT (receipt_id, user_id) DO UPDATE SET seen_at = excluded.seen_at`
+    )
+    .bind(receiptId, userId, now.toISOString())
+    .run();
+}
+
+const CONVERSATION_LIMIT = 50;
+
+export async function handleListReceiptConversations(db: D1Database, userId: string): Promise<RouteResult> {
+  // Every receipt this person is part of the conversation on.
+  const candidates = (
+    await db
+      .prepare(
+        `SELECT receipt_id FROM goods_receipt_collaborators WHERE removed_at IS NULL AND (user_id = ?1 OR added_by = ?1 OR team_id IN (SELECT team_id FROM org_team_members WHERE user_id = ?1))
+         UNION SELECT receipt_id FROM goods_receipt_comments WHERE author_id = ?1
+         UNION SELECT pi.subject_id FROM tasks t JOIN stage_visits v ON v.id = t.stage_visit_id JOIN process_instances pi ON pi.id = v.process_instance_id
+               WHERE pi.subject_type = 'goods_receipt' AND t.status = 'open' AND t.claimed_by = ?1
+                 AND EXISTS (SELECT 1 FROM goods_receipt_comments c WHERE c.receipt_id = pi.subject_id)`
+      )
+      .bind(userId)
+      .all<{ receipt_id: string }>()
+  ).results.map((r) => r.receipt_id);
+
+  const out = [];
+  for (const receiptId of candidates) {
+    const seen = (await db.prepare("SELECT seen_at FROM goods_receipt_reads WHERE receipt_id = ? AND user_id = ?").bind(receiptId, userId).first<{ seen_at: string }>())?.seen_at ?? null;
+    // Added: the latest time this person came in, by name or through a team, after they last caught up.
+    const added = await db
+      .prepare(
+        `SELECT c.added_at, ab.name AS added_by, t.name AS team FROM goods_receipt_collaborators c
+         LEFT JOIN org_users ab ON ab.id = c.added_by LEFT JOIN org_teams t ON t.id = c.team_id
+         WHERE c.receipt_id = ?1 AND c.removed_at IS NULL AND c.added_by != ?2
+           AND (c.user_id = ?2 OR c.team_id IN (SELECT team_id FROM org_team_members WHERE user_id = ?2))
+         ORDER BY c.added_at DESC LIMIT 1`
+      )
+      .bind(receiptId, userId)
+      .first<{ added_at: string; added_by: string | null; team: string | null }>();
+    const addedNew = added && (!seen || added.added_at > seen) ? added : null;
+    const since = seen ?? added?.added_at ?? null;
+    const fresh = await db
+      .prepare(`SELECT count(*) AS n FROM goods_receipt_comments WHERE receipt_id = ? AND author_id != ? ${since ? "AND created_at > ?" : ""}`)
+      .bind(...[receiptId, userId, ...(since ? [since] : [])])
+      .first<{ n: number }>();
+    const newMessages = fresh?.n ?? 0;
+    if (!addedNew && newMessages === 0) continue;
+    const access = await receiptAccess(db, userId, receiptId);
+    if (!access) continue;
+    const latest = await db
+      .prepare(
+        `SELECT c.body, c.created_at, u.name FROM goods_receipt_comments c LEFT JOIN org_users u ON u.id = c.author_id
+         WHERE c.receipt_id = ? ORDER BY c.created_at DESC, c.id DESC LIMIT 1`
+      )
+      .bind(receiptId)
+      .first<{ body: string; created_at: string; name: string | null }>();
+    const context = await receiptContext(db, receiptId);
+    out.push({
+      receiptId,
+      receiptNumber: access.receipt.receipt_number,
+      organisation: context.organisation,
+      supplier: context.supplier,
+      orders: context.orders,
+      added: addedNew ? { by: addedNew.added_by, team: addedNew.team, at: iso(addedNew.added_at) } : null,
+      newMessages,
+      latest: latest ? { by: latest.name, body: latest.body.length > 280 ? `${latest.body.slice(0, 279)}…` : latest.body, at: iso(latest.created_at) } : null,
+      lastAt: [iso(latest?.created_at), iso(addedNew?.added_at)].filter(Boolean).sort().at(-1) ?? null,
+    });
+  }
+  out.sort((a, b) => String(b.lastAt).localeCompare(String(a.lastAt)));
+  return { status: 200, body: { conversations: out.slice(0, CONVERSATION_LIMIT) } };
+}
+
+/** `POST /receipt-conversations/:id/done` — caught up, until someone writes again or adds them again. */
+export async function handleReceiptConversationDone(db: D1Database, userId: string, receiptId: string, now = new Date()): Promise<RouteResult> {
+  if (!(await receiptAccess(db, userId, receiptId))) return notFound;
+  await markReceiptSeen(db, userId, receiptId, now);
+  return { status: 200, body: { done: true } };
 }

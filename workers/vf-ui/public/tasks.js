@@ -961,15 +961,35 @@ const NAV_PERMISSIONS = {
  */
 const NAV_PARENT = { mapping: "routes", routelibrary: "routes", outboundmapping: "processroutes" };
 
+/**
+ * **A count on a menu item — decision 0660**: the Conversations waiting
+ * for this person, on Tasks (or Goods Receipts for the Warehouse). Kept
+ * here so a menu drawn again keeps it.
+ */
+const navBadges = new Map();
+export function setNavBadge(screen, n) {
+  navBadges.set(screen, n);
+  for (const item of document.querySelectorAll(`.navitem[data-screen="${screen}"]`)) {
+    item.querySelector(".navbadge")?.remove();
+    if (n > 0) item.append(el("span", { class: "navbadge", title: t("receipts.conv.heading"), text: String(n) }));
+  }
+}
+
 function navLink(screen, iconName, hue) {
+  const n = navBadges.get(screen) ?? 0;
   return el(
     "a",
     {
       class: `navitem navhue${hue}${current === screen || NAV_PARENT[current] === screen ? " on" : ""}`,
       title: t(`nav.${screen}`),
+      "data-screen": screen,
       onclick: () => go(screen),
     },
-    [el("span", { class: "navicon" }, [icon(iconName)]), el("span", { class: "navlabel", text: t(`nav.${screen}`) })]
+    [
+      el("span", { class: "navicon" }, [icon(iconName)]),
+      el("span", { class: "navlabel", text: t(`nav.${screen}`) }),
+      ...(n > 0 ? [el("span", { class: "navbadge", title: t("receipts.conv.heading"), text: String(n) })] : []),
+    ]
   );
 }
 
@@ -1361,6 +1381,8 @@ function render() {
       el("div", {}, [
         topbar(t("nav.tasks"), `${me.name} · ${me.environmentId ?? ""}`),
         // From agents — decision 0622: filled after rendering, hidden when empty.
+        // Conversations — decision 0660: receipts this person was added to, or with new messages.
+        el("div", { id: "receiptconversations", hidden: "hidden" }),
         el("div", { id: "agentnotes", hidden: "hidden" }),
 
         el("div", { class: "panel" }, [
@@ -1428,6 +1450,9 @@ function render() {
   // From agents — decision 0622. Never holds the task list up, and says nothing on failure.
   import("/agent-notes.js")
     .then((m) => m.fill(document.getElementById("agentnotes")))
+    .catch(() => {});
+  import("/receipt-conversations.js")
+    .then((m) => m.fill(document.getElementById("receiptconversations")))
     .catch(() => {});
 }
 

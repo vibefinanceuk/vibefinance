@@ -288,6 +288,8 @@ import receiptsInStringsSql from "../migrations/0297_receipts_in_strings.sql?raw
 import receiptsAgentsStringsSql from "../migrations/0298_receipts_agents_strings.sql?raw";
 import receiptClaimStringsSql from "../migrations/0299_receipt_claim_and_correct_strings.sql?raw";
 import receiptTimelineStringsSql from "../migrations/0300_receipt_timeline_strings.sql?raw";
+import receiptAttachmentsStringsSql from "../migrations/0301_receipt_attachments_strings.sql?raw";
+import receiptConversationsStringsSql from "../migrations/0302_receipt_conversations_strings.sql?raw";
 
 function stripSqlComments(sql: string): string {
   return sql
@@ -609,5 +611,7 @@ export async function applyTestSchema(): Promise<void> {
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(receiptsAgentsStringsSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(receiptClaimStringsSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(receiptTimelineStringsSql)));
+  await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(receiptAttachmentsStringsSql)));
+  await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(receiptConversationsStringsSql)));
 
 }
