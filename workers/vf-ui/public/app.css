@@ -5482,3 +5482,13 @@
 .tlchat .activitywho .activitywhen { font-weight: 400; }
 .tlchat.mine { flex-direction: row-reverse; }
 .tlchat.mine .activitybubble { background: var(--bg-accent); }
+
+/*
+  Decision 0676 — the Timeline's entries line up with the box to write
+  in: the feed is inset by the same 14px as `.activityinput`, so a card's
+  left edge meets the box's and its right edge the Post button's. The
+  unreadable-document alert is the feed's first entry, so it scrolls
+  with the rest; inside the feed the gap spaces it, not its own margin.
+*/
+.tlfeed { padding-inline: 14px; }
+.tlfeed > .systemalert { margin-bottom: 0; flex: 0 0 auto; color: var(--text-primary); }

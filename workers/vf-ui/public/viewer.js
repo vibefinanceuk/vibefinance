@@ -3160,7 +3160,21 @@ export function buildDocTabs(invoiceId) {
    */
   const attachments = buildAttachmentsTab(invoiceId);
 
-  const { content: timelineContent, countBadge } = buildActivityTab(invoiceId);
+  // Decision 0676: the unreadable-document alert scrolls with the feed, as its first entry.
+  const unreadableAlert =
+    !stored.intake || stored.intake.readable
+      ? null
+      : el("div", { class: "systemalert" }, [
+          el("div", { class: "icon" }, [icon("systemalert")]),
+          el("div", {}, [
+            el("div", { class: "systemalertlabel", text: t("activity.systemalert") }),
+            el("div", { class: "systemalertheadline", text: t("viewer.unreadable") }),
+            ...(stored.intake.attempted
+              ? [el("div", { class: "systemalertdetail", text: `${t("viewer.tried")} ${stored.intake.attempted}` })]
+              : []),
+          ]),
+        ]);
+  const { content: timelineContent, countBadge } = buildActivityTab(invoiceId, { banner: unreadableAlert });
   const { content: collaboratorsContent } = buildCollaboratorsControl(invoiceId);
 
   /**
@@ -3200,18 +3214,6 @@ export function buildDocTabs(invoiceId) {
     { class: "vtimeline" },
     [
       collaboratorsContent,
-      !stored.intake || stored.intake.readable
-        ? null
-        : el("div", { class: "systemalert" }, [
-            el("div", { class: "icon" }, [icon("systemalert")]),
-            el("div", {}, [
-              el("div", { class: "systemalertlabel", text: t("activity.systemalert") }),
-              el("div", { class: "systemalertheadline", text: t("viewer.unreadable") }),
-              ...(stored.intake.attempted
-                ? [el("div", { class: "systemalertdetail", text: `${t("viewer.tried")} ${stored.intake.attempted}` })]
-                : []),
-            ]),
-          ]),
       timelineContent,
     ].filter(Boolean)
   );

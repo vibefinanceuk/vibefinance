@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 7 October 2026 (decision 0675). A living document: what
+Last updated 7 October 2026 (decision 0676). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,14 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### The Timeline's alert scrolls, and its entries line up (0676)
+
+A document's unreadable-document alert is now the Timeline's first
+entry and scrolls with the rest. The entries are inset to line up with
+the box to write in and the Post button.
+
+Full reasoning is in decision 0676.
 
 ### The Timeline's entries: coloured cards and chat bubbles (0675)
 

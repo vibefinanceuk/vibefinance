@@ -5537,6 +5537,15 @@ describe("the document/timeline tabs (decision 0269)", () => {
     expect(note?.querySelector(".systemalertlabel")?.textContent).toBe("System Alert");
     expect(note?.textContent).toContain("This document could not be read automatically");
     expect(note?.textContent).toContain("Tried: OCR");
+    // Decision 0676: the feed's first entry, so it scrolls with the rest.
+    expect(note?.parentElement?.classList.contains("activityfeed")).toBe(true);
+    expect(note?.parentElement?.firstElementChild).toBe(note);
+  });
+
+  it("insets the Timeline's entries to line up with the box to write in (decision 0676)", async () => {
+    const css = (await import("virtual:stylesheets")).default["app.css"];
+    expect(css).toContain(".tlfeed { padding-inline: 14px; }");
+    expect(css).toMatch(/\.activityinput \{[^}]*padding: 10px 14px;/);
   });
 
   it("does not colour the system alert orange", async () => {

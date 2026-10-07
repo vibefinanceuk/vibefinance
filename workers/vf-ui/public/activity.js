@@ -28,11 +28,15 @@ import { icon } from "/icons.js";
 let items = null;
 let loading = false;
 let error = null;
+// Decision 0676: a standing note about the document (the unreadable-document
+// alert), drawn first inside the feed so it scrolls with the entries.
+let banner = null;
 
 function reset() {
   items = null;
   loading = false;
   error = null;
+  banner = null;
 }
 
 async function load(invoiceId, content, countBadge) {
@@ -258,6 +262,7 @@ function renderContent(content, countBadge, invoiceId) {
         ? [el("div", { class: "muted", text: t("activity.empty") })]
         : items.map(itemRow)
   );
+  if (banner) feed.prepend(banner);
   // Decision 0675: the entries keep Day's colours in Night too.
   feed.classList.add("tlfeed");
 
@@ -290,8 +295,9 @@ function renderContent(content, countBadge, invoiceId) {
  * `countBadge` is a live node meant to sit inside `viewer.js`'s own
  * tab button, updated in place as loading completes.
  */
-export function buildActivityTab(invoiceId) {
+export function buildActivityTab(invoiceId, { banner: note = null } = {}) {
   reset();
+  banner = note;
   const content = el("div", { class: "activitytabcontent" });
   const countBadge = el("span", { class: "activitycount", hidden: "hidden" });
   load(invoiceId, content, countBadge);
