@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 7 October 2026 (decision 0663). A living document: what
+Last updated 7 October 2026 (decision 0664). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,13 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Compact actions: one resting colour, brighter on hover (0664)
+
+A primary action rested bright, in the colour hover gives, so it never
+changed when hovered. Compact actions now all rest in the softer colour
+and brighten on hover. The primary one keeps its bolder icon. Full
+reasoning is in decision 0664.
 
 ### The Goods Receipts screen's actions (0663)
 

@@ -213,6 +213,15 @@ describe("the Goods Receipts screen", () => {
     expect(ret.querySelector("svg")!.innerHTML).not.toBe(rec.querySelector("svg")!.innerHTML);
   });
 
+  it("rests every compact action in the same colour, primary or not, and brightens each on hover (decision 0664)", async () => {
+    const css = ((await import("virtual:stylesheets")).default as Record<string, string>)["app.css"];
+    // The cause: a primary action rested in --text-primary, which is also what hover gives, so it never changed.
+    expect(css).toContain(".actionlink.compactlink.primary { color: var(--text-secondary); }");
+    expect(css).toContain(".actionlink.compactlink:hover:not(:disabled) { color: var(--text-primary); }");
+    await openScreen(["AP.Receive"]);
+    expect(document.getElementById("receipts-toupload")!.className).toBe("actionlink primary compactlink");
+  });
+
   it("lets AP.Validate look, with the order's state and credit expected, but not record", async () => {
     await openScreen(["AP.Validate"]);
     expect([...document.querySelectorAll(".navitem")].some((n) => n.textContent === "Goods Receipts")).toBe(true);

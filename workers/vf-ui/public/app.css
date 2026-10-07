@@ -5394,3 +5394,12 @@
 /* Decision 0662: a card's own actions in the invoice viewer, small, icon left of the word, as the Agents screen's. */
 .actionlink.compactlink { flex-direction: row; padding: 4px 8px; gap: 4px; }
 .actionlink.compactlink svg { width: 16px; height: 16px; }
+/*
+  Decision 0664: every compact action rests in the same softer colour and
+  brightens on hover, primary or not (Dan: Upload receipts and Record a
+  receipt "have a lighter font" and do not change when hovered, where
+  Record a return does). The one to press is still told apart, by its
+  bolder icon (`.actionlink.primary svg`, decision 0108).
+*/
+.actionlink.compactlink.primary { color: var(--text-secondary); }
+.actionlink.compactlink:hover:not(:disabled) { color: var(--text-primary); }
