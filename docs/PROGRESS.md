@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 7 October 2026 (decision 0671). A living document: what
+Last updated 7 October 2026 (decision 0672). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,14 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Return Reasons: AP team email first, lists side by side (0672)
+
+The AP team email card comes first, then Return reasons and Goods
+return reasons side by side at half the width each. Every Save and Add
+on the tab is a small icon-and-word action.
+
+Full reasoning is in decision 0672.
 
 ### Stage Restrictions: return targets' Add and Remove (0671)
 

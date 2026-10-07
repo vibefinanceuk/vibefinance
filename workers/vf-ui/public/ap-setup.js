@@ -476,7 +476,7 @@ function returnReasonRow(reason, problem, base = "return-reasons") {
   return el("div", { class: "returnreasonrow" }, [
     labelInput,
     el("label", { class: "returnreasonactive" }, [activeCheckbox, el("span", { text: t("apsetup.returnreasons.active") })]),
-    actionLink("save", { onclick: save }),
+    compactLink("save", { onclick: save }),
   ]);
 }
 
@@ -511,7 +511,7 @@ function reasonListPanel(reasons, base, titleKey, subKey, problem, id) {
     el("div", { class: "cardhead" }, [el("h3", { text: t(titleKey) })]),
     el("p", { class: "muted sm", text: t(subKey) }),
     el("div", { class: "returnreasonlist" }, rows),
-    el("div", { class: "returnreasonrow returnreasonnew" }, [newId, newLabel, actionLink("create", { label: t("apsetup.add"), onclick: addReason })]),
+    el("div", { class: "returnreasonrow returnreasonnew" }, [newId, newLabel, compactLink("addcard", { label: t("apsetup.add"), onclick: addReason })]),
   ]);
 }
 
@@ -532,15 +532,23 @@ function returnReasonsTab(problem) {
     render();
   };
 
+  // **Decision 0672:** the AP team email first, its Save small at the
+  // top right as Matching's (0669); then the two reason lists side by
+  // side, half the width each, as Approval Hierarchy's overrides (0670).
   return el("div", {}, [
     problem,
-    reasonListPanel(returnReasons, "return-reasons", "apsetup.returnreasons", "apsetup.returnreasons.sub", problem),
-    el("div", { class: "panel" }, [
-      el("div", { class: "cardhead" }, [el("h3", { text: t("apsetup.returnreasons.apteamemail") })]),
+    el("div", { class: "panel", id: "ap-team-email" }, [
+      el("div", { class: "cardhead" }, [
+        el("h3", { text: t("apsetup.returnreasons.apteamemail") }),
+        el("div", { class: "statebuttons" }, [compactLink("save", { onclick: saveApTeamEmail })]),
+      ]),
       el("p", { class: "muted sm", text: t("apsetup.returnreasons.apteamemailsub") }),
-      el("div", { class: "editgrid" }, [apTeamEmailInput, actionLink("save", { onclick: saveApTeamEmail })]),
+      el("div", { class: "editgrid" }, [apTeamEmailInput]),
     ]),
-    reasonListPanel(goodsReturnReasons, "goods-return-reasons", "apsetup.goodsreturnreasons", "apsetup.goodsreturnreasons.sub", problem, "goods-return-reasons"),
+    el("div", { class: "overridepair reasonpair" }, [
+      reasonListPanel(returnReasons, "return-reasons", "apsetup.returnreasons", "apsetup.returnreasons.sub", problem, "return-reasons"),
+      reasonListPanel(goodsReturnReasons, "goods-return-reasons", "apsetup.goodsreturnreasons", "apsetup.goodsreturnreasons.sub", problem, "goods-return-reasons"),
+    ]),
   ]);
 }
 

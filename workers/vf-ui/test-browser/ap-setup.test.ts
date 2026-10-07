@@ -2159,6 +2159,31 @@ describe("the Return Reasons tab (decision 0498, row layout in 0499)", () => {
     expect(listedAfterCreate).toBe(true);
   });
 
+  it("puts the AP team email first, then the two lists side by side, every Save and Add compact (decision 0672)", async () => {
+    await openApSetupAs(
+      ["Admin.Configure"],
+      EMPTY_OVERVIEW,
+      EMPTY_CONFIG,
+      returnReasonsRoutes(REASONS, { apTeamEmail: "ap@acme.com" }, {
+        "/api/admin/goods-return-reasons": { reasons: [{ id: "damaged", label: "Damaged", active: true, sortOrder: 10 }] },
+      })
+    );
+    switchTab("Return Reasons");
+    const panels = [...document.querySelectorAll(".panel")].map((p) => p.id);
+    expect(panels).toEqual(["ap-team-email", "return-reasons", "goods-return-reasons"]);
+    const pair = document.querySelector(".reasonpair") as HTMLElement;
+    expect(pair.classList.contains("overridepair")).toBe(true);
+    expect([...pair.children].map((c) => c.id)).toEqual(["return-reasons", "goods-return-reasons"]);
+    const emailSave = document.querySelector("#ap-team-email .cardhead button") as HTMLElement;
+    expect(emailSave.textContent).toBe("Save");
+    const buttons = [...document.querySelectorAll("#ap-team-email button, .reasonpair button")].filter((b) => ["Save", "Add"].includes(b.textContent ?? ""));
+    expect(buttons).toHaveLength(1 + 3 + 2);
+    for (const b of buttons) {
+      expect(b.classList.contains("compactlink"), b.textContent ?? "").toBe(true);
+      expect(b.firstElementChild?.tagName.toLowerCase()).toBe("svg");
+    }
+  });
+
   it("lists why goods went back in a panel of its own, and adds to that list — decision 0643", async () => {
     const created: { path: string; body: unknown }[] = [];
     await openApSetupAs(
