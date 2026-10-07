@@ -1,7 +1,7 @@
 # 0673: Purchase Orders — CSV Template and Load CSV, as an icon with its word
 
-**Status: built and tested locally, not yet pushed or deployed.** It is
-`vf-ui` only, with no migration. Deploy vf-ui.
+**Status: live** at `e6149fb`, pushed and deployed 7 October 2026. It is
+`vf-ui` only, with no migration.
 
 ## What was asked
 

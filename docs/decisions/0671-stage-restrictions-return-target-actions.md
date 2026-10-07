@@ -1,7 +1,7 @@
 # 0671: Stage Restrictions — Add and Remove as an icon with its word, and the toggles aligned
 
-**Status: built and tested locally, not yet pushed or deployed.** It is
-`vf-ui` only, with no migration. Deploy vf-ui.
+**Status: live** at `e6149fb`, pushed and deployed 7 October 2026. It is
+`vf-ui` only, with no migration.
 
 ## What was asked
 
