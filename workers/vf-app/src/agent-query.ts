@@ -81,6 +81,34 @@ function daysSince(expr: string): string {
 }
 
 /**
+ * **A receipt line's value — decision 0656**: its quantity at the order
+ * line's unit price (price ÷ base quantity, else amount ÷ quantity), as
+ * GRNI values goods (0650). Uses `rl` and `pl`.
+ */
+const RECEIPT_LINE_VALUE = `ROUND(rl.quantity * COALESCE(pl.price_amount / NULLIF(COALESCE(pl.base_quantity, 1), 0), pl.line_extension_amount / NULLIF(pl.quantity, 0)), 2)`;
+
+/**
+ * **A purchase order line's receipt state — decision 0656**, as Goods
+ * Receipts works it out (0645/0646): net received on registered
+ * receipts (counted lines only) against the ordered quantity, within
+ * the supplier's quantity tolerance, else the organisation's. Uses `po`
+ * and `pl`.
+ */
+const PO_LINE_RECEIPT_STATE = `(SELECT CASE
+    WHEN x.net IS NULL OR x.net <= 1e-9 THEN 'not_received'
+    WHEN pl.quantity IS NULL OR pl.quantity <= 0 THEN 'fully_received'
+    WHEN x.net > pl.quantity * (1 + x.tol / 100.0) + 1e-9 THEN 'over_received'
+    WHEN x.net >= pl.quantity * (1 - x.tol / 100.0) - 1e-9 THEN 'fully_received'
+    ELSE 'partially_received' END
+  FROM (SELECT
+      (SELECT SUM(CASE gl.movement WHEN 'received' THEN gl.quantity ELSE -gl.quantity END)
+       FROM goods_receipt_lines gl JOIN goods_receipts gr ON gr.id = gl.receipt_id
+       WHERE gl.order_number = po.order_number AND gl.order_line_number = pl.line_number
+         AND gr.status = 'registered' AND gr.cancelled_at IS NULL AND gl.line_status = 'active' AND gl.waiting_since IS NULL) AS net,
+      COALESCE((SELECT s3.quantity_tolerance_pct FROM suppliers s3 WHERE s3.vat_id = po.seller_party_id ORDER BY s3.status = 'active' DESC LIMIT 1),
+               (SELECT quantity_tolerance_pct FROM org_matching_config WHERE id = 1), 0) AS tol) x)`;
+
+/**
  * **A returned invoice's corrected one has arrived — decision 0632**: a
  * later invoice with the same number from the same supplier (matched, or
  * the same printed name). Uses `h` and `pi`. Kept here since 0637, so the
@@ -409,6 +437,89 @@ export const QUERY_DATASETS: QueryDataset[] = [
         group: true,
         values: ["yes", "no"],
         enumKey: "agents.qyesno",
+      },
+      // Decision 0656: where the line stands on goods received (registered receipts, within tolerance).
+      {
+        key: "receipt",
+        words: "goods received against the line: not_received, partially_received, fully_received or over_received",
+        kind: "enum",
+        sql: PO_LINE_RECEIPT_STATE,
+        label: "agents.col.receiptstate",
+        group: true,
+        values: ["not_received", "partially_received", "fully_received", "over_received"],
+        enumKey: "agents.qreceipt",
+      },
+    ],
+  },
+  /**
+   * **Goods receipts — decision 0656**: one row per receipt line, with
+   * its receipt, order and supplier. AP.Validate as Purchase orders,
+   * scoped by the order's organisation (a line whose order is not
+   * loaded has none, and is everyone's, as elsewhere).
+   */
+  {
+    id: "receipts",
+    permission: "AP.Validate",
+    from: `goods_receipt_lines rl
+      JOIN goods_receipts r ON r.id = rl.receipt_id
+      LEFT JOIN purchase_orders po ON po.order_number = rl.order_number
+      LEFT JOIN purchase_order_lines pl ON pl.purchase_order_id = po.id AND pl.line_number = rl.order_line_number
+      LEFT JOIN goods_return_reasons grr ON grr.id = rl.return_reason_id`,
+    scope: "po.org_unit_id",
+    rowId: "rl.id",
+    invoiceId: null,
+    since: "rl.created_at",
+    currency: "po.currency",
+    totals: { total: RECEIPT_LINE_VALUE, currency: "po.currency" },
+    fields: [
+      { key: "receipt", words: "the warehouse's receipt or return number", kind: "text", sql: "r.receipt_number", label: "agents.col.receipt", group: true },
+      { key: "receiptDate", words: "when the goods arrived or went back", kind: "date", sql: "r.receipt_date", label: "agents.col.receiptdate" },
+      { key: "daysSinceReceipt", words: "days since the receipt date", kind: "days", sql: daysSince("r.receipt_date"), label: "agents.col.dayssincereceipt" },
+      { key: "order", words: "the purchase order number", kind: "text", sql: "rl.order_number", label: "agents.col.ponumber", group: true },
+      { key: "supplier", words: "the order's supplier", kind: "text", sql: "(SELECT s2.name FROM suppliers s2 WHERE s2.vat_id = po.seller_party_id ORDER BY s2.status = 'active' DESC LIMIT 1)", label: "agents.col.supplier", group: true },
+      { key: "item", words: "the item on the order line", kind: "text", sql: "COALESCE(pl.item_name, pl.item_description)", label: "agents.col.item", group: true },
+      {
+        key: "movement",
+        words: "received (goods in) or returned (goods sent back)",
+        kind: "enum",
+        sql: "rl.movement",
+        label: "agents.col.movement",
+        group: true,
+        values: ["received", "returned"],
+        enumKey: "agents.qmovement",
+      },
+      { key: "value", words: "the line's quantity at the order's price, in the order's currency", kind: "money", sql: RECEIPT_LINE_VALUE, label: "agents.col.value" },
+      { key: "currency", words: "the order's currency code", kind: "text", sql: "po.currency", label: "agents.col.currency", group: true },
+      {
+        key: "receiptStatus",
+        words: "the receipt: registered (counts), pending (in the Warehouse Receipts process), rejected, or cancelled",
+        kind: "enum",
+        sql: "CASE WHEN r.cancelled_at IS NOT NULL THEN 'cancelled' ELSE r.status END",
+        label: "agents.col.receiptstatus",
+        group: true,
+        values: ["registered", "pending", "rejected", "cancelled"],
+        enumKey: "agents.qreceiptstatus",
+      },
+      {
+        key: "lineStatus",
+        words: "the line: counted, waiting (for its purchase order to be loaded), needs_attention (at Matching), or rejected",
+        kind: "enum",
+        sql: "CASE WHEN rl.line_status = 'rejected' THEN 'rejected' WHEN rl.waiting_since IS NOT NULL THEN 'waiting' WHEN rl.check_reason IS NOT NULL AND r.status = 'pending' THEN 'needs_attention' ELSE 'counted' END",
+        label: "agents.col.linestatus",
+        group: true,
+        values: ["counted", "waiting", "needs_attention", "rejected"],
+        enumKey: "agents.qreceiptline",
+      },
+      { key: "daysWaiting", words: "days a line has waited for its purchase order (empty when not waiting)", kind: "days", sql: `CASE WHEN rl.waiting_since IS NULL THEN NULL ELSE ${daysSince("rl.waiting_since")} END`, label: "agents.col.dayswaiting" },
+      { key: "returnReason", words: "why goods went back (returns only)", kind: "text", sql: "grr.label", label: "agents.col.returnreason", group: true },
+      { key: "deliveryNote", words: "the supplier's delivery note", kind: "text", sql: "r.delivery_note", label: "agents.col.deliverynote" },
+      {
+        key: "recordedBy",
+        words: "who recorded it: the person, or the source it arrived by",
+        kind: "text",
+        sql: "COALESCE((SELECT u.name FROM org_users u WHERE u.id = r.created_by), (SELECT s.name FROM route_messages m JOIN sources s ON s.id = m.instance_id WHERE m.id = r.route_message_id))",
+        label: "agents.col.recordedby",
+        group: true,
       },
     ],
   },
@@ -1165,6 +1276,8 @@ const DATASET_WORDS: Record<string, string> = {
   returns: "one row per invoice returned to its supplier",
   suppliers: "one row per supplier on file",
   purchase_orders: "one row per purchase order line",
+  // Decision 0656.
+  receipts: "one row per goods receipt line (goods in, or sent back), with its receipt, order and supplier; use for what arrived, what waits for its purchase order, and returns",
   deliveries: "one row per delivery of an invoice to the ERP or another destination",
   files: "one row per file received from a supplier or channel",
 };

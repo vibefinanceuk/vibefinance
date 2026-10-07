@@ -57,6 +57,13 @@ const REPORT_WORDS: Record<string, string> = {
   // Decision 0632.
   returned_no_reply:
     "Returned to the supplier with no corrected invoice yet, returned more than a number of days ago. Option: waitDays (1-90, default 7).",
+  // Decision 0656: goods receipts.
+  waiting_on_receipt:
+    "Waiting on receipt: invoices held at a stage because the goods are not received yet (an Awaiting receipt or Credit expected task), for more than a number of days. Option: olderThanDays (1-365, default 3).",
+  received_not_invoiced:
+    "Received, not invoiced (GRNI): purchase order lines whose goods were received but not yet invoiced, older than a number of days, by supplier, valued at the order's price. Option: olderThanDays (0-365, default 30).",
+  credit_still_owed:
+    "Credit still owed: purchase order lines where goods were returned after being invoiced and no credit note has come yet, valued at the order's price.",
   // Decision 0630: started by an event.
   event_stuck:
     "EVENT, when an invoice has been at one stage longer than a number of days (stuck invoices). Option: stageDays (1-90, default 3).",

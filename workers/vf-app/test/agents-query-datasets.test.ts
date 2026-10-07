@@ -136,7 +136,7 @@ describe("who may ask what", () => {
     const ivy = await queryCatalogue(env.DB, "ivy");
     expect(ivy.datasets.map((d) => d.id)).toEqual(["deliveries", "files"]);
     const dan = await queryCatalogue(env.DB, "dan");
-    expect(dan.datasets.map((d) => d.id)).toEqual(["invoices", "tasks", "lines", "coding", "stage_visits", "returns", "suppliers", "purchase_orders", "deliveries", "files"]);
+    expect(dan.datasets.map((d) => d.id)).toEqual(["invoices", "tasks", "lines", "coding", "stage_visits", "returns", "suppliers", "purchase_orders", "receipts", "deliveries", "files"]);
     // The form offers Sam his own question for Germany only.
     const list = (await handleListAgents(env.DB, "sam")).body as { reports: { id: string; orgIds: string[] }[] };
     expect(list.reports.find((r) => r.id === "query")?.orgIds).toEqual(["acme-de"]);

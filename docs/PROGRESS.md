@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 6 October 2026 (decision 0655). A living document: what
+Last updated 7 October 2026 (decision 0656). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,17 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Goods receipts in questions and agents (0656)
+
+Agents can ask about goods receipts: a Receipts dataset (one row per
+receipt line, with its order, supplier, value, status and who recorded
+it), and each purchase order line's receipt state. Three ready-made
+reports: invoices waiting on goods received, goods received not invoiced
+older than N days, and credit still owed for goods returned after
+invoicing; and a ready-made question for receipt lines waiting more than
+7 days for their order. This completes Goods Receipts level 3, the
+Warehouse Receipts proposal.
 
 ### Receipts in: goods receipts arrive by a route (0655)
 

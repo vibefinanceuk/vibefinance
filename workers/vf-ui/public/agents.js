@@ -104,6 +104,10 @@ export const EXAMPLES = [
   { id: "chase_returns", report: "returned_no_reply", schedule: { every: "workday", time: "09:00" }, options: { waitDays: 7 }, email: false, action: "chase_supplier" },
   { id: "duplicate_alert", report: "event_duplicate", schedule: { every: "hour" }, options: {}, email: true },
   { id: "failed_files", report: "event_file_failed", schedule: { every: "hour" }, options: {}, email: true },
+  // Decision 0656: goods receipts.
+  { id: "invoices_waiting_goods", report: "waiting_on_receipt", schedule: { every: "workday", time: "09:00" }, options: { olderThanDays: 3 }, email: true },
+  { id: "grni_ageing", report: "received_not_invoiced", schedule: { every: "week", time: "08:00", weekday: 1 }, options: { olderThanDays: 30 }, email: true },
+  { id: "credit_owed", report: "credit_still_owed", schedule: { every: "week", time: "08:00", weekday: 1 }, options: {}, email: true },
   // Decision 0638: ready-made questions, to use as they are or change in Edit steps.
   {
     id: "large_invoices",
@@ -125,6 +129,14 @@ export const EXAMPLES = [
     schedule: { every: "week", time: "08:00", weekday: 1 },
     options: { query: { dataset: "stage_visits", where: [{ field: "entered", op: "in_last_days", value: 30 }], since: "all", show: [], groupBy: ["visitStage"], measures: [{ fn: "count" }, { fn: "avg", field: "daysSpent" }, { fn: "max", field: "daysSpent" }], sort: [{ key: "avg_daysSpent", dir: "desc" }], limit: 50 } },
     email: false,
+  },
+  // Decision 0656: receipt lines waiting more than 7 days for their purchase order (Dan agreed, question 5).
+  {
+    id: "receipt_lines_waiting",
+    report: "query",
+    schedule: { every: "workday", time: "09:00" },
+    options: { query: { dataset: "receipts", where: [{ field: "lineStatus", op: "is", value: "waiting" }, { field: "daysWaiting", op: "over", value: 7 }], since: "all", show: ["receipt", "order", "supplier", "item", "daysWaiting", "recordedBy"], groupBy: [], measures: [], sort: [{ key: "daysWaiting", dir: "desc" }], limit: 100 } },
+    email: true,
   },
   {
     id: "failed_deliveries",

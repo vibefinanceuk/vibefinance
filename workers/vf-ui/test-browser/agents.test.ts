@@ -223,6 +223,9 @@ interface Call {
 function stub(opts: {
   permissions: string[];
   agents?: unknown[];
+  /** Decision 0656: more reports and datasets than the usual ones. */
+  extraReports?: unknown[];
+  extraDatasets?: unknown[];
   notes?: unknown[];
   note?: unknown;
   createReply?: [number, unknown];
@@ -316,6 +319,7 @@ function stub(opts: {
               options: {},
               custom: true,
             },
+            ...(opts.extraReports ?? []),
           ],
           orgs: [
             { id: "acme-uk", name: "Acme UK" },
@@ -352,6 +356,7 @@ function stub(opts: {
                 since: false,
                 fields: [{ key: "supplier", kind: "text", label: "agents.col.supplier", group: true, ops: ["is", "contains"] }],
               },
+              ...(opts.extraDatasets ?? []),
             ],
           },
           canManageAll: opts.permissions.includes("Admin.UserManagement"),
@@ -2043,3 +2048,44 @@ describe("questions started by an event, with actions, and ready-made — decisi
     expect(document.getElementById("agent-q-words")?.textContent).toContain("Total is over 100,000.00 GBP");
   });
 });
+
+describe("goods receipts in agents — decision 0656", () => {
+  const RECEIPT_REPORTS = [
+    { id: "waiting_on_receipt", permission: "AP.Analysis", orgIds: ["acme-uk"], optionKeys: ["olderThanDays"], options: { olderThanDays: 3 } },
+    { id: "received_not_invoiced", permission: "AP.Analysis", orgIds: ["acme-uk"], optionKeys: ["olderThanDays"], options: { olderThanDays: 30 } },
+    { id: "credit_still_owed", permission: "AP.Analysis", orgIds: ["acme-uk"], optionKeys: [], options: {} },
+  ];
+  const RECEIPTS = {
+    id: "receipts",
+    orgIds: ["acme-uk"],
+    fields: [
+      { key: "receipt", kind: "text", label: "agents.col.receipt", group: true, ops: ["is", "contains"] },
+      { key: "order", kind: "text", label: "agents.col.ponumber", group: true, ops: ["is", "contains"] },
+      { key: "supplier", kind: "text", label: "agents.col.supplier", group: true, ops: ["is", "contains"] },
+      { key: "item", kind: "text", label: "agents.col.item", group: true, ops: ["is", "contains"] },
+      { key: "lineStatus", kind: "enum", label: "agents.col.linestatus", group: true, values: ["counted", "waiting", "needs_attention", "rejected"], enumKey: "agents.qreceiptline", ops: ["is", "is_not", "in"] },
+      { key: "daysWaiting", kind: "days", label: "agents.col.dayswaiting", ops: ["is", "over", "under", "between"] },
+      { key: "recordedBy", kind: "text", label: "agents.col.recordedby", group: true, ops: ["is", "contains"] },
+    ],
+  };
+
+  it("offers the receipt agents where their reports and dataset may be used, and fills the waiting-lines question", async () => {
+    await openAgents({ permissions: ["AP.Agents"], agents: [], extraReports: RECEIPT_REPORTS, extraDatasets: [RECEIPTS] });
+    button("Ready-made")!.click();
+    const offered = [...document.querySelectorAll("#agents-examples .agentexample")].map((x) => x.getAttribute("data-example"));
+    expect(offered).toEqual(expect.arrayContaining(["invoices_waiting_goods", "grni_ageing", "credit_owed", "receipt_lines_waiting"]));
+    document.querySelector<HTMLButtonElement>('[data-example="receipt_lines_waiting"] .actionlink')!.click();
+    (document.getElementById("agent-steps") as HTMLDetailsElement).open = true;
+    expect((document.getElementById("agent-report") as HTMLSelectElement).value).toBe("query");
+    expect((document.getElementById("agent-q-dataset") as HTMLSelectElement).value).toBe("receipts");
+  });
+
+  it("leaves them out where the reports or the dataset are not the person's", async () => {
+    await openAgents({ permissions: ["AP.Agents"], agents: [] });
+    button("Ready-made")!.click();
+    const offered = [...document.querySelectorAll("#agents-examples .agentexample")].map((x) => x.getAttribute("data-example"));
+    expect(offered).not.toContain("grni_ageing");
+    expect(offered).not.toContain("receipt_lines_waiting");
+  });
+});
+

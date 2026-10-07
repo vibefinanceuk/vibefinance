@@ -9,6 +9,9 @@ import type { Permission } from "./permissions.js";
 import type { RouteResult } from "./org-route.js";
 import { readLicenceState } from "./licence-cache.js";
 import { exitStageIds } from "./process-ends.js";
+import { grniReport } from "./grni-route.js";
+import { orderFigures } from "./goods-receipts.js";
+import { readsReceiptFacts } from "./receipt-recheck.js";
 import { handleAccruals } from "./accruals-route.js";
 import { handleOverdueBalance } from "./overdue-balance-route.js";
 import { handleWorkloadOpenTasks } from "./workload-open-tasks-route.js";
@@ -232,6 +235,24 @@ const OPTION_RULES: Record<
     olderThanDays: undefined,
     stageDays: undefined,
     waitDays: { min: 1, max: 90, default: 7 },
+  },
+  // Decision 0656: invoices held by a receipt rule this many days.
+  waiting_on_receipt: {
+    minTotal: undefined,
+    highlightDays: undefined,
+    withinDays: undefined,
+    olderThanDays: { min: 1, max: 365, default: 3 },
+    stageDays: undefined,
+    waitDays: undefined,
+  },
+  // Decision 0656: goods in and not invoiced for more than this many days.
+  received_not_invoiced: {
+    minTotal: undefined,
+    highlightDays: undefined,
+    withinDays: undefined,
+    olderThanDays: { min: 0, max: 365, default: 30 },
+    stageDays: undefined,
+    waitDays: undefined,
   },
 };
 
@@ -1168,6 +1189,221 @@ function totalsOfRows(rows: Record<string, unknown>[]): ReportTotal[] {
   }));
 }
 
+// ── Goods receipts — decision 0656 ──────────────────────────────────────
+
+/**
+ * **Waiting on receipt.** Invoices held at a stage by an open task a
+ * receipt rule raised (one that reads a receipt fact, 0648: *Awaiting
+ * receipt*, *Credit expected*) for at least `olderThanDays` (default 3).
+ * One row per invoice, by its oldest such task.
+ */
+async function gatherWaitingOnReceipt(db: D1Database, authorId: string, orgs: Org[], now: Date, options: AgentOptions) {
+  const visible = await unitsWherePermitted(db, authorId, "AP.Analysis");
+  const days = options.olderThanDays ?? 3;
+  const byInvoice = new Map<string, Record<string, string | number | null>>();
+  const totals = new Map<string, ReportTotal>();
+  for (const org of orgs) {
+    const units = await scopedToChosenOrg(db, visible, org.id);
+    const clause = unitClause({ units }, "h.org_unit_id");
+    const rows = (
+      await db
+        .prepare(
+          `SELECT h.id AS id, COALESCE(h.invoice_number, json_extract(h.facts_json, '$."BT-1"')) AS number,
+                  COALESCE(sup.name, json_extract(h.facts_json, '$."BT-27"')) AS supplier_name,
+                  json_extract(h.facts_json, '$."BT-13"') AS po, h.currency AS currency, h.total_with_vat AS total,
+                  t.created_at AS since, s.name AS stage,
+                  (SELECT rv.compiled_json FROM rule_versions rv WHERE rv.rule_id = t.rule_id ORDER BY rv.version DESC LIMIT 1) AS compiled
+           FROM tasks t
+           JOIN stage_visits v ON v.id = t.stage_visit_id
+           JOIN process_instances pi ON pi.id = v.process_instance_id AND pi.subject_type = 'invoice'
+           JOIN invoice_headers h ON h.id = pi.subject_id
+           LEFT JOIN suppliers sup ON sup.id = h.supplier_id
+           LEFT JOIN process_stages s ON s.id = t.stage_id
+           WHERE t.status = 'open' AND t.rule_id IS NOT NULL ${clause.sql}
+           ORDER BY t.created_at`,
+        )
+        .bind(...clause.binds)
+        .all<{ id: string; number: string | null; supplier_name: string | null; po: string | null; currency: string | null; total: number | null; since: string; stage: string | null; compiled: string | null }>()
+    ).results;
+    for (const r of rows) {
+      if (byInvoice.has(r.id) || !readsReceiptFacts(r.compiled)) continue;
+      const waited = daysBetween(r.since, now);
+      if (waited < days) continue;
+      byInvoice.set(r.id, {
+        org: org.name,
+        invoiceId: r.id,
+        invoice: r.number,
+        supplier: r.supplier_name,
+        po: r.po,
+        stage: r.stage,
+        daysWaiting: waited,
+        total: r.total === null ? null : round2(r.total),
+        currency: r.currency,
+        _key: `receipt-wait:${r.id}`,
+      });
+      addTotal(totals, r.currency, r.total);
+    }
+  }
+  const out = [...byInvoice.values()].sort((a, b) => Number(b.daysWaiting) - Number(a.daysWaiting));
+  return {
+    columns: [
+      { key: "org", label: "agents.col.org", kind: "text" as const },
+      { key: "invoice", label: "agents.col.invoice", kind: "text" as const },
+      { key: "supplier", label: "agents.col.supplier", kind: "text" as const },
+      { key: "po", label: "agents.col.ponumber", kind: "text" as const },
+      { key: "stage", label: "agents.col.stage", kind: "text" as const },
+      { key: "daysWaiting", label: "agents.col.dayswaiting", kind: "days" as const },
+      { key: "total", label: "agents.col.total", kind: "money" as const },
+      { key: "currency", label: "agents.col.currency", kind: "text" as const },
+    ],
+    rows: out,
+    totals: [...totals.values()].map((t) => ({ ...t, total: t.total === null ? null : round2(t.total) })),
+  };
+}
+
+/**
+ * **Received, not invoiced** — goods received not invoiced (0650) as at
+ * today, the lines whose oldest goods not yet invoiced are more than
+ * `olderThanDays` (default 30) old, by supplier: what month-end accrues,
+ * and what to chase. Valued at the order's price, per currency.
+ */
+async function gatherReceivedNotInvoiced(db: D1Database, authorId: string, orgs: Org[], now: Date, options: AgentOptions) {
+  const days = options.olderThanDays ?? 30;
+  const seen = new Set<string>();
+  const out: Record<string, string | number | null>[] = [];
+  const totals = new Map<string, ReportTotal>();
+  for (const org of orgs) {
+    const report = await grniReport(db, authorId, org.id, null, now);
+    if ("error" in report) continue;
+    for (const l of report.lines) {
+      const key = `${l.orderNumber}:${l.orderLine}`;
+      if (seen.has(key) || l.days <= days) continue;
+      seen.add(key);
+      out.push({
+        org: org.name,
+        supplier: l.supplier,
+        po: l.orderNumber,
+        orderLine: l.orderLine,
+        item: l.item,
+        quantity: l.notInvoiced,
+        oldestReceipt: l.oldestReceiptDate,
+        days: l.days,
+        total: l.amount,
+        currency: l.currency,
+        _key: `grni:${key}`,
+      });
+      addTotal(totals, l.currency, l.amount);
+    }
+  }
+  out.sort((a, b) => String(a.supplier ?? "").localeCompare(String(b.supplier ?? "")) || Number(b.days) - Number(a.days));
+  return {
+    columns: [
+      { key: "org", label: "agents.col.org", kind: "text" as const },
+      { key: "supplier", label: "agents.col.supplier", kind: "text" as const },
+      { key: "po", label: "agents.col.ponumber", kind: "text" as const },
+      { key: "orderLine", label: "agents.col.orderline", kind: "count" as const },
+      { key: "item", label: "agents.col.item", kind: "text" as const },
+      { key: "quantity", label: "agents.col.notinvoiced", kind: "count" as const },
+      { key: "oldestReceipt", label: "agents.col.oldestreceipt", kind: "date" as const },
+      { key: "days", label: "agents.col.oldestdays", kind: "days" as const },
+      { key: "total", label: "agents.col.value", kind: "money" as const },
+      { key: "currency", label: "agents.col.currency", kind: "text" as const },
+    ],
+    rows: out,
+    totals: [...totals.values()].map((t) => ({ ...t, total: t.total === null ? null : round2(t.total) })),
+  };
+}
+
+/**
+ * **Credit still owed** — order lines where goods went back after being
+ * invoiced, so more is invoiced than was kept (beyond tolerance) and a
+ * credit note is expected (0647's *Credit expected*). Valued at the
+ * order's price, with when the last return was.
+ */
+async function gatherCreditStillOwed(db: D1Database, authorId: string, orgs: Org[], now: Date) {
+  const visible = await unitsWherePermitted(db, authorId, "AP.Analysis");
+  const seen = new Set<string>();
+  const out: Record<string, string | number | null>[] = [];
+  const totals = new Map<string, ReportTotal>();
+  for (const org of orgs) {
+    const units = await scopedToChosenOrg(db, visible, org.id);
+    const clause = unitClause({ units }, "po.org_unit_id");
+    const orders = (
+      await db
+        .prepare(
+          `SELECT DISTINCT po.order_number FROM goods_receipt_lines l
+           JOIN goods_receipts r ON r.id = l.receipt_id
+           JOIN purchase_orders po ON po.order_number = l.order_number
+           WHERE l.movement = 'returned' AND r.status = 'registered' AND r.cancelled_at IS NULL
+             AND l.line_status = 'active' AND l.waiting_since IS NULL ${clause.sql}`,
+        )
+        .bind(...clause.binds)
+        .all<{ order_number: string }>()
+    ).results;
+    for (const o of orders) {
+      const f = await orderFigures(db, o.order_number);
+      if (!f) continue;
+      for (const line of f.lines.filter((x) => x.creditExpected > 0)) {
+        const key = `${f.orderNumber}:${line.lineNumber}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        const po = await db
+          .prepare(
+            `SELECT pl.price_amount, pl.base_quantity, pl.line_extension_amount, pl.quantity FROM purchase_order_lines pl
+             JOIN purchase_orders p ON p.id = pl.purchase_order_id WHERE p.order_number = ? AND pl.line_number = ?`,
+          )
+          .bind(f.orderNumber, line.lineNumber)
+          .first<{ price_amount: number | null; base_quantity: number | null; line_extension_amount: number | null; quantity: number | null }>();
+        const unit =
+          po?.price_amount !== null && po?.price_amount !== undefined
+            ? po.price_amount / (po.base_quantity || 1)
+            : po?.line_extension_amount !== null && po?.line_extension_amount !== undefined && po.quantity
+              ? po.line_extension_amount / po.quantity
+              : null;
+        const last = await db
+          .prepare(
+            `SELECT max(r.receipt_date) AS d FROM goods_receipt_lines l JOIN goods_receipts r ON r.id = l.receipt_id
+             WHERE l.order_number = ? AND l.order_line_number = ? AND l.movement = 'returned' AND r.status = 'registered' AND r.cancelled_at IS NULL`,
+          )
+          .bind(f.orderNumber, line.lineNumber)
+          .first<{ d: string | null }>();
+        const value = unit === null ? null : round2(line.creditExpected * unit);
+        out.push({
+          org: org.name,
+          supplier: f.supplier?.name ?? null,
+          po: f.orderNumber,
+          orderLine: line.lineNumber,
+          item: line.itemName,
+          quantity: line.creditExpected,
+          lastReturn: last?.d ?? null,
+          days: last?.d ? daysBetween(last.d, now) : null,
+          total: value,
+          currency: f.currency,
+          _key: `credit:${key}`,
+        });
+        addTotal(totals, f.currency, value);
+      }
+    }
+  }
+  out.sort((a, b) => Number(b.days ?? 0) - Number(a.days ?? 0));
+  return {
+    columns: [
+      { key: "org", label: "agents.col.org", kind: "text" as const },
+      { key: "supplier", label: "agents.col.supplier", kind: "text" as const },
+      { key: "po", label: "agents.col.ponumber", kind: "text" as const },
+      { key: "orderLine", label: "agents.col.orderline", kind: "count" as const },
+      { key: "item", label: "agents.col.item", kind: "text" as const },
+      { key: "quantity", label: "agents.col.creditqty", kind: "count" as const },
+      { key: "lastReturn", label: "agents.col.lastreturn", kind: "date" as const },
+      { key: "days", label: "agents.col.dayssince", kind: "days" as const },
+      { key: "total", label: "agents.col.value", kind: "money" as const },
+      { key: "currency", label: "agents.col.currency", kind: "text" as const },
+    ],
+    rows: out,
+    totals: [...totals.values()].map((t) => ({ ...t, total: t.total === null ? null : round2(t.total) })),
+  };
+}
+
 export const AGENT_REPORTS: AgentReport[] = [
   {
     id: "outstanding_payables",
@@ -1207,6 +1443,10 @@ export const AGENT_REPORTS: AgentReport[] = [
     permission: "AP.Analysis",
     gather: gatherReturnedNoReply,
   },
+  // Decision 0656: goods receipts.
+  { id: "waiting_on_receipt", permission: "AP.Analysis", gather: gatherWaitingOnReceipt },
+  { id: "received_not_invoiced", permission: "AP.Analysis", gather: gatherReceivedNotInvoiced },
+  { id: "credit_still_owed", permission: "AP.Analysis", gather: (db, a, o, n) => gatherCreditStillOwed(db, a, o, n) },
   // Decision 0633: the agent's own question, from the catalogue.
   {
     id: "query",
