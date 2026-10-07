@@ -5499,3 +5499,22 @@
 /* Room for "£12,500.20", which the bare "12500.2" never needed: the table is fixed-layout, so its header sets the width. */
 .linetable th.money { width: 8.5em; }
 #lines .num { white-space: nowrap; }
+
+/*
+  Decision 0678 — the Header Fields pop-out as a compact list. Dan found
+  each row's separator line, the shaded box behind each value, and the
+  space between rows wasted room. A read-only value is plain text on the
+  right; a field the person may edit keeps its input box, so it still
+  reads as editable. The rows sit close, with no lines between them.
+*/
+.hffields .kf { border-top: none; padding: 5px 0; }
+.popout .hffields .kf + .kf { margin-top: 0; }
+.hffields .kf .readonly {
+  background: transparent;
+  min-height: 0;
+  padding: 0;
+  border-radius: 0;
+  color: var(--text-primary);
+}
+/* Dan: "Expand the height to fit all fields on the screen." Up to the window's height, not 80%; it scrolls only past that. */
+.popout.hfpopout { max-height: calc(100vh - 32px); }

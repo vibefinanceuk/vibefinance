@@ -4728,6 +4728,16 @@ describe("the Invoice header card is a curated summary, with a pop-out for the r
     expect(list?.querySelector(".kf")).not.toBeNull();
   });
 
+  it("lays the Header Fields pop-out out as a compact list: no lines, no shaded value boxes (decision 0678)", async () => {
+    const css = (await import("virtual:stylesheets")).default["app.css"];
+    expect(css).toContain(".hffields .kf { border-top: none; padding: 5px 0; }");
+    expect(css).toContain(".popout .hffields .kf + .kf { margin-top: 0; }");
+    const rule = css.slice(css.indexOf(".hffields .kf .readonly {\n  background"), css.indexOf("}", css.indexOf(".hffields .kf .readonly {\n  background")));
+    expect(rule).toContain("background: transparent;");
+    expect(rule).toContain("padding: 0;");
+    expect(css).toContain(".popout.hfpopout { max-height: calc(100vh - 32px); }");
+  });
+
   /**
    * **The one caller among nine that is not a problem — decision
    * 0493.** Every other `note()` call reports something that stopped a

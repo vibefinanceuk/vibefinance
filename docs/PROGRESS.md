@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 7 October 2026 (decision 0677). A living document: what
+Last updated 7 October 2026 (decision 0678). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,13 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Header Fields pop-out as a compact list (0678)
+
+No separator lines and no shaded value boxes, with rows close together.
+Editable fields keep their input box.
+
+Full reasoning is in decision 0678.
 
 ### The invoice viewer's amounts as money (0677)
 

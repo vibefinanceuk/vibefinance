@@ -4696,7 +4696,8 @@ export async function openViewer(task, onClose) {
       popoutBackdrop.hidden = true;
     };
     const backdrop = el("div", { class: "backdrop" }, [
-      el("div", { class: "popout" }, [
+      // Decision 0678: `hfpopout` lets it grow to the window's height, so every field shows at once.
+      el("div", { class: "popout hfpopout" }, [
         el("div", { class: "cardhead" }, [
           el("h3", { text: t("viewer.allheaderfields") }),
           /**
