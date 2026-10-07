@@ -1,9 +1,8 @@
 # 0675: The Timeline's entries — system events as coloured cards, chat as bubbles
 
-**Status: built and tested locally, not yet pushed or deployed.** It
-touches `vf-licence` (strings), `vf-app` (one field) and `vf-ui`. It
-needs **vf-licence migration `0304`** and no vf-app migration. Deploy
-vf-licence, vf-app and vf-ui.
+**Status: live** at `4777178`, pushed and deployed 7 October 2026, with
+vf-licence migration `0304` applied. It touches `vf-licence` (strings),
+`vf-app` (one field) and `vf-ui`.
 
 ## What was asked
 
