@@ -1,7 +1,7 @@
 # 0677: The invoice viewer's amounts shown as money, in English or German form
 
-**Status: built and tested locally, not yet pushed or deployed.** It is
-`vf-ui` only, with no migration. Deploy vf-ui.
+**Status: live** at `2985b7f`, pushed, deployed and tested by Dan, 7
+October 2026. It is `vf-ui` only, with no migration.
 
 ## What was asked
 
