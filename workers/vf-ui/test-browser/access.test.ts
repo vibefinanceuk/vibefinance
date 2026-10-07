@@ -360,6 +360,8 @@ describe("org units", () => {
     await openRolesAs(["Admin.Configure"], EMPTY);
     switchTab("Org / Company Code");
     expect([...document.querySelectorAll("button")].some((b) => b.textContent?.includes("New org"))).toBe(true);
+    // Decision 0667: the tab's own New button, an icon with its word.
+    expect([...document.querySelectorAll("button")].find((b) => b.textContent === "New org")?.classList.contains("compactlink")).toBe(true);
   });
 
   it("creates a real org unit, posting the entered fields", async () => {
@@ -1063,6 +1065,12 @@ describe("a person's own properties and limits — decision 0334, its own pop-ou
   function clickPropertiesAction(name: string) {
     const row = [...document.querySelectorAll("tr")].find((r) => r.textContent?.includes(name));
     const button = [...(row?.querySelectorAll("button") ?? [])].find((b) => b.textContent?.includes("Properties"));
+    // Decision 0667: Roles and Properties, an icon with its word, as is the tab's New person.
+    for (const word of ["Roles", "Properties"]) {
+      const b = [...(row?.querySelectorAll("button") ?? [])].find((x) => x.textContent === word);
+      expect(b?.classList.contains("compactlink")).toBe(true);
+    }
+    expect([...document.querySelectorAll("button")].find((x) => x.textContent === "New person")?.classList.contains("compactlink")).toBe(true);
     button?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
   }
 
@@ -1692,6 +1700,12 @@ describe("teams — decision 0332", () => {
 
     select.value = "usr2";
     const addBtn = [...document.querySelectorAll(".memberpickerrow button")].find((b) => b.textContent === "Add");
+    // Decision 0667: Add and Remove, each a small icon with its word.
+    expect(addBtn?.classList.contains("compactlink")).toBe(true);
+    expect(addBtn?.firstElementChild?.tagName.toLowerCase()).toBe("svg");
+    const removeShown = [...document.querySelectorAll(".assignmentrow button")].find((b) => b.textContent === "Remove");
+    expect(removeShown?.classList.contains("compactlink")).toBe(true);
+    expect(removeShown?.firstElementChild?.tagName.toLowerCase()).toBe("svg");
     await addBtn?.click();
     await new Promise((r) => setTimeout(r, 0));
 
@@ -1783,6 +1797,8 @@ describe("invitations — decision 0593", () => {
     expect(cell("u-ben").querySelector("button")?.textContent).toBe("Invite again");
     expect(cell("u-cy").textContent).toContain("Not invited");
     expect(cell("u-cy").querySelector("button")?.textContent).toBe("Invite");
+    // Decision 0667: Invite and Invite again, an icon with its word.
+    for (const who of ["u-ben", "u-cy"]) expect(cell(who).querySelector("button")?.classList.contains("compactlink")).toBe(true);
   });
 
   it("invites a person, and says it went or why not", async () => {

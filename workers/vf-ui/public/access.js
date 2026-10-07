@@ -1,6 +1,6 @@
 import { t } from "/strings.js";
 import { el, frame, topbar, setCurrentScreen, hasMyPermission } from "/tasks.js";
-import { actionLink } from "/viewer.js";
+import { actionLink, compactLink } from "/viewer.js";
 
 /**
  * Who can do what, where, and up to how much — decisions 0319, 0326.
@@ -314,7 +314,7 @@ function readyMadeRoleButtons() {
       r.permissions.every((p) => knownPermissions.some((k) => k.name === p)) &&
       !roles.some((role) => r.permissions.every((p) => role.permissions.includes(p)))
   ).map((r) =>
-    actionLink("newrole", {
+    compactLink("newrole", {
       label: t(r.labelKey),
       onclick: () => openRoleForm(null, { id: r.id, name: t(r.nameKey), permissions: r.permissions }),
     })
@@ -790,8 +790,9 @@ function openTeamForm(existingTeam) {
             ? existingTeam.members.map((m) => {
                 const label = el("span", { text: m.userName });
                 if (!canAssign) return el("div", { class: "assignmentrow" }, [label]);
-                const removeBtn = el("button", {
-                  text: t("roles.remove"),
+                // Decision 0667: Remove and Add, each with a small icon and its word.
+                const removeBtn = compactLink("discard", {
+                  label: t("roles.remove"),
                   onclick: async () => {
                     problem.textContent = "";
                     try {
@@ -811,6 +812,7 @@ function openTeamForm(existingTeam) {
                     }
                   },
                 });
+                removeBtn.classList.add("teamremove");
                 return el("div", { class: "assignmentrow" }, [label, removeBtn]);
               })
             : [el("p", { class: "muted", text: t("roles.noteammembers") })]
@@ -829,8 +831,8 @@ function openTeamForm(existingTeam) {
               {},
               users.filter((u) => !alreadyIn.has(u.id)).map((u) => el("option", { value: u.id, text: u.name }))
             );
-            const addBtn = el("button", {
-              text: t("roles.addmember"),
+            const addBtn = compactLink("newperson", {
+              label: t("roles.addmember"),
               onclick: async () => {
                 problem.textContent = "";
                 try {
@@ -851,6 +853,7 @@ function openTeamForm(existingTeam) {
                 }
               },
             });
+            addBtn.classList.add("teamadd");
             return el("div", { class: "memberpickerrow" }, [select, addBtn]);
           })(),
         ]),
@@ -910,7 +913,8 @@ function invitationCell(user) {
     el("div", { class: status === "accepted" ? "ok" : status === "none" ? "muted" : status === "pending" ? "" : "warn", text: words }),
     ...(canInvite
       ? [
-          actionLink("post", {
+          // Decision 0667: Invite and Invite again, an icon with its word, as the other screens' compact actions.
+          compactLink("post", {
             label: t(status === "none" ? "invite.send" : "invite.again"),
             onclick: async () => {
               const r = await sendInvitation(user.id);
@@ -946,9 +950,9 @@ function personRow(user) {
   return el("tr", { "data-user": user.id }, [
     el("td", {}, [el("div", { text: user.name }), el("div", { class: "sm muted", text: user.email })]),
     el("td", { class: "sm", text: assignmentText }),
-    el("td", {}, canAssign ? [actionLink("roles", { onclick: () => openPersonRolesForm(user) })] : []),
+    el("td", {}, canAssign ? [compactLink("roles", { onclick: () => openPersonRolesForm(user) })] : []),
     el("td", { class: "sm", text: limitText }),
-    el("td", {}, canAssign ? [actionLink("properties", { onclick: () => openPersonPropertiesForm(user) })] : []),
+    el("td", {}, canAssign ? [compactLink("properties", { onclick: () => openPersonPropertiesForm(user) })] : []),
     // Decision 0593: signing in, by invitation.
     ...(canAssign ? [invitationCell(user)] : []),
   ]);
@@ -981,8 +985,9 @@ function openPersonRolesForm(user) {
     own.length > 0
       ? own.map((a) => {
           const label = el("span", { text: `${a.roleName} — ${a.unitName ?? t("roles.everywhere")}` });
-          const removeBtn = el("button", {
-            text: t("roles.remove"),
+          // Decision 0667: the same Remove as a team's, for a person's role.
+          const removeBtn = compactLink("discard", {
+            label: t("roles.remove"),
             onclick: async () => {
               problem.textContent = "";
               try {
@@ -1333,7 +1338,7 @@ function render() {
         "roles.nounits",
         ["column.unit", "roles.kind", "roles.parentorg", "roles.vatid"],
         units.map(unitRow),
-        hasMyPermission("Admin.Configure") ? actionLink("neworg", { onclick: () => openUnitForm(null) }) : null
+        hasMyPermission("Admin.Configure") ? compactLink("neworg", { onclick: () => openUnitForm(null) }) : null
       ),
     roles: () =>
       section(
@@ -1342,7 +1347,7 @@ function render() {
         ["column.role", "roles.permissions"],
         roles.map(roleRow),
         canManage
-          ? el("div", { class: "statebuttons" }, [actionLink("newrole", { onclick: () => openRoleForm(null) }), ...readyMadeRoleButtons()])
+          ? el("div", { class: "statebuttons" }, [compactLink("newrole", { onclick: () => openRoleForm(null) }), ...readyMadeRoleButtons()])
           : null
       ),
     people: () =>
@@ -1351,7 +1356,7 @@ function render() {
         "roles.nopeople",
         ["column.person", "roles.assignments", "", "roles.limits", "", ...(canAssign ? ["invite.column"] : [])],
         users.map(personRow),
-        canAssign ? actionLink("newperson", { onclick: () => openNewPersonForm() }) : null
+        canAssign ? compactLink("newperson", { onclick: () => openNewPersonForm() }) : null
       ),
     teams: () =>
       section(
@@ -1359,7 +1364,7 @@ function render() {
         "roles.noteamsconfigured",
         ["column.team", "roles.personorg", "roles.teammembers"],
         teams.map(teamRow),
-        canManage ? actionLink("newteam", { onclick: () => openTeamForm(null) }) : null
+        canManage ? compactLink("newteam", { onclick: () => openTeamForm(null) }) : null
       ),
   }[activeTab]();
 
