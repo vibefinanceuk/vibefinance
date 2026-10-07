@@ -773,8 +773,8 @@ function stageRestrictionsTab(problem) {
     const targetRows = (stage.returnTargets ?? []).map((target) =>
       el("div", { class: "assignmentrow" }, [
         el("span", { text: `${target.targetStageName} — ${target.teamName}` }),
-        el("button", {
-          text: t("roles.remove"),
+        compactLink("discard", {
+          label: t("roles.remove"),
           onclick: async () => {
             problem.textContent = "";
             try {
@@ -805,18 +805,27 @@ function stageRestrictionsTab(problem) {
     const returnTargetsSection = [
       el("div", { class: "sectionlabel", text: t("apsetup.stagerestrictions.returntargetsheading") }),
       el("p", { class: "muted sm", text: t("apsetup.stagerestrictions.returntargetshint") }),
-      el(
-        "div",
-        { class: "assignmentlist" },
-        targetRows.length > 0 ? targetRows : [el("p", { class: "muted sm", text: t("apsetup.stagerestrictions.notargetsyet") })]
-      ),
-      ...(hasAddOptions
+      ...(targetRows.length > 0 ? [el("div", { class: "assignmentlist" }, targetRows)] : []),
+      // **Add, small and on the right — decision 0671.** With no
+      // targets yet it sits beside "No return targets configured for
+      // this stage yet."; once there are some, on its own line under
+      // the rows' Remove, in the same place.
+      ...(targetRows.length === 0 || hasAddOptions
         ? [
-            el("div", { class: "statebuttons" }, [
-              actionLink("create", {
-                label: t("apsetup.add"),
-                onclick: () => openReturnTargetPicker(stage, otherStages, teams, problem),
-              }),
+            el("div", { class: "returntargetadd" }, [
+              targetRows.length === 0
+                ? el("p", { class: "muted sm", text: t("apsetup.stagerestrictions.notargetsyet") })
+                : el("span"),
+              ...(hasAddOptions
+                ? [
+                    el("div", { class: "statebuttons" }, [
+                      compactLink("addcard", {
+                        label: t("apsetup.add"),
+                        onclick: () => openReturnTargetPicker(stage, otherStages, teams, problem),
+                      }),
+                    ]),
+                  ]
+                : []),
             ]),
           ]
         : []),
@@ -839,10 +848,13 @@ function stageRestrictionsTab(problem) {
      */
     const body = !offered
       ? [
-          el("div", { class: "stageslimrow" }, [
-            el("p", { class: "muted sm", text: t("apsetup.stagerestrictions.notoffered") }),
-            el("div", { class: "stageslimtoggles" }, [offerToggleRow, reverifyToggleRow, discardToggleRow]),
-          ]),
+          // **The three toggles as full-width rows with lines between —
+          // decision 0671.** They used to wrap beside the explanation
+          // (0507), which left each checkbox at the end of its sentence
+          // and none lined up. Now they are the same rows, in the same
+          // place, as when the stage offers Account Coding restrictions.
+          el("p", { class: "muted sm", text: t("apsetup.stagerestrictions.notoffered") }),
+          el("div", { class: "stagetoggles" }, [offerToggleRow, reverifyToggleRow, discardToggleRow]),
           ...returnTargetsSection,
         ]
       : (() => {
@@ -905,9 +917,7 @@ function stageRestrictionsTab(problem) {
             el("div", { class: "sectionlabel", text: t("apsetup.stagerestrictions.fieldsheading") }),
             el("div", { class: "stagefields" }, rows),
             el("p", { class: "muted sm", text: t("apsetup.stagerestrictions.fieldshint") }),
-            offerToggleRow,
-            reverifyToggleRow,
-            discardToggleRow,
+            el("div", { class: "stagetoggles" }, [offerToggleRow, reverifyToggleRow, discardToggleRow]),
             ...returnTargetsSection,
           ];
         })();

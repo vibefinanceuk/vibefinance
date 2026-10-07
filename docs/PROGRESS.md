@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 7 October 2026 (decision 0670). A living document: what
+Last updated 7 October 2026 (decision 0671). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,15 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Stage Restrictions: return targets' Add and Remove (0671)
+
+Each stage's Add is a small icon-and-word action on the right of "No
+return targets configured for this stage yet." (or under the rows once
+there are some), and each target's Remove has its icon. The three toggles are aligned
+rows with lines between in every stage card.
+
+Full reasoning is in decision 0671.
 
 ### Approval Hierarchy's override cards side by side (0670)
 

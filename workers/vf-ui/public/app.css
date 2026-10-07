@@ -1544,38 +1544,12 @@
   }
 
   /*
-    **A transitionary stage's own condensed content — decision 0507,
-    now a grid item like every other stage card (0510).** Intake and
-    Payment Eligible (migration 0081) offer no Account Coding fields at
-    all — `apsetup.stagerestrictions.notoffered` was, until 0507, given
-    a whole panel's worth of vertical stacking to say so. The
-    explanation and the three toggles that still apply regardless of
-    `offerFieldRestrictions` (decisions 0485/0487/0502) share one
-    flexible row instead, which wraps onto two lines rather than one
-    at the narrower width a `.stagegrid` column gives it — still far
-    less than the four stacked lines this replaced.
+    **A transitionary stage's card (`.stageslim`) — decision 0507,
+    laid out like any other since 0671.** Its three toggles used to wrap
+    beside the explanation, in a tighter card; Dan found the checkboxes
+    unaligned and the two kinds of card inconsistent, so it now has the
+    same padding and the same full-width toggle rows (`.stagetoggles`).
   */
-  .panel.stageslim { padding: 12px 18px; }
-  .panel.stageslim > .cardhead { margin-bottom: 6px; }
-  .stageslimrow {
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 6px 24px;
-  }
-  .stageslimrow > p { margin: 0; flex: 1 1 240px; }
-  .stageslimtoggles {
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 4px 20px;
-  }
-  .stageslimtoggles .assignmentrow {
-    border-bottom: none;
-    padding: 0;
-    width: auto;
-  }
-
   /*
     **Editable-field checkboxes as wrapping chips, not one full-width
     row each — decision 0507.** Three short labels (Project, Commodity
@@ -5425,3 +5399,21 @@
 .overridepair > .panel { margin-bottom: 0; }
 .overridepair .editgrid select, .overridepair .editgrid input { min-width: 0; width: 100%; }
 @media (max-width: 900px) { .overridepair { grid-template-columns: 1fr; } }
+
+/*
+  Decision 0671 — Stage Restrictions: a stage's Add (return target) sits
+  on the right, beside "No return targets configured for this stage
+  yet." or under the rows' Remove.
+*/
+.returntargetadd { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 6px 0; }
+.returntargetadd > p { margin: 0; }
+.returntargetadd .statebuttons { margin: 0; flex: none; }
+
+/*
+  Decision 0671 — a stage's three toggles (Offer Account Coding
+  restrictions, Recheck the rule, Allow Discard) are full-width rows,
+  checkbox on the right, with a line under each, whether or not the
+  stage offers Account Coding restrictions. The last keeps its line,
+  which sets them apart from Return targets below.
+*/
+.stagetoggles .assignmentrow:last-child { border-bottom: 0.5px solid var(--border); }

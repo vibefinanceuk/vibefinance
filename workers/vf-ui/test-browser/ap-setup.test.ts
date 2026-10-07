@@ -1673,9 +1673,27 @@ describe("Stage Restrictions (decision 0483)", () => {
 
       const panel = stagePanel();
       expect(panel.classList.contains("stageslim")).toBe(true);
-      const toggles = panel.querySelector(".stageslimtoggles");
+      // Decision 0671: the same full-width rows as a stage that offers
+      // restrictions, after the explanation rather than beside it.
+      const toggles = panel.querySelector(".stagetoggles");
       expect(toggles).toBeTruthy();
-      expect(toggles?.querySelectorAll("input[type=checkbox]").length).toBe(3);
+      expect(toggles?.previousElementSibling?.textContent).toContain("Not configurable here");
+      const rows = [...toggles!.children];
+      expect(rows.length).toBe(3);
+      for (const row of rows) {
+        expect(row.classList.contains("assignmentrow")).toBe(true);
+        expect(row.lastElementChild?.getAttribute("type")).toBe("checkbox");
+      }
+    });
+
+    it("lays out the toggles the same way whether or not the stage offers restrictions (decision 0671)", async () => {
+      await openApSetupAs(["Admin.Configure"], EMPTY_OVERVIEW, EMPTY_CONFIG, stageRestrictionsRoutes([]));
+      switchTab("Stage Restrictions");
+      const panel = stagePanel();
+      expect(panel.classList.contains("stageslim")).toBe(false);
+      const toggles = panel.querySelector(".stagetoggles");
+      expect([...toggles!.children].every((r) => r.classList.contains("assignmentrow"))).toBe(true);
+      expect(toggles!.children.length).toBe(3);
     });
   });
 
@@ -1751,6 +1769,47 @@ describe("Stage Restrictions (decision 0483)", () => {
       // Validation's own picker offers Coding — the other stage — never itself.
       expect([...selects[0].options].map((o) => o.textContent)).toEqual(["Coding"]);
       expect([...selects[1].options].map((o) => o.textContent)).toEqual(["Coding team"]);
+    });
+
+    it("puts a compact Add to the right of the empty-list sentence (decision 0671)", async () => {
+      await openApSetupAs(["Admin.Configure"], EMPTY_OVERVIEW, EMPTY_CONFIG, stageRestrictionsRoutes([], { "/api/processes/ap": TWO_STAGE_DETAIL }));
+      switchTab("Stage Restrictions");
+
+      const row = panelNamed("Validation").querySelector(".returntargetadd") as HTMLElement;
+      expect(row.firstElementChild?.textContent).toBe("No return targets configured for this stage yet.");
+      const add = row.lastElementChild?.querySelector("button") as HTMLElement;
+      expect(add.textContent).toBe("Add");
+      expect(add.classList.contains("compactlink")).toBe(true);
+      expect(add.firstElementChild?.tagName.toLowerCase()).toBe("svg");
+    });
+
+    it("draws Remove compact, with Add under the rows on the right (decision 0671)", async () => {
+      await openApSetupAs(
+        ["Admin.Configure"],
+        EMPTY_OVERVIEW,
+        EMPTY_CONFIG,
+        stageRestrictionsRoutes([], {
+          "/api/processes/ap": {
+            ...TWO_STAGE_DETAIL,
+            stages: [
+              {
+                ...TWO_STAGE_DETAIL.stages[0],
+                returnTargets: [{ id: "rt1", targetStageId: "coding", targetStageName: "Coding", teamId: "team-coding", teamName: "Coding team" }],
+              },
+              TWO_STAGE_DETAIL.stages[1],
+            ],
+          },
+        })
+      );
+      switchTab("Stage Restrictions");
+
+      const panel = panelNamed("Validation");
+      const remove = [...panel.querySelectorAll(".assignmentrow button")].find((b) => b.textContent === "Remove") as HTMLElement;
+      expect(remove.classList.contains("compactlink")).toBe(true);
+      expect(remove.firstElementChild?.tagName.toLowerCase()).toBe("svg");
+      expect(panel.textContent).not.toContain("No return targets configured for this stage yet.");
+      const add = panel.querySelector(".returntargetadd .statebuttons button") as HTMLElement;
+      expect(add.classList.contains("compactlink")).toBe(true);
     });
 
     it("shows a configured target with its stage and team name, and a Remove button", async () => {
@@ -1956,13 +2015,10 @@ describe("The Stage Restrictions grid's own CSS — decision 0507", () => {
     expect(css).toContain(".stagefields .fieldhidden { flex-basis: 100%; }");
   });
 
-  it("puts a transitionary stage's three toggles on one flexible row", async () => {
+  it("no longer wraps a transitionary stage's toggles beside its explanation (decision 0671)", async () => {
     const css = (await import("virtual:stylesheets")).default["app.css"];
-    const rule = css.slice(css.indexOf(".stageslimtoggles {"), css.indexOf(".stageslimtoggles {") + 200);
-
-    expect(rule).toContain("display: flex;");
-    expect(rule).toContain("flex-wrap: wrap;");
-    expect(css).toContain(".stageslimtoggles .assignmentrow {");
+    expect(css).not.toContain(".stageslimtoggles");
+    expect(css).toContain(".stagetoggles .assignmentrow:last-child { border-bottom: 0.5px solid var(--border); }");
   });
 });
 
