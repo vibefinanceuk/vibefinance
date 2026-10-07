@@ -5163,6 +5163,33 @@ describe("the document/timeline tabs (decision 0269)", () => {
     expect(icons.every((svg) => svg.innerHTML !== "")).toBe(true);
   });
 
+  it("colours each entry by what happened, a bounced email as a problem, and puts your own message on the right (decision 0675)", async () => {
+    stubFetch({
+      ...BASE_ROUTES,
+      "/api/documents/inv-1/activity": {
+        items: [
+          { kind: "received", at: "2026-10-07T15:37:19.973Z" },
+          { kind: "action_taken", at: "2026-10-07T15:40:00.000Z", action: "return_to_supplier", userName: "Dan", comment: null, emailStatus: "bounced", emailToAddress: "ap@supplier.example" },
+          { kind: "action_taken", at: "2026-10-07T15:41:00.000Z", action: "claim", userName: "Dan", comment: null },
+          { kind: "comment", at: "2026-10-07T15:42:00.000Z", id: "c-1", body: "Mine", userName: "Dan Young", mine: true },
+          { kind: "comment", at: "2026-10-07T15:43:00.000Z", id: "c-2", body: "Theirs", userName: "Priya Patel", mine: false },
+        ],
+      },
+    });
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { openViewer } = await import("/viewer.js");
+    await openViewer(TASK, () => {});
+    await new Promise((r) => setTimeout(r, 0));
+    (timelineTabButton() as HTMLButtonElement).click();
+
+    expect(document.querySelector(".activityfeed")?.classList.contains("tlfeed")).toBe(true);
+    const tones = [...document.querySelectorAll(".tlcard")].map((c) => (c as HTMLElement).dataset.tone);
+    expect(tones).toEqual(["info", "bad", "act"]);
+    const bubbles = [...document.querySelectorAll(".tlchat")];
+    expect(bubbles.map((b) => b.classList.contains("mine"))).toEqual([true, false]);
+  });
+
   it("says when a receipt rule's task closed by itself once the goods arrived (decision 0648)", async () => {
     const base = BASE_ROUTES["/api/ui-strings"] as { locale: string; strings: Record<string, string> };
     stubFetch({

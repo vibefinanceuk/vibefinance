@@ -134,6 +134,12 @@ export const ICONS = {
   // it ends up using.
   systemalert: '<path d="M12 3 2 20h20z"/><path d="M12 10v4"/><circle cx="12" cy="17" r="0.6" fill="currentColor" stroke="none"/>',
 
+  // The Timeline's own symbols — decision 0675: arrived (an inbox), done
+  // (a tick) and a problem (an exclamation mark in a circle).
+  inbox: '<path d="M3 13h5l1.5 2.5h5L16 13h5"/><path d="M5.5 5h13L21 13v6H3v-6z"/>',
+  tick: '<path d="M5 12.5l4.5 4.5L19 7.5"/>',
+  alertcircle: '<circle cx="12" cy="12" r="9"/><path d="M12 7.5v5.5"/><circle cx="12" cy="16.5" r="0.6" fill="currentColor" stroke="none"/>',
+
   /**
    * **A person with a plus** — decision 0237, for recording a supplier
    * the ERP does not have.

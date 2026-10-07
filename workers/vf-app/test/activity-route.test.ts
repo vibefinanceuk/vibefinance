@@ -716,3 +716,18 @@ describe("one clock for the whole feed (decision 0674)", () => {
   });
 });
 
+describe("whose message it is (decision 0675)", () => {
+  it("marks the viewer's own comments as theirs, and leaves the key off when nobody is named", async () => {
+    await seedInvoice("inv-1");
+    await seedUser("u-priya", "Priya Patel");
+    await seedUser("u-dan", "Dan Young");
+    await env.DB.prepare("INSERT INTO document_comments (id, invoice_id, author_id, body, created_at) VALUES ('c-1', 'inv-1', 'u-priya', 'Mine', '2026-09-01 10:00:00'), ('c-2', 'inv-1', 'u-dan', 'Theirs', '2026-09-01 10:01:00')").run();
+
+    const asPriya = (await handleGetActivity(env.DB, "inv-1", "u-priya")).body as { items: { kind: string; body?: string; mine?: boolean }[] };
+    expect(asPriya.items.filter((i) => i.kind === "comment").map((i) => [i.body, i.mine])).toEqual([["Mine", true], ["Theirs", false]]);
+
+    const nobody = (await handleGetActivity(env.DB, "inv-1")).body as { items: Record<string, unknown>[] };
+    expect(nobody.items.filter((i) => i.kind === "comment").every((i) => !("mine" in i))).toBe(true);
+  });
+});
+

@@ -5418,3 +5418,67 @@
   which sets them apart from Return targets below.
 */
 .stagetoggles .assignmentrow:last-child { border-bottom: 0.5px solid var(--border); }
+
+/*
+  Decision 0675 — the Timeline / Chat's entries, from the mock-up Dan
+  chose (option B), in both the Document viewer and a receipt's.
+
+  **Day's colours in both themes.** Dan found Night's deeper tones too
+  heavy here, so `.tlfeed` sets the colour tokens its entries use back
+  to Day's values. The pane around them keeps its own theme.
+*/
+.tlfeed {
+  --surface-1: #e8eff8;
+  --surface-2: #ffffff;
+  --text-primary: #121a26;
+  --text-secondary: #4a5768;
+  --text-muted: #7b8798;
+  --border: rgba(18, 26, 38, 0.10);
+  --border-strong: rgba(18, 26, 38, 0.18);
+  --bg-accent: #e6f1fb;
+  --text-accent: #185fa5;
+  --border-accent: #378add;
+  --bg-warning: #faeeda;
+  --text-warning: #854f0b;
+  --border-warning: #ef9f27;
+  --bg-success: #eaf3de;
+  --text-success: #3b6d11;
+  --border-success: #639922;
+  --bg-danger: #fbe4e1;
+  --text-danger: #9c2b1f;
+  --border-danger: #d64a36;
+}
+
+/* A system entry: a slim card, a coloured left edge, its symbol, a bold label, the words and the time. */
+.tlcard {
+  display: block;
+  border-left: 3px solid var(--border-strong);
+  border-radius: 6px;
+  padding: 6px 10px;
+  background: var(--surface-1);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+.tlcard .tltop { display: flex; gap: 7px; align-items: flex-start; }
+.tlcard .activityactionicon { width: 14px; height: 14px; margin-top: 1px; color: var(--text-secondary); }
+.tlcard .tltext { flex: 1 1 auto; min-width: 0; line-height: 1.45; }
+.tlcard .tllabel { color: var(--text-primary); font-weight: 600; }
+.tlcard .tllabel::after { content: " · "; font-weight: 400; color: var(--text-muted); }
+.tlcard .activitymsg { color: var(--text-secondary); }
+.tlcard .activitywhen { color: var(--text-muted); }
+.tlcard .activityactioncomment { color: var(--text-muted); margin: 2px 0 0 21px; }
+.tlcard.tl-info { border-left-color: var(--border-accent); }
+.tlcard.tl-info .activityactionicon { color: var(--text-accent); }
+.tlcard.tl-warn { border-left-color: var(--border-warning); }
+.tlcard.tl-warn .activityactionicon { color: var(--text-warning); }
+.tlcard.tl-ok { border-left-color: var(--border-success); }
+.tlcard.tl-ok .activityactionicon { color: var(--text-success); }
+.tlcard.tl-bad { border-left-color: var(--border-danger); background: color-mix(in srgb, var(--bg-danger) 40%, var(--surface-1)); }
+.tlcard.tl-bad .activityactionicon { color: var(--text-danger); }
+
+/* A person's message: an outlined bubble; your own on the right, in the accent's tint. */
+.tlchat .activitybubble { border: 0.5px solid var(--border-accent); background: color-mix(in srgb, var(--bg-accent) 35%, var(--surface-2)); color: var(--text-primary); }
+.tlchat .activitywho { color: var(--text-primary); }
+.tlchat .activitywho .activitywhen { font-weight: 400; }
+.tlchat.mine { flex-direction: row-reverse; }
+.tlchat.mine .activitybubble { background: var(--bg-accent); }

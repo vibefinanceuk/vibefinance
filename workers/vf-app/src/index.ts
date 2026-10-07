@@ -4713,7 +4713,7 @@ export default {
         return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
       }
 
-      const result = await handleGetActivity(db, activityMatch[1]);
+      const result = await handleGetActivity(db, activityMatch[1], auth.user.id);
       return json(result.body, result.status);
     }
 

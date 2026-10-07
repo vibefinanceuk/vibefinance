@@ -367,16 +367,16 @@ async function lookupNames(db: D1Database, table: string, ids: Set<string>): Pro
   return new Map(rows.results.map((r) => [r.id, r.name]));
 }
 
-async function commentEvents(db: D1Database, invoiceId: string): Promise<ActivityItem[]> {
+async function commentEvents(db: D1Database, invoiceId: string, viewerId?: string): Promise<ActivityItem[]> {
   const rows = await db
     .prepare(
-      `SELECT c.id, c.body, c.created_at AS at, u.name AS user_name
+      `SELECT c.id, c.body, c.created_at AS at, c.author_id, u.name AS user_name
        FROM document_comments c
        JOIN org_users u ON u.id = c.author_id
        WHERE c.invoice_id = ?`
     )
     .bind(invoiceId)
-    .all<{ id: string; body: string; at: string; user_name: string }>();
+    .all<{ id: string; body: string; at: string; author_id: string; user_name: string }>();
 
   // Same reasoning as stageCompletedEvents: author_id is NOT NULL and
   // FK-enforced, and org_users.name is NOT NULL — no fallback needed.
@@ -386,6 +386,8 @@ async function commentEvents(db: D1Database, invoiceId: string): Promise<Activit
     id: r.id,
     body: r.body,
     userName: r.user_name,
+    // Decision 0675: whether the person looking wrote it, so their own sits on the right.
+    ...(viewerId ? { mine: r.author_id === viewerId } : {}),
   }));
 }
 
@@ -455,7 +457,7 @@ async function receiptClosedEvents(db: D1Database, invoiceId: string): Promise<A
   }));
 }
 
-export async function handleGetActivity(db: D1Database, invoiceId: string): Promise<RouteResult> {
+export async function handleGetActivity(db: D1Database, invoiceId: string, viewerId?: string): Promise<RouteResult> {
   const invoice = await db.prepare("SELECT id FROM invoice_headers WHERE id = ?").bind(invoiceId).first();
   if (!invoice) {
     return { status: 404, body: { error: `document ${invoiceId} does not exist` } };
@@ -465,7 +467,7 @@ export async function handleGetActivity(db: D1Database, invoiceId: string): Prom
     receivedEvent(db, invoiceId),
     stageCompletedEvents(db, invoiceId),
     ruleFiredEvents(db, invoiceId),
-    commentEvents(db, invoiceId),
+    commentEvents(db, invoiceId, viewerId),
     taskActionEvents(db, invoiceId),
     taskEndedEvents(db, invoiceId),
     erpExportEvents(db, invoiceId),

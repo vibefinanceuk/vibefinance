@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 7 October 2026 (decision 0674). A living document: what
+Last updated 7 October 2026 (decision 0675). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,16 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### The Timeline's entries: coloured cards and chat bubbles (0675)
+
+In both Timelines, a system event is a slim card with a coloured edge,
+a symbol and a bold label: blue for information, amber for attention,
+green for done, red for a problem, and grey for a person's action. Chat
+stays as bubbles, with your own on the right. The entries keep Day's
+colours in Night too.
+
+Full reasoning is in decision 0675.
 
 ### The Timeline in time order, one clock (0674)
 

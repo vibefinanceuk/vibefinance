@@ -1,4 +1,4 @@
-import { stamp } from "/timestamp.js";
+import { chatBubble, systemCard } from "/timeline-entry.js";
 import { t } from "/strings.js";
 import { el as make } from "/tasks.js";
 import { icon } from "/icons.js";
@@ -36,8 +36,6 @@ const initials = (name) =>
     .toUpperCase();
 
 /** "7 Oct 2026, 09:12", in the browser's own time. */
-// The same moment, shown the same way as the Document viewer's (decision 0674).
-const when = stamp;
 
 /** A refusal in words: the reason's own, where there is one. */
 function refused(body, fallbackKey) {
@@ -52,6 +50,9 @@ function refused(body, fallbackKey) {
 const fill = (key, values) => Object.entries(values).reduce((s, [k, v]) => s.split(`{${k}}`).join(v === null || v === undefined || v === "" ? "—" : String(v)), t(key));
 const qtyUnit = (x) => (x ? `${x.quantity ?? "—"}${x.unit ? ` ${x.unit}` : ""}` : "—");
 const orderLine = (x) => (x ? `${x.order} / ${x.line}` : "—");
+
+/** A receipt's kinds that share an invoice action's look (decision 0675). */
+const RECEIPT_EVENT = { claimed: "claim", released: "release", reassigned: "reassign" };
 
 /** What one thing that happened says, in words. Exported for its test. */
 export function describe(item) {
@@ -200,20 +201,10 @@ export function buildReceiptTimeline(receiptId, { countBadge = null } = {}) {
     ]);
   }
 
-  function row(item) {
-    if (item.kind === "comment")
-      return el("div", { class: `activitycomment${item.mine ? " mine" : ""}`, "data-kind": "comment" }, [
-        el("span", { class: "activityavatar", text: initials(item.by) }),
-        el("div", { class: "activitybubble" }, [
-          el("div", { class: "activitywho" }, [el("span", { text: item.by ?? "—" }), el("span", { class: "activitywhen", text: when(item.at) })]),
-          el("div", { class: "activitybody", text: item.body }),
-        ]),
-      ]);
-    return el("div", { class: "activitysysline", "data-kind": item.kind }, [
-      el("span", { class: "activitydot" }),
-      el("span", { class: "activitymsg", text: describe(item) }),
-      el("span", { class: "activitywhen", text: when(item.at) }),
-    ]);
+  // Decision 0675: drawn the shared way, as the Document viewer's.
+  function row(item, index, all) {
+    if (item.kind === "comment") return chatBubble({ name: item.by, body: item.body, at: item.at, mine: item.mine === true });
+    return systemCard(RECEIPT_EVENT[item.kind] ?? item.kind, { text: describe(item), at: item.at, prevAt: index > 0 ? all[index - 1].at : null, kind: item.kind });
   }
 
   function render() {
@@ -239,7 +230,7 @@ export function buildReceiptTimeline(receiptId, { countBadge = null } = {}) {
         ]),
         s.problem ? el("div", { class: "warn sm", id: "receipt-timeline-problem", text: s.problem }) : null,
         s.error ? el("div", { class: "warn sm", text: s.error }) : null,
-        el("div", { class: "activityfeed" }, s.loading ? [el("div", { class: "muted", text: t("receipts.tl.loading") })] : s.items.length ? s.items.map(row) : [el("div", { class: "muted", text: t("receipts.tl.empty") })]),
+        el("div", { class: "activityfeed tlfeed" }, s.loading ? [el("div", { class: "muted", text: t("receipts.tl.loading") })] : s.items.length ? s.items.map(row) : [el("div", { class: "muted", text: t("receipts.tl.empty") })]),
         el("div", { class: "activityinput" }, [box, postButton]),
         s.sentNote ? el("div", { class: "muted sm", id: "receipt-chat-sent", text: s.sentNote }) : null,
       ].filter(Boolean)

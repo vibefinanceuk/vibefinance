@@ -1,4 +1,4 @@
-import { stamp } from "/timestamp.js";
+import { chatBubble, systemCard } from "/timeline-entry.js";
 import { t } from "/strings.js";
 import { el } from "/tasks.js";
 import { icon } from "/icons.js";
@@ -116,8 +116,7 @@ function ruleFiredLine(item) {
  * `return_to_supplier`, `discard`, `reassign`, `route_to_approver`), so
  * it doubles as the icon lookup key in `itemRow` below.
  */
-/** Actions whose icon is another button's (decision 0553): the export's Download, and Undo's Return. */
-const ACTION_ICONS = { erp_export: "download", erp_export_undone: "return", receipt_closed: "goodsreceipts" };
+// Each action's symbol and colour now come from `EVENTS` in timeline-entry.js (decision 0675).
 
 function actionTakenLine(item) {
   const who = item.userName;
@@ -200,78 +199,50 @@ function systemMessage(item) {
   return "";
 }
 
-function initials(name) {
-  return String(name)
-    .split(" ")
-    .map((w) => w[0])
-    .join("")
-    .slice(0, 2)
-    .toUpperCase();
+/**
+ * Which `EVENTS` entry (tone, symbol, label) an item takes — decision
+ * 0675. A Return To Supplier whose email did not go through is a
+ * problem, not just something to notice.
+ */
+const EMAIL_FAILED = new Set(["bounced", "complained", "send_failed"]);
+function eventKey(item) {
+  if (item.kind !== "action_taken") return item.kind;
+  if (item.action === "return_to_supplier" && EMAIL_FAILED.has(item.emailStatus)) return "email_failed";
+  return item.action;
 }
 
-function itemRow(item) {
-  if (item.kind === "comment") {
-    return el("div", { class: "activitycomment" }, [
-      el("span", { class: "activityavatar", text: initials(item.userName) }),
-      el("div", { class: "activitybubble" }, [
-        el("div", { class: "activitywho" }, [
-          el("span", { text: item.userName }),
-          el("span", { class: "activitywhen", text: stamp(item.at) }),
-        ]),
-        el("div", { class: "activitybody", text: item.body }),
-      ]),
-    ]);
-  }
+/** One entry, drawn the shared way (`timeline-entry.js`, decision 0675). */
+function itemRow(item, index, all) {
+  if (item.kind === "comment") return chatBubble({ name: item.userName, body: item.body, at: item.at, mine: item.mine === true });
 
+  const prevAt = index > 0 ? all[index - 1].at : null;
   if (item.kind === "action_taken") {
-    // **The icon of the button taken**, asked for live — the same
-    // closed vocabulary `icons.js` already draws for the action row
-    // itself, not a generic dot, so Reassign one day looks like
-    // Reassign here too rather than every action reading the same.
-    return el("div", { class: "activitysysline activityaction" }, [
-      // Decision 0553 — the ERP export's lines take the icons of its own buttons.
-      el("span", { class: "activityactionicon" }, [icon(ACTION_ICONS[item.action] ?? item.action)]),
-      el(
-        "div",
-        { class: "activityactionbody" },
-        [
-          el("div", { class: "activitymsgrow" }, [
-            el("span", { class: "activitymsg", text: systemMessage(item) }),
-            el("span", { class: "activitywhen", text: stamp(item.at) }),
-          ]),
-          // A po_link's comment is the order number, already in the line above.
-          item.comment && item.action !== "po_link" && item.action !== "po_pair" ? el("div", { class: "activityactioncomment", text: item.comment }) : null,
-          // Decision 0498 — the supplier-facing comment (separate from
-          // the reason above) and what happened to the email, both
-          // only ever present on a return_to_supplier item.
-          item.supplierComment ? el("div", { class: "activityactioncomment", text: item.supplierComment }) : null,
-          emailStatusLine(item) ? el("div", { class: "activityactioncomment muted sm", text: emailStatusLine(item) }) : null,
-        ].filter(Boolean)
-      ),
-    ]);
+    return systemCard(eventKey(item), {
+      text: systemMessage(item),
+      at: item.at,
+      prevAt,
+      classes: "activityaction",
+      kind: "action_taken",
+      subs: [
+        // A po_link's comment is the order number, already in the line above.
+        item.comment && item.action !== "po_link" && item.action !== "po_pair" ? item.comment : null,
+        // Decision 0498 — the supplier-facing comment, and what happened to the email.
+        item.supplierComment ?? null,
+        emailStatusLine(item),
+      ],
+    });
   }
-
   if (item.kind === "received" && item.messageId) {
     // Decision 0571 — the message reference, and the file this invoice was read from.
-    return el("div", { class: "activitysysline activityreceived" }, [
-      el("span", { class: "activitydot" }),
-      el("div", { class: "activityactionbody" }, [
-        el("div", { class: "activitymsgrow" }, [
-          el("span", { class: "activitymsg", text: systemMessage(item) }),
-          el("span", { class: "activitywhen", text: stamp(item.at) }),
-        ]),
-        item.filename
-          ? el("div", { class: "activityactioncomment muted sm", text: t("activity.receivedfile").replace("{file}", item.filename) })
-          : null,
-      ].filter(Boolean)),
-    ]);
+    return systemCard("received", {
+      text: systemMessage(item),
+      at: item.at,
+      prevAt,
+      classes: "activityreceived",
+      subs: [item.filename ? t("activity.receivedfile").replace("{file}", item.filename) : null],
+    });
   }
-
-  return el("div", { class: "activitysysline" }, [
-    el("span", { class: "activitydot" }),
-    el("span", { class: "activitymsg", text: systemMessage(item) }),
-    el("span", { class: "activitywhen", text: stamp(item.at) }),
-  ]);
+  return systemCard(eventKey(item), { text: systemMessage(item), at: item.at, prevAt });
 }
 
 function renderContent(content, countBadge, invoiceId) {
@@ -287,6 +258,8 @@ function renderContent(content, countBadge, invoiceId) {
         ? [el("div", { class: "muted", text: t("activity.empty") })]
         : items.map(itemRow)
   );
+  // Decision 0675: the entries keep Day's colours in Night too.
+  feed.classList.add("tlfeed");
 
   const box = el("textarea", { id: "activity-input", placeholder: t("activity.placeholder") });
   const postButton = el("button", {
