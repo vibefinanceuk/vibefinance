@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 7 October 2026 (decision 0668). A living document: what
+Last updated 7 October 2026 (decision 0669). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,15 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### AP Setup's Save and the coding lists' actions (0669)
+
+On AP Setup, the following are small icon-and-word actions:
+
+- Save, on Matching, Account Coding and Approval Hierarchy;
+- each coding list's CSV Template, Load CSV and Add. Add now has a plus.
+
+Full reasoning is in decision 0669.
 
 ### People tab: actions after Signing in, one column each (0668)
 

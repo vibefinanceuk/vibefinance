@@ -534,6 +534,20 @@ describe("Account Coding — decision 0444", () => {
   });
 });
 
+describe("Save as a small icon with its word on Matching, Account Coding and Approval Hierarchy (decision 0669)", () => {
+  it("draws each tab's Save compactly", async () => {
+    for (const tab of ["Matching", "Account Coding", "Approval Hierarchy"]) {
+      document.body.innerHTML = `<main id="shell"></main><main id="viewer" hidden></main>`;
+      vi.resetModules();
+      await openApSetupAs(["Admin.Configure"]);
+      switchTab(tab);
+      const saves = [...document.querySelectorAll("button")].filter((b) => b.textContent === "Save");
+      expect(saves.length, tab).toBeGreaterThan(0);
+      expect(saves.some((b) => b.classList.contains("compactlink")), tab).toBe(true);
+    }
+  });
+});
+
 describe("Approval Hierarchy — the mode and Default Approver form", () => {
   it("shows the configured mode already selected", async () => {
     await openApSetupAs(["Admin.Configure"], EMPTY_OVERVIEW, { ...EMPTY_CONFIG, mode: "cost_object" });

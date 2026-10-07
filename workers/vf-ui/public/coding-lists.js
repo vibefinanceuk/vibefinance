@@ -1,6 +1,6 @@
 import { t } from "/strings.js";
 import { el } from "/tasks.js";
-import { actionLink } from "/viewer.js";
+import { actionLink, compactLink } from "/viewer.js";
 import { icon } from "/icons.js";
 
 /**
@@ -431,7 +431,7 @@ function csvLoaderPanel(listType, refresh) {
   const noteId = `codingcsvnote-${listType}`;
   const noteBox = el("div", { class: "muted sm", id: noteId });
   const picker = el("input", { type: "file", accept: ".csv,text/csv" });
-  const loadButton = actionLink("load", { primary: true, onclick: () => runLoad(), label: t("purchaseorders.loadbutton") });
+  const loadButton = compactLink("load", { primary: true, onclick: () => runLoad(), label: t("purchaseorders.loadbutton") });
 
   function note(message) {
     const box = document.getElementById(noteId);
@@ -478,7 +478,7 @@ function csvLoaderPanel(listType, refresh) {
     }
   }
 
-  const templateButton = actionLink("download", { onclick: () => downloadCsvTemplate(listType), label: t("purchaseorders.templatebutton") });
+  const templateButton = compactLink("download", { onclick: () => downloadCsvTemplate(listType), label: t("purchaseorders.templatebutton") });
   // csvFormats is already in its final state by the time this panel
   // renders — ap-setup.js's own open() awaits loadCodingListCsvFormats()
   // before ever calling render().
@@ -679,7 +679,7 @@ function costCentreTab(costCentreNames) {
       state.rows.map((c) =>
         costCentreRow(c, () => openCostCentreForm(c, { costCentres: costCentreNames, units: cachedUnits, users: cachedUsers, onSaved }))
       ),
-      actionLink("create", {
+      compactLink("addcard", {
         primary: true,
         label: t("apsetup.add"),
         onclick: () => openCostCentreForm(null, { costCentres: costCentreNames, units: cachedUnits, users: cachedUsers, onSaved }),
@@ -909,7 +909,7 @@ function codingListTab(listType, titleKey, subKey, emptyKey) {
       state.rows.map((entry) =>
         codingEntryRow(entry, state.declaredFilters, () => openCodingEntryEditor(listType, titleKey, entry), listType)
       ),
-      actionLink("create", {
+      compactLink("addcard", {
         primary: true,
         label: t("apsetup.add"),
         onclick: () => openCodingEntryEditor(listType, titleKey, null),

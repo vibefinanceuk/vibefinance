@@ -944,6 +944,12 @@ describe("CSV Template and Load — decision 0445", () => {
       const buttons = [...document.querySelectorAll("button")].map((b) => b.textContent);
       expect(buttons, `${label} should have a Load button`).toContain("Load CSV");
       expect(buttons, `${label} should have a Template button`).toContain("CSV Template");
+      // Decision 0669: CSV Template, Load CSV and Add, each a small icon with its word.
+      for (const word of ["CSV Template", "Load CSV", "Add"]) {
+        const b = [...document.querySelectorAll("#codingactivetab button")].find((x) => x.textContent === word);
+        expect(b?.classList.contains("compactlink"), `${label}: ${word}`).toBe(true);
+        expect(b?.firstElementChild?.tagName.toLowerCase(), `${label}: ${word}`).toBe("svg");
+      }
     }
   });
 

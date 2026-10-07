@@ -1,6 +1,6 @@
 import { t } from "/strings.js";
 import { el, frame, topbar, setCurrentScreen, hasMyPermission } from "/tasks.js";
-import { actionLink } from "/viewer.js";
+import { actionLink, compactLink } from "/viewer.js";
 import { currencyPicker } from "/access.js";
 import { accountCodingTab, loadCodingListCsvFormats, loadAccountCodingTables } from "/coding-lists.js";
 
@@ -237,7 +237,7 @@ function codingRulePanel() {
     ]);
   };
   const options = el("div", { class: "radiochoices" }, [choice("exclusive"), choice("both")]);
-  const save = actionLink("save", {
+  const save = compactLink("save", {
     primary: true,
     onclick: async () => {
       problem.textContent = "";
@@ -992,7 +992,7 @@ function matchingConfigTab(problem) {
     enabledCheckbox,
   ]);
 
-  const save = actionLink("save", {
+  const save = compactLink("save", {
     primary: true,
     onclick: async () => {
       problem.textContent = "";
@@ -1172,7 +1172,7 @@ function modeForm(problem) {
     excludeCoding,
   ]);
 
-  const save = actionLink("save", {
+  const save = compactLink("save", {
     primary: true,
     onclick: async () => {
       problem.textContent = "";
