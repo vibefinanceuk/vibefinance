@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 7 October 2026 (decision 0662). A living document: what
+Last updated 7 October 2026 (decision 0663). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,13 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### The Goods Receipts screen's actions (0663)
+
+The Goods Receipts screen's actions are drawn the same way, as a small
+icon with its word. That covers Upload receipts, Record a return,
+Record a receipt and Find. Record a return and Record a receipt now each
+have their own icon. Full reasoning is in decision 0663.
 
 ### The invoice viewer's card actions (0662)
 

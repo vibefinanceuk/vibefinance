@@ -201,6 +201,18 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("the Goods Receipts screen", () => {
+  it("draws Upload receipts, Record a return and Record a receipt as an icon with its word, each its own icon (decision 0663)", async () => {
+    await openScreen(["AP.Receive"]);
+    const upload = document.getElementById("receipts-toupload")!;
+    const ret = button("Record a return")!;
+    const rec = button("Record a receipt")!;
+    for (const b of [upload, ret, rec]) {
+      expect(b.classList.contains("compactlink")).toBe(true);
+      expect(b.firstElementChild?.tagName.toLowerCase()).toBe("svg");
+    }
+    expect(ret.querySelector("svg")!.innerHTML).not.toBe(rec.querySelector("svg")!.innerHTML);
+  });
+
   it("lets AP.Validate look, with the order's state and credit expected, but not record", async () => {
     await openScreen(["AP.Validate"]);
     expect([...document.querySelectorAll(".navitem")].some((n) => n.textContent === "Goods Receipts")).toBe(true);

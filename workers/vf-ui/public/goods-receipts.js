@@ -1,6 +1,6 @@
 import { t } from "/strings.js";
 import { el as make, frame, topbar, setCurrentScreen, hasMyPermission } from "/tasks.js";
-import { actionLink } from "/viewer.js";
+import { actionLink, compactLink } from "/viewer.js";
 import { icon } from "/icons.js";
 import { currentOrgId } from "/orgs.js";
 import { donutChart } from "/charts.js";
@@ -142,7 +142,7 @@ function processLine() {
   if (warehouse) return el("p", { class: "sm", id: "receipts-process", text: t("receipts.process.through").replace("{process}", warehouse.name) });
   const parts = [el("span", { class: "sm muted", text: t("receipts.process.direct") })];
   if (hasMyPermission("Admin.Configure")) {
-    const button = actionLink("addcard", {
+    const button = compactLink("addcard", {
       label: t("receipts.process.setup"),
       onclick: async () => {
         button.disabled = true;
@@ -256,7 +256,8 @@ async function toCreate(which) {
 }
 
 function loader() {
-  const button = actionLink("load", { primary: true, label: t("receipts.uploadincreate"), onclick: () => toCreate("upload") });
+  // Decision 0663: the screen's own actions drawn as the viewer's card actions (0662), an icon with its word.
+  const button = compactLink("load", { primary: true, label: t("receipts.uploadincreate"), onclick: () => toCreate("upload") });
   button.id = "receipts-toupload";
   return el("div", { class: "panel" }, [
     el("div", { class: "cardhead" }, [el("h3", { text: t("receipts.loadheading") }), el("div", { class: "statebuttons" }, [button])]),
@@ -857,7 +858,7 @@ export function openRecord(mode = "received", { container = null, onSaved = null
     ]),
     el("div", { class: "editgrid" }, [
       el("label", { for: "record-order", text: t("receipts.form.order") }),
-      el("div", { class: "searchrow" }, [orderInput, actionLink("search", { label: t("receipts.form.find"), onclick: () => find() })]),
+      el("div", { class: "searchrow" }, [orderInput, compactLink("search", { label: t("receipts.form.find"), onclick: () => find() })]),
       el("label", { for: "record-number", text: t(returning ? "receipts.form.returnnumber" : "receipts.form.number") }),
       numberInput,
       el("label", { for: "record-date", text: t(returning ? "receipts.form.returnedon" : "receipts.form.receivedon") }),
@@ -905,8 +906,9 @@ function render() {
   }
   const actions = canRecord()
     ? el("div", { class: "statebuttons" }, [
-        actionLink("create", { label: t("receipts.recordreturn"), onclick: () => toCreate("return") }),
-        actionLink("create", { primary: true, label: t("receipts.recordreceipt"), onclick: () => toCreate("receipt") }),
+        // Decision 0663: each with an icon of its own — goods going back, goods coming in.
+        compactLink("return", { label: t("receipts.recordreturn"), onclick: () => toCreate("return") }),
+        compactLink("goodsreceipts", { primary: true, label: t("receipts.recordreceipt"), onclick: () => toCreate("receipt") }),
       ])
     : null;
   shell.replaceChildren(
