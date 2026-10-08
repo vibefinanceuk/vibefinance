@@ -61,3 +61,17 @@ adapter passes it as `max_tokens` (default 8192, as before).
 
 Dan re-sends. Expected: headers read again in seconds. Lines either arrive, or
 `extraction.lineProblem` shows what the model wrote.
+
+## Confirmed live, 8 October 2026
+
+Dan emailed three scans one per email. All three were read in the background
+(0687), and every line total matches the invoice's net total exactly:
+
+| Invoice | Lines | Line sum | Net (BT-106) | Validation |
+| --- | --- | --- | --- | --- |
+| 13017251 (023F88A6) | 1 | 2162.76 | 2162.76 | passed |
+| 2157829 (023B684C, multi-page) | 70 | 2563.41 | 2563.41 | passed |
+| 30098095 (0242C15A) | 1 | 186.24 | 186.24 | warning: BT-5 read as `EURO` |
+
+The `EURO` warning is the model writing the currency's name instead of its ISO
+4217 code. It is not a line problem.
