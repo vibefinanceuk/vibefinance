@@ -504,6 +504,26 @@ describe("POST /rules/compile", () => {
     expect(res.status).toBe(500);
     expect(await res.json()).toEqual({ error: "AI binding not configured" });
   });
+
+  it("answers in JSON when the rules model fails, so the Rules screen can say so (decision 0689)", async () => {
+    await env.DB.prepare("INSERT INTO rule_sets (id, name, mode, status) VALUES ('rs-fail', 'Validation', 'first_match', 'active')").run();
+    const failing = { run: async () => { throw new Error("AiError: 3040: Capacity temporarily exceeded"); } };
+    const res = await worker.fetch(
+      new Request("https://example.com/rules/compile", {
+        method: "POST",
+        headers: { ...authHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify({ ruleSetId: "rs-fail", sourceText: "If the supplier is not known, assign a task to the AP team" }),
+      }),
+      { ...env, AI: failing } as unknown as Env,
+      { waitUntil() {}, passThroughOnException() {} } as unknown as ExecutionContext
+    );
+    expect(res.status).toBe(502);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toContain("The rules model did not answer");
+    expect(body.error).toContain("3040: Capacity temporarily exceeded");
+    // Nothing half-made: no rule was written.
+    expect((await env.DB.prepare("SELECT count(*) AS n FROM rules WHERE rule_set_id = 'rs-fail'").first<{ n: number }>())!.n).toBe(0);
+  });
 });
 
 describe("licence enforcement — the gate applied to mutating endpoints", () => {  async function setLicenceStatus(status: "active" | "warned" | "blocked", reason?: string) {

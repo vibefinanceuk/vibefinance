@@ -47,25 +47,33 @@ async function compile() {
   examples = [];
   note(t("compose.compiling"));
 
-  const response = await fetch("/api/rules/compile", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      ruleSetId: stage.ruleSetId,
-      sourceText,
-      // Present only when revising, so the route makes a new version
-      // rather than a new rule.
-      ...(revising?.ruleId ? { ruleId: revising.ruleId } : {}),
-      // Only meaningful on creation — decision 0266. A recompile
-      // ignores this field regardless, but not sending it while
-      // revising keeps the request honest about what it is asking for.
-      ...(!revising && document.getElementById("rule-name")?.value.trim()
-        ? { name: document.getElementById("rule-name").value.trim() }
-        : {}),
-    }),
-  });
+  // Decision 0689: a request that fails, or a reply that is not JSON (an
+  // error page), is said on the screen rather than left on "Working out".
+  let response;
+  try {
+    response = await fetch("/api/rules/compile", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ruleSetId: stage.ruleSetId,
+        sourceText,
+        // Present only when revising, so the route makes a new version
+        // rather than a new rule.
+        ...(revising?.ruleId ? { ruleId: revising.ruleId } : {}),
+        // Only meaningful on creation — decision 0266. A recompile
+        // ignores this field regardless, but not sending it while
+        // revising keeps the request honest about what it is asking for.
+        ...(!revising && document.getElementById("rule-name")?.value.trim()
+          ? { name: document.getElementById("rule-name").value.trim() }
+          : {}),
+      }),
+    });
+  } catch {
+    note(t("compose.failed"));
+    return;
+  }
 
-  const body = await response.json();
+  const body = await response.json().catch(() => ({}));
 
   if (body.status === "refused") {
     refusal = body.reason;

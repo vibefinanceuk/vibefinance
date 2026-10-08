@@ -1155,14 +1155,24 @@ export default {
         return json({ error: t("invalidJsonBody", locale) }, 400);
       }
       const model = createWorkersAiCompilerModel(env.AI);
-      const result = await handleCompileRequest(
-        model,
-        COMPILER_MODEL_ID,
-        db,
-        (body ?? {}) as Record<string, unknown>,
-        locale
-      );
-      return json(result.body, result.status);
+      /**
+       * **The model failing is answered, not thrown — decision 0689.** A
+       * Workers AI error escaped as an uncaught exception, the Worker
+       * answered with an error page, and the Rules screen — which could
+       * not read it — sat on "Working out what you mean" for good.
+       */
+      try {
+        const result = await handleCompileRequest(
+          model,
+          COMPILER_MODEL_ID,
+          db,
+          (body ?? {}) as Record<string, unknown>,
+          locale
+        );
+        return json(result.body, result.status);
+      } catch (err) {
+        return json({ error: t("rulesModelFailed", locale, { detail: String(err).slice(0, 300) }) }, 502);
+      }
     }
 
     // On-demand licence refresh — the same fix already applied to

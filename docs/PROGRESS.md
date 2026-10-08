@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 8 October 2026 (decision 0688). A living document: what
+Last updated 8 October 2026 (decision 0689). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,14 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### A rules-model failure is said, not hung on (0689)
+
+Creating a rule sat on "Working out what you mean" for good: a Workers AI error
+crashed `/rules/compile`, and the screen could not read the error page. The
+route now answers 502 JSON naming the model's error, and the screen shows it.
+
+Full reasoning is in decision 0689.
 
 ### A scanned page's lines asked for on their own (0688)
 

@@ -26,6 +26,7 @@ export type MessageKey =
   | "noLicenceProvisioned"
   | "licenceBlockedFallback"
   | "ruleSetIdSourceTextRequired"
+  | "rulesModelFailed"
   | "confirmedByRequired"
   | "exampleDoesNotExist"
   | "activatedByRequired"
@@ -115,6 +116,15 @@ const MESSAGES: Record<MessageKey, Record<Locale, string>> = {
     es: "Licencia bloqueada",
     it: "Licenza bloccata",
     nl: "Licentie geblokkeerd",
+  },
+  // Decision 0689: the rules model failed; said, rather than a crash the page never hears back from.
+  rulesModelFailed: {
+    en: "The rules model did not answer, so the rule was not worked out. Please try again. ({detail})",
+    de: "Das Regelmodell hat nicht geantwortet, daher wurde die Regel nicht ausgewertet. Bitte erneut versuchen. ({detail})",
+    fr: "Le modèle de règles n'a pas répondu, la règle n'a donc pas été interprétée. Veuillez réessayer. ({detail})",
+    es: "El modelo de reglas no respondió, así que la regla no se interpretó. Inténtelo de nuevo. ({detail})",
+    it: "Il modello delle regole non ha risposto, quindi la regola non è stata interpretata. Riprovare. ({detail})",
+    nl: "Het regelmodel gaf geen antwoord, dus de regel is niet uitgewerkt. Probeer het opnieuw. ({detail})",
   },
   ruleSetIdSourceTextRequired: {
     en: "ruleSetId and sourceText (both strings) are required",
