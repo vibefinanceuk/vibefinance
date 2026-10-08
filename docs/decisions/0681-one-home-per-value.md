@@ -1,10 +1,7 @@
 # 0681: One home per value — the Peppol BIS 3.0 Business Terms
 
-**Status: built and tested locally, not yet pushed or deployed.** It
-touches `vf-app` and `vf-ui`. It needs **vf-app migration `0148`**.
-Deploy vf-app and vf-ui. Dan will clear the runtime data and start with
-new invoices, so nothing already stored needs to carry over (though the
-migration works on existing rows too).
+**Status: live** at `8ccf2ea`, pushed and deployed 8 October 2026, with
+vf-app migration `0148` applied. It touches `vf-app` and `vf-ui`.
 
 ## What was asked
 

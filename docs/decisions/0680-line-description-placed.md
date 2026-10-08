@@ -1,7 +1,7 @@
 # 0680: The line table's Description column back after Item name
 
-**Status: built and tested locally, not yet pushed or deployed.** It is
-`vf-ui` only, with no migration. Deploy vf-ui.
+**Status: live** at `8ccf2ea`, pushed and deployed 8 October 2026 (with
+0681). It is `vf-ui` only, with no migration.
 
 ## What was asked
 
