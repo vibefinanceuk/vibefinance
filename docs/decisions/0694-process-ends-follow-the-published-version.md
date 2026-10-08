@@ -1,6 +1,6 @@
 # 0694: A process's entry and exit stages follow the version published
 
-**Status: built**, in bundle 0994. vf-app (`process-route.ts`) and migration
+**Status: live** at `e31255b`, pushed and deployed 8 October 2026, migration applied; Supplier Maintenance now reads Intake → Complete. vf-app (`process-route.ts`) and migration
 `0153_process_ends_follow_current_version.sql`.
 
 ## What was asked
