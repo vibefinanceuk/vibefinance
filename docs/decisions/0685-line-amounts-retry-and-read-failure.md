@@ -1,6 +1,6 @@
 # 0685: Line amounts as invoices print them, one retry, and why a read failed
 
-**Status: built**, in bundle 0983 on top of `3c0430f`. vf-app only, no migration.
+**Status: live** at `9ac4f96`, pushed and deployed 8 October 2026. vf-app only, no migration.
 
 ## What was asked
 

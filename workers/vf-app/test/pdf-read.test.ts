@@ -295,3 +295,28 @@ describe("line amounts as invoices print them, a retry, and why a read failed (d
     expect(facts["intake.readFailure"]).toContain("did not respond in time");
   });
 });
+
+describe("line items must carry both keys (decision 0686)", () => {
+  beforeEach(async () => {
+    await applyTestSchema();
+    await handleCreateProcess(env.DB, { id: "p-ap", name: "AP" });
+    await handleCreateStage(env.DB, "p-ap", { id: "s-received", name: "Received", sequence: 1 });
+    await handleCreateSource(env.DB, "p-ap", { id: "src-mail", name: "AP mailbox", mechanism: "email" });
+    await handleCreateIntakeChannel(env.DB, "p-ap", { id: "ch-image", name: "Image", structure: "image" });
+  });
+
+  it("asks for description and amount on every line, as every top-level key is asked for", async () => {
+    const { buildExtractionSchema } = await import("../src/extraction.js");
+    const schema = buildExtractionSchema() as { properties: { lines: { items: { required: string[] } } } };
+    expect(schema.properties.lines.items.required).toEqual(["description", "amount"]);
+  });
+
+  it("says what an empty row looked like when it was the only one", async () => {
+    const empty = JSON.stringify({ invoiceNumber: "E", lines: [{}], _confidence: 0.9 });
+    const result = await handleCaptureFromSource(env.DB, "src-mail", SCANNED_FLATE(), recordingModel(empty).model);
+    const facts = JSON.parse((await env.DB.prepare("SELECT facts_json FROM invoice_headers WHERE id = ?").bind((result.body as { id: string }).id).first<{ facts_json: string }>())!.facts_json);
+    expect(facts["extraction.lineRows"]).toBe(1);
+    expect(facts["extraction.linesKept"]).toBe(0);
+    expect(facts["extraction.lineProblem"]).toBe("row 1: no amount: {}");
+  });
+});

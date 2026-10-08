@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 8 October 2026 (decision 0685). A living document: what
+Last updated 8 October 2026 (decision 0686). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,15 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Line items must carry both keys (0686)
+
+Dan's re-sent scans still kept no lines, and no amount had been refused: the
+model was answering `lines: [{}]`. The line schema now requires `description`
+and `amount` (both nullable), as the top level already did, and
+`extraction.lineProblem` also shows a set-aside row.
+
+Full reasoning is in decision 0686.
 
 ### Line amounts, one retry, and why a read failed (0685)
 

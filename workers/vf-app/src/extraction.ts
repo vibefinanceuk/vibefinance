@@ -252,6 +252,10 @@ export function buildExtractionSchema(
         description: { type: ["string", "null"], description: "what this line is for, as printed" },
         amount: { type: ["number", "null"], description: "the line's own total amount as PRINTED, excluding VAT where the document separates them. Never calculated." },
       },
+      // Decision 0686: both keys required, as at the top level. Without
+      // this, guided decoding let the model answer `lines: [{}]` — one
+      // empty row, set aside as amount-less — on every one of Dan's scans.
+      required: ["description", "amount"],
     },
   };
 
@@ -512,6 +516,7 @@ export function parseExtractionResponse(
   // evidence that the real lines are unreliable.
   let rejectedRows = 0;
   let lineProblem: string | null = null;
+  let setAside: string | null = null;
   const linesTruncated = rawLines.length > settings.maxExtractedLines;
   const lines: ExtractedLine[] = [];
   let lineNumber = 0;
@@ -529,6 +534,8 @@ export function parseExtractionResponse(
      */
     if (row.amount === null || row.amount === undefined || (typeof row.amount === "string" && row.amount.trim() === "")) {
       rejectedRows += 1;
+      // Decision 0686: what a set-aside row looked like, kept when no line survives.
+      if (setAside === null) setAside = `row ${lines.length + rejectedRows}: no amount: ${JSON.stringify(row).slice(0, 120)}`;
       continue;
     }
     const amount = lineAmount(row.amount);
@@ -563,6 +570,7 @@ export function parseExtractionResponse(
     const descriptionCheck = coerce(row.description, "text");
     if (settings.requireLineDescription && !descriptionCheck.ok) {
       rejectedRows += 1;
+      if (setAside === null) setAside = `row ${lines.length + rejectedRows}: no description: ${JSON.stringify(row).slice(0, 120)}`;
       continue;
     }
 
@@ -605,7 +613,8 @@ export function parseExtractionResponse(
   // arriving with no lines says whether the model saw none or they were discarded.
   facts["extraction.lineRows"] = rawLines.length;
   facts["extraction.linesKept"] = usableLines.length;
-  if (lineProblem !== null && usableLines.length === 0) facts["extraction.lineProblem"] = lineProblem;
+  const problem = lineProblem ?? setAside;
+  if (problem !== null && usableLines.length === 0) facts["extraction.lineProblem"] = problem;
 
   return { facts, lines: usableLines, linesTruncated, confidence, missingFields, rawModelOutput: raw };
 }
