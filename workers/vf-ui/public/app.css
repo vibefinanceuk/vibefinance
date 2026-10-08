@@ -5348,10 +5348,12 @@
 .receiptside .receipttimeline .activityfeed { flex: 1 1 auto; min-height: 0; overflow: auto; }
 .receiptside .receipttimeline .activityinput { flex: none; }
 .receiptside .receipttimeline .collabbar { flex-wrap: wrap; }
-/* A line of what happened: the dot, the words, and when under them, so a narrow panel wraps cleanly. */
-.receiptside .activitysysline { display: grid; grid-template-columns: 12px minmax(0, 1fr); column-gap: 6px; align-items: start; }
-.receiptside .activitysysline .activitydot { margin-top: 7px; }
-.receiptside .activitysysline .activitywhen { grid-column: 2; }
+/*
+  Decision 0682 — what happened is a card (0675), laid out as in the
+  Document viewer. The grid this panel gave its old dotted lines (a 12px
+  column for the dot) outranked the card's own layout and squeezed its
+  words into that 12px column, one word per line.
+*/
 @media (max-width: 900px) {
   .popout.receiptpop { display: block; height: auto; overflow: auto; }
   .popout.receiptpop .receiptside { border-left: none; border-top: 0.5px solid var(--border); }

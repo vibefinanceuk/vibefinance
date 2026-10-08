@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 7 October 2026 (decision 0681). A living document: what
+Last updated 8 October 2026 (decision 0682). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,13 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### The receipt Timeline's cards wrap (0682)
+
+The receipt panel's old grid for dotted lines squeezed the new cards
+into a 12px column. It is removed.
+
+Full reasoning is in decision 0682.
 
 ### One home per value: the Peppol BIS 3.0 Business Terms (0681)
 

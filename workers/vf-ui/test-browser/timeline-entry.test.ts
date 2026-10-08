@@ -56,4 +56,10 @@ describe("a Timeline entry", () => {
     expect(rule).toContain("--bg-danger: #fbe4e1;");
     expect(css).toContain(".tlchat.mine { flex-direction: row-reverse; }");
   });
+
+  it("lets nothing in the receipt panel re-lay a card as the old dotted line (decision 0682)", async () => {
+    // A 12px grid column for the old dot squeezed a card's words to one per line.
+    const css = (await import("virtual:stylesheets")).default["app.css"];
+    expect(css).not.toMatch(/\.receiptside \.activitysysline \{/);
+  });
 });
