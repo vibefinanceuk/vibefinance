@@ -76,7 +76,9 @@ export interface ExtractionModel {
   extract(
     prompt: string,
     images: readonly { bytes: Uint8Array; contentType: string }[],
-    schema: Record<string, unknown>
+    schema: Record<string, unknown>,
+    /** Decision 0688: the separate lines call caps its answer lower. */
+    opts?: { maxTokens?: number }
   ): Promise<string>;
 }
 
@@ -216,7 +218,9 @@ function customPromptKey(key: string): string {
  */
 export function buildExtractionSchema(
   vocabulary: VocabularyInput = "invoice",
-  settings?: ExtractionSettings
+  settings?: ExtractionSettings,
+  /** Decision 0688: a scanned page's lines are asked for in a call of their own. */
+  options: { lines?: boolean } = {}
 ): Record<string, unknown> {
   const v = asResolved(vocabulary);
   const properties: Record<string, unknown> = {};
@@ -242,22 +246,7 @@ export function buildExtractionSchema(
   // unit price are common on product invoices and absent from freight
   // ones; these two are what the line-sum validation check needs, and
   // more can be added when something needs them.
-  properties.lines = {
-    type: ["array", "null"],
-    description:
-      `The invoice's line items, in the order they appear, up to ${settings?.maxExtractedLines ?? MAX_EXTRACTED_LINES}. Each is one charge or product row from the main table — not a subtotal, VAT line, or grand total. Null if the document has no itemised table at all.`,
-    items: {
-      type: "object",
-      properties: {
-        description: { type: ["string", "null"], description: "what this line is for, as printed" },
-        amount: { type: ["number", "null"], description: "the line's own total amount as PRINTED, excluding VAT where the document separates them. Never calculated." },
-      },
-      // Decision 0686: both keys required, as at the top level. Without
-      // this, guided decoding let the model answer `lines: [{}]` — one
-      // empty row, set aside as amount-less — on every one of Dan's scans.
-      required: ["description", "amount"],
-    },
-  };
+  if (options.lines !== false) properties.lines = linesProperty(settings);
 
   properties._confidence = {
     type: "number",
@@ -279,6 +268,57 @@ export function buildExtractionSchema(
     properties,
     required: Object.keys(properties),
   };
+}
+
+/** The `lines` property: what a line item is, and the two keys every row must carry (0686). */
+function linesProperty(settings?: ExtractionSettings): Record<string, unknown> {
+  return {
+    type: ["array", "null"],
+    description:
+      `The invoice's line items, in the order they appear, up to ${settings?.maxExtractedLines ?? MAX_EXTRACTED_LINES}. Each is one charge or product row from the main table — not a subtotal, VAT line, or grand total. Null if the document has no itemised table at all.`,
+    items: {
+      type: "object",
+      properties: {
+        description: { type: ["string", "null"], description: "what this line is for, as printed" },
+        amount: { type: ["number", "null"], description: "the line's own total amount as PRINTED, excluding VAT where the document separates them. Never calculated." },
+      },
+      // Decision 0686: both keys required, as at the top level. Without
+      // this, guided decoding let the model answer `lines: [{}]` — one
+      // empty row, set aside as amount-less — on every one of Dan's scans.
+      required: ["description", "amount"],
+    },
+  };
+}
+
+/**
+ * **The lines on their own — decision 0688.** Asked in a second call per
+ * scanned page, after the header was read in a first. Requiring both keys
+ * on every row (0686) made the model write out the table it had skipped
+ * with `[{}]`, and on Dan's scans the answer no longer came back in time:
+ * the header was lost with the lines. Apart, a header is read in seconds
+ * whatever happens to the lines, and `maxItems` plus a lower token cap
+ * bound how long a line answer can run.
+ */
+export function buildLinesSchema(settings?: ExtractionSettings): Record<string, unknown> {
+  const lines = linesProperty(settings);
+  return {
+    type: "object",
+    properties: { lines: { ...lines, type: "array", maxItems: settings?.maxExtractedLines ?? MAX_EXTRACTED_LINES } },
+    required: ["lines"],
+  };
+}
+
+export function buildLinesPrompt(pageCount = 1, pageNumber?: number): string {
+  const page = pageCount > 1 && pageNumber ? `This image is page ${pageNumber} of a ${pageCount}-page invoice. ` : "";
+  return `${page}You are reading a photograph or scan of a supplier invoice. Return only its line items: each charge or product row of the main table, in order, as printed.
+
+- One entry per row of the table. Not a subtotal, VAT line, discount summary or grand total.
+- description: the row's item name or description, as printed.
+- amount: the row's own line total as printed, excluding VAT where the document separates them — a plain number, a dot for the decimal point, no currency symbol or thousands separator. Never calculated.
+- A row you cannot read: null for that value. Never guess.
+- No table of line items on this page: an empty list.
+
+Return only the JSON object described by the schema.`;
 }
 
 export function buildExtractionPrompt(
@@ -509,7 +549,109 @@ export function parseExtractionResponse(
   // total, and a partial sum would produce a confident-looking
   // mismatch that reflects only what was captured. Better to have no
   // lines than misleading ones.
-  const rawLines = Array.isArray(obj.lines) ? obj.lines : [];
+  const read = readLineRows(obj.lines, settings);
+  const usableLines = read.lines;
+  const linesTruncated = read.linesTruncated;
+
+  // Exposed as a real derived fact so customers can write rules
+  // against it — "if extraction confidence is below 0.8, assign a
+  // task to the AP team" — rather than this module deciding a
+  // threshold on their behalf.
+  facts["extraction.confidence"] = confidence;
+  // Decision 0684: what the model reported for the lines and what was kept, so an invoice
+  // arriving with no lines says whether the model saw none or they were discarded.
+  facts["extraction.lineRows"] = read.lineRows;
+  facts["extraction.linesKept"] = usableLines.length;
+  if (read.problem !== null) facts["extraction.lineProblem"] = read.problem;
+
+  return { facts, lines: usableLines, linesTruncated, confidence, missingFields, rawModelOutput: raw };
+}
+
+/**
+ * Extracts one invoice from one or more page images.
+ *
+ * Pages are passed in document order and reach the model in a single
+ * call. A multi-page invoice is one document, not several — the
+ * charge lines may run across a page break, and the totals are
+ * commonly on the last page. Extracting each page separately and
+ * merging the results in code would mean inventing an answer for what
+ * to do when two pages disagree about the same field.
+ */
+/**
+ * Which page a field came from, and what the other pages said.
+ *
+ * Only populated where pages genuinely disagreed. A conflict is not
+ * an error — a header repeated on every page will agree, and a value
+ * one page could not read is simply absent — but where two pages
+ * both report a field and report it DIFFERENTLY, that is worth
+ * surfacing rather than resolving silently.
+ */
+export interface PageConflict {
+  field: string;
+  /** The value kept, and the page it came from. */
+  chosen: string | number | boolean;
+  chosenPage: number;
+  /** What the other pages said, by page number. */
+  others: { page: number; value: string | number | boolean }[];
+}
+
+export interface MultiPageExtractionResult extends ExtractionResult {
+  pageCount: number;
+  conflicts: PageConflict[];
+  /** Pages that failed outright. A page that could not be read does
+   *  not sink the document — the others may still carry everything
+   *  needed — but it must be visible, because a missing page is
+   *  exactly why a total might not match its lines. */
+  failedPages: { page: number; reason: string }[];
+}
+
+/** The separate lines call's token ceiling: 25 rows need about a thousand. */
+export const LINES_MAX_TOKENS = 2500;
+
+/**
+ * **A scanned page's lines, asked for on their own — decision 0688.**
+ * Only once its header was read. Whatever happens here, the header stands:
+ * a lines call that times out, runs past its token cap or answers nonsense
+ * leaves the page with no lines and `extraction.lineProblem` saying why,
+ * with the start of what the model wrote when it wrote anything.
+ */
+async function readPageLines(
+  model: ExtractionModel,
+  result: ExtractionResult,
+  image: { bytes: Uint8Array; contentType: string },
+  pageCount: number,
+  pageNumber: number,
+  settings: ExtractionSettings
+): Promise<void> {
+  try {
+    const raw = await model.extract(buildLinesPrompt(pageCount, pageNumber), [image], buildLinesSchema(settings), { maxTokens: LINES_MAX_TOKENS });
+    const read = parseLinesResponse(raw, settings);
+    result.lines = read.lines;
+    result.linesTruncated = read.linesTruncated;
+    result.facts["extraction.lineRows"] = read.lineRows;
+    result.facts["extraction.linesKept"] = read.lines.length;
+    if (read.problem !== null) result.facts["extraction.lineProblem"] = read.problem;
+    else delete result.facts["extraction.lineProblem"];
+  } catch (err) {
+    const why = err instanceof Error ? err.message : String(err);
+    const began = err instanceof ExtractionRefusal && err.rawModelOutput ? `; it began: ${err.rawModelOutput.slice(0, 160)}` : "";
+    result.lines = [];
+    result.facts["extraction.lineRows"] = 0;
+    result.facts["extraction.linesKept"] = 0;
+    result.facts["extraction.lineProblem"] = `lines not read: ${why.slice(0, 200)}${began}`;
+  }
+}
+
+/**
+ * **A line list as the model gave it, read into lines — decisions 0052,
+ * 0684, 0685, 0686.** Shared by the one-call read (text) and the
+ * separate lines call for a scanned page (0688).
+ */
+export function readLineRows(
+  input: unknown,
+  settings: ExtractionSettings = DEFAULT_EXTRACTION_SETTINGS
+): { lines: ExtractedLine[]; linesTruncated: boolean; lineRows: number; problem: string | null } {
+  const rawLines = Array.isArray(input) ? input : [];
   // Rows rejected as not being line items at all, counted separately
   // from rows that failed to parse. The distinction matters for the
   // completeness check below: a row that is not a line item is not
@@ -604,57 +746,20 @@ export function parseExtractionResponse(
   const consideredRows = Math.min(rawLines.length, settings.maxExtractedLines);
   const usableLines = lines.length + rejectedRows === consideredRows ? lines : [];
 
-  // Exposed as a real derived fact so customers can write rules
-  // against it — "if extraction confidence is below 0.8, assign a
-  // task to the AP team" — rather than this module deciding a
-  // threshold on their behalf.
-  facts["extraction.confidence"] = confidence;
-  // Decision 0684: what the model reported for the lines and what was kept, so an invoice
-  // arriving with no lines says whether the model saw none or they were discarded.
-  facts["extraction.lineRows"] = rawLines.length;
-  facts["extraction.linesKept"] = usableLines.length;
   const problem = lineProblem ?? setAside;
-  if (problem !== null && usableLines.length === 0) facts["extraction.lineProblem"] = problem;
-
-  return { facts, lines: usableLines, linesTruncated, confidence, missingFields, rawModelOutput: raw };
+  return { lines: usableLines, linesTruncated, lineRows: rawLines.length, problem: problem !== null && usableLines.length === 0 ? problem : null };
 }
 
-/**
- * Extracts one invoice from one or more page images.
- *
- * Pages are passed in document order and reach the model in a single
- * call. A multi-page invoice is one document, not several — the
- * charge lines may run across a page break, and the totals are
- * commonly on the last page. Extracting each page separately and
- * merging the results in code would mean inventing an answer for what
- * to do when two pages disagree about the same field.
- */
-/**
- * Which page a field came from, and what the other pages said.
- *
- * Only populated where pages genuinely disagreed. A conflict is not
- * an error — a header repeated on every page will agree, and a value
- * one page could not read is simply absent — but where two pages
- * both report a field and report it DIFFERENTLY, that is worth
- * surfacing rather than resolving silently.
- */
-export interface PageConflict {
-  field: string;
-  /** The value kept, and the page it came from. */
-  chosen: string | number | boolean;
-  chosenPage: number;
-  /** What the other pages said, by page number. */
-  others: { page: number; value: string | number | boolean }[];
-}
-
-export interface MultiPageExtractionResult extends ExtractionResult {
-  pageCount: number;
-  conflicts: PageConflict[];
-  /** Pages that failed outright. A page that could not be read does
-   *  not sink the document — the others may still carry everything
-   *  needed — but it must be visible, because a missing page is
-   *  exactly why a total might not match its lines. */
-  failedPages: { page: number; reason: string }[];
+/** The separate lines call's answer (0688): `{ lines: [...] }`. A refusal if it is not JSON. */
+export function parseLinesResponse(raw: string, settings: ExtractionSettings = DEFAULT_EXTRACTION_SETTINGS) {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new ExtractionRefusal("the model's line answer was not valid JSON", raw);
+  }
+  const obj = (parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {}) as Record<string, unknown>;
+  return readLineRows(obj.lines, settings);
 }
 
 /**
@@ -720,7 +825,7 @@ export async function extractInvoiceFromImages(
           // report the absent line table as a failure to read one.
           buildExtractionPrompt(vocabulary, pages.length, pageNumber),
           [{ bytes, contentType: sniffed }],
-          buildExtractionSchema(vocabulary, settings)
+          buildExtractionSchema(vocabulary, settings, { lines: false })
         );
       /**
        * **Asked once more when the model did not answer — decision
@@ -736,7 +841,9 @@ export async function extractInvoiceFromImages(
         if (!(first instanceof ExtractionRefusal && first.unanswered)) throw first;
         raw = await ask();
       }
-      perPage.push({ page: pageNumber, result: parseExtractionResponse(raw, vocabulary, settings) });
+      const result = parseExtractionResponse(raw, vocabulary, settings);
+      await readPageLines(model, result, { bytes, contentType: sniffed }, pages.length, pageNumber, settings);
+      perPage.push({ page: pageNumber, result });
     } catch (err) {
       // One unreadable page does not sink the document. The others
       // may carry everything needed, and the failure is recorded so

@@ -242,7 +242,8 @@ describe("extractInvoiceFromImage", () => {
     let seenSchema: Record<string, unknown> | undefined;
     const spy: ExtractionModel = {
       extract: async (_p, _i, schema) => {
-        seenSchema = schema;
+        // Decision 0688: the first call is the header's; the second asks for lines alone.
+        seenSchema ??= schema;
         return JSON.stringify({ "invoiceNumber": "X", "transport_reference": "TR-88431", _confidence: 0.9 });
       },
     };

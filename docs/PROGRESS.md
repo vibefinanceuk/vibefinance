@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 8 October 2026 (decision 0687). A living document: what
+Last updated 8 October 2026 (decision 0688). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,16 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### A scanned page's lines asked for on their own (0688)
+
+After 0686, every scanned page timed out, and the header was lost with the
+lines. Each page is now read in two calls: the header without lines, then the
+lines alone (at most 25 rows, capped at 2500 tokens). A lines call that fails
+keeps the header and records why in `extraction.lineProblem`, with how the
+model's answer began.
+
+Full reasoning is in decision 0688.
 
 ### Email accepted at once, read later; the same email read once (0687)
 

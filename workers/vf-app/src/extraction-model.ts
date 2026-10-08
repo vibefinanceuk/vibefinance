@@ -65,7 +65,7 @@ export interface VisionRequestShape {
    *  single document, and its pages must reach the model in document
    *  order — page two's totals mean nothing to a model that reads
    *  them first. One image is the common case, not a special one. */
-  build(prompt: string, images: readonly VisionImage[], schema: Record<string, unknown>): Record<string, unknown>;
+  build(prompt: string, images: readonly VisionImage[], schema: Record<string, unknown>, maxTokens?: number): Record<string, unknown>;
 }
 
 function toBase64(bytes: Uint8Array): string {
@@ -111,7 +111,7 @@ function toBase64(bytes: Uint8Array): string {
 export const VISION_SHAPES: VisionRequestShape[] = [
   {
     label: "image_url-data-url",
-    build: (prompt, images, schema) => ({
+    build: (prompt, images, schema, maxTokens) => ({
       messages: [
         {
           role: "user",
@@ -146,7 +146,8 @@ export const VISION_SHAPES: VisionRequestShape[] = [
       // The same max_tokens trap decision 0002's addendum recorded
       // for the compiler, in a new place and with a different
       // resolution.
-      max_tokens: 8192,
+      // Decision 0688: the separate lines call asks for less, so a runaway answer ends sooner.
+      max_tokens: maxTokens ?? 8192,
       temperature: 0,
     }),
   },
@@ -155,7 +156,7 @@ export const VISION_SHAPES: VisionRequestShape[] = [
 export function createWorkersAiExtractionModel(ai: AiRunnable, modelId?: string): ExtractionModel {
   const model = modelId || DEFAULT_EXTRACTION_MODEL_ID;
   return {
-    async extract(prompt, images, schema): Promise<string> {
+    async extract(prompt, images, schema, opts): Promise<string> {
       // No fallback loop any more. It existed while the working shape
       // was unknown; now that it is confirmed, trying alternatives on
       // failure would only paper over a real regression — and a
@@ -173,7 +174,7 @@ export function createWorkersAiExtractionModel(ai: AiRunnable, modelId?: string)
       // contract is that extraction either returns text or refuses.
       let raw: unknown;
       try {
-        raw = await ai.run(model, VISION_SHAPES[0].build(prompt, images, schema));
+        raw = await ai.run(model, VISION_SHAPES[0].build(prompt, images, schema, opts?.maxTokens));
       } catch (err) {
         const message = String(err);
         // The underlying message is ALWAYS preserved, including in

@@ -133,7 +133,9 @@ describe("an emailed ordinary PDF becomes an invoice with its fields", () => {
     const { model, calls } = recordingModel();
     const result = await handleCaptureFromSource(env.DB, "src-mail", SCANNED_FLATE(), model);
     expect(result.status).toBe(201);
-    expect(calls).toHaveLength(1);
+    // Decision 0688: the header, then the page's lines on their own.
+    expect(calls).toHaveLength(2);
+    expect(calls[1].prompt).toContain("Return only its line items");
     expect(calls[0].images).toHaveLength(1);
     // Decision 0684: the scan's own JPEG, not a re-encoded PNG.
     expect(calls[0].images[0].contentType).toBe("image/jpeg");
@@ -273,7 +275,8 @@ describe("line amounts as invoices print them, a retry, and why a read failed (d
       },
     };
     const result = await handleCaptureFromSource(env.DB, "src-mail", SCANNED_FLATE(), model);
-    expect(calls).toBe(2);
+    // Unanswered, asked again, then the lines call (0688).
+    expect(calls).toBe(3);
     const facts = JSON.parse((await env.DB.prepare("SELECT facts_json FROM invoice_headers WHERE id = ?").bind((result.body as { id: string }).id).first<{ facts_json: string }>())!.facts_json);
     expect(facts["BT-1"]).toBe("INV-7781");
   });
@@ -318,5 +321,81 @@ describe("line items must carry both keys (decision 0686)", () => {
     expect(facts["extraction.lineRows"]).toBe(1);
     expect(facts["extraction.linesKept"]).toBe(0);
     expect(facts["extraction.lineProblem"]).toBe("row 1: no amount: {}");
+  });
+});
+
+describe("a scanned page's lines are asked for on their own (decision 0688)", () => {
+  beforeEach(async () => {
+    await applyTestSchema();
+    await handleCreateProcess(env.DB, { id: "p-ap", name: "AP" });
+    await handleCreateStage(env.DB, "p-ap", { id: "s-received", name: "Received", sequence: 1 });
+    await handleCreateSource(env.DB, "p-ap", { id: "src-mail", name: "AP mailbox", mechanism: "email" });
+    await handleCreateIntakeChannel(env.DB, "p-ap", { id: "ch-image", name: "Image", structure: "image" });
+  });
+
+  const factsOf = async (result: { body: unknown }) =>
+    JSON.parse((await env.DB.prepare("SELECT facts_json FROM invoice_headers WHERE id = ?").bind((result.body as { id: string }).id).first<{ facts_json: string }>())!.facts_json);
+
+  it("asks for the header without lines, then the lines alone, capped", async () => {
+    const seen: { schema: Record<string, unknown>; opts?: { maxTokens?: number } }[] = [];
+    const model = {
+      extract: async (_p: string, _i: unknown, schema: Record<string, unknown>, opts?: { maxTokens?: number }) => {
+        seen.push({ schema, opts });
+        return seen.length === 1
+          ? JSON.stringify({ invoiceNumber: "H-1", totalWithVat: 100, _confidence: 0.9 })
+          : JSON.stringify({ lines: [{ description: "Toner", amount: 60 }, { description: "Paper", amount: 40 }] });
+      },
+    };
+    const result = await handleCaptureFromSource(env.DB, "src-mail", SCANNED_FLATE(), model);
+    expect(seen).toHaveLength(2);
+    expect((seen[0].schema as { properties: Record<string, unknown> }).properties.lines).toBeUndefined();
+    expect(seen[0].opts?.maxTokens).toBeUndefined();
+    const linesSchema = seen[1].schema as { properties: { lines: { maxItems: number; items: { required: string[] } } }; required: string[] };
+    expect(linesSchema.required).toEqual(["lines"]);
+    expect(linesSchema.properties.lines.maxItems).toBe(25);
+    expect(linesSchema.properties.lines.items.required).toEqual(["description", "amount"]);
+    expect(seen[1].opts?.maxTokens).toBe(2500);
+    const rows = await env.DB.prepare("SELECT description, amount FROM invoice_lines WHERE invoice_id = ? ORDER BY line_number").bind((result.body as { id: string }).id).all();
+    expect(rows.results).toEqual([{ description: "Toner", amount: 60 }, { description: "Paper", amount: 40 }]);
+    const facts = await factsOf(result);
+    expect(facts["BT-1"]).toBe("H-1");
+    expect(facts["extraction.lineRows"]).toBe(2);
+    expect(facts["extraction.linesKept"]).toBe(2);
+  });
+
+  it("keeps the header when the lines call times out, and says so", async () => {
+    const { ExtractionRefusal } = await import("../src/extraction.js");
+    let calls = 0;
+    const model = {
+      extract: async () => {
+        calls++;
+        if (calls === 1) return JSON.stringify({ invoiceNumber: "H-2", totalWithVat: 100, _confidence: 0.9 });
+        throw new ExtractionRefusal("the model did not respond in time (3046)", undefined, true);
+      },
+    };
+    const result = await handleCaptureFromSource(env.DB, "src-mail", SCANNED_FLATE(), model);
+    expect(result.status).toBe(201);
+    const facts = await factsOf(result);
+    expect(facts["BT-1"]).toBe("H-2");
+    expect(facts["intake.structure"]).toBe("ordinary_pdf");
+    expect(facts["extraction.linesKept"]).toBe(0);
+    expect(facts["extraction.lineProblem"]).toBe("lines not read: the model did not respond in time (3046)");
+  });
+
+  it("shows how a line answer cut off at its token cap began", async () => {
+    const { ExtractionRefusal } = await import("../src/extraction.js");
+    let calls = 0;
+    const model = {
+      extract: async () => {
+        calls++;
+        if (calls === 1) return JSON.stringify({ invoiceNumber: "H-3", _confidence: 0.9 });
+        throw new ExtractionRefusal("the model's response was cut off at the token limit", '{"lines":[{"description":"Toner","amount":1},{"description":"Toner","amount":1},');
+      },
+    };
+    const facts = await factsOf(await handleCaptureFromSource(env.DB, "src-mail", SCANNED_FLATE(), model));
+    expect(facts["BT-1"]).toBe("H-3");
+    expect(facts["extraction.lineProblem"]).toBe(
+      'lines not read: the model\'s response was cut off at the token limit; it began: {"lines":[{"description":"Toner","amount":1},{"description":"Toner","amount":1},'
+    );
   });
 });

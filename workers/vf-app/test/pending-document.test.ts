@@ -189,8 +189,9 @@ describe("finalising", () => {
     };
     await handleFinalisePendingDocument(env.DB, storage, id, spy);
 
-    // Page 1 first, despite page 2 being uploaded first.
-    expect(callPages).toEqual([0x01, 0x02]);
+    // Page 1 first, despite page 2 being uploaded first. Each page is
+    // asked twice: its header, then its lines alone (decision 0688).
+    expect(callPages).toEqual([0x01, 0x01, 0x02, 0x02]);
   });
 
   it("tells each call which page it is looking at, and not to infer the others", async () => {
@@ -208,6 +209,12 @@ describe("finalising", () => {
     };
     await handleFinalisePendingDocument(env.DB, storage, id, spy);
 
+    // Decision 0688: each page's header call is followed by its lines call.
+    expect(prompts).toHaveLength(4);
+    expect(prompts[1]).toMatch(/page 1 of a 2-page invoice[\s\S]*Return only its line items/);
+    expect(prompts[3]).toMatch(/page 2 of a 2-page invoice[\s\S]*Return only its line items/);
+    prompts.splice(3, 1);
+    prompts.splice(1, 1);
     expect(prompts[0]).toMatch(/page 1 of a 2-page invoice/);
     expect(prompts[1]).toMatch(/page 2 of a 2-page invoice/);
     // Leads with what to EXTRACT, not what to omit. The first
@@ -272,9 +279,9 @@ describe("finalising", () => {
       _confidence: 0.9,
     });
 
-    let call = 0;
+    // Answered by page, whichever call it is (header or lines, 0688).
     const perPageModel = {
-      extract: async () => (call++ === 0 ? pageOne : pageTwo),
+      extract: async (_p: string, images: readonly { bytes: Uint8Array }[]) => (images[0].bytes[4] === 0x01 ? pageOne : pageTwo),
     };
     const result = await handleFinalisePendingDocument(env.DB, storage, id, perPageModel);
 
@@ -474,7 +481,8 @@ describe("pages are extracted at upload time (decision 0047)", () => {
     };
     const result = await handleFinalisePendingDocument(env.DB, storage, id, model);
     expect(result.status).toBe(201);
-    expect(called).toBe(1);
+    // The header, then the lines (0688).
+    expect(called).toBe(2);
   });
 });
 
