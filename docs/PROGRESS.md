@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 8 October 2026 (decision 0682). A living document: what
+Last updated 8 October 2026 (decision 0683). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,15 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Ordinary PDFs are read (0683)
+
+A PDF with no embedded invoice is read from its text (a digital PDF) or
+from each page's picture (a scan) by the same model as a photograph.
+Before, it was kept empty for keying. The viewer's "could not be read"
+alert now shows only when nothing could be read.
+
+Full reasoning is in decision 0683.
 
 ### The receipt Timeline's cards wrap (0682)
 
@@ -6237,9 +6246,10 @@ model can do in the time available (0163). It is kept and explained
 rather than lost, and it is not read — nothing resizes, retries or
 splits it.
 
-**Image-only PDFs.** A PDF cannot be rasterised inside a Worker — no
-native renderer, and PDF.js needs a canvas workerd does not provide.
-Submit the page as an image instead.
+**Image-only PDFs.** Read since decision 0683: a digital PDF from its
+text, a scanned one from each page's picture (decoded by PDF.js and made
+a PNG in the Worker). A page drawn as vectors or many image strips is
+still left for keying.
 
 **Abandoned pending documents.** A page-one upload that never returns
 holds a customer's invoice image indefinitely. Needs an expiry sweep,

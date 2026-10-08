@@ -46,11 +46,11 @@ describe("detectStructure — the ordering that matters", () => {
 });
 
 describe("detectStructure — the cases with no structure", () => {
-  it("does not claim a structure for a PDF carrying no invoice", async () => {
-    // A scan or an export. It genuinely needs a vision model, and a PDF
-    // cannot be rasterised inside a Worker, so no handler can read it.
+  it("sends a PDF carrying no invoice to be read as an ordinary PDF (decision 0683)", async () => {
+    // A scan or an export: read from its text, or its page pictures, on the image channel.
     const result = await detectStructure(fromBase64(PLAIN_NO_ATTACHMENT_B64));
-    expect(result.structure).toBeNull();
+    expect(result.structure).toBe("image");
+    expect(result.pdf).toBe(true);
   });
 
   it("distinguishes 'no invoice present' from 'declared but unreadable'", async () => {
@@ -63,7 +63,8 @@ describe("detectStructure — the cases with no structure", () => {
     const brokenOutcome = broken.attempted.find((a) => a.test === "embedded_invoice_xml")?.outcome;
     expect(noneOutcome).toBe("none present");
     expect(brokenOutcome).not.toBe("none present");
-    expect(broken.structure).toBeNull();
+    // Decision 0683: read as an ordinary PDF rather than not at all; `attempted` keeps why.
+    expect(broken.pdf).toBe(true);
   });
 
   it("returns no structure for an empty document rather than guessing", async () => {

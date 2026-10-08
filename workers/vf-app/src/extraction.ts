@@ -864,6 +864,33 @@ export function mergePageResults(
   };
 }
 
+/**
+ * **An invoice read from its PDF's text — decision 0683.** The same
+ * prompt, schema and parsing as a photograph, told it is reading text
+ * rather than a picture. One call for the whole document: the text of
+ * even a long invoice is small, and the model sees every page at once,
+ * as the multi-page image prompt asks it to.
+ */
+export async function extractInvoiceFromPdfText(
+  model: ExtractionModel,
+  pages: readonly string[],
+  vocabulary: VocabularyInput = "invoice",
+  settings: ExtractionSettings = DEFAULT_EXTRACTION_SETTINGS,
+  truncated = false
+): Promise<ExtractionResult> {
+  const prompt = buildExtractionPrompt(vocabulary).replace(
+    "You are reading a photograph or scan of a supplier invoice and extracting specific fields from it.",
+    "You are reading the text of a supplier invoice, taken from its PDF page by page, and extracting specific fields from it. The text below is all there is: the layout is lost, so a table's columns appear as words along a line, and a label may sit on the line before or after its value."
+  );
+  const text = pages.map((page, i) => `--- page ${i + 1} of ${pages.length} ---\n${page}`).join("\n\n");
+  const raw = await model.extract(
+    `${prompt}\n\nThe invoice's text${truncated ? " (cut short: the document is longer than one request can carry)" : ""}:\n\n${text}`,
+    [],
+    buildExtractionSchema(vocabulary, settings)
+  );
+  return parseExtractionResponse(raw, vocabulary, settings);
+}
+
 export async function extractInvoiceFromImage(
   model: ExtractionModel,
   bytes: Uint8Array,

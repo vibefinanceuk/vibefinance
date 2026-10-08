@@ -56,6 +56,8 @@ export interface DetectionResult {
   /** The embedded attachment, when the PDF branch found one — so the
    *  caller need not extract it a second time. */
   embeddedXml?: string;
+  /** Decision 0683: an ordinary PDF (no embedded invoice), read on the image channel by its text or its page pictures. */
+  pdf?: boolean;
 }
 
 /**
@@ -98,10 +100,11 @@ export async function detectStructure(bytes: Uint8Array): Promise<DetectionResul
         return { structure: "structured_pdfa", attempted, embeddedXml: attachment.xml };
       }
       // An ordinary PDF with no embedded invoice — a scan or an export.
-      // It genuinely needs a vision model, and a PDF cannot be
-      // rasterised inside a Worker, so no handler here can read it.
+      // **Read now — decision 0683**: its text, or the picture of each
+      // page, on the image channel, by `handleCaptureOrdinaryPdf`. Until
+      // then a Worker could not rasterise it and nothing read it.
       attempted.push({ test: "embedded_invoice_xml", outcome: "none present" });
-      return { structure: null, attempted };
+      return { structure: "image", attempted, pdf: true };
     } catch (err) {
       // The document DECLARES an embedded invoice and it could not be
       // read. Recorded distinctly from "none present": one is a
@@ -109,7 +112,8 @@ export async function detectStructure(bytes: Uint8Array): Promise<DetectionResul
       // sending it badly.
       const reason = err instanceof PdfExtractionError ? err.message : String(err);
       attempted.push({ test: "embedded_invoice_xml", outcome: `declared but unreadable: ${reason}` });
-      return { structure: null, attempted };
+      // Decision 0683: read as an ordinary PDF rather than not at all; `attempted` keeps why.
+      return { structure: "image", attempted, pdf: true };
     }
   }
   attempted.push({ test: "pdf_header", outcome: "not a PDF" });

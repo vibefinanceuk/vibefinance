@@ -11,7 +11,7 @@ import {
   detailOfAttempts,
   type DetectedStructure,
 } from "./detect-structure.js";
-import { handleCaptureIntake, handleCaptureImage, handleCaptureUblXml, withFormat } from "./intake-capture-route.js";
+import { handleCaptureIntake, handleCaptureImage, handleCaptureOrdinaryPdf, handleCaptureUblXml, withFormat } from "./intake-capture-route.js";
 import type { ExtractionModel } from "./extraction.js";
 import { CSV_ROOT, decodeText, formatFacts, readInvoiceXml, rootElementOf, UblParseError } from "@vibefinance/shared";
 import { captureThroughMapping, SUPPLIER_ROOTS_NOT_MAPPED } from "./supplier-mapping-route.js";
@@ -471,7 +471,10 @@ export async function handleCaptureFromSource(
      */
     result = await captureThroughMapping(db, source.id, channel.id, decodeText(bytes), CSV_ROOT, sender, idOverride, enricher);
   } else {
-    result = await handleCaptureImage(db, channel.id, bytes, model, idOverride, enricher);
+    // Decision 0683: an ordinary PDF is read from its text or its page pictures; anything else is a picture.
+    result = detection.pdf
+      ? await handleCaptureOrdinaryPdf(db, channel.id, bytes, model, idOverride, enricher)
+      : await handleCaptureImage(db, channel.id, bytes, model, idOverride, enricher);
 
     /**
      * A model that never answered keeps the document — decision 0163.

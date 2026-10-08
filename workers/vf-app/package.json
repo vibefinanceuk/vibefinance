@@ -8,11 +8,12 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@vibefinance/shared": "*"
+    "@vibefinance/shared": "*",
+    "unpdf": "^1.8.1"
   },
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "^0.22.0",
-    "wrangler": "^4.127.1",
-    "vitest": "4.1.0"
+    "vitest": "4.1.0",
+    "wrangler": "^4.127.1"
   }
 }

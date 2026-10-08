@@ -1,3 +1,4 @@
+import { readPdf } from "./pdf-read.js";
 import type { InvoiceFacts } from "@vibefinance/shared";
 import { formatFacts, readInvoiceXml, UblParseError, type ReadInvoiceXml } from "@vibefinance/shared";
 import type { RouteResult } from "./org-route.js";
@@ -6,7 +7,7 @@ import { mergePoMatchFacts, mergeReceiptFactsForInvoice } from "./po-matching.js
 import { mergeCodingValidityForInvoice } from "./coding-validation.js";
 import { handleCreateProcessInstance, visitCurrentStage } from "./workflow-engine.js";
 import { extractEmbeddedInvoiceXml, looksLikePdf, PdfExtractionError } from "./pdf-attachment.js";
-import { extractInvoiceFromImage, extractInvoiceFromImages, mergePageResults, sniffImageType, ExtractionRefusal, type ExtractionModel } from "./extraction.js";
+import { extractInvoiceFromImage, extractInvoiceFromImages, extractInvoiceFromPdfText, mergePageResults, sniffImageType, ExtractionRefusal, type ExtractionModel, type ExtractionResult } from "./extraction.js";
 import { loadPendingPages, loadPageExtractions, markFinalised, type PendingDocumentStorage } from "./pending-document-route.js";
 import { loadCustomFields } from "./custom-field-route.js";
 import { loadExtractionSettings, toValidationSettings } from "./extraction-settings.js";
@@ -636,17 +637,30 @@ export async function handleCaptureImage(
     throw err;
   }
 
+  return captureExtracted(db, channelId, extraction, idOverride, enrichFacts, {}, { documentPath: "image-extraction" });
+}
+
+/**
+ * What every read-by-a-model path does with its answer: an invoice from
+ * the facts and lines it read, through `handleCaptureIntake` like any
+ * other, and a response that says the data was inferred. Shared by a
+ * photograph and an ordinary PDF (decision 0683).
+ */
+async function captureExtracted(
+  db: D1Database,
+  channelId: string,
+  extraction: ExtractionResult,
+  idOverride: string | undefined,
+  enrichFacts: CaptureIntakeBody["enrichFacts"] | undefined,
+  extraFacts: Record<string, unknown>,
+  extraBody: Record<string, unknown>
+): Promise<RouteResult> {
   const { facts, lines: extractedLines, linesTruncated, confidence, missingFields } = extraction;
   const id = idOverride ?? crypto.randomUUID();
 
   const result = await handleCaptureIntake(db, channelId, {
     id,
-    invoiceNumber: facts["BT-1"] as string | undefined,
-    issueDate: facts["BT-2"] as string | undefined,
-    currency: facts["BT-5"] as string | undefined,
-    supplierVatId: facts["BT-31"] as string | undefined,
-    totalWithVat: facts["BT-112"] as number | undefined,
-    facts,
+    facts: { ...facts, ...extraFacts },
     // Real extracted lines, in the same canonical shape the UBL path
     // produces — which is what lets validation's line-sum check run
     // against an image-captured invoice at all.
@@ -661,7 +675,7 @@ export async function handleCaptureImage(
     // confident the model was, and what it could not read.
     result.body = {
       ...result.body,
-      documentPath: "image-extraction",
+      ...extraBody,
       confidence,
       missingFields,
       lineCount: extractedLines.length,
@@ -672,6 +686,52 @@ export async function handleCaptureImage(
     };
   }
   return result;
+}
+
+/**
+ * **An ordinary PDF, read — decision 0683.** A PDF with no embedded
+ * invoice: its text when it has a text layer (a digital PDF), else the
+ * picture of each page (a scan), read by the same model and prompt as a
+ * photograph. `intake.read` records which, so the viewer and rules can
+ * tell a PDF read from text from one read from pictures.
+ *
+ * A PDF with neither is refused as unanswered, so the caller keeps it as
+ * an invoice with no facts for a person to key — what happened to every
+ * ordinary PDF before this.
+ */
+export async function handleCaptureOrdinaryPdf(
+  db: D1Database,
+  channelId: string,
+  bytes: Uint8Array,
+  model: ExtractionModel,
+  idOverride?: string,
+  enrichFacts?: CaptureIntakeBody["enrichFacts"]
+): Promise<RouteResult> {
+  const customFields = await loadCustomFields(db);
+  const vocabulary = resolveVocabulary("invoice", customFields);
+  const settings = await loadExtractionSettings(db, channelId);
+
+  const read = await readPdf(bytes);
+  let extraction: ExtractionResult;
+  let how: string;
+  try {
+    if (read.kind === "text") {
+      extraction = await extractInvoiceFromPdfText(model, read.pages, vocabulary, settings, read.truncated);
+      how = "pdf_text";
+    } else if (read.kind === "images") {
+      extraction = await extractInvoiceFromImages(model, read.images, vocabulary, settings);
+      how = read.pageCount > read.images.length ? `pdf_images (${read.images.length} of ${read.pageCount} pages)` : "pdf_images";
+    } else {
+      throw new ExtractionRefusal(read.reason, undefined, true);
+    }
+  } catch (err) {
+    if (err instanceof ExtractionRefusal) {
+      await recordCaptureEvent(db, channelId, "rejected", err.message, null);
+      return { status: 422, body: { error: err.message, rawModelOutput: err.rawModelOutput?.slice(0, 2000), unanswered: err.unanswered } };
+    }
+    throw err;
+  }
+  return captureExtracted(db, channelId, extraction, idOverride, enrichFacts, { "intake.structure": "ordinary_pdf", "intake.read": how }, { documentPath: how.startsWith("pdf_text") ? "pdf-text-extraction" : "pdf-image-extraction" });
 }
 
 /**

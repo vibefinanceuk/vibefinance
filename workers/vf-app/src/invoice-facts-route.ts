@@ -868,9 +868,13 @@ export async function handleGetInvoice(
         attempted: (facts as Record<string, unknown>)["intake.attempted"] ?? null,
         // **Said rather than inferred.** A screen deciding this from an
         // empty string would be a second place the rule lives.
-        readable:
-          typeof (facts as Record<string, unknown>)["intake.structure"] === "string" &&
-          (facts as Record<string, unknown>)["intake.structure"] !== "",
+        //
+        // **Unreadable only when capture said so — decision 0683.** Only
+        // a document nothing could read is stored with `intake.structure`
+        // empty; a photograph or an XML upload never set it at all, and
+        // was told "could not be read automatically" with every field
+        // filled in. Absent means read.
+        readable: (facts as Record<string, unknown>)["intake.structure"] !== "",
       },
       validation: {
         passed: verdict.passed,
