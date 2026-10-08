@@ -10,6 +10,7 @@ import {
   openRouteMessage,
   routePartKey,
   setPartFormat,
+  sha256Hex,
   setPartOutcome,
   storeRoutePart,
   type StoredPart,
@@ -205,6 +206,15 @@ async function record(
   attachments = 0,
   captured = 0
 ): Promise<void> {
+  await recordArrival(db, { sender: message.from, recipient: message.to, sourceId, outcome, reason, attachments, captured });
+}
+
+/** The arrival's row, from what is known of it — by receiving, or by the reader afterwards (0687). Never throws. */
+export async function recordArrival(
+  db: D1Database,
+  a: { sender: string; recipient: string; sourceId: string | null; outcome: "captured" | "rejected"; reason: string | null; attachments: number; captured: number }
+): Promise<void> {
+  const { sender, recipient, sourceId, outcome, reason, attachments, captured } = a;
   try {
     await db
       .prepare(
@@ -214,8 +224,8 @@ async function record(
       )
       .bind(
         crypto.randomUUID(),
-        message.from,
-        message.to.toLowerCase(),
+        sender,
+        recipient.toLowerCase(),
         sourceId,
         outcome,
         reason,
@@ -241,7 +251,7 @@ async function record(
  * this database cannot see it, so **a message arriving is the only
  * honest evidence that routing works.**
  */
-async function markReceiving(db: D1Database, sourceId: string): Promise<void> {
+export async function markReceiving(db: D1Database, sourceId: string): Promise<void> {
   try {
     await db
       .prepare("UPDATE sources SET email_routing = 'active' WHERE id = ? AND email_routing != 'active'")
@@ -273,9 +283,12 @@ export async function handleInboundEmail(
   model: ExtractionModel,
   bucket?: R2Bucket,
   customerId?: string,
-  onFinished?: (messageId: string) => Promise<void>
+  onFinished?: (messageId: string) => Promise<void>,
+  options: InboundOptions = {}
 ): Promise<void> {
-  const messageId = await receiveInboundEmail(message, db, model, bucket, customerId);
+  const received = await receiveInboundEmail(message, db, model, bucket, customerId, options);
+  // Decision 0687: a message left to be read later has not finished; the reader tells whoever asked.
+  const messageId = received?.queued ? null : (received?.id ?? null);
   if (messageId && onFinished) {
     try {
       await onFinished(messageId);
@@ -447,13 +460,38 @@ async function captureOnePart(
   return { captured: true, ...(invoiceId ? { invoiceId } : {}) };
 }
 
+export interface InboundOptions {
+  /**
+   * **Accept now, read later — decision 0687.** Store the email and its
+   * attachments, answer the sending mail server, and leave the reading
+   * to `readQueuedInbound` on the five-minute cron. Reading five scanned
+   * PDFs took longer than a sender waits; it took the silence as a
+   * failure and sent the same email again every five minutes.
+   */
+  readLater?: boolean;
+}
+
+/**
+ * **Which email this is — decision 0687.** Its Message-ID header, which
+ * a sending server keeps when it tries the same email again; else the
+ * sha256 of the message as it arrived, which a retry also repeats.
+ */
+export async function emailIdentity(raw: string, rawBytes: Uint8Array): Promise<string> {
+  const headerEnd = raw.search(/\r?\n\r?\n/);
+  const headers = (headerEnd === -1 ? raw : raw.slice(0, headerEnd)).replace(/\r?\n[ \t]+/g, " ");
+  const header = headers.match(/^message-id:[ \t]*(.*)$/im)?.[1]?.trim();
+  if (header) return header.slice(0, 300);
+  return `sha256:${await sha256Hex(rawBytes)}`;
+}
+
 async function receiveInboundEmail(
   message: EmailMessage,
   db: D1Database,
   model: ExtractionModel,
   bucket?: R2Bucket,
-  customerId?: string
-): Promise<string | null> {
+  customerId?: string,
+  options: InboundOptions = {}
+): Promise<{ id: string | null; queued?: boolean } | null> {
   /**
    * **Read once, as bytes — decision 0555.** The raw stream can be read
    * only once, and the email itself is now kept, so it is read as the
@@ -464,6 +502,26 @@ async function receiveInboundEmail(
   const raw = new TextDecoder().decode(rawBytes);
   const receivedAt = new Date().toISOString();
   const source = await sourceFor(db, message.to);
+
+  /**
+   * **The same email twice is read once — decision 0687.** A sending
+   * server that did not hear back in time delivers the same email again;
+   * each delivery used to become a message of its own and make every
+   * invoice again. The second is noted on the first and accepted, so the
+   * sender stops, and nothing is read.
+   */
+  const identity = await emailIdentity(raw, rawBytes);
+  if (source) {
+    const earlier = await db
+      .prepare("SELECT id FROM route_messages WHERE instance_id = ? AND email_message_id = ? ORDER BY received_at LIMIT 1")
+      .bind(source.id, identity)
+      .first<{ id: string }>()
+      .catch(() => null);
+    if (earlier) {
+      await addRouteEvent(db, earlier.id, "received_again", { detail: `${rawBytes.length} bytes; the same email again, not read again` });
+      return null;
+    }
+  }
 
   /**
    * **The message is recorded before anything is decided about it**,
@@ -485,6 +543,9 @@ async function receiveInboundEmail(
     bytes: rawBytes.length,
     receivedAt,
   });
+  if (messageId && source) {
+    await db.prepare("UPDATE route_messages SET email_message_id = ? WHERE id = ?").bind(identity, messageId).run().catch(() => undefined);
+  }
   const canStore = !!(messageId && source && bucket && customerId);
   if (messageId && source) {
     if (canStore) {
@@ -528,7 +589,7 @@ async function receiveInboundEmail(
       });
     }
     message.setReject("That address does not accept invoices.");
-    return messageId;
+    return { id: messageId };
   }
 
   if (source.status === "retired") {
@@ -545,7 +606,7 @@ async function receiveInboundEmail(
     // 0130). Until it does, this is the guard that makes the status
     // true rather than decorative.
     message.setReject("That address is no longer in use.");
-    return messageId;
+    return { id: messageId };
   }
 
   const attachments = attachmentsOf(raw);
@@ -563,7 +624,7 @@ async function receiveInboundEmail(
     message.setReject(
       "No invoice was attached. Please attach the invoice as a PDF, XML or image."
     );
-    return messageId;
+    return { id: messageId };
   }
 
   /**
@@ -571,8 +632,7 @@ async function receiveInboundEmail(
    * invoices in one message has sent three invoices, and picking one
    * would lose two silently.
    */
-  const failures: string[] = [];
-  let incomplete = false;
+  const storedParts: (StoredPart | undefined)[] = [];
   for (const [index, attachment] of attachments.entries()) {
     const seq = index + 1;
 
@@ -597,7 +657,25 @@ async function receiveInboundEmail(
       if ("stored" in part) stored = part.stored;
       else await addRouteEvent(db, messageId!, "attachment_not_stored", { partSeq: seq, detail: part.reason });
     }
+    storedParts.push(stored);
+  }
 
+  /**
+   * **Accepted, and read later — decision 0687.** Only when every
+   * attachment is safely stored: the reader works from the stored copies.
+   * One that could not be stored is read now, as before.
+   */
+  if (options.readLater && messageId && storedParts.every((p) => p !== undefined)) {
+    await db.prepare("UPDATE route_messages SET read_queued_at = ? WHERE id = ?").bind(new Date().toISOString(), messageId).run();
+    await addRouteEvent(db, messageId, "queued", { detail: `${attachments.length} attachment${attachments.length === 1 ? "" : "s"} to read` });
+    return { id: messageId, queued: true };
+  }
+
+  const failures: string[] = [];
+  let incomplete = false;
+  for (const [index, attachment] of attachments.entries()) {
+    const seq = index + 1;
+    const stored = storedParts[index];
     const outcome = await captureAttachmentPart(db, {
       messageId,
       sourceId: source.id,
@@ -641,13 +719,13 @@ async function receiveInboundEmail(
       });
     }
     message.setReject("The attached file could not be read as an invoice.");
-    return messageId;
+    return { id: messageId };
   }
 
   await record(db, message, "captured", null, source.id, attachments.length, captured);
   if (messageId) await finishRouteMessage(db, messageId, { status: failures.length > 0 || incomplete ? "partial" : "delivered" });
   await markReceiving(db, source.id);
-  return messageId;
+  return { id: messageId };
 }
 
 /**

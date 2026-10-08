@@ -43,6 +43,9 @@ export async function whyNotReprocess(db: D1Database, m: MessageRow): Promise<st
   if (m.direction !== "in") return "outbound";
   if (m.status !== "failed" && m.status !== "partial" && m.status !== "received") return "not_failed";
   if (!m.instance_id) return "no_original";
+  // Decision 0687: a message being read in the background is not run twice at once.
+  const lease = await db.prepare("SELECT reading_until FROM route_messages WHERE id = ?").bind(m.id).first<{ reading_until: string | null }>();
+  if (lease?.reading_until && lease.reading_until > new Date().toISOString()) return "being_read";
   const source = await db
     .prepare("SELECT s.status, p.subject_type FROM sources s JOIN processes p ON p.id = s.process_id WHERE s.id = ?")
     .bind(m.instance_id)
@@ -74,7 +77,11 @@ export async function handleReprocessMessage(
   if (!deps.bucket) return { status: 503, body: { error: "no R2 bucket is bound", reason: "no_bucket" } };
   const sourceId = m.instance_id as string;
 
-  await db.prepare("UPDATE route_messages SET attempts = attempts + 1 WHERE id = ?").bind(id).run();
+  // Decision 0687: held while it runs, so the background reader leaves it alone.
+  await db
+    .prepare("UPDATE route_messages SET attempts = attempts + 1, reading_until = ? WHERE id = ?")
+    .bind(new Date(Date.now() + 10 * 60 * 1000).toISOString(), id)
+    .run();
   await addRouteEvent(db, id, "reprocessed", { actor });
 
   const parts = (
@@ -153,6 +160,7 @@ export async function handleReprocessMessage(
   }
 
   const status = await settleInbound(db, id, attachments.length, reasons);
+  await db.prepare("UPDATE route_messages SET reading_until = NULL WHERE id = ?").bind(id).run();
   return { status: 200, body: { id, status, ran: toRun.length, failed: reasons.length } };
 }
 
@@ -162,7 +170,7 @@ export async function handleReprocessMessage(
  * failed at translation, with each file's reason. No attachment at all:
  * failed at the format, as receiving decides.
  */
-async function settleInbound(db: D1Database, id: string, attachmentCount: number, reasons: string[]): Promise<string> {
+export async function settleInbound(db: D1Database, id: string, attachmentCount: number, reasons: string[]): Promise<string> {
   const captured = await db
     .prepare("SELECT count(*) AS n FROM route_message_parts WHERE message_id = ? AND role = 'attachment' AND outcome = 'captured'")
     .bind(id)

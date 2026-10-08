@@ -40,8 +40,9 @@ function rawEmail(attachments: { filename: string; contentType: string; bytes: U
   return `From: accounts@munch.de\r\nTo: ${ADDRESS}\r\nSubject: ${subject}\r\nContent-Type: multipart/mixed; boundary="${boundary}"\r\n\r\n${parts.join("")}`;
 }
 
-function message(attachments: { filename: string; contentType: string; bytes: Uint8Array }[], to = ADDRESS): EmailMessage {
-  const raw = rawEmail(attachments);
+function message(attachments: { filename: string; contentType: string; bytes: Uint8Array }[], to = ADDRESS, messageId?: string): EmailMessage {
+  // Decision 0687: a Message-ID makes each a different email, as three real failures are.
+  const raw = (messageId ? `Message-ID: <${messageId}>\r\n` : "") + rawEmail(attachments);
   return { from: "accounts@munch.de", to, raw: new Response(raw).body as ReadableStream, rawSize: raw.length, setReject() {}, async forward() {} };
 }
 
@@ -316,7 +317,7 @@ describe("alerts: telling", () => {
     await handleSaveAlert(env.DB, "it", { routeId: "s-ap", failuresPerDay: 2, emails: ["it@acme.com"] });
     const sent: Sent[] = [];
     for (let i = 0; i < 3; i++) {
-      await handleInboundEmail(message([]), env.DB, reads, env.DOCUMENTS, CUSTOMER, (id) => notifyMessageFinished(env.DB, fakeTransport(sent), id));
+      await handleInboundEmail(message([], ADDRESS, `m${i}@munch.de`), env.DB, reads, env.DOCUMENTS, CUSTOMER, (id) => notifyMessageFinished(env.DB, fakeTransport(sent), id));
     }
     expect(sent).toHaveLength(1);
     expect((sent[0] as Extract<Sent, { kind: "email" }>).subject).toBe("VibeFinance: 2 failed messages today on AP mailbox");

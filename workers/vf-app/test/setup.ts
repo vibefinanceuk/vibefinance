@@ -152,6 +152,7 @@ import receiptLineCorrectionsSql from "../../../migrations/0145_receipt_line_cor
 import receiptTimelineSql from "../../../migrations/0146_receipt_timeline.sql?raw";
 import receiptReadsSql from "../../../migrations/0147_receipt_conversation_reads.sql?raw";
 import oneHomeSql from "../../../migrations/0148_one_home_per_value.sql?raw";
+import inboundReadLaterSql from "../../../migrations/0149_inbound_read_later.sql?raw";
 
 // Another known divergence from production, on top of the one below:
 // D1's exec() splits its input by newline and executes each non-empty
@@ -502,6 +503,7 @@ export async function applyTestSchema(): Promise<void> {
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(receiptTimelineSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(receiptReadsSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(oneHomeSql)));
+  await env.DB.exec(toOneStatementPerLine(stripSqlComments(inboundReadLaterSql)));
 }
 
 /**

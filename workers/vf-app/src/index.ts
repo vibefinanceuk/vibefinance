@@ -235,6 +235,7 @@ import { handleGetRetention, handleSetRetention, handleListBeyondRetention } fro
 import { handleCaptureFromSource } from "./source-capture-route.js";
 import { handleInboundEmail, handleListInboundEmail, type EmailMessage } from "./inbound-email.js";
 import { handleGetRouteMessage, handleListRouteMessages, routeMessagePart } from "./route-monitor-route.js";
+import { readQueuedInbound } from "./inbound-read-later.js";
 import { handleDeleteDestination, handleListRoutes, handleProcessRoutes, handleRenameDestination, handleRetireDestination, handleSetInstanceStatus } from "./routes-route.js";
 import { handleDismissMessage, handleReprocessMessage } from "./route-reprocess.js";
 import {
@@ -7173,7 +7174,9 @@ export default {
       env.DOCUMENTS,
       env.CUSTOMER_ID,
       // Decision 0559: tell whoever asked, if it failed.
-      (messageId) => notifyMessageFinished(env.DB!, alertTransport(env), messageId)
+      (messageId) => notifyMessageFinished(env.DB!, alertTransport(env), messageId),
+      // Decision 0687: accept once stored, and read on the five-minute cron.
+      { readLater: true }
     );
   },
   /* eslint-enable no-restricted-properties */
@@ -7209,6 +7212,20 @@ export default {
         await processAbsences(db, new Date());
       } catch {
         // Deliberately silent: the next tick tries again.
+      }
+      // Decision 0687: emailed attachments accepted and left to read. Last, as it may take minutes.
+      try {
+        const { db, documents } = resolveTenant(new Request("https://scheduled-trigger.internal/"), env);
+        if (env.AI) {
+          await readQueuedInbound(db, {
+            model: createWorkersAiExtractionModel(env.AI, env.EXTRACTION_MODEL_ID),
+            bucket: documents,
+            customerId: env.CUSTOMER_ID,
+            onFinished: (messageId) => notifyMessageFinished(db, alertTransport(env), messageId),
+          });
+        }
+      } catch {
+        // Deliberately silent: a message cut short is picked up again next tick.
       }
       return;
     }

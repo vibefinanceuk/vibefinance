@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 8 October 2026 (decision 0686). A living document: what
+Last updated 8 October 2026 (decision 0687). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,21 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Email accepted at once, read later; the same email read once (0687)
+
+Five scanned PDFs took longer to read than the sending server would wait, so it
+sent the same email again every five minutes and each copy made the invoices
+again.
+
+- An email is now stored and accepted at once. Its attachments are read on the
+  five-minute cron, with a lease, resuming where a run stopped, and giving up
+  after three runs.
+- A second delivery of the same email (same Message-ID, else the same bytes) is
+  noted on the first and not read.
+- vf-app migration 0149 and vf-licence migration 0305.
+
+Full reasoning is in decision 0687.
 
 ### Line items must carry both keys (0686)
 
