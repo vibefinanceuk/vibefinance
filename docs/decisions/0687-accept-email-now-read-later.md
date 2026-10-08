@@ -1,6 +1,6 @@
 # 0687: An emailed message is accepted at once and read later; the same email is read once
 
-**Status: built**, in bundle 0985 on top of `487b982`. vf-app migration
+**Status: live** at `ec1bddc` (pushed with `83b73dd`), deployed 8 October 2026, migrations applied. vf-app migration
 `0149_inbound_read_later.sql`; vf-licence migration `0305_inbound_read_later_strings.sql`.
 
 ## What was asked

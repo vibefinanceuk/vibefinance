@@ -1,6 +1,6 @@
 # 0688: A scanned page's lines are asked for on their own
 
-**Status: built**, in bundle 0986. vf-app only, no migration.
+**Status: live** at `83b73dd`, pushed and deployed 8 October 2026. vf-app only, no migration.
 
 ## What happened
 
