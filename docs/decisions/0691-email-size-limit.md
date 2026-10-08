@@ -1,6 +1,6 @@
 # 0691: An Email source's size limit, and a polite refusal
 
-**Status: built**, in bundle 0989.
+**Status: live** at `66b2f29`, pushed and deployed 8 October 2026, migrations applied.
 
 - vf-app migration `0150_source_email_size_limit.sql`.
 - vf-licence migration `0306_email_size_limit_strings.sql`.

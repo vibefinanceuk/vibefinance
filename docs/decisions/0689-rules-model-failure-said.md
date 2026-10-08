@@ -1,6 +1,6 @@
 # 0689: A failure of the rules model is said, not left on "Working out what you mean"
 
-**Status: built**, in bundle 0988. vf-app and vf-ui, no migration.
+**Status: live** at `2331ea6`, pushed and deployed 8 October 2026.
 
 ## What was asked
 

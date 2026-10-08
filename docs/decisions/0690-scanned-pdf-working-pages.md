@@ -1,6 +1,6 @@
 # 0690: A scanned PDF is read and shown from smaller working pages; the original is kept
 
-**Status: built**, in bundle 0989. vf-app (migration `0151_invoice_pages.sql`,
+**Status: live** at `66b2f29`, pushed and deployed 8 October 2026, migrations applied. vf-app (migration `0151_invoice_pages.sql`,
 new `images` binding in `wrangler.jsonc`). Cloudflare Images must be enabled on
 the account.
 
