@@ -222,3 +222,76 @@ describe("lines from a scanned invoice (decision 0684)", () => {
   });
 });
 
+
+describe("line amounts as invoices print them, a retry, and why a read failed (decision 0685)", () => {
+  beforeEach(async () => {
+    await applyTestSchema();
+    await handleCreateProcess(env.DB, { id: "p-ap", name: "AP" });
+    await handleCreateStage(env.DB, "p-ap", { id: "s-received", name: "Received", sequence: 1 });
+    await handleCreateSource(env.DB, "p-ap", { id: "src-mail", name: "AP mailbox", mechanism: "email" });
+    await handleCreateIntakeChannel(env.DB, "p-ap", { id: "ch-image", name: "Image", structure: "image" });
+  });
+
+  it("reads currency codes, a trailing symbol and credits, and refuses prose and decimal commas", async () => {
+    const { lineAmount } = await import("../src/extraction.js");
+    const v = (x: unknown) => {
+      const r = lineAmount(x);
+      return r.ok ? r.value : "refused";
+    };
+    expect(v(579.84)).toBe(579.84);
+    expect(v("£1,234.56")).toBe(1234.56);
+    expect(v("579.84 GBP")).toBe(579.84);
+    expect(v("GBP 579.84")).toBe(579.84);
+    expect(v("579.84 £")).toBe(579.84);
+    expect(v("(25.00)")).toBe(-25);
+    expect(v("25.00-")).toBe(-25);
+    expect(v("25.00 CR")).toBe(-25);
+    expect(v("about 25")).toBe("refused");
+    expect(v("579,84")).toBe("refused");
+  });
+
+  it("keeps lines whose amounts carry a currency code, and records the first refused amount when none are kept", async () => {
+    const coded = JSON.stringify({ invoiceNumber: "A", lines: [{ description: "Toner", amount: "579.84 GBP" }], _confidence: 0.9 });
+    const one = await handleCaptureFromSource(env.DB, "src-mail", SCANNED_FLATE(), recordingModel(coded).model);
+    const lines = await env.DB.prepare("SELECT amount FROM invoice_lines WHERE invoice_id = ?").bind((one.body as { id: string }).id).all();
+    expect(lines.results).toEqual([{ amount: 579.84 }]);
+
+    const prose = JSON.stringify({ invoiceNumber: "B", lines: [{ description: "Toner", amount: "see attached" }], _confidence: 0.9 });
+    const two = await handleCaptureFromSource(env.DB, "src-mail", SCANNED_FLATE(), recordingModel(prose).model);
+    const facts = JSON.parse((await env.DB.prepare("SELECT facts_json FROM invoice_headers WHERE id = ?").bind((two.body as { id: string }).id).first<{ facts_json: string }>())!.facts_json);
+    expect(facts["extraction.lineProblem"]).toBe('row 1: amount "see attached"');
+  });
+
+  it("asks once more when the model did not answer a page, and reads it", async () => {
+    let calls = 0;
+    const { ExtractionRefusal } = await import("../src/extraction.js");
+    const model = {
+      extract: async () => {
+        calls++;
+        if (calls === 1) throw new ExtractionRefusal("the model did not respond in time (3046)", undefined, true);
+        return READ;
+      },
+    };
+    const result = await handleCaptureFromSource(env.DB, "src-mail", SCANNED_FLATE(), model);
+    expect(calls).toBe(2);
+    const facts = JSON.parse((await env.DB.prepare("SELECT facts_json FROM invoice_headers WHERE id = ?").bind((result.body as { id: string }).id).first<{ facts_json: string }>())!.facts_json);
+    expect(facts["BT-1"]).toBe("INV-7781");
+  });
+
+  it("keeps a PDF the model never answered for keying, and says why on the invoice", async () => {
+    const { ExtractionRefusal } = await import("../src/extraction.js");
+    let calls = 0;
+    const model = {
+      extract: async () => {
+        calls++;
+        throw new ExtractionRefusal("the model did not respond in time (3046)", undefined, true);
+      },
+    };
+    const result = await handleCaptureFromSource(env.DB, "src-mail", SCANNED_FLATE(), model);
+    expect(result.status).toBe(201);
+    expect(calls).toBe(2);
+    const facts = JSON.parse((await env.DB.prepare("SELECT facts_json FROM invoice_headers WHERE id = ?").bind((result.body as { id: string }).id).first<{ facts_json: string }>())!.facts_json);
+    expect(facts["intake.structure"]).toBe("");
+    expect(facts["intake.readFailure"]).toContain("did not respond in time");
+  });
+});

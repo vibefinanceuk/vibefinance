@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 8 October 2026 (decision 0684). A living document: what
+Last updated 8 October 2026 (decision 0685). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,19 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Line amounts, one retry, and why a read failed (0685)
+
+From Dan's re-sent scans, where lines were returned but none kept:
+
+- A line amount with a currency code (`579.84 GBP`), a trailing symbol or
+  a credit mark (`(25.00)`, `25.00-`, `25.00 CR`) is now read.
+- `extraction.lineProblem` records the first refused amount when no lines
+  are kept.
+- A page the model did not answer is asked once more.
+- `intake.readFailure` says why a document was kept for keying.
+
+Full reasoning is in decision 0685.
 
 ### Scanned PDFs read well (0684)
 

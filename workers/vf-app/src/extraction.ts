@@ -397,6 +397,51 @@ function coerce(value: unknown, type: FieldType): { ok: true; value: string | nu
   return trimmed.length > 0 ? { ok: true, value: trimmed } : { ok: false };
 }
 
+/**
+ * **A line's amount, as invoices print it — decision 0685.** `coerce`
+ * takes a number, or a string with at most a leading currency symbol and
+ * thousands commas. A scanned invoice's line amounts came back in other
+ * plain forms and every line was refused. These are read too, and
+ * nothing else is:
+ *
+ * - a currency code before or after (`GBP 579.84`, `579.84 GBP`);
+ * - a currency symbol after (`579.84 £`, `579,84 €` is not: see below);
+ * - a credit in brackets (`(25.00)`), with a trailing minus (`25.00-`),
+ *   or marked `CR` (`25.00 CR`), all negative.
+ *
+ * A decimal comma (`579,84`) is still refused here: it cannot be told
+ * from a thousands comma in a two-digit tail without knowing the
+ * document's locale, and inventing a value is worse than none (0041).
+ */
+export function lineAmount(value: unknown): { ok: true; value: string | number | boolean } | { ok: false } {
+  const direct = coerce(value, "number");
+  if (direct.ok || typeof value !== "string") return direct;
+  let s = value.trim().replace(/[\s\u00a0]+/g, " ");
+  let negative = false;
+  const bracketed = s.match(/^\((.*)\)$/);
+  if (bracketed) {
+    negative = true;
+    s = bracketed[1].trim();
+  }
+  const credit = s.match(/^(.*?)\s*(?:CR|Cr|cr)$/);
+  if (credit) {
+    negative = true;
+    s = credit[1].trim();
+  }
+  if (/-$/.test(s) && !/^-/.test(s)) {
+    negative = true;
+    s = s.slice(0, -1).trim();
+  }
+  s = s
+    .replace(/^[A-Z]{3}\s*/, "")
+    .replace(/\s*[A-Z]{3}$/, "")
+    .replace(/\s*[\u00a3\u20ac$\u00a5]$/, "")
+    .trim();
+  const again = coerce(s, "number");
+  if (!again.ok) return again;
+  return { ok: true, value: negative ? -Math.abs(again.value as number) : again.value };
+}
+
 export function parseExtractionResponse(
   raw: string,
   vocabulary: VocabularyInput = "invoice",
@@ -466,6 +511,7 @@ export function parseExtractionResponse(
   // completeness check below: a row that is not a line item is not
   // evidence that the real lines are unreliable.
   let rejectedRows = 0;
+  let lineProblem: string | null = null;
   const linesTruncated = rawLines.length > settings.maxExtractedLines;
   const lines: ExtractedLine[] = [];
   let lineNumber = 0;
@@ -485,8 +531,12 @@ export function parseExtractionResponse(
       rejectedRows += 1;
       continue;
     }
-    const amount = coerce(row.amount, "number");
-    if (!amount.ok) continue;
+    const amount = lineAmount(row.amount);
+    if (!amount.ok) {
+      // Decision 0685: the first amount refused is kept, so a list discarded for it can be seen.
+      if (lineProblem === null) lineProblem = `row ${lines.length + rejectedRows + 1}: amount ${JSON.stringify(row.amount).slice(0, 60)}`;
+      continue;
+    }
 
     // A line item has a description — decision 0052.
     //
@@ -555,6 +605,7 @@ export function parseExtractionResponse(
   // arriving with no lines says whether the model saw none or they were discarded.
   facts["extraction.lineRows"] = rawLines.length;
   facts["extraction.linesKept"] = usableLines.length;
+  if (lineProblem !== null && usableLines.length === 0) facts["extraction.lineProblem"] = lineProblem;
 
   return { facts, lines: usableLines, linesTruncated, confidence, missingFields, rawModelOutput: raw };
 }
@@ -653,14 +704,29 @@ export async function extractInvoiceFromImages(
     }
 
     try {
-      const raw = await model.extract(
-        // Each call is told which page it is looking at and how many
-        // there are, so a model seeing only the totals page does not
-        // report the absent line table as a failure to read one.
-        buildExtractionPrompt(vocabulary, pages.length, pageNumber),
-        [{ bytes, contentType: sniffed }],
-        buildExtractionSchema(vocabulary, settings)
-      );
+      const ask = () =>
+        model.extract(
+          // Each call is told which page it is looking at and how many
+          // there are, so a model seeing only the totals page does not
+          // report the absent line table as a failure to read one.
+          buildExtractionPrompt(vocabulary, pages.length, pageNumber),
+          [{ bytes, contentType: sniffed }],
+          buildExtractionSchema(vocabulary, settings)
+        );
+      /**
+       * **Asked once more when the model did not answer — decision
+       * 0685.** Dan's scans showed the timeouts are intermittent: the
+       * same two-page PDF went unanswered four times in five and was read
+       * in full the fifth. One retry, only for a page the model never
+       * answered (0163); a page it read and refused is not asked again.
+       */
+      let raw: string;
+      try {
+        raw = await ask();
+      } catch (first) {
+        if (!(first instanceof ExtractionRefusal && first.unanswered)) throw first;
+        raw = await ask();
+      }
       perPage.push({ page: pageNumber, result: parseExtractionResponse(raw, vocabulary, settings) });
     } catch (err) {
       // One unreadable page does not sink the document. The others
@@ -794,6 +860,10 @@ export function mergePageResults(
   // Decision 0684: line rows reported across every page, and lines kept.
   facts["extraction.lineRows"] = perPage.reduce((n, p) => n + Number(p.result.facts["extraction.lineRows"] ?? 0), 0);
   facts["extraction.linesKept"] = lines.length;
+  // Decision 0685: the first refused amount on any page, when no lines were kept.
+  const problem = perPage.map((p) => p.result.facts["extraction.lineProblem"]).find((v) => typeof v === "string");
+  if (problem !== undefined && lines.length === 0) facts["extraction.lineProblem"] = problem;
+  else delete facts["extraction.lineProblem"];
   // Conflicts and failed pages become real facts, so a rule can raise
   // a task for a human — decision 0048.
   //

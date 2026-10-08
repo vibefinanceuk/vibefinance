@@ -502,7 +502,9 @@ export async function handleCaptureFromSource(
         idOverride,
         bucket,
         customerId,
-        stored
+        stored,
+        // Decision 0685: why it was not read, on the invoice, rather than nowhere.
+        { "intake.readFailure": String((result.body as { error?: string }).error ?? "the model did not answer").slice(0, 300) }
       );
     }
   }

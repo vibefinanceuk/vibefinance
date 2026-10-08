@@ -131,7 +131,7 @@ export async function embeddedJpegs(bytes: Uint8Array): Promise<Uint8Array[]> {
     let dataStart = streamAt + "stream".length;
     if (text[dataStart] === "\r") dataStart++;
     if (text[dataStart] === "\n") dataStart++;
-    let data = bytes.slice(dataStart, dataStart + length);
+    let data: Uint8Array = bytes.slice(dataStart, dataStart + length);
     if (filters.length === 2) {
       try {
         data = await inflate(data);
