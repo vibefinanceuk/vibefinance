@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 8 October 2026 (decision 0691). A living document: what
+Last updated 8 October 2026 (decision 0692). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,16 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Indexes for the tables that grow with every invoice (0692)
+
+Every query in vf-app was run through `EXPLAIN QUERY PLAN`. `tasks` had no
+index, so every inbox and task check read all tasks ever made. 22 indexes
+(migration 0152) turn those reads, and the Documents list, Route monitor counts
+and usage reporting, into indexed searches. Usage now counts the month as a
+date range.
+
+Full reasoning is in decision 0692.
 
 ### An Email source's size limit, and a polite refusal (0691)
 

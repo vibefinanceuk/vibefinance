@@ -50,6 +50,20 @@ describe("computeCurrentPeriodUsage", () => {
     expect(usage.rulesEvaluated).toBe(5); // 3 + 2, not the excluded runs' 5 + 5
   });
 
+  it("counts December into the right year, in either timestamp form (decision 0692)", async () => {
+    await seedInvoiceRun("d1", "matched", "2026-12-01 00:00:00", 1);
+    await seedInvoiceRun("d2", "matched", "2026-12-31T23:59:59Z", 1);
+    await seedInvoiceRun("d3", "matched", "2026-12-31 23:59:59", 1);
+    // Outside: the last moment of November and the first of January.
+    await seedInvoiceRun("n1", "matched", "2026-11-30 23:59:59", 1);
+    await seedInvoiceRun("j1", "matched", "2027-01-01 00:00:00", 1);
+    await seedInvoiceRun("j2", "matched", "2027-01-01T00:00:00Z", 1);
+    const usage = await computeCurrentPeriodUsage(env.DB, new Date("2026-12-31T12:00:00Z"), "acme-production");
+    expect(usage.periodKey).toBe("2026-12");
+    expect(usage.invoicesProcessed).toBe(3);
+    expect(usage.rulesEvaluated).toBe(3);
+  });
+
   it("breaks outcomes down by their actual value, not a fixed enum", async () => {
     await seedInvoiceRun("r1", "matched", "2026-08-01T00:00:00Z", 0);
     await seedInvoiceRun("r2", "matched", "2026-08-02T00:00:00Z", 0);

@@ -17,27 +17,33 @@ export async function computeCurrentPeriodUsage(
   environmentId: string
 ): Promise<UsageReport> {
   const periodKey = now.toISOString().slice(0, 7); // "YYYY-MM"
+  // Decision 0692: the month as a range, so idx_invoice_runs_created can be
+  // used (strftime() on the column cannot). Both "YYYY-MM-DD HH:MM:SS" and
+  // ISO "YYYY-MM-DDTHH:MM:SSZ" sort inside it.
+  const from = `${periodKey}-01`;
+  const next = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
+  const to = next.toISOString().slice(0, 10);
 
   const invoicesRow = await db
-    .prepare("SELECT count(*) AS n FROM invoice_runs WHERE strftime('%Y-%m', created_at) = ?")
-    .bind(periodKey)
+    .prepare("SELECT count(*) AS n FROM invoice_runs WHERE created_at >= ? AND created_at < ?")
+    .bind(from, to)
     .first<{ n: number }>();
 
   const rulesRow = await db
     .prepare(
       `SELECT count(*) AS n FROM invoice_run_steps
        WHERE invoice_run_id IN (
-         SELECT id FROM invoice_runs WHERE strftime('%Y-%m', created_at) = ?
+         SELECT id FROM invoice_runs WHERE created_at >= ? AND created_at < ?
        )`
     )
-    .bind(periodKey)
+    .bind(from, to)
     .first<{ n: number }>();
 
   const outcomeRows = await db
     .prepare(
-      "SELECT outcome, count(*) AS n FROM invoice_runs WHERE strftime('%Y-%m', created_at) = ? GROUP BY outcome"
+      "SELECT outcome, count(*) AS n FROM invoice_runs WHERE created_at >= ? AND created_at < ? GROUP BY outcome"
     )
-    .bind(periodKey)
+    .bind(from, to)
     .all<OutcomeCountRow>();
 
   const outcomeCounts: Record<string, number> = {};
