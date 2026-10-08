@@ -1,6 +1,6 @@
 # 0686: Line items must carry both keys
 
-**Status: built**, in bundle 0984 on top of `9ac4f96`. vf-app only, no migration.
+**Status: live** at `487b982`, pushed and deployed 8 October 2026. vf-app only, no migration.
 
 ## What was asked
 
