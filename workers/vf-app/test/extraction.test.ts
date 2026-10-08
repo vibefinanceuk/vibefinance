@@ -469,7 +469,8 @@ describe("the real failure this fix addresses", () => {
     const result = parseExtractionResponse(JSON.stringify(response));
     // Text fields land as facts; numeric and date ones correctly
     // refuse "X". What matters is that nothing is silently dropped.
-    const accounted = Object.keys(result.facts).filter((k) => k !== "extraction.confidence").length + result.missingFields.length;
+    // Decision 0684's line counts are about the lines, not a prompt key.
+    const accounted = Object.keys(result.facts).filter((k) => !["extraction.confidence", "extraction.lineRows", "extraction.linesKept"].includes(k)).length + result.missingFields.length;
     expect(accounted).toBe(promptKeys.length);
   });
 });

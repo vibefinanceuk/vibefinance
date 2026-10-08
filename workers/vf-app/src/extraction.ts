@@ -472,6 +472,19 @@ export function parseExtractionResponse(
   for (const raw of rawLines.slice(0, settings.maxExtractedLines)) {
     if (!raw || typeof raw !== "object") continue;
     const row = raw as Record<string, unknown>;
+    /**
+     * **A row with no amount at all is not a line item — decision 0684.**
+     * A scanned invoice's table carries rows of text with nothing in the
+     * amount column: a description running onto a second line, a
+     * delivery note, a sub-heading. Such a row was counted as a line that
+     * failed to read, and one of them threw away every real line. It is
+     * now set aside like a row with no description (0052). An amount that
+     * is there and cannot be read still discards the list.
+     */
+    if (row.amount === null || row.amount === undefined || (typeof row.amount === "string" && row.amount.trim() === "")) {
+      rejectedRows += 1;
+      continue;
+    }
     const amount = coerce(row.amount, "number");
     if (!amount.ok) continue;
 
@@ -538,6 +551,10 @@ export function parseExtractionResponse(
   // task to the AP team" — rather than this module deciding a
   // threshold on their behalf.
   facts["extraction.confidence"] = confidence;
+  // Decision 0684: what the model reported for the lines and what was kept, so an invoice
+  // arriving with no lines says whether the model saw none or they were discarded.
+  facts["extraction.lineRows"] = rawLines.length;
+  facts["extraction.linesKept"] = usableLines.length;
 
   return { facts, lines: usableLines, linesTruncated, confidence, missingFields, rawModelOutput: raw };
 }
@@ -774,6 +791,9 @@ export function mergePageResults(
   );
 
   facts["extraction.confidence"] = confidence;
+  // Decision 0684: line rows reported across every page, and lines kept.
+  facts["extraction.lineRows"] = perPage.reduce((n, p) => n + Number(p.result.facts["extraction.lineRows"] ?? 0), 0);
+  facts["extraction.linesKept"] = lines.length;
   // Conflicts and failed pages become real facts, so a rule can raise
   // a task for a human — decision 0048.
   //

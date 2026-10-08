@@ -69,8 +69,22 @@ export async function readPdf(bytes: Uint8Array): Promise<PdfRead> {
     return { kind: "text", pages: kept, truncated };
   }
 
-  const images: Uint8Array[] = [];
   const pageCount = pdf.numPages;
+
+  /**
+   * **A scan's own JPEGs, as they are — decision 0684.** Most scanners
+   * store each page as a JPEG (DCTDecode), often wrapped in Flate. That
+   * JPEG is exactly what a photograph upload sends the model, so it is
+   * unwrapped and sent as it is: no decoding to pixels, no re-encoding,
+   * full resolution and colour. Decoding a 1654×2339 page and making it
+   * a PNG cost the Worker heavy CPU and a request several times the
+   * size, and two of Dan's five scans went unanswered.
+   */
+  const jpegs = await embeddedJpegs(bytes);
+  if (jpegs.length > 0) return { kind: "images", images: jpegs.slice(0, MAX_SCANNED_PAGES), pageCount };
+
+  // Any other picture (JBIG2, CCITT, raw pixels): decoded by PDF.js and made a grey PNG.
+  const images: Uint8Array[] = [];
   for (let n = 1; n <= Math.min(pageCount, MAX_SCANNED_PAGES); n++) {
     let found;
     try {
@@ -85,6 +99,80 @@ export async function readPdf(bytes: Uint8Array): Promise<PdfRead> {
   }
   if (images.length > 0) return { kind: "images", images, pageCount };
   return { kind: "none", reason: "the PDF has no text to read and no page image" };
+}
+
+/**
+ * Every image XObject in the file that is a JPEG (its last filter
+ * DCTDecode, after at most a FlateDecode), at least 200 pixels each way,
+ * in file order (which is page order for a scanner's output), as JPEG
+ * bytes. Streams cannot sit in compressed object streams, so the image
+ * dictionaries and their data are readable directly from the file.
+ */
+export async function embeddedJpegs(bytes: Uint8Array): Promise<Uint8Array[]> {
+  const text = new TextDecoder("latin1").decode(bytes);
+  const out: Uint8Array[] = [];
+  const re = /\/Subtype\s*\/Image\b/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) {
+    const start = text.lastIndexOf("<<", m.index);
+    const end = dictEnd(text, start);
+    if (start < 0 || end < 0) continue;
+    const dict = text.slice(start, end);
+    const filters = [...(dict.match(/\/Filter\s*(\[[^\]]*\]|\/\w+)/)?.[1] ?? "").matchAll(/\/(\w+)/g)].map((f) => f[1]);
+    if (filters[filters.length - 1] !== "DCTDecode") continue;
+    if (filters.length > 2 || (filters.length === 2 && filters[0] !== "FlateDecode")) continue;
+    if (/\/DecodeParms/.test(dict) && filters.length === 2) continue;
+    const width = Number(dict.match(/\/Width\s+(\d+)/)?.[1] ?? 0);
+    const height = Number(dict.match(/\/Height\s+(\d+)/)?.[1] ?? 0);
+    if (width < 200 || height < 200) continue;
+    const length = streamLength(text, dict);
+    const streamAt = text.indexOf("stream", end);
+    if (length === null || streamAt < 0) continue;
+    let dataStart = streamAt + "stream".length;
+    if (text[dataStart] === "\r") dataStart++;
+    if (text[dataStart] === "\n") dataStart++;
+    let data = bytes.slice(dataStart, dataStart + length);
+    if (filters.length === 2) {
+      try {
+        data = await inflate(data);
+      } catch {
+        continue;
+      }
+    }
+    if (data[0] === 0xff && data[1] === 0xd8) out.push(data);
+  }
+  return out;
+}
+
+/** The index just past the `>>` closing the dictionary opened at `start`. */
+function dictEnd(text: string, start: number): number {
+  let depth = 0;
+  for (let i = start; i < text.length - 1; i++) {
+    if (text[i] === "<" && text[i + 1] === "<") {
+      depth++;
+      i++;
+    } else if (text[i] === ">" && text[i + 1] === ">") {
+      depth--;
+      i++;
+      if (depth === 0) return i + 1;
+    }
+  }
+  return -1;
+}
+
+/** A stream's /Length, direct (`/Length 1234`) or by reference (`/Length 7 0 R`). */
+function streamLength(text: string, dict: string): number | null {
+  const direct = dict.match(/\/Length\s+(\d+)(?!\s+\d+\s+R)/);
+  if (direct) return Number(direct[1]);
+  const ref = dict.match(/\/Length\s+(\d+)\s+(\d+)\s+R/);
+  if (!ref) return null;
+  const obj = text.match(new RegExp(`(?:^|\\s)${ref[1]}\\s+${ref[2]}\\s+obj\\s+(\\d+)`));
+  return obj ? Number(obj[1]) : null;
+}
+
+async function inflate(bytes: Uint8Array): Promise<Uint8Array> {
+  const stream = new Blob([bytes as Uint8Array<ArrayBuffer>]).stream().pipeThrough(new DecompressionStream("deflate"));
+  return new Uint8Array(await new Response(stream).arrayBuffer());
 }
 
 /** Pixels (1, 3 or 4 channels) to a grey PNG no wider or taller than MAX_IMAGE_SIDE. */

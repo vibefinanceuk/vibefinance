@@ -68,6 +68,9 @@ export function contentTypeForDetection(detection: {
   const outcomeOf = (test: string) => detection.attempted.find((a) => a.test === test)?.outcome;
 
   if (detection.structure === "image") {
+    // Decision 0684: an ordinary PDF is read on the image channel (0683) but is still a PDF.
+    // Stored as image/jpeg, the viewer had nothing it could draw.
+    if (outcomeOf("pdf_header") === "found") return "application/pdf";
     // The sniffed type, which is more specific than "an image".
     const sniffed = outcomeOf("image_magic_bytes");
     return sniffed && sniffed.startsWith("image/") ? sniffed : "image/jpeg";

@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 8 October 2026 (decision 0683). A living document: what
+Last updated 8 October 2026 (decision 0684). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,18 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Scanned PDFs read well (0684)
+
+From Dan's first emailed scans:
+
+- A scan's own page JPEGs go to the model as they are.
+- The original is kept as a PDF, so the viewer shows it.
+- A table row with no amount no longer throws away every line.
+- `extraction.lineRows` and `linesKept` say what the model returned and
+  what was kept.
+
+Full reasoning is in decision 0684.
 
 ### Ordinary PDFs are read (0683)
 

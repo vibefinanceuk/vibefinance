@@ -1,19 +1,20 @@
 import { env } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
 import { applyTestSchema } from "./setup.js";
-import { readPdf, toGreyPng } from "../src/pdf-read.js";
+import { readPdf, toGreyPng, embeddedJpegs } from "../src/pdf-read.js";
 import { handleCaptureFromSource } from "../src/source-capture-route.js";
 import { handleGetInvoice, handleUpsertInvoice } from "../src/invoice-facts-route.js";
 import { handleCreateSource } from "../src/source-route.js";
 import { handleCreateIntakeChannel } from "../src/intake-channel-route.js";
 import { handleCreateProcess, handleCreateStage } from "../src/process-route.js";
-import { DIGITAL_INVOICE_PDF_B64, SCANNED_INVOICE_PDF_B64 } from "./fixtures/pdf-read-fixtures.js";
+import { DIGITAL_INVOICE_PDF_B64, SCANNED_INVOICE_PDF_B64, SCANNED_FLATE_JPEG_PDF_B64 } from "./fixtures/pdf-read-fixtures.js";
 import { PLAIN_NO_ATTACHMENT_B64 } from "./fixtures/pdf-fixtures.js";
 
 /** Decision 0683: an ordinary PDF read from its text, or from the picture of each page. */
 const fromBase64 = (b64: string) => Uint8Array.from(atob(b64.replace(/\s/g, "")), (c) => c.charCodeAt(0));
 const DIGITAL = () => fromBase64(DIGITAL_INVOICE_PDF_B64);
 const SCANNED = () => fromBase64(SCANNED_INVOICE_PDF_B64);
+const SCANNED_FLATE = () => fromBase64(SCANNED_FLATE_JPEG_PDF_B64);
 
 const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
 const pngSize = (png: Uint8Array) => {
@@ -55,14 +56,20 @@ describe("readPdf", () => {
     expect(read.pages[0]).toContain("Total GBP 120.00");
   });
 
-  it("turns a scanned PDF's page picture into a grey PNG", async () => {
+  it("hands over a scanned PDF's page JPEG as it is (decision 0684)", async () => {
     const read = await readPdf(SCANNED());
     expect(read.kind).toBe("images");
     if (read.kind !== "images") return;
     expect(read.images).toHaveLength(1);
-    const png = read.images[0];
-    expect([...png.slice(0, 8)]).toEqual(PNG_SIGNATURE);
-    expect(pngSize(png)).toEqual({ width: 620, height: 420, colourType: 0 });
+    expect([...read.images[0].slice(0, 2)]).toEqual([0xff, 0xd8]);
+  });
+
+  it("unwraps a page JPEG stored inside Flate, as Dan's scanner writes it (decision 0684)", async () => {
+    const jpegs = await embeddedJpegs(SCANNED_FLATE());
+    expect(jpegs).toHaveLength(1);
+    expect([...jpegs[0].slice(0, 2)]).toEqual([0xff, 0xd8]);
+    const read = await readPdf(SCANNED_FLATE());
+    expect(read.kind).toBe("images");
   });
 
   it("says when a PDF has neither text nor a page picture", async () => {
@@ -124,11 +131,14 @@ describe("an emailed ordinary PDF becomes an invoice with its fields", () => {
 
   it("reads a scanned PDF from its page picture, as a photograph", async () => {
     const { model, calls } = recordingModel();
-    const result = await handleCaptureFromSource(env.DB, "src-mail", SCANNED(), model);
+    const result = await handleCaptureFromSource(env.DB, "src-mail", SCANNED_FLATE(), model);
     expect(result.status).toBe(201);
     expect(calls).toHaveLength(1);
     expect(calls[0].images).toHaveLength(1);
-    expect(calls[0].images[0].contentType).toBe("image/png");
+    // Decision 0684: the scan's own JPEG, not a re-encoded PNG.
+    expect(calls[0].images[0].contentType).toBe("image/jpeg");
+    // Decision 0684: kept as the PDF it is, so the viewer can draw it.
+    expect((result.body as { document?: { contentType?: string } }).document?.contentType ?? "application/pdf").toBe("application/pdf");
     const facts = JSON.parse((await headerOf((result.body as { id: string }).id))!.facts_json);
     expect(facts["intake.read"]).toBe("pdf_images");
     expect(facts["BT-1"]).toBe("INV-7781");
@@ -166,3 +176,49 @@ describe("the viewer's 'could not be read' note (decision 0683)", () => {
     expect(await readable({ "intake.structure": "ordinary_pdf", "intake.read": "pdf_text" })).toBe(true);
   });
 });
+
+describe("lines from a scanned invoice (decision 0684)", () => {
+  beforeEach(async () => {
+    await applyTestSchema();
+    await handleCreateProcess(env.DB, { id: "p-ap", name: "AP" });
+    await handleCreateStage(env.DB, "p-ap", { id: "s-received", name: "Received", sequence: 1 });
+    await handleCreateSource(env.DB, "p-ap", { id: "src-mail", name: "AP mailbox", mechanism: "email" });
+    await handleCreateIntakeChannel(env.DB, "p-ap", { id: "ch-image", name: "Image", structure: "image" });
+  });
+
+  it("keeps the lines when the table has rows of text with no amount, and says what it kept", async () => {
+    const read = JSON.stringify({
+      invoiceNumber: "INV-1",
+      totalWithVat: 120,
+      lines: [
+        { description: "Courier service, same-day", amount: 75 },
+        { description: "London to Leeds, booked 30 Sep", amount: null },
+        { description: "Pallet wrap", amount: "25.00" },
+      ],
+      _confidence: 0.9,
+    });
+    const { model } = recordingModel(read);
+    const result = await handleCaptureFromSource(env.DB, "src-mail", SCANNED_FLATE(), model);
+    const id = (result.body as { id: string }).id;
+    const lines = await env.DB.prepare("SELECT description, amount FROM invoice_lines WHERE invoice_id = ? ORDER BY line_number").bind(id).all();
+    expect(lines.results).toEqual([{ description: "Courier service, same-day", amount: 75 }, { description: "Pallet wrap", amount: 25 }]);
+    const facts = JSON.parse((await env.DB.prepare("SELECT facts_json FROM invoice_headers WHERE id = ?").bind(id).first<{ facts_json: string }>())!.facts_json);
+    expect(facts["extraction.lineRows"]).toBe(3);
+    expect(facts["extraction.linesKept"]).toBe(2);
+  });
+
+  it("still drops every line when an amount is there and cannot be read", async () => {
+    const read = JSON.stringify({
+      invoiceNumber: "INV-2",
+      lines: [{ description: "A", amount: 75 }, { description: "B", amount: "about 25" }],
+      _confidence: 0.9,
+    });
+    const { model } = recordingModel(read);
+    const result = await handleCaptureFromSource(env.DB, "src-mail", SCANNED_FLATE(), model);
+    const id = (result.body as { id: string }).id;
+    const facts = JSON.parse((await env.DB.prepare("SELECT facts_json FROM invoice_headers WHERE id = ?").bind(id).first<{ facts_json: string }>())!.facts_json);
+    expect(facts["extraction.lineRows"]).toBe(2);
+    expect(facts["extraction.linesKept"]).toBe(0);
+  });
+});
+

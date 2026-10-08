@@ -1,8 +1,6 @@
 # 0683: Reading an ordinary PDF — its text, or the picture of each page
 
-**Status: built and tested locally, not yet pushed or deployed.** It is
-`vf-app` only, with no migration, and adds one dependency (`unpdf`).
-Deploy vf-app (after `npm install`).
+**Status: live** at `2ad1785`, pushed and deployed 8 October 2026.
 
 ## What was asked
 

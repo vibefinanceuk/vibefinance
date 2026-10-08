@@ -1,7 +1,6 @@
 # 0682: The receipt Timeline's cards wrap properly
 
-**Status: built and tested locally, not yet pushed or deployed.** It is
-`vf-ui` only, with no migration. Deploy vf-ui.
+**Status: live** at `2ad1785`, pushed and deployed 8 October 2026.
 
 ## What was asked
 
