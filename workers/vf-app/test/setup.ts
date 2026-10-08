@@ -153,6 +153,8 @@ import receiptTimelineSql from "../../../migrations/0146_receipt_timeline.sql?ra
 import receiptReadsSql from "../../../migrations/0147_receipt_conversation_reads.sql?raw";
 import oneHomeSql from "../../../migrations/0148_one_home_per_value.sql?raw";
 import inboundReadLaterSql from "../../../migrations/0149_inbound_read_later.sql?raw";
+import emailSizeLimitSql from "../../../migrations/0150_source_email_size_limit.sql?raw";
+import invoicePagesSql from "../../../migrations/0151_invoice_pages.sql?raw";
 
 // Another known divergence from production, on top of the one below:
 // D1's exec() splits its input by newline and executes each non-empty
@@ -204,7 +206,7 @@ const TABLES_IN_DROP_ORDER = [
   // route_messages, so both go first, invoice_documents before it.
   "route_alert_log", "route_alerts",
   // Supplier mappings (decision 0561): parts reference mappings, versions reference messages.
-  "partner_connector_copies", "outbound_mapping_versions", "destination_requests", "destination_deliveries", "connector_secrets", "source_keys", "route_message_items", "route_message_events", "route_message_parts", "supplier_mapping_versions", "supplier_mappings", "lookup_entries", "lookup_lists", "invoice_documents", "route_messages",
+  "partner_connector_copies", "outbound_mapping_versions", "destination_requests", "destination_deliveries", "connector_secrets", "source_keys", "route_message_items", "route_message_events", "route_message_parts", "supplier_mapping_versions", "supplier_mappings", "lookup_entries", "lookup_lists", "invoice_pages", "invoice_documents", "route_messages",
   // Routes, slice 3 (decision 0557): instances reference sources and processes.
   "route_instances", "route_versions", "routes",
   "erp_export_rows", "erp_export_invoices", "erp_exports", "invoice_line_coding_splits", "invoice_line_po_pairings", "cost_centre_gl_codes", "document_comments",
@@ -504,6 +506,8 @@ export async function applyTestSchema(): Promise<void> {
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(receiptReadsSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(oneHomeSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(inboundReadLaterSql)));
+  await env.DB.exec(toOneStatementPerLine(stripSqlComments(emailSizeLimitSql)));
+  await env.DB.exec(toOneStatementPerLine(stripSqlComments(invoicePagesSql)));
 }
 
 /**

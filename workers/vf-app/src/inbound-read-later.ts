@@ -1,4 +1,5 @@
 import type { ExtractionModel } from "./extraction.js";
+import type { PageShrinker } from "./page-shrink.js";
 import {
   captureAttachmentPart,
   markReceiving,
@@ -37,6 +38,8 @@ export interface ReadLaterDeps {
   bucket?: R2Bucket;
   customerId?: string;
   onFinished?: (messageId: string) => Promise<void>;
+  /** Decision 0690: makes a scan's pages smaller before reading. */
+  shrink?: PageShrinker;
 }
 
 /** How long a claim holds without being renewed: longer than one attachment can take. */
@@ -194,6 +197,7 @@ async function readOne(
         bucket: deps.bucket,
         customerId: deps.customerId,
         sender: m.counterparty ?? undefined,
+        shrink: deps.shrink,
       });
     } catch (err) {
       // An attachment that throws is failed with why, rather than tried again every five minutes.

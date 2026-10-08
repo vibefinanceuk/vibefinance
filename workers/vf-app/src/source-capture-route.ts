@@ -1,3 +1,4 @@
+import type { PageShrinker, WorkingPage } from "./page-shrink.js";
 import type { RouteResult } from "./org-route.js";
 import { deriveOrgUnit } from "./derive-org.js";
 import { renderPeppolDocument } from "./peppol-render.js";
@@ -186,7 +187,9 @@ async function retainOriginal(
     embeddedXml?: string;
   },
   issueDate?: string,
-  stored?: StoredPart
+  stored?: StoredPart,
+  /** Decision 0690: a scan's working pages, shown in place of the original. */
+  workingPages?: WorkingPage[]
 ): Promise<RetentionOutcome> {
   if (!bucket) return { retained: false, reason: "no R2 bucket is bound" };
   if (!customerId) return { retained: false, reason: "CUSTOMER_ID is not configured" };
@@ -263,6 +266,22 @@ async function retainOriginal(
       } catch {
         // A rendering that throws leaves the original retained and the
         // invoice usable, which is the whole point of doing it after.
+      }
+    }
+
+    /**
+     * **A scan's working pages — decision 0690.** One greyscale JPEG per
+     * page, no larger than 1600 pixels a side, with its size: what the
+     * model read, and what the viewer draws (retained pages come before
+     * the document). One image per page is what a lasso crops. The
+     * original stays as it arrived, in the Attachments tab. A failure
+     * here leaves the original shown, as before.
+     */
+    if (workingPages && workingPages.length > 0) {
+      try {
+        await storeWorkingPages(bucket, db, customerId, invoiceId, workingPages, issueDate);
+      } catch {
+        // The original is retained either way.
       }
     }
 
@@ -358,7 +377,9 @@ export async function handleCaptureFromSource(
    * this route's own path, unchanged: the channel, placement, supplier
    * matching, the process, retention.
    */
-  preRead?: PreRead
+  preRead?: PreRead,
+  /** Decision 0690: makes a scan's pages smaller (Cloudflare Images), where bound. */
+  shrink?: PageShrinker
 ): Promise<RouteResult> {
   const source = await db
     .prepare("SELECT id, process_id, name, default_org_unit_id FROM sources WHERE id = ?")
@@ -443,6 +464,8 @@ export async function handleCaptureFromSource(
   // see buildIntakeEnricher's own comment for why this exists.
   const enricher = buildIntakeEnricher(db, source);
 
+  // Decision 0690: the scan's working pages, when every page was made smaller.
+  let workingPages: WorkingPage[] | undefined;
   let result: RouteResult;
   if (preRead) {
     result = await capturePreRead(db, channel.id, preRead, idOverride, enricher);
@@ -473,7 +496,12 @@ export async function handleCaptureFromSource(
   } else {
     // Decision 0683: an ordinary PDF is read from its text or its page pictures; anything else is a picture.
     result = detection.pdf
-      ? await handleCaptureOrdinaryPdf(db, channel.id, bytes, model, idOverride, enricher)
+      ? await handleCaptureOrdinaryPdf(db, channel.id, bytes, model, idOverride, enricher, {
+          shrink,
+          onPages: (pages) => {
+            workingPages = pages;
+          },
+        })
       : await handleCaptureImage(db, channel.id, bytes, model, idOverride, enricher);
 
     /**
@@ -751,7 +779,7 @@ export async function handleCaptureFromSource(
   }
 
   const retention = invoiceId
-    ? await retainOriginal(bucket, db, customerId, invoiceId, bytes, detection, undefined, stored)
+    ? await retainOriginal(bucket, db, customerId, invoiceId, bytes, detection, undefined, stored, workingPages)
     : { retained: false, reason: "the handler returned no invoice id" };
 
   return withIntakeFacts(result, detection.structure, attempted, retention);
@@ -1220,4 +1248,30 @@ async function captureWithoutFacts(
       },
     },
   };
+}
+
+/** Decision 0690: each working page in R2 and `invoice_pages`, all or none. */
+async function storeWorkingPages(
+  bucket: R2Bucket,
+  db: D1Database,
+  customerId: string,
+  invoiceId: string,
+  pages: WorkingPage[],
+  issueDate?: string
+): Promise<void> {
+  const base = computeDocumentKey(customerId, invoiceId, "pages", issueDate).replace(/\.pages$/, "/pages");
+  const keys = pages.map((_, i) => `${base}/${i + 1}.jpg`);
+  for (const [i, page] of pages.entries()) {
+    await bucket.put(keys[i], page.bytes.slice().buffer as ArrayBuffer, { httpMetadata: { contentType: "image/jpeg" } });
+  }
+  await db.batch(
+    pages.map((page, i) =>
+      db
+        .prepare(
+          `INSERT INTO invoice_pages (id, invoice_id, page_number, r2_key, content_type, width, height, original_width, original_height)
+           VALUES (?, ?, ?, ?, 'image/jpeg', ?, ?, ?, ?)`
+        )
+        .bind(crypto.randomUUID(), invoiceId, i + 1, keys[i], page.width, page.height, page.originalWidth, page.originalHeight)
+    )
+  );
 }

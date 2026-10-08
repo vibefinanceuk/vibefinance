@@ -4994,6 +4994,12 @@
 .prfields .l { color: var(--text-muted); }
 .prfields .addr { font-weight: 600; }
 .prfields select { max-width: 360px; }
+/* Decision 0691: an Email source's size limit and its message to a sender. */
+.prfields.emaillimit { border-top: 1px solid var(--border); padding-top: 10px; margin-top: 12px; align-items: start; }
+.prfields.emaillimit .l { padding-top: 6px; }
+.prfields.emaillimit input.narrow { width: 80px; }
+.prfields.emaillimit textarea { width: 100%; max-width: 560px; font: inherit; }
+.prfields.emaillimit .inline { display: flex; align-items: center; gap: 10px; }
 .popout.praddpop { width: min(520px, 100%); }
 .rttable td:last-child { white-space: nowrap; }
 @media (max-width: 1200px) { .rtgrid { grid-template-columns: 1fr; } .rtchain { grid-template-columns: 1fr; } .rtpart:not(:last-child)::after { content: none; } }

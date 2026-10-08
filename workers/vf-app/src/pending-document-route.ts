@@ -313,15 +313,18 @@ export async function listRetainedPages(
   db: D1Database,
   invoiceId: string
 ): Promise<{ pageNumber: number; contentType: string }[]> {
+  // Decision 0690: and a scan's working pages (`invoice_pages`), shown in place of its PDF.
   const rows = await db
     .prepare(
       `SELECT p.page_number, p.content_type
        FROM pending_document_pages p
        JOIN pending_documents d ON d.id = p.pending_document_id
        WHERE d.invoice_id = ?
-       ORDER BY p.page_number`
+       UNION ALL
+       SELECT page_number, content_type FROM invoice_pages WHERE invoice_id = ?
+       ORDER BY 1`
     )
-    .bind(invoiceId)
+    .bind(invoiceId, invoiceId)
     .all<{ page_number: number; content_type: string }>();
   return rows.results.map((r) => ({ pageNumber: r.page_number, contentType: r.content_type }));
 }
@@ -347,9 +350,11 @@ export async function retainedPage(
       `SELECT p.content_type, p.r2_key
        FROM pending_document_pages p
        JOIN pending_documents d ON d.id = p.pending_document_id
-       WHERE d.invoice_id = ? AND p.page_number = ?`
+       WHERE d.invoice_id = ? AND p.page_number = ?
+       UNION ALL
+       SELECT content_type, r2_key FROM invoice_pages WHERE invoice_id = ? AND page_number = ?`
     )
-    .bind(invoiceId, pageNumber)
+    .bind(invoiceId, pageNumber, invoiceId, pageNumber)
     .first<{ content_type: string; r2_key: string }>();
   if (!row) return null;
 

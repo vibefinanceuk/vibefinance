@@ -1,6 +1,6 @@
 import { t } from "/strings.js";
 import { el, frame, topbar, setCurrentScreen } from "/tasks.js";
-import { actionLink } from "/viewer.js";
+import { actionLink, compactLink } from "/viewer.js";
 import { httpsSection } from "/https-keys.js";
 import { erpDeliveriesSection, httpsOutSection, sftpOutSection, unitsField, unitsSummary } from "/destinations.js";
 import { sftpInSection } from "/sftp-settings.js";
@@ -260,11 +260,72 @@ function sourcePanel(s) {
       el("div", { class: "l", text: t("processroutes.field.status") }),
       el("div", {}, sourceState(s, true)),
     ]),
+    // Decision 0691: the largest email accepted, and what a sender is told.
+    s.mechanism === "email" && s.status !== "retired" ? emailLimitSection(s) : null,
     // Decision 0578: an HTTPS source's address, keys, and how to send.
     s.mechanism === "https" ? httpsSection(s) : null,
     // Decision 0620: an SFTP source's server, folder, and Check now.
     s.mechanism === "sftp" && s.status !== "retired" ? sftpInSection(s) : null,
   ].filter(Boolean));
+}
+
+/**
+ * **What an Email source accepts — decision 0691.** The largest email, in
+ * MB (blank: the default), and this source's own message to a sender whose
+ * email is too large (blank: the default in Interface wording, shown here
+ * as the placeholder). Saved together.
+ */
+function emailLimitSection(s) {
+  // The server's default (DEFAULT_MAX_EMAIL_MB), applied when the field is blank.
+  const defaultMb = 10;
+  const limit = el("input", {
+    type: "number",
+    id: "email-limit-mb",
+    min: "1",
+    max: "25",
+    step: "1",
+    class: "narrow",
+    placeholder: String(defaultMb),
+    value: s.maxEmailMb == null ? "" : String(s.maxEmailMb),
+  });
+  const message = el("textarea", {
+    id: "email-reject-message",
+    rows: "3",
+    maxlength: "500",
+    placeholder: t("email.reject.toolarge"),
+  });
+  message.value = s.emailRejectMessage ?? "";
+  const note = el("div", { class: "muted sm", id: "email-limit-note" });
+  const save = compactLink("save", {
+    onclick: async () => {
+      note.textContent = "";
+      const mb = limit.value.trim();
+      const response = await fetch(`/api/sources/${encodeURIComponent(s.id)}/email-limit`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ maxEmailMb: mb === "" ? null : Number(mb), rejectMessage: message.value.trim() === "" ? null : message.value }),
+      }).catch(() => null);
+      if (!response || !response.ok) {
+        note.textContent = t("processroutes.emaillimit.failed");
+        return;
+      }
+      const body = await response.json().catch(() => ({}));
+      s.maxEmailMb = body.maxEmailMb ?? null;
+      s.emailRejectMessage = body.rejectMessage ?? null;
+      note.textContent = t("processroutes.emaillimit.saved");
+    },
+  });
+  return el("div", { class: "prfields emaillimit" }, [
+    el("div", { class: "l", text: t("processroutes.field.maxemail") }),
+    el("div", {}, [
+      el("div", { class: "inline" }, [limit, el("span", { class: "muted", text: " MB" })]),
+      el("div", { class: "muted sm", text: t("processroutes.maxemail.help").replace("{n}", String(defaultMb)) }),
+    ]),
+    el("div", { class: "l", text: t("processroutes.field.rejectmsg") }),
+    el("div", {}, [message, el("div", { class: "muted sm", text: t("processroutes.rejectmsg.help") })]),
+    el("div", { class: "l" }),
+    el("div", { class: "inline" }, [save, note]),
+  ]);
 }
 
 /**

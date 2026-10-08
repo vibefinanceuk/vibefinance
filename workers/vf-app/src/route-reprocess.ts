@@ -1,3 +1,4 @@
+import type { PageShrinker } from "./page-shrink.js";
 import type { RouteResult } from "./org-route.js";
 import type { ExtractionModel } from "./extraction.js";
 import { attachmentsOf, captureAttachmentPart } from "./inbound-email.js";
@@ -27,6 +28,8 @@ export interface ReprocessDeps {
   model: ExtractionModel;
   bucket?: R2Bucket;
   customerId?: string;
+  /** Decision 0690: makes a scan's pages smaller before reading. */
+  shrink?: PageShrinker;
 }
 
 interface MessageRow {
@@ -155,6 +158,7 @@ export async function handleReprocessMessage(
       customerId: deps.customerId,
       actor,
       sender: (m as { counterparty?: string | null }).counterparty ?? undefined,
+      shrink: deps.shrink,
     });
     if (!outcome.captured) reasons.push(outcome.why ? `${a.filename}: ${outcome.why}` : a.filename);
   }

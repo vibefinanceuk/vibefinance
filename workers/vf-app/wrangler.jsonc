@@ -29,6 +29,14 @@
     "binding": "AI"
   },
 
+  // Cloudflare Images (decision 0690): a scanned PDF's pages are made
+  // smaller and greyscale before the model reads them and the viewer
+  // shows them. Not in wrangler.test.jsonc, as AI is not: tests pass a
+  // fake shrinker. Images must be enabled on the account.
+  "images": {
+    "binding": "IMAGES"
+  },
+
   // The licensing contract (Blueprint build order step 4, "Subsystem
   // three"). See docs/decisions/0003-licensing-signed-token.md.
   //

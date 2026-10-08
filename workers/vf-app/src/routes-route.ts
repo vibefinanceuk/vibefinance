@@ -1,3 +1,4 @@
+import { DEFAULT_MAX_EMAIL_MB } from "./source-route.js";
 import { unitIdsOf } from "./destination-units.js";
 import { connectorOfInstance } from "@vibefinance/shared";
 import { connectorLibrary } from "./partner-library.js";
@@ -249,6 +250,10 @@ export async function handleProcessRoutes(
         status: s.status ?? "active",
         emailAddress: s.email_address ?? null,
         emailRouting: s.email_routing ?? "not_configured",
+        // Decision 0691: the largest email accepted; null is the default.
+        maxEmailMb: s.max_email_mb ?? null,
+        effectiveMaxEmailMb: (s.max_email_mb as number | null) ?? DEFAULT_MAX_EMAIL_MB,
+        emailRejectMessage: s.email_reject_message ?? null,
         defaultOrgUnitId: s.default_org_unit_id ?? null,
         routeId: s.route_id,
         routeName: s.route_name,

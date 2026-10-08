@@ -1,3 +1,5 @@
+import { BUILTIN_TOO_LARGE_MESSAGE, DEFAULT_MAX_EMAIL_MB, fillRejectMessage } from "./source-route.js";
+import type { PageShrinker } from "./page-shrink.js";
 import { handleCaptureFromSource } from "./source-capture-route.js";
 import { detectStructure } from "./detect-structure.js";
 import { decodeText } from "@vibefinance/shared";
@@ -98,11 +100,11 @@ export interface EmailMessage {
 async function sourceFor(db: D1Database, address: string) {
   return db
     .prepare(
-      `SELECT id, name, status, email_routing FROM sources
+      `SELECT id, name, status, email_routing, max_email_mb, email_reject_message FROM sources
        WHERE email_address = ? AND mechanism = 'email'`
     )
     .bind(address.toLowerCase())
-    .first<{ id: string; name: string; status: string; email_routing: string }>();
+    .first<{ id: string; name: string; status: string; email_routing: string; max_email_mb: number | null; email_reject_message: string | null }>();
 }
 
 /**
@@ -369,6 +371,8 @@ interface CapturePartArgs {
   actor?: string;
   /** Who sent it, which a supplier mapping may name (0561). */
   sender?: string;
+  /** Decision 0690: makes a scan's pages smaller before reading. */
+  shrink?: PageShrinker;
 }
 
 /** One file, one invoice: the path every attachment took before 0577. */
@@ -386,7 +390,9 @@ async function captureOnePart(
     args.bucket,
     args.customerId,
     stored,
-    args.sender
+    args.sender,
+    undefined,
+    args.shrink
   );
   const read = result.body as
     | {
@@ -469,6 +475,14 @@ export interface InboundOptions {
    * failure and sent the same email again every five minutes.
    */
   readLater?: boolean;
+  /** Decision 0690: makes a scan's pages smaller before reading. */
+  shrink?: PageShrinker;
+  /**
+   * **The default "too large" wording — decision 0691**, from Interface
+   * wording (`email.reject.toolarge`). A source's own message overrides
+   * it; where neither is available the built-in English is used.
+   */
+  tooLargeMessage?: () => Promise<string | null>;
 }
 
 /**
@@ -513,7 +527,8 @@ async function receiveInboundEmail(
   const identity = await emailIdentity(raw, rawBytes);
   if (source) {
     const earlier = await db
-      .prepare("SELECT id FROM route_messages WHERE instance_id = ? AND email_message_id = ? ORDER BY received_at LIMIT 1")
+      // Decision 0691: not one refused at the gateway (too large), which a sender may send again.
+      .prepare("SELECT id FROM route_messages WHERE instance_id = ? AND email_message_id = ? AND failed_part IS NOT 'gateway' ORDER BY received_at LIMIT 1")
       .bind(source.id, identity)
       .first<{ id: string }>()
       .catch(() => null);
@@ -546,6 +561,34 @@ async function receiveInboundEmail(
   if (messageId && source) {
     await db.prepare("UPDATE route_messages SET email_message_id = ? WHERE id = ?").bind(identity, messageId).run().catch(() => undefined);
   }
+  /**
+   * **Too large for this address — decision 0691.** Refused while it
+   * arrives, before anything is stored or read: the sender's mail system
+   * returns our message to them. The limit is the source's own, else 10
+   * MB; the message the source's own, else Interface wording's default.
+   */
+  if (source && source.status !== "retired") {
+    const limitMb = source.max_email_mb ?? DEFAULT_MAX_EMAIL_MB;
+    if (rawBytes.length > limitMb * 1024 * 1024) {
+      const sizeMb = rawBytes.length / (1024 * 1024);
+      let template = source.email_reject_message;
+      if (!template && options.tooLargeMessage) template = await options.tooLargeMessage().catch(() => null);
+      const text = fillRejectMessage(template || BUILTIN_TOO_LARGE_MESSAGE, sizeMb, limitMb);
+      await record(db, message, "rejected", "too_large", source.id);
+      if (messageId) {
+        await addRouteEvent(db, messageId, "original_not_stored", { detail: "too large to accept" });
+        await finishRouteMessage(db, messageId, {
+          status: "failed",
+          failedPart: "gateway",
+          errorCode: "too_large",
+          errorText: `The email was ${sizeMb.toFixed(1)} MB; ${source.name} accepts up to ${limitMb} MB. The sender was told: ${text}`.slice(0, 1000),
+        });
+      }
+      message.setReject(text);
+      return { id: messageId };
+    }
+  }
+
   const canStore = !!(messageId && source && bucket && customerId);
   if (messageId && source) {
     if (canStore) {
@@ -687,6 +730,7 @@ async function receiveInboundEmail(
       bucket,
       customerId,
       sender: message.from,
+      shrink: options.shrink,
     });
     if (!outcome.captured) failures.push(outcome.why ? `${attachment.filename}: ${outcome.why}` : attachment.filename);
     // Decision 0577: a CSV of several invoices where some were not made is only partly delivered.

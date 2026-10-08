@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 8 October 2026 (decision 0689). A living document: what
+Last updated 8 October 2026 (decision 0691). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,24 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### An Email source's size limit, and a polite refusal (0691)
+
+Each Email source has a largest email (default 10 MB, up to 25) and, if wanted,
+its own message to a sender whose email is too large. The default message is
+`email.reject.toolarge` in Interface wording. Too large is refused as it
+arrives, as a bounce, and nothing is stored.
+
+Full reasoning is in decision 0691.
+
+### Scanned PDFs read and shown from smaller working pages (0690)
+
+Cloudflare Images makes each page of a scan greyscale and no more than 1600 px.
+Those pages are read and shown, and kept one image per page with their sizes
+(`invoice_pages`), ready for a lasso. The original PDF is kept unchanged, in
+the Attachments tab.
+
+Full reasoning is in decision 0690.
 
 ### A rules-model failure is said, not hung on (0689)
 

@@ -1,3 +1,4 @@
+import { shrinkPages, sizeText, type PageShrinker, type WorkingPage } from "./page-shrink.js";
 import { readPdf } from "./pdf-read.js";
 import type { InvoiceFacts } from "@vibefinance/shared";
 import { formatFacts, readInvoiceXml, UblParseError, type ReadInvoiceXml } from "@vibefinance/shared";
@@ -705,13 +706,31 @@ export async function handleCaptureOrdinaryPdf(
   bytes: Uint8Array,
   model: ExtractionModel,
   idOverride?: string,
-  enrichFacts?: CaptureIntakeBody["enrichFacts"]
+  enrichFacts?: CaptureIntakeBody["enrichFacts"],
+  /**
+   * **A smaller working copy — decision 0690.** `shrink` makes each page
+   * of a scan smaller (Cloudflare Images); the smaller pages are read, and
+   * handed to `onPages` to be kept as the invoice's working pages.
+   */
+  smaller: { shrink?: PageShrinker; onPages?: (pages: WorkingPage[]) => void } = {}
 ): Promise<RouteResult> {
   const customFields = await loadCustomFields(db);
   const vocabulary = resolveVocabulary("invoice", customFields);
   const settings = await loadExtractionSettings(db, channelId);
 
   const read = await readPdf(bytes);
+  const reducedFacts: Record<string, string> = {};
+  if (read.kind === "images" && smaller.shrink) {
+    const result = await shrinkPages(read.images, smaller.shrink);
+    // Whatever was made smaller is read smaller, even when not every page was.
+    read.images = result.pages;
+    if (result.shrunk) {
+      reducedFacts["intake.reduced"] = `${result.pages.length} page${result.pages.length === 1 ? "" : "s"}, ${sizeText(result.bytesBefore)} to ${sizeText(result.bytesAfter)}`;
+      smaller.onPages?.(result.working);
+    } else {
+      reducedFacts["intake.reduced"] = `not reduced: ${result.reason}`;
+    }
+  }
   let extraction: ExtractionResult;
   let how: string;
   try {
@@ -731,7 +750,7 @@ export async function handleCaptureOrdinaryPdf(
     }
     throw err;
   }
-  return captureExtracted(db, channelId, extraction, idOverride, enrichFacts, { "intake.structure": "ordinary_pdf", "intake.read": how }, { documentPath: how.startsWith("pdf_text") ? "pdf-text-extraction" : "pdf-image-extraction" });
+  return captureExtracted(db, channelId, extraction, idOverride, enrichFacts, { "intake.structure": "ordinary_pdf", "intake.read": how, ...reducedFacts }, { documentPath: how.startsWith("pdf_text") ? "pdf-text-extraction" : "pdf-image-extraction" });
 }
 
 /**

@@ -194,7 +194,7 @@ import {
   handleSetRuleNameTranslation,
 } from "./rules-list-route.js";
 import { handleInvoiceProgress } from "./invoice-progress-route.js";
-import { handleSetSourceOrg } from "./source-route.js";
+import { handleSetSourceOrg, handleSetSourceEmailLimit } from "./source-route.js";
 import {
   handleLoadSuppliers,
   handleListSuppliers,
@@ -236,6 +236,7 @@ import { handleCaptureFromSource } from "./source-capture-route.js";
 import { handleInboundEmail, handleListInboundEmail, type EmailMessage } from "./inbound-email.js";
 import { handleGetRouteMessage, handleListRouteMessages, routeMessagePart } from "./route-monitor-route.js";
 import { readQueuedInbound } from "./inbound-read-later.js";
+import { imagesShrinker } from "./page-shrink.js";
 import { handleDeleteDestination, handleListRoutes, handleProcessRoutes, handleRenameDestination, handleRetireDestination, handleSetInstanceStatus } from "./routes-route.js";
 import { handleDismissMessage, handleReprocessMessage } from "./route-reprocess.js";
 import {
@@ -399,6 +400,12 @@ export interface Env {
    * why this isn't required the way DB is.
    */
   DOCUMENTS?: R2Bucket;
+  /**
+   * Cloudflare Images — decision 0690. Makes a scanned PDF's pages
+   * smaller and greyscale before they are read and shown. Optional:
+   * without it, pages are read as they arrived.
+   */
+  IMAGES?: ImagesBinding;
   /**
    * Signs short-lived document URLs (decision 0073). A secret, set with
    * `wrangler secret put`, never a var — decision 0012's incident is
@@ -1371,6 +1378,27 @@ export default {
     }
 
 
+    // The largest email an Email source accepts — decision 0691.
+    {
+      const match = pathname.match(/^\/sources\/([^/]+)\/email-limit$/);
+      if (match && request.method === "PUT") {
+        const { db } = resolveTenant(request, env);
+        const auth = await authenticatePerson(db, request, env);
+        if (!auth.user) return json({ error: auth.reason }, 401);
+        if (!(await hasPermission(db, auth.user.id, "Admin.Configure"))) {
+          return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
+        }
+        let body: Record<string, unknown>;
+        try {
+          body = (await request.json()) as Record<string, unknown>;
+        } catch {
+          return json({ error: t("invalidJsonBody", resolveLocale(env.LOCALE)) }, 400);
+        }
+        const result = await handleSetSourceEmailLimit(db, decodeURIComponent(match[1]), body);
+        return json(result.body, result.status);
+      }
+    }
+
     // Finding one of our own units, and re-routing — decision 0224.
     if (pathname === "/org/units/search" && request.method === "GET") {
       const { db } = resolveTenant(request, env);
@@ -2194,7 +2222,7 @@ export default {
       const body = request.method === "GET" || request.method === "DELETE" ? {} : ((await request.json().catch(() => ({}))) as Record<string, unknown>);
       const reprocessDeps = () => {
         if (!env.AI) return null;
-        return { model: createWorkersAiExtractionModel(env.AI, env.EXTRACTION_MODEL_ID), bucket: documents, customerId: env.CUSTOMER_ID };
+        return { model: createWorkersAiExtractionModel(env.AI, env.EXTRACTION_MODEL_ID), bucket: documents, customerId: env.CUSTOMER_ID, shrink: imagesShrinker(env.IMAGES) };
       };
       if (pathname === "/route-messages/reprocess" && request.method === "POST") {
         const deps = reprocessDeps();
@@ -5843,7 +5871,12 @@ export default {
         // captures; it reports that the original was not retained
         // rather than refusing the document (decision 0068).
         documents,
-        env.CUSTOMER_ID
+        env.CUSTOMER_ID,
+        undefined,
+        undefined,
+        undefined,
+        // Decision 0690: a scan's pages made smaller before reading.
+        imagesShrinker(env.IMAGES)
       );
       return json(result.body, result.status);
     }
@@ -7186,7 +7219,13 @@ export default {
       // Decision 0559: tell whoever asked, if it failed.
       (messageId) => notifyMessageFinished(env.DB!, alertTransport(env), messageId),
       // Decision 0687: accept once stored, and read on the five-minute cron.
-      { readLater: true }
+      // Decision 0690: a scan read inline (storage failed) is made smaller too.
+      {
+        readLater: true,
+        shrink: imagesShrinker(env.IMAGES),
+        // Decision 0691: the default "too large" wording, as Interface wording keeps it.
+        tooLargeMessage: () => uiString(env, "email.reject.toolarge"),
+      }
     );
   },
   /* eslint-enable no-restricted-properties */
@@ -7232,6 +7271,7 @@ export default {
             bucket: documents,
             customerId: env.CUSTOMER_ID,
             onFinished: (messageId) => notifyMessageFinished(db, alertTransport(env), messageId),
+            shrink: imagesShrinker(env.IMAGES),
           });
         }
       } catch {
@@ -7306,3 +7346,19 @@ export default {
     }
   },
 };
+
+/**
+ * **One of Interface wording's strings, server-side — decision 0691.** Read
+ * from vf-licence's `GET /ui-strings` (unauthenticated: the words on a
+ * public sign-in page) through the service binding, in this environment's
+ * language. Null where it cannot be reached, so the caller falls back.
+ */
+async function uiString(env: Env, key: string): Promise<string | null> {
+  if (!env.LICENCE_SERVICE) return null;
+  const locale = encodeURIComponent(env.LOCALE ?? "en");
+  const response = await env.LICENCE_SERVICE.fetch(new Request(`https://vf-licence/ui-strings?locale=${locale}`));
+  if (!response.ok) return null;
+  const body = (await response.json()) as { strings?: Record<string, string> };
+  const value = body.strings?.[key];
+  return typeof value === "string" && value.trim() !== "" ? value : null;
+}

@@ -827,3 +827,62 @@ export async function handleSetSourceOrg(
 
   return { status: 200, body: { sourceId, orgUnitId: unitId } };
 }
+
+/** Decision 0691: the largest email an Email source accepts when none is set, and the most that can be set. */
+export const DEFAULT_MAX_EMAIL_MB = 10;
+export const CEILING_MAX_EMAIL_MB = 25;
+export const MAX_REJECT_MESSAGE_CHARS = 500;
+
+/**
+ * `PUT /sources/:id/email-limit` — **what an Email source accepts, and
+ * what a sender is told — decision 0691.**
+ *
+ * - `maxEmailMb`: 1–25, or `null` for the default (10 MB).
+ * - `rejectMessage`: this source's own wording, overriding the default in
+ *   Interface wording; `null` or blank uses the default. `{size}` and
+ *   `{limit}` are filled in.
+ *
+ * Either may be left out to keep what is set. Email sources only.
+ */
+export async function handleSetSourceEmailLimit(
+  db: D1Database,
+  sourceId: string,
+  body: Record<string, unknown>
+): Promise<RouteResult> {
+  const source = await db
+    .prepare("SELECT mechanism, max_email_mb, email_reject_message FROM sources WHERE id = ?")
+    .bind(sourceId)
+    .first<{ mechanism: string; max_email_mb: number | null; email_reject_message: string | null }>();
+  if (!source) return { status: 404, body: { error: `source ${sourceId} does not exist` } };
+  if (source.mechanism !== "email") return { status: 409, body: { error: "only an Email source receives emails", reason: "not_email" } };
+
+  let limit = source.max_email_mb;
+  if ("maxEmailMb" in body) {
+    const value = body.maxEmailMb;
+    if (value !== null && (typeof value !== "number" || !Number.isInteger(value) || value < 1 || value > CEILING_MAX_EMAIL_MB)) {
+      return { status: 400, body: { error: `maxEmailMb must be a whole number from 1 to ${CEILING_MAX_EMAIL_MB}, or null for the default`, reason: "out_of_range" } };
+    }
+    limit = value as number | null;
+  }
+  let message = source.email_reject_message;
+  if ("rejectMessage" in body) {
+    const value = body.rejectMessage;
+    if (value !== null && typeof value !== "string") return { status: 400, body: { error: "rejectMessage must be text, or null for the default", reason: "not_text" } };
+    const text = typeof value === "string" ? value.replace(/\s+/g, " ").trim() : "";
+    if (text.length > MAX_REJECT_MESSAGE_CHARS) {
+      return { status: 400, body: { error: `rejectMessage may be at most ${MAX_REJECT_MESSAGE_CHARS} characters`, reason: "too_long" } };
+    }
+    message = text === "" ? null : text;
+  }
+  await db.prepare("UPDATE sources SET max_email_mb = ?, email_reject_message = ? WHERE id = ?").bind(limit, message, sourceId).run();
+  return { status: 200, body: { sourceId, maxEmailMb: limit, effectiveMb: limit ?? DEFAULT_MAX_EMAIL_MB, rejectMessage: message } };
+}
+
+/** The default wording when Interface wording cannot be reached (decision 0691). */
+export const BUILTIN_TOO_LARGE_MESSAGE =
+  "Thank you for your email. We could not process it because it is {size} MB, larger than the {limit} MB this address accepts. Please send it again as smaller emails, for example one invoice per email.";
+
+/** The message with {size} and {limit} filled in, on one line. */
+export function fillRejectMessage(template: string, sizeMb: number, limitMb: number): string {
+  return template.replace(/\{size\}/g, sizeMb.toFixed(1)).replace(/\{limit\}/g, String(limitMb)).replace(/\s+/g, " ").trim();
+}
