@@ -156,6 +156,7 @@ import inboundReadLaterSql from "../../../migrations/0149_inbound_read_later.sql
 import emailSizeLimitSql from "../../../migrations/0150_source_email_size_limit.sql?raw";
 import invoicePagesSql from "../../../migrations/0151_invoice_pages.sql?raw";
 import growingIndexesSql from "../../../migrations/0152_indexes_for_growing_tables.sql?raw";
+import processEndsSql from "../../../migrations/0153_process_ends_follow_current_version.sql?raw";
 
 // Another known divergence from production, on top of the one below:
 // D1's exec() splits its input by newline and executes each non-empty
@@ -510,6 +511,7 @@ export async function applyTestSchema(): Promise<void> {
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(emailSizeLimitSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(invoicePagesSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(growingIndexesSql)));
+  await env.DB.exec(toOneStatementPerLine(stripSqlComments(processEndsSql)));
 }
 
 /**

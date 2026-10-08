@@ -492,7 +492,26 @@ export async function handlePublishDraft(db: D1Database, processId: string): Pro
     return { status: 422, body: { error: "there is no draft to publish" } };
   }
 
-  await db.prepare("UPDATE processes SET version = ? WHERE id = ?").bind(draftVersion, processId).run();
+  /**
+   * **And its ends with it — decision 0694.** Sources deliver to a
+   * process's entry stage and Destinations read from its exit stage
+   * (0557): its first and last stage. They were stored once, by migration
+   * 0107, and nothing moved them, so Supplier Maintenance kept Review as
+   * both after Intake and Complete were added around it. Publishing a
+   * version now sets them to that version's first and last stage, the
+   * same stage a new instance already starts at (`handleCreateProcessInstance`).
+   */
+  await db.batch([
+    db.prepare("UPDATE processes SET version = ? WHERE id = ?").bind(draftVersion, processId),
+    db
+      .prepare(
+        `UPDATE processes SET
+           entry_stage_id = (SELECT stage_id FROM process_stage_versions WHERE process_id = ?1 AND version = ?2 ORDER BY sequence ASC LIMIT 1),
+           exit_stage_id = (SELECT stage_id FROM process_stage_versions WHERE process_id = ?1 AND version = ?2 ORDER BY sequence DESC LIMIT 1)
+         WHERE id = ?1`
+      )
+      .bind(processId, draftVersion),
+  ]);
 
   return { status: 200, body: { id: processId, version: draftVersion } };
 }

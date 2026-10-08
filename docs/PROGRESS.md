@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 8 October 2026 (decision 0693). A living document: what
+Last updated 8 October 2026 (decision 0694). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,15 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### A process's entry and exit stages follow the version published (0694)
+
+They were stored once (migration 0107) and never moved, so Supplier
+Maintenance showed Review as both after Intake and Complete were added.
+Publishing now sets them to the new first and last stage; migration 0153
+re-syncs every process.
+
+Full reasoning is in decision 0694.
 
 ### The Tasks search finds what the card shows (0693)
 

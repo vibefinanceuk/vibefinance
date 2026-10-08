@@ -876,3 +876,29 @@ describe("process routes, gated for the first time — decision 0349 — reorder
     expect(discardRes.status).toBe(200);
   });
 });
+
+describe("a process's ends follow the version published (decision 0694)", () => {
+  beforeEach(applyTestSchema);
+
+  it("moves entry and exit to the new first and last stage when stages are added around the old one", async () => {
+    const { processEnds } = await import("../src/process-ends.js");
+    // Supplier Maintenance as it was: one stage, stored as both ends (as migration 0107 left it).
+    await handleCreateProcess(env.DB, { id: "sm", name: "Supplier Maintenance" });
+    await handleCreateStage(env.DB, "sm", { id: "sm-review", name: "Review", sequence: 1 });
+    await env.DB.prepare("UPDATE processes SET entry_stage_id = 'sm-review', exit_stage_id = 'sm-review' WHERE id = 'sm'").run();
+
+    // Intake added and dragged first, Complete added last, then published.
+    await handleAddDraftStage(env.DB, "sm", { id: "sm-intake", name: "Intake" });
+    await handleAddDraftStage(env.DB, "sm", { id: "sm-complete", name: "Complete" });
+    expect((await handleReorderDraftStages(env.DB, "sm", ["sm-intake", "sm-review", "sm-complete"])).status).toBe(200);
+    // Before publishing, the live version is unchanged.
+    expect(await processEnds(env.DB, "sm")).toMatchObject({ entryStageId: "sm-review", exitStageId: "sm-review" });
+
+    expect((await handlePublishDraft(env.DB, "sm")).status).toBe(200);
+    const ends = await processEnds(env.DB, "sm");
+    expect(ends.stages.map((s) => s.id)).toEqual(["sm-intake", "sm-review", "sm-complete"]);
+    expect(ends).toMatchObject({ entryStageId: "sm-intake", exitStageId: "sm-complete" });
+    const stored = await env.DB.prepare("SELECT entry_stage_id, exit_stage_id FROM processes WHERE id = 'sm'").first();
+    expect(stored).toEqual({ entry_stage_id: "sm-intake", exit_stage_id: "sm-complete" });
+  });
+});
