@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 8 October 2026 (decision 0692). A living document: what
+Last updated 8 October 2026 (decision 0693). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,15 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### The Tasks search finds what the card shows (0693)
+
+It searched only stage, supplier name and the raw amount, so the invoice
+number, the VAT number (shown when a scan has no supplier name) and amounts as
+the card writes them ("2,595.31", "250.00") found nothing. All are searched
+now, plus the PO number and the matched supplier's name.
+
+Full reasoning is in decision 0693.
 
 ### Indexes for the tables that grow with every invoice (0692)
 

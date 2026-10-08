@@ -294,6 +294,7 @@ import supplierTemplateStringsSql from "../migrations/0303_supplier_csv_template
 import timelineLabelStringsSql from "../migrations/0304_timeline_entry_labels.sql?raw";
 import inboundReadLaterStringsSql from "../migrations/0305_inbound_read_later_strings.sql?raw";
 import emailSizeLimitStringsSql from "../migrations/0306_email_size_limit_strings.sql?raw";
+import taskSearchHintSql from "../migrations/0307_task_search_hint.sql?raw";
 
 function stripSqlComments(sql: string): string {
   return sql
@@ -621,5 +622,6 @@ export async function applyTestSchema(): Promise<void> {
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(timelineLabelStringsSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(inboundReadLaterStringsSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(emailSizeLimitStringsSql)));
+  await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(taskSearchHintSql)));
 
 }

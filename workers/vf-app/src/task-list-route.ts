@@ -400,7 +400,46 @@ function normalizePage(requested: number | undefined): number {
 function taskSearchPattern(search: string | null | undefined): string | null {
   const term = search?.trim();
   if (!term) return null;
-  return `%${term.replace(/[\\%_]/g, "\\$&")}%`;
+  const like = (value: string) => `%${value.replace(/[\\%_]/g, "\\$&")}%`;
+  /**
+   * **What the card shows, as it shows it — decision 0693.** One bound
+   * value (`?8`) carrying three forms of the term, so the numbered
+   * placeholders after it stay where they are:
+   * - `text`: as typed;
+   * - `compact`: without spaces, for a VAT number shown as "GB 126 7764 47";
+   * - `amount`: the term read as money ("£2,595.31", "2.595,31", "250"),
+   *   matched against the total with two decimals, as the card shows it.
+   */
+  const amount = searchAmount(term);
+  return JSON.stringify({
+    text: like(term),
+    compact: like(term.replace(/\s+/g, "")),
+    amount: amount === null ? null : like(amount),
+  });
+}
+
+/**
+ * The search term as an amount with a dot for its decimals ("2595.31"), or
+ * null when it is not one. Grouping and currency are dropped; where both a
+ * comma and a dot appear, the later one is the decimal mark; a lone comma
+ * followed by one or two digits is a decimal comma ("579,84").
+ */
+export function searchAmount(term: string): string | null {
+  const s = term.replace(/^[A-Z]{3}|[A-Z]{3}$/gi, "").replace(/[\s\u00a0£€$¥]/g, "");
+  if (!/^\d[\d.,]*$/.test(s)) return null;
+  const dot = s.lastIndexOf(".");
+  const comma = s.lastIndexOf(",");
+  let n: string;
+  if (dot >= 0 && comma >= 0) {
+    n = dot > comma ? s.replace(/,/g, "") : s.replace(/\./g, "").replace(",", ".");
+  } else if (comma >= 0) {
+    n = /,\d{1,2}$/.test(s) && s.split(",").length === 2 ? s.replace(",", ".") : s.replace(/,/g, "");
+  } else if ((s.match(/\./g) ?? []).length > 1) {
+    n = s.replace(/\./g, "");
+  } else {
+    n = s;
+  }
+  return /^\d+(\.\d*)?$/.test(n) ? n.replace(/\.$/, "") : null;
 }
 
 export async function handleListMyTasks(
@@ -597,16 +636,25 @@ export async function handleListMyTasks(
          )
          -- The org-focus narrowing computed above.
          AND (h.org_unit_id IS NULL OR ?6 = 0 OR h.org_unit_id IN (SELECT value FROM json_each(?7)))
-         -- Free-text search, decision 0449: stage name, supplier name
-         -- (the same BT-27 fact the row itself displays via
-         -- sellerNameOf() below — no supplier-table join needed, since
-         -- nothing shown here comes from one), and amount.
+         -- Free-text search, decisions 0449 and 0693: whatever the card
+         -- shows, as it shows it. The stage; the invoice number (the
+         -- card's heading); the supplier's name, from the invoice (BT-27)
+         -- or the supplier it was matched to; its VAT number, shown when
+         -- there is no name, with or without spaces; the purchase order
+         -- number; a goods receipt's number; and the amount, with two
+         -- decimals and read from "£2,595.31" as typed.
          AND (
            ?8 IS NULL
            OR (
-             s.name LIKE ?8 ESCAPE '\\'
-             OR json_extract(h.facts_json, '$."BT-27"') LIKE ?8 ESCAPE '\\'
-             OR CAST(h.total_with_vat AS TEXT) LIKE ?8 ESCAPE '\\'
+             s.name LIKE json_extract(?8, '$.text') ESCAPE '\\'
+             OR h.invoice_number LIKE json_extract(?8, '$.text') ESCAPE '\\'
+             OR json_extract(h.facts_json, '$."BT-27"') LIKE json_extract(?8, '$.text') ESCAPE '\\'
+             OR (SELECT sp.name FROM suppliers sp WHERE sp.id = h.supplier_id) LIKE json_extract(?8, '$.text') ESCAPE '\\'
+             OR replace(h.supplier_vat_id, ' ', '') LIKE json_extract(?8, '$.compact') ESCAPE '\\'
+             OR json_extract(h.facts_json, '$."BT-13"') LIKE json_extract(?8, '$.text') ESCAPE '\\'
+             OR gr.receipt_number LIKE json_extract(?8, '$.text') ESCAPE '\\'
+             OR (json_extract(?8, '$.amount') IS NOT NULL
+                 AND printf('%.2f', h.total_with_vat) LIKE json_extract(?8, '$.amount') ESCAPE '\\')
            )
          )
          -- One task by id, decision 0573.

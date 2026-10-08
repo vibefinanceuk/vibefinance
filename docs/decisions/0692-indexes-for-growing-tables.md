@@ -1,6 +1,6 @@
 # 0692: Indexes for the tables that grow with every invoice
 
-**Status: built**, in bundle 0992. vf-app migration
+**Status: live** at `33b11f4`, pushed and deployed 8 October 2026, migration applied. vf-app migration
 `0152_indexes_for_growing_tables.sql` (indexes only) and one query in
 `usage.ts`.
 

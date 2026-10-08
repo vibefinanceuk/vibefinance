@@ -776,10 +776,10 @@ describe("searching — real SQL, decision 0449", () => {
   });
 
   /**
-   * **The same three fields the row itself shows** — stage name,
-   * supplier (the BT-27 fact `sellerNameOf()` already reads), and
-   * amount. Invoice number is deliberately not one of them: this
-   * screen has never selected or displayed it, unlike Documents.
+   * **What the row shows** — stage name, supplier (the BT-27 fact
+   * `sellerNameOf()` reads), and amount (0449); and since decision 0693
+   * the invoice number (now the card's heading), the VAT number shown
+   * when there is no name, and the amount as the card formats it.
    */
   it("finds by stage name", async () => {
     await grant("alice", ["AP.Validate", "AP.Approve"]);
@@ -814,6 +814,64 @@ describe("searching — real SQL, decision 0449", () => {
 
     const result = await handleListMyTasks(env.DB, "alice", { search: "251.88" });
     expect((result.body as { tasks: TaskRow[] }).tasks.map((t) => t.id)).toEqual(["t-1"]);
+  });
+
+  it("finds by invoice number, the card's heading (decision 0693)", async () => {
+    await seedInstance("inv-1", "validation", "v-1");
+    await seedInstance("inv-2", "validation", "v-2");
+    await seedTask("t-1", "validation", "v-1", { user: "alice" });
+    await seedTask("t-2", "validation", "v-2", { user: "alice" });
+    await setInvoiceFacts("inv-1", { "BT-1": "197291" });
+    await setInvoiceFacts("inv-2", { "BT-1": "2157829" });
+
+    const result = await handleListMyTasks(env.DB, "alice", { search: "1972" });
+    expect((result.body as { tasks: TaskRow[] }).tasks.map((t) => t.id)).toEqual(["t-1"]);
+  });
+
+  it("finds by the VAT number shown when there is no name, with or without its spaces (decision 0693)", async () => {
+    await seedInstance("inv-1", "validation", "v-1");
+    await seedInstance("inv-2", "validation", "v-2");
+    await seedTask("t-1", "validation", "v-1", { user: "alice" });
+    await seedTask("t-2", "validation", "v-2", { user: "alice" });
+    await setInvoiceFacts("inv-1", { "BT-31": "GB 126 7764 47" });
+    await setInvoiceFacts("inv-2", { "BT-31": "GB 927351812" });
+
+    for (const term of ["GB 126 7764 47", "gb126776447", "7764 47"]) {
+      const result = await handleListMyTasks(env.DB, "alice", { search: term });
+      expect((result.body as { tasks: TaskRow[] }).tasks.map((t) => t.id), term).toEqual(["t-1"]);
+    }
+  });
+
+  it("finds by the amount as the card shows it, grouped, with a symbol, or in German (decision 0693)", async () => {
+    await seedInstance("inv-1", "validation", "v-1");
+    await seedInstance("inv-2", "validation", "v-2");
+    await seedTask("t-1", "validation", "v-1", { user: "alice" });
+    await seedTask("t-2", "validation", "v-2", { user: "alice" });
+    await setInvoiceAmount("inv-1", 2595.31);
+    await setInvoiceAmount("inv-2", 250);
+
+    const ids = async (term: string) => ((await handleListMyTasks(env.DB, "alice", { search: term })).body as { tasks: TaskRow[] }).tasks.map((t) => t.id);
+    expect(await ids("2,595.31")).toEqual(["t-1"]);
+    expect(await ids("£2,595.31")).toEqual(["t-1"]);
+    expect(await ids("2.595,31")).toEqual(["t-1"]);
+    expect(await ids("2595.3")).toEqual(["t-1"]);
+    // 250 is stored as 250.0; the card shows 250.00.
+    expect(await ids("250.00")).toEqual(["t-2"]);
+    expect(await ids("GBP 250.00")).toEqual(["t-2"]);
+  });
+
+  it("finds by purchase order number and by the matched supplier's own name (decision 0693)", async () => {
+    await seedInstance("inv-1", "validation", "v-1");
+    await seedInstance("inv-2", "validation", "v-2");
+    await seedTask("t-1", "validation", "v-1", { user: "alice" });
+    await seedTask("t-2", "validation", "v-2", { user: "alice" });
+    await setInvoiceFacts("inv-1", { "BT-13": "1210065335" });
+    await env.DB.prepare("INSERT INTO suppliers (id, name, vat_id, erp_identifier, status) VALUES ('sup-1', 'Arco Limited', 'GB1', 'E1', 'active')").run();
+    await env.DB.prepare("UPDATE invoice_headers SET supplier_id = 'sup-1' WHERE id = 'inv-2'").run();
+
+    const ids = async (term: string) => ((await handleListMyTasks(env.DB, "alice", { search: term })).body as { tasks: TaskRow[] }).tasks.map((t) => t.id);
+    expect(await ids("12100653")).toEqual(["t-1"]);
+    expect(await ids("arco")).toEqual(["t-2"]);
   });
 
   it("ignores case", async () => {
@@ -1043,5 +1101,23 @@ describe("offersPoMatching — decision 0531", () => {
     await env.DB.prepare("UPDATE tasks SET required_permission = 'AP.Match' WHERE id = 't-1'").run();
 
     expect((await list("alice"))[0].offersPoMatching).toBe(true);
+  });
+});
+
+describe("reading a search term as an amount (decision 0693)", () => {
+  it("reads grouping, decimal marks and currency the way the card and a German screen write them", async () => {
+    const { searchAmount } = await import("../src/task-list-route.js");
+    expect(searchAmount("2,595.31")).toBe("2595.31");
+    expect(searchAmount("£2,595.31")).toBe("2595.31");
+    expect(searchAmount("2.595,31")).toBe("2595.31");
+    expect(searchAmount("2.595,31 €")).toBe("2595.31");
+    expect(searchAmount("579,84")).toBe("579.84");
+    expect(searchAmount("1,234,567")).toBe("1234567");
+    expect(searchAmount("1.234.567")).toBe("1234567");
+    expect(searchAmount("GBP 250.00")).toBe("250.00");
+    expect(searchAmount("250")).toBe("250");
+    expect(searchAmount("Nordwind")).toBeNull();
+    expect(searchAmount("INV-001")).toBeNull();
+    expect(searchAmount("-5")).toBeNull();
   });
 });
