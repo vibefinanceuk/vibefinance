@@ -1,7 +1,6 @@
 # 0684: Scanned PDFs read well — their own JPEGs, their lines, and the original shown
 
-**Status: built and tested locally, not yet pushed or deployed.** It is
-`vf-app` only, with no migration. Deploy vf-app.
+**Status: live** at `3c0430f`, pushed and deployed 8 October 2026.
 
 ## What was asked
 
