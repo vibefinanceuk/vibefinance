@@ -1,6 +1,6 @@
 # 0693: The Tasks search finds what the card shows
 
-**Status: built**, in bundle 0993. vf-app (`task-list-route.ts`) and vf-licence
+**Status: live** at `ec6d4e0`, pushed and deployed 8 October 2026, migration applied, tested by Dan. vf-app (`task-list-route.ts`) and vf-licence
 migration `0307_task_search_hint.sql`.
 
 ## What was asked
