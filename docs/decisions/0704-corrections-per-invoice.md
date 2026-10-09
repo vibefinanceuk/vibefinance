@@ -1,6 +1,6 @@
 # 0704: Whether learning helps: fields corrected per invoice, on the supplier's page
 
-**Status: built**, not yet pushed. vf-app `supplier-layouts.ts` (`supplierCorrections`), the
+**Status: live** at `8077f5e`, pushed and deployed 9 October 2026, migration applied. vf-app `supplier-layouts.ts` (`supplierCorrections`), the
 supplier layouts route; vf-ui supplier pop-out; vf-licence migration
 `0315_supplier_learning_strings.sql`.
 

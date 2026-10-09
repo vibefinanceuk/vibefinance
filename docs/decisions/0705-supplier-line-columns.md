@@ -1,6 +1,6 @@
 # 0705: A supplier's line table is learned, and its quantity, unit price and VAT rate are read
 
-**Status: built**, not yet pushed. vf-app `supplier-layouts.ts` (`learnColumns`,
+**Status: live** at `51bcbc4`, pushed and deployed 9 October 2026, migration applied. vf-app `supplier-layouts.ts` (`learnColumns`,
 `supplierColumns`), `field-regions.ts`, `layout-hints.ts`, `extraction.ts`,
 `intake-capture-route.ts`; vf-ui; vf-licence migration `0316_line_columns_strings.sql`.
 No vf-app migration: line places use 0701's table.
