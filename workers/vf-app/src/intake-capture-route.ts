@@ -573,7 +573,9 @@ export async function handleCaptureImage(
   // Decision 0434's own hook, forwarded through unchanged — see
   // CaptureIntakeBody.enrichFacts. Every existing caller (the direct
   // /capture-image API route included) omits this and is unaffected.
-  enrichFacts?: CaptureIntakeBody["enrichFacts"]
+  enrichFacts?: CaptureIntakeBody["enrichFacts"],
+  /** Decision 0703: what this supplier's invoices are known to look like. */
+  hint?: ReadingHint | null
 ): Promise<RouteResult> {
   const channel = await db.prepare("SELECT id FROM intake_channels WHERE id = ?").bind(channelId).first();
   if (!channel) {
@@ -610,7 +612,7 @@ export async function handleCaptureImage(
 
   let extraction;
   try {
-    extraction = await extractInvoiceFromImage(model, bytes, vocabulary, settings);
+    extraction = await extractInvoiceFromImage(model, bytes, vocabulary, settings, { hint: hint?.text });
   } catch (err) {
     if (err instanceof ExtractionRefusal) {
       // A refusal, never a half-populated invoice: the compiler's own
@@ -638,7 +640,24 @@ export async function handleCaptureImage(
     throw err;
   }
 
-  return captureExtracted(db, channelId, extraction, idOverride, enrichFacts, {}, { documentPath: "image-extraction" });
+  return captureExtracted(db, channelId, extraction, idOverride, enrichFacts, hintFacts(hint), { documentPath: "image-extraction" });
+}
+
+/** Decision 0703: what a reading was told about the supplier beforehand. */
+export interface ReadingHint {
+  text: string;
+  fields: string[];
+  supplierName: string;
+  how: string;
+}
+
+/**
+ * Recorded on the invoice, so it can be seen that a reading was helped and
+ * how (and, later, whether help means fewer corrections).
+ */
+function hintFacts(hint: ReadingHint | null | undefined): Record<string, string> {
+  if (!hint) return {};
+  return { "intake.layoutHint": `${hint.supplierName} (${hint.how === "supplier_email" ? "supplier's email address" : "earlier invoices from this sender"}): ${hint.fields.join(", ")}` };
 }
 
 /**
@@ -712,7 +731,7 @@ export async function handleCaptureOrdinaryPdf(
    * of a scan smaller (Cloudflare Images); the smaller pages are read, and
    * handed to `onPages` to be kept as the invoice's working pages.
    */
-  smaller: { shrink?: PageShrinker; onPages?: (pages: WorkingPage[]) => void } = {}
+  smaller: { shrink?: PageShrinker; onPages?: (pages: WorkingPage[]) => void; hint?: ReadingHint | null } = {}
 ): Promise<RouteResult> {
   const customFields = await loadCustomFields(db);
   const vocabulary = resolveVocabulary("invoice", customFields);
@@ -735,10 +754,10 @@ export async function handleCaptureOrdinaryPdf(
   let how: string;
   try {
     if (read.kind === "text") {
-      extraction = await extractInvoiceFromPdfText(model, read.pages, vocabulary, settings, read.truncated);
+      extraction = await extractInvoiceFromPdfText(model, read.pages, vocabulary, settings, read.truncated, { hint: smaller.hint?.text });
       how = "pdf_text";
     } else if (read.kind === "images") {
-      extraction = await extractInvoiceFromImages(model, read.images, vocabulary, settings);
+      extraction = await extractInvoiceFromImages(model, read.images, vocabulary, settings, { hint: smaller.hint?.text });
       how = read.pageCount > read.images.length ? `pdf_images (${read.images.length} of ${read.pageCount} pages)` : "pdf_images";
     } else {
       throw new ExtractionRefusal(read.reason, undefined, true);
@@ -750,7 +769,7 @@ export async function handleCaptureOrdinaryPdf(
     }
     throw err;
   }
-  return captureExtracted(db, channelId, extraction, idOverride, enrichFacts, { "intake.structure": "ordinary_pdf", "intake.read": how, ...reducedFacts }, { documentPath: how.startsWith("pdf_text") ? "pdf-text-extraction" : "pdf-image-extraction" });
+  return captureExtracted(db, channelId, extraction, idOverride, enrichFacts, { "intake.structure": "ordinary_pdf", "intake.read": how, ...reducedFacts, ...hintFacts(smaller.hint) }, { documentPath: how.startsWith("pdf_text") ? "pdf-text-extraction" : "pdf-image-extraction" });
 }
 
 /**

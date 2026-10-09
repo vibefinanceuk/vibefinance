@@ -1,6 +1,6 @@
 # Design: Learning each supplier's invoice layout
 
-**Status: agreed**, 9 October 2026 (Dan: *"Agreed with this proposal"*, including the four decisions in §5). Step 1 built as decision 0701; steps 2 and 3a as 0702 (layouts worked out from the regions when asked, not stored: see 0702). Builds on the
+**Status: agreed**, 9 October 2026 (Dan: *"Agreed with this proposal"*, including the four decisions in §5). Step 1 built as decision 0701; steps 2 and 3a as 0702 (layouts worked out from the regions when asked, not stored: see 0702); step 3b as 0703 (supplier from the sender only, for now). Builds on the
 document viewer's find-and-lasso work (decisions 0697–0700).
 
 ---

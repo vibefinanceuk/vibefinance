@@ -4,6 +4,7 @@ import { deriveOrgUnit } from "./derive-org.js";
 import { renderPeppolDocument } from "./peppol-render.js";
 import { renderCsvTable } from "./csv-render.js";
 import { matchSupplier } from "./match-supplier.js";
+import { hintBeforeReading } from "./layout-hints.js";
 import {
   channelStructure,
   detectStructure,
@@ -494,6 +495,13 @@ export async function handleCaptureFromSource(
      */
     result = await captureThroughMapping(db, source.id, channel.id, decodeText(bytes), CSV_ROOT, sender, idOverride, enricher);
   } else {
+    /**
+     * **What this supplier's invoices look like — decision 0703.** Known
+     * before reading only from who sent it; a document with no sender, or
+     * from one not yet tied to a supplier, is read as before. A failure here
+     * never stops the reading.
+     */
+    const hint = sender ? await hintBeforeReading(db, sender).catch(() => null) : null;
     // Decision 0683: an ordinary PDF is read from its text or its page pictures; anything else is a picture.
     result = detection.pdf
       ? await handleCaptureOrdinaryPdf(db, channel.id, bytes, model, idOverride, enricher, {
@@ -501,8 +509,9 @@ export async function handleCaptureFromSource(
           onPages: (pages) => {
             workingPages = pages;
           },
+          hint,
         })
-      : await handleCaptureImage(db, channel.id, bytes, model, idOverride, enricher);
+      : await handleCaptureImage(db, channel.id, bytes, model, idOverride, enricher, hint);
 
     /**
      * A model that never answered keeps the document — decision 0163.

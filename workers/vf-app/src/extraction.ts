@@ -344,7 +344,9 @@ Return only the JSON object described by the schema.`;
 export function buildExtractionPrompt(
   vocabulary: VocabularyInput = "invoice",
   pageCount = 1,
-  pageNumber?: number
+  pageNumber?: number,
+  /** Decision 0703: what this supplier's invoices are known to look like, where known. */
+  hint?: string | null
 ): string {
   const v = asResolved(vocabulary);
   const customSection =
@@ -379,8 +381,13 @@ Rules that matter more than completeness:
 - Set _confidence honestly. A clear, sharp, complete invoice justifies a high score; a blurry photo, a cropped image, or a document you are partly guessing at does not.${customSection}
 
 - Include every field named in the schema, even when the answer is null. Do not omit a key because you could not find its value.
-
+${hint ? `\n${hint}\n` : ""}
 Return only the JSON object described by the schema.`;
+}
+
+/** Decision 0703: what a reading is told beyond the document, where anything is known. */
+export interface ReadingContext {
+  hint?: string | null;
 }
 
 /** A line in the canonical shape the rest of the system already uses:
@@ -814,7 +821,8 @@ export async function extractInvoiceFromImages(
   // Per-channel settings (decision 0053). Previously absent entirely,
   // which meant every setting an administrator configured was
   // honoured nowhere in the image path — see decision 0056.
-  settings: ExtractionSettings = DEFAULT_EXTRACTION_SETTINGS
+  settings: ExtractionSettings = DEFAULT_EXTRACTION_SETTINGS,
+  context: ReadingContext = {}
 ): Promise<MultiPageExtractionResult> {
   if (pages.length === 0) {
     throw new ExtractionRefusal("no pages were supplied");
@@ -845,7 +853,7 @@ export async function extractInvoiceFromImages(
           // Each call is told which page it is looking at and how many
           // there are, so a model seeing only the totals page does not
           // report the absent line table as a failure to read one.
-          buildExtractionPrompt(vocabulary, pages.length, pageNumber),
+          buildExtractionPrompt(vocabulary, pages.length, pageNumber, context.hint),
           [{ bytes, contentType: sniffed }],
           buildExtractionSchema(vocabulary, settings, { lines: false })
         );
@@ -1106,9 +1114,10 @@ export async function extractInvoiceFromPdfText(
   pages: readonly string[],
   vocabulary: VocabularyInput = "invoice",
   settings: ExtractionSettings = DEFAULT_EXTRACTION_SETTINGS,
-  truncated = false
+  truncated = false,
+  context: ReadingContext = {}
 ): Promise<ExtractionResult> {
-  const prompt = buildExtractionPrompt(vocabulary).replace(
+  const prompt = buildExtractionPrompt(vocabulary, 1, undefined, context.hint).replace(
     "You are reading a photograph or scan of a supplier invoice and extracting specific fields from it.",
     "You are reading the text of a supplier invoice, taken from its PDF page by page, and extracting specific fields from it. The text below is all there is: the layout is lost, so a table's columns appear as words along a line, and a label may sit on the line before or after its value."
   );
@@ -1125,9 +1134,10 @@ export async function extractInvoiceFromImage(
   model: ExtractionModel,
   bytes: Uint8Array,
   vocabulary: VocabularyInput = "invoice",
-  settings: ExtractionSettings = DEFAULT_EXTRACTION_SETTINGS
+  settings: ExtractionSettings = DEFAULT_EXTRACTION_SETTINGS,
+  context: ReadingContext = {}
 ): Promise<ExtractionResult> {
-  return extractInvoiceFromImages(model, [bytes], vocabulary, settings);
+  return extractInvoiceFromImages(model, [bytes], vocabulary, settings, context);
 }
 
 export type { ResolvedVocabulary };

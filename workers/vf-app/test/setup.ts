@@ -159,6 +159,7 @@ import growingIndexesSql from "../../../migrations/0152_indexes_for_growing_tabl
 import processEndsSql from "../../../migrations/0153_process_ends_follow_current_version.sql?raw";
 import fieldRegionsSql from "../../../migrations/0154_invoice_field_regions.sql?raw";
 import layoutResetsSql from "../../../migrations/0155_supplier_layout_resets.sql?raw";
+import senderIndexSql from "../../../migrations/0156_sender_lookup_index.sql?raw";
 
 // Another known divergence from production, on top of the one below:
 // D1's exec() splits its input by newline and executes each non-empty
@@ -516,6 +517,7 @@ export async function applyTestSchema(): Promise<void> {
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(processEndsSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(fieldRegionsSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(layoutResetsSql)));
+  await env.DB.exec(toOneStatementPerLine(stripSqlComments(senderIndexSql)));
 }
 
 /**
