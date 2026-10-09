@@ -1,6 +1,6 @@
 # 0706: Record New Supplier opens the form, filled from the document and from what was typed
 
-**Status: built**, not yet pushed. vf-ui only.
+**Status: live** at `2ffe36b`, pushed and deployed 9 October 2026. vf-ui only.
 
 ## What was asked
 
