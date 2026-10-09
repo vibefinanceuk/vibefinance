@@ -3611,6 +3611,14 @@ const KEYS_THE_INTERFACE_USES = [
   "viewer.lasso.wrongkind.amount",
   "viewer.lasso.wrongkind.date",
   "viewer.lasso.wrongkind.number",
+  // A scanned page being read by Tesseract (decision 0698).
+  "viewer.ocr.reading",
+  // The AI reading a lassoed part of a page, and suggesting a field (decision 0699).
+  "viewer.lasso.ai.reading",
+  "viewer.lasso.ai.allowance",
+  "viewer.lasso.ai.failed",
+  "viewer.lasso.suggest",
+  "viewer.lasso.suggest.put",
   "routes.format.supplier_csv",
   "routes.formats.supplier_csv",
   "routes.formats.supplier_csv.syntax",

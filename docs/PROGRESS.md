@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 9 October 2026 (decision 0697). A living document: what
+Last updated 9 October 2026 (decision 0699). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,25 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### The AI reads a lasso Tesseract was unsure of (0699)
+
+On a scan, a lasso whose words Tesseract was unsure of (or are the wrong kind for
+the field) sends just that cut-out to the vision model, which reads it for the
+field. With no field chosen, the model says which field it looks like and the
+viewer offers it ("Looks like Due date · Put it there"). `POST
+/invoices/:id/read-region`. Sure reads, and PDFs with text, use no AI.
+
+Full reasoning is in decision 0699.
+
+### Scans read by Tesseract in the browser (0698)
+
+Scans and photos are read into words with positions by Tesseract (vendored
+tesseract.js, English and German) in the browser, the first time a field is
+looked for or a lasso drawn on them, so finding a value and the lasso work on
+scans as on PDFs with text. No AI allowance used; nothing leaves the deployment.
+
+Full reasoning is in decision 0698.
 
 ### Clicking a field shows where its value is; a lasso fills it (0697)
 

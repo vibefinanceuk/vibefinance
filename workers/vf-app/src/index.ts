@@ -238,6 +238,7 @@ import { handleGetRouteMessage, handleListRouteMessages, routeMessagePart } from
 import { readQueuedInbound } from "./inbound-read-later.js";
 import { isAllowanceError } from "./extraction.js";
 import { imagesShrinker } from "./page-shrink.js";
+import { handleReadRegion } from "./region-read.js";
 import { handleDeleteDestination, handleListRoutes, handleProcessRoutes, handleRenameDestination, handleRetireDestination, handleSetInstanceStatus } from "./routes-route.js";
 import { handleDismissMessage, handleReprocessMessage } from "./route-reprocess.js";
 import {
@@ -4231,6 +4232,33 @@ export default {
      * (`/invoices/:id/document-url` above): whoever may see the invoice
      * may see what it came with.
      */
+    /**
+     * **Reading a lassoed part of a page — decision 0699.** The viewer sends
+     * the cut-out where Tesseract was unsure of it, or to ask which field
+     * it is; the vision model reads it. Gated as the document itself is: who
+     * may see the invoice may read part of it.
+     */
+    const regionMatch = pathname.match(/^\/invoices\/([^/]+)\/read-region$/);
+    if (regionMatch && request.method === "POST") {
+      const { db } = resolveTenant(request, env);
+      const auth = await authenticatePerson(db, request, env);
+      if (!auth.user) {
+        return json({ error: auth.reason }, 401);
+      }
+      const invoiceId = regionMatch[1];
+      if (
+        !(await hasPermission(db, auth.user.id, "AP.Validate")) &&
+        !(await hasPermission(db, auth.user.id, "AP.Code")) &&
+        !(await hasPermission(db, auth.user.id, "AP.Match")) &&
+        !(await canViewInvoiceAsCollaborator(db, auth.user.id, invoiceId))
+      ) {
+        return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
+      }
+      const body = await request.json().catch(() => null);
+      const answer = await handleReadRegion(env.AI ? createWorkersAiExtractionModel(env.AI, env.EXTRACTION_MODEL_ID) : null, body);
+      return json(answer.body, answer.status);
+    }
+
     const attachmentsMatch = pathname.match(/^\/invoices\/([^/]+)\/attachments(?:\/([^/]+)\/(\d+)\/url)?$/);
     if (
       attachmentsMatch &&

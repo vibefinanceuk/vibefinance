@@ -340,6 +340,8 @@ const PROXIED_TO_INSTANCE: RegExp[] = [
   // Everything received with an invoice, for the Attachments tab — decision 0571.
   /^\/invoices\/[^/]+\/attachments$/,
   /^\/invoices\/[^/]+\/attachments\/[^/]+\/\d+\/url$/,
+  // A lassoed part of a page read by the vision model — decision 0699.
+  /^\/invoices\/[^/]+\/read-region$/,
   // The standard's own code lists, so a person picks a currency rather
   // than types one (decision 0113).
   /^\/code-lists$/,

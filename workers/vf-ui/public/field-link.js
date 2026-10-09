@@ -108,12 +108,58 @@ function choose(select, text) {
   return hit?.value ?? null;
 }
 
-/** What the document lassoed, put in the field that last had focus. */
+/**
+ * Below this, a word Tesseract read is not trusted on its own: the lassoed
+ * part of the page is read again by the AI (decision 0699). Tesseract gives
+ * clean print 90 and more; a smudged or skewed word falls well under 75.
+ */
+export const OCR_TRUSTED = 75;
+
+/** The header fields someone could fill now, for the AI to choose from (0699). */
+function fillableFields() {
+  const seen = new Set();
+  const out = [];
+  for (const node of document.querySelectorAll("[data-field]")) {
+    if (!isEditable(node) || node.dataset.line !== undefined || seen.has(node.dataset.field)) continue;
+    seen.add(node.dataset.field);
+    out.push({ field: node.dataset.field, label: labelOf(node), kind: node.dataset.kind ?? "text" });
+  }
+  return out;
+}
+
+/**
+ * What the document lassoed, put in the field that last had focus.
+ *
+ * Decision 0699: words Tesseract was unsure of, or that are not the
+ * field's kind of value, are first read again by the AI (the document is
+ * asked to send its cut-out); with no field chosen, the AI is asked which
+ * field it looks like, and the answer is offered, never applied unasked.
+ */
 export function fillTarget(message) {
   const target = state.target;
-  if (!target?.isConnected || !isEditable(target)) return reply(false, "viewer.lasso.nofield");
+  if (!target?.isConnected || !isEditable(target)) {
+    if (message.source === "ai") {
+      if (message.suggested) {
+        const node = fieldNode(message.suggested);
+        if (node) return state.link?.send("filled", { ok: false, reason: "viewer.lasso.suggest", text: message.text, suggestion: { field: message.suggested, label: labelOf(node) } });
+      }
+      return reply(false, "viewer.lasso.nofield");
+    }
+    const fields = fillableFields();
+    if (!fields.length) return reply(false, "viewer.lasso.nofield");
+    state.link?.send("readRegion", { purpose: "suggest", ocrText: message.text ?? "", context: message.context ?? "", fields });
+    return;
+  }
   const kind = target.dataset.kind ?? "text";
   const label = labelOf(target);
+
+  if (message.source === "ocr" && target.tagName !== "SELECT") {
+    const value = valueFromLasso(message.text, kind, parseAmount);
+    if (value === null || (message.confidence ?? 0) < OCR_TRUSTED) {
+      state.link?.send("readRegion", { purpose: "read", kind, label, ocrText: message.text ?? "", context: message.context ?? "" });
+      return;
+    }
+  }
 
   if (target.tagName === "SELECT") {
     const value = choose(target, message.text);
@@ -136,6 +182,19 @@ export function fillTarget(message) {
   reply(true, null, label);
 }
 
+/** The editable header control for `field`, if it is on screen. */
+function fieldNode(field) {
+  return [...document.querySelectorAll("[data-field]")].find((n) => n.dataset.field === field && n.dataset.line === undefined && isEditable(n)) ?? null;
+}
+
+/** "Put it there": the suggested field becomes the target and takes the value (0699). */
+export function fillField(message) {
+  const node = fieldNode(message.field);
+  if (!node) return reply(false, "viewer.lasso.nofield");
+  state.target = node;
+  fillTarget({ text: message.text, source: "ai" });
+}
+
 /**
  * Connects the form on screen to the document of `invoiceId` — called
  * each time an invoice is opened. `currency()` is the invoice's currency
@@ -147,6 +206,7 @@ export function connectFields(invoiceId, { currency, lineDescription, makeLink =
   state.link?.close();
   state.link = invoiceId ? makeLink(invoiceId) : null;
   state.link?.on("lassoed", fillTarget);
+  state.link?.on("fillField", fillField);
   state.invoiceId = invoiceId;
   state.target = null;
   state.currency = currency ?? (() => "");

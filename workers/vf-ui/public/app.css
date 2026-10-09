@@ -4257,6 +4257,8 @@
   .vhint { margin-left: auto; font-size: var(--text-sm); color: var(--text-secondary); }
   .vhint + .vpagestatus { margin-left: 12px; }
   .vhint:empty + .vpagestatus { margin-left: auto; }
+  /* The AI's suggested field, offered on the toolbar — decision 0699. */
+  .vsuggest { background: none; border: 0; padding: 0; font: inherit; color: var(--text-accent); text-decoration: underline; cursor: pointer; }
   /* A field whose value the lasso just filled — decision 0697. */
   .lassofilled { box-shadow: 0 0 0 2px rgba(22, 163, 74, 0.6); transition: box-shadow 0.6s; }
 

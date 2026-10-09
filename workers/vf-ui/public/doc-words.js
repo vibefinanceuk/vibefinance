@@ -82,6 +82,39 @@ export function pdfWords(textContent, viewport, measure = null) {
   return readingOrder(words);
 }
 
+/**
+ * Every word Tesseract read on a page image as a box on it — decision 0698.
+ * `blocks` is tesseract.js's `data.blocks` (blocks → paragraphs → lines →
+ * words, each word with a pixel `bbox` and a `confidence` from 0 to 100);
+ * `width` and `height` are the image's own size in pixels. A word keeps its
+ * confidence (`conf`), so a lasso over words Tesseract was unsure of can be
+ * read again another way (decision 0699).
+ */
+export function ocrWords(blocks, width, height) {
+  const words = [];
+  if (!width || !height) return words;
+  for (const block of blocks ?? []) {
+    for (const paragraph of block?.paragraphs ?? []) {
+      for (const line of paragraph?.lines ?? []) {
+        for (const word of line?.words ?? []) {
+          const text = String(word?.text ?? "").trim();
+          const b = word?.bbox;
+          if (!text || !b) continue;
+          words.push({
+            text,
+            x: clamp(b.x0 / width),
+            y: clamp(b.y0 / height),
+            w: Math.min(1, (b.x1 - b.x0) / width),
+            h: Math.min(1, (b.y1 - b.y0) / height),
+            conf: Number(word.confidence ?? 0),
+          });
+        }
+      }
+    }
+  }
+  return readingOrder(words);
+}
+
 function clamp(n) {
   return Math.min(1, Math.max(0, n));
 }
@@ -179,6 +212,35 @@ export function wordsInLasso(words, polygon) {
   if (!Array.isArray(polygon) || polygon.length < 3) return { words: [], text: "", box: null };
   const taken = words.filter((w) => insidePolygon({ x: w.x + w.w / 2, y: w.y + w.h / 2 }, polygon));
   return { words: taken, text: taken.map((w) => w.text).join(" "), box: unionBox(taken) };
+}
+
+/**
+ * What is printed beside `box` on the page, for the model reading a lasso
+ * to know what it is looking at (decision 0699): the words on the same
+ * line to its left (a label, usually), then the line just above it, left
+ * to right. At most `max` characters.
+ */
+export function contextFor(words, box, taken = [], max = 200) {
+  if (!box) return "";
+  const mid = box.y + box.h / 2;
+  const left = words.filter(
+    (w) => !taken.includes(w) && Math.abs(w.y + w.h / 2 - mid) < Math.max(w.h, box.h * 0.6) && w.x + w.w <= box.x + 0.005 && box.x - (w.x + w.w) < 0.4
+  );
+  const above = words.filter(
+    (w) => !taken.includes(w) && w.y + w.h <= box.y + 0.003 && box.y - (w.y + w.h) < 0.03 && w.x < box.x + box.w && w.x + w.w > box.x - 0.15
+  );
+  const text = [...left.map((w) => w.text), ...(above.length ? ["|", ...above.map((w) => w.text)] : [])].join(" ");
+  return text.slice(0, max);
+}
+
+/** The smallest box around a lasso's points. */
+export function polygonBox(points) {
+  if (!points?.length) return null;
+  const xs = points.map((p) => p.x);
+  const ys = points.map((p) => p.y);
+  const x = Math.max(0, Math.min(...xs));
+  const y = Math.max(0, Math.min(...ys));
+  return { x, y, w: Math.min(1, Math.max(...xs)) - x, h: Math.min(1, Math.max(...ys)) - y };
 }
 
 // ---------------------------------------------------------------------

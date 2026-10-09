@@ -24,6 +24,12 @@ const STRINGS = {
     "viewer.lasso.filled": "Put in {field}",
     "viewer.lasso.nofield": "Click the field to fill first",
     "viewer.lasso.wrongkind.amount": "No amount in the lasso for {field}",
+    "viewer.ocr.reading": "Reading the page…",
+    "viewer.lasso.ai.reading": "Reading it with AI…",
+    "viewer.lasso.ai.allowance": "The AI allowance is used up today: please type it in",
+    "viewer.lasso.suggest": "Looks like {field}",
+    "viewer.lasso.suggest.put": "Put it there",
+    "field.bt-9": "Due date",
     "field.bt-112": "Invoice total",
     "field.bt-2": "Invoice date",
   },
@@ -71,14 +77,15 @@ const flush = async () => {
   await new Promise((r) => setTimeout(r, 0));
 };
 
-function mountViewer(pageWords: unknown = PAGE_WORDS) {
+function mountViewer(pageWords: unknown = PAGE_WORDS, extra: Record<string, unknown> = {}) {
   const page = { pageNumber: 1, kind: "pdf", load: vi.fn(async () => ({})) };
   const deps = {
     resolvePages: vi.fn(async () => [page]),
     drawPdfPage: vi.fn(async () => {}),
     drawImage: vi.fn(async () => {}),
-    pageWords: vi.fn(async () => pageWords),
+    pageWords: vi.fn(() => Promise.resolve(pageWords)),
     docLink: (id: string) => docLink(id, FakeChannel as unknown as typeof BroadcastChannel),
+    ...extra,
   };
   const root = pageViewer("inv-1", "application/pdf", deps) as HTMLElement;
   document.body.append(root);
@@ -181,8 +188,13 @@ describe("the lasso and finding a value — decision 0697", () => {
     expect(root.querySelector(".vhint")?.textContent).toBe("Click the field to fill first");
   });
 
-  it("says a page has no readable text when it has no words (a scan, until decision 0698)", async () => {
-    const { root } = mountViewer(null);
+  it("a page Tesseract read nothing from still goes to the AI (0699)", async () => {
+    const readRegion = vi.fn(async () => ({ ok: true, text: "INV-0042" }));
+    const { root } = mountViewer(null, { cropRegion: vi.fn(async () => "x"), readRegion });
+    const input = markField(document.createElement("input"), { field: "BT-1", kind: "text" }) as HTMLInputElement;
+    document.body.append(input);
+    connectFields("inv-1", { makeLink: (id: string) => docLink(id, FakeChannel as unknown as typeof BroadcastChannel) });
+    input.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
     await flush();
     (root.querySelector('[aria-label="Lasso"]') as HTMLButtonElement).click();
     const holder = root.querySelector(".vcanvasholder") as HTMLElement;
@@ -191,7 +203,45 @@ describe("the lasso and finding a value — decision 0697", () => {
     holder.dispatchEvent(new MouseEvent("pointermove", { clientX: 300, clientY: 230 }));
     holder.dispatchEvent(new MouseEvent("pointerup", { clientX: 90, clientY: 230 }));
     await flush();
-    expect(root.querySelector(".vhint")?.textContent).toBe("This page has no readable text yet");
+    await flush();
+    expect(readRegion).toHaveBeenCalled();
+    expect(input.value).toBe("INV-0042");
+  });
+
+  it("looks for a line's amount beside the line's own description", async () => {
+    // The same amount on two rows; the line is "Widgets", which is the second.
+    const { root } = mountViewer(words([["Gadgets", "740,70"], ["Widgets", "740,70"]]));
+    const input = markField(document.createElement("input"), { field: "BT-131", kind: "amount", line: 0 }) as HTMLInputElement;
+    input.value = "740.70";
+    document.body.append(input);
+    connectFields("inv-1", {
+      lineDescription: () => "Widgets",
+      makeLink: (id: string) => docLink(id, FakeChannel as unknown as typeof BroadcastChannel),
+    });
+    input.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
+    await flush();
+    // The Widgets row starts at 150/1000.
+    expect((root.querySelector(".vlocate.best") as HTMLElement).getAttribute("style")).toMatch(/top:14\.\d+%/);
+  });
+
+  it("says it is reading the page while a scan is read for the first time (0698)", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    let finish: (w: unknown) => void = () => {};
+    const { root } = mountViewer(new Promise((r) => (finish = r)));
+    const input = markField(document.createElement("input"), { field: "BT-112", kind: "amount" }) as HTMLInputElement;
+    input.value = "740.70";
+    document.body.append(input);
+    connectFields("inv-1", { makeLink: (id: string) => docLink(id, FakeChannel as unknown as typeof BroadcastChannel) });
+    for (let i = 0; i < 10; i++) await Promise.resolve();
+    input.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
+    for (let i = 0; i < 10; i++) await Promise.resolve();
+    vi.advanceTimersByTime(400);
+    expect(root.querySelector(".vhint")?.textContent).toBe("Reading the page…");
+    finish(PAGE_WORDS);
+    vi.useRealTimers();
+    await flush();
+    expect(root.querySelector(".vhint")?.textContent).toBe("");
+    expect(root.querySelector(".vlocate.best")).toBeTruthy();
   });
 
   it("the lasso and the highlight tool are one or the other", async () => {
@@ -259,5 +309,119 @@ describe("fillTarget — the lasso's text as the field's value", () => {
     });
     input.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
     expect(sent.at(-1)).toMatchObject({ type: "locate", field: "BT-131", value: "740.7", near: { field: "BT-153", value: "Widgets" } });
+  });
+});
+
+/** A scan's words, as Tesseract gives them: with confidence (decision 0698). */
+function scanned(rows: [string, number][][]) {
+  const out: { text: string; x: number; y: number; w: number; h: number; conf: number }[] = [];
+  rows.forEach((row, r) => {
+    let x = 100;
+    for (const [text, conf] of row) {
+      out.push({ text, x: x / 1000, y: (100 + r * 50) / 1000, w: (text.length * 10) / 1000, h: 20 / 1000, conf });
+      x += (text.length + 1) * 10;
+    }
+  });
+  return readingOrder(out);
+}
+
+function lassoRound(root: HTMLElement, x0: number, y0: number, x1: number, y1: number) {
+  (root.querySelector('[aria-label="Lasso"]') as HTMLButtonElement).click();
+  const holder = root.querySelector(".vcanvasholder") as HTMLElement;
+  holder.dispatchEvent(new MouseEvent("pointerdown", { clientX: x0, clientY: y0 }));
+  holder.dispatchEvent(new MouseEvent("pointermove", { clientX: x1, clientY: y0 }));
+  holder.dispatchEvent(new MouseEvent("pointermove", { clientX: x1, clientY: y1 }));
+  holder.dispatchEvent(new MouseEvent("pointerup", { clientX: x0, clientY: y1 }));
+}
+
+describe("the AI reads a lasso Tesseract was unsure of — decision 0699", () => {
+  beforeEach(async () => {
+    FakeChannel.all = [];
+    document.body.replaceChildren();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        if (String(url).startsWith("/api/ui-strings")) return { ok: true, json: async () => STRINGS } as Response;
+        throw new Error(`no stub for ${url}`);
+      })
+    );
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const link = (id: string) => docLink(id, FakeChannel as unknown as typeof BroadcastChannel);
+
+  it("sends the cut-out to be read when a word is below the trusted confidence, and fills the field with the answer", async () => {
+    const cropRegion = vi.fn(async () => "data:image/jpeg;base64,AAAA");
+    const readRegion = vi.fn(async () => ({ ok: true, text: "740,70" }));
+    const { root } = mountViewer(scanned([[["Total", 95], ["74O,7O", 41]]]), { cropRegion, readRegion });
+    const input = markField(document.createElement("input"), { field: "BT-112", kind: "amount" }) as HTMLInputElement;
+    document.body.append(input);
+    connectFields("inv-1", { currency: () => "EUR", makeLink: link });
+    input.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
+    await flush();
+    lassoRound(root, 90, 90, 300, 130);
+    await flush();
+    await flush();
+    expect(readRegion).toHaveBeenCalledWith("inv-1", expect.objectContaining({ kind: "amount", label: "Invoice total", ocrText: "Total 74O,7O" }));
+    expect(input.value).toContain("740.70");
+    expect(root.querySelector(".vhint")?.textContent).toBe("Put in Invoice total");
+  });
+
+  it("trusts words Tesseract was sure of, and asks nothing", async () => {
+    const readRegion = vi.fn();
+    const { root } = mountViewer(scanned([[["Total", 95], ["740,70", 96]]]), { cropRegion: vi.fn(), readRegion });
+    const input = markField(document.createElement("input"), { field: "BT-112", kind: "amount" }) as HTMLInputElement;
+    document.body.append(input);
+    connectFields("inv-1", { currency: () => "EUR", makeLink: link });
+    input.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
+    await flush();
+    lassoRound(root, 90, 90, 300, 130);
+    await flush();
+    expect(readRegion).not.toHaveBeenCalled();
+    expect(input.value).toContain("740.70");
+  });
+
+  it("says when the AI allowance is used up, and leaves the field alone", async () => {
+    const readRegion = vi.fn(async () => ({ ok: false, reason: "ai_allowance" }));
+    const { root } = mountViewer(scanned([[["74O,7O", 30]]]), { cropRegion: vi.fn(async () => "x"), readRegion });
+    const input = markField(document.createElement("input"), { field: "BT-112", kind: "amount" }) as HTMLInputElement;
+    input.value = "1";
+    document.body.append(input);
+    connectFields("inv-1", { makeLink: link });
+    input.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
+    await flush();
+    lassoRound(root, 90, 90, 300, 130);
+    await flush();
+    await flush();
+    expect(input.value).toBe("1");
+    expect(root.querySelector(".vhint")?.textContent).toBe("The AI allowance is used up today: please type it in");
+  });
+
+  it("with no field chosen, offers the field the AI thinks it is, and fills it only when asked", async () => {
+    const readRegion = vi.fn(async () => ({ ok: true, text: "30.10.2026", field: "BT-9" }));
+    const { root } = mountViewer(scanned([[["Due", 90], ["30.10.2026", 92]]]), { cropRegion: vi.fn(async () => "x"), readRegion });
+    const due = markField(document.createElement("input"), { field: "BT-9", kind: "date" }) as HTMLInputElement;
+    due.type = "date";
+    const issued = markField(document.createElement("input"), { field: "BT-2", kind: "date" }) as HTMLInputElement;
+    document.body.append(due, issued);
+    connectFields("inv-1", { makeLink: link });
+    await flush();
+    lassoRound(root, 90, 90, 300, 130);
+    await flush();
+    await flush();
+    expect(readRegion).toHaveBeenCalledWith("inv-1", expect.objectContaining({ fields: [
+      { field: "BT-9", label: "Due date", kind: "date" },
+      { field: "BT-2", label: "Invoice date", kind: "date" },
+    ] }));
+    expect(due.value).toBe("");
+    expect(root.querySelector(".vhint")?.textContent).toBe("Looks like Due date · Put it there");
+    (root.querySelector(".vsuggest") as HTMLButtonElement).click();
+    await flush();
+    expect(due.value).toBe("2026-10-30");
   });
 });

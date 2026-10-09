@@ -11,6 +11,7 @@ import {
   wordsInLasso,
   valueFromLasso,
   squash,
+  ocrWords,
 } from "/doc-words.js";
 import { parseAmount } from "/money.js";
 
@@ -277,5 +278,44 @@ describe("valueFromLasso — the lasso's text as the field's value", () => {
 describe("squash", () => {
   it("drops case, spaces, punctuation and accents", () => {
     expect(squash("Société Générale, S.A.")).toBe("societegeneralesa");
+  });
+});
+
+describe("ocrWords — Tesseract's words as boxes on the page (decision 0698)", () => {
+  // As tesseract.js 6 gives them for a 1157×1637 page (read from a real scan in testing).
+  const blocks = [
+    {
+      paragraphs: [
+        {
+          lines: [
+            {
+              words: [
+                { text: "Gesamtbetrag", confidence: 96, bbox: { x0: 681, y0: 470, x1: 802, y1: 497 } },
+                { text: "1.683,26", confidence: 95, bbox: { x0: 960, y0: 475, x1: 1033, y1: 492 } },
+                { text: "€", confidence: 95, bbox: { x0: 1039, y0: 475, x1: 1049, y1: 489 } },
+              ],
+            },
+          ],
+        },
+      ],
+    },
+    { paragraphs: [{ lines: [{ words: [{ text: "Müller", confidence: 96, bbox: { x0: 99, y0: 77, x1: 188, y1: 100 } }] }] }] },
+  ];
+
+  it("gives each word as a fraction of the image, in reading order, with its confidence", () => {
+    const words = ocrWords(blocks, 1157, 1637);
+    expect(words.map((w: { text: string }) => w.text)).toEqual(["Müller", "Gesamtbetrag", "1.683,26", "€"]);
+    expect(words[2].x).toBeCloseTo(960 / 1157);
+    expect(words[2].h).toBeCloseTo(17 / 1637);
+    expect(words[2].conf).toBe(95);
+  });
+
+  it("is found by the same search as a PDF's text", () => {
+    const words = ocrWords(blocks, 1157, 1637);
+    expect(locate([{ pageNumber: 1, words }], { field: "BT-112", value: "1683.26", kind: "amount" })[0].text).toBe("1.683,26");
+  });
+
+  it("is nothing without the image's size", () => {
+    expect(ocrWords(blocks, 0, 0)).toEqual([]);
   });
 });

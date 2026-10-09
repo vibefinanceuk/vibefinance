@@ -102,3 +102,11 @@ line table now put on every control.
   number, date (`09.10.2026`), VAT number in groups, supplier name, net, VAT and
   total (`1.683,26 €` beside *Gesamtbetrag*), and a line amount on its own row
   were all found, and a lasso round the total read `Gesamtbetrag 1.683,26 €`.
+
+## Addendum: a line's row (fixed with 0698)
+
+As first bundled (0998), a line field sent its description to be found first,
+but the viewer passed it on as if it were already a place on the page, so a
+line's value was not looked for on its own row. The viewer now finds the
+description first and looks beside it. Tested in `lasso.test.ts` ("looks for a
+line's amount beside the line's own description").

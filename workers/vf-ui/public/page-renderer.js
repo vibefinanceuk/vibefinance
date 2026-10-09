@@ -16,8 +16,9 @@
 import { t } from "/strings.js";
 import { el } from "/tasks.js";
 import { icon } from "/icons.js";
-import { pdfWords, locate, rotateBox, unrotatePoint, wordsInLasso } from "/doc-words.js";
+import { pdfWords, locate, rotateBox, unrotatePoint, wordsInLasso, contextFor, polygonBox } from "/doc-words.js";
 import { docLink } from "/doc-link.js";
+import { readPage } from "/ocr.js";
 
 export const ZOOM_STEPS = [0.5, 0.75, 1, 1.25, 1.5, 2, 3];
 /** Index into ZOOM_STEPS for 1×, and where every document starts. */
@@ -155,14 +156,119 @@ function measureText() {
   return measurer || null;
 }
 
-async function realPageWords(source, loaded) {
-  if (source.kind !== "pdf" || !loaded?.getTextContent) return null;
+/** The longest side a PDF page is drawn at to be read by OCR: about 170 dpi on A4. */
+const OCR_SIDE = 2000;
+
+/**
+ * A page's words — decisions 0697 and 0698. A PDF's own text layer where
+ * it has one; otherwise the page read by Tesseract (`ocr.js`): an image
+ * page from its own bytes, a PDF page with no text (a scan inside a PDF)
+ * drawn to a canvas first. `null` when there is nothing to read.
+ */
+async function realPageWords(source, loaded, { invoiceId } = {}) {
+  if (source.kind === "pdf" && loaded?.getTextContent) {
+    try {
+      const content = await loaded.getTextContent();
+      const words = pdfWords(content, loaded.getViewport({ scale: 1, rotation: 0 }), measureText());
+      if (words.length) return words;
+    } catch {
+      // Fall through to reading it as a picture.
+    }
+    try {
+      const base = loaded.getViewport({ scale: 1, rotation: 0 });
+      const viewport = loaded.getViewport({ scale: Math.min(4, OCR_SIDE / Math.max(base.width, base.height)), rotation: 0 });
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.round(viewport.width);
+      canvas.height = Math.round(viewport.height);
+      await loaded.render({ canvasContext: canvas.getContext("2d"), viewport }).promise;
+      const words = await readPage(`${invoiceId}:pdf:${source.pageNumber}`, canvas, canvas.width, canvas.height);
+      return words.length ? words : null;
+    } catch {
+      return null;
+    }
+  }
+  if (source.kind === "image" && source.urlFor) {
+    try {
+      const url = await source.urlFor();
+      if (!url) return null;
+      const blob = await (await fetch(url)).blob();
+      let width = loaded?.naturalWidth;
+      let height = loaded?.naturalHeight;
+      if (!width || !height) {
+        const bitmap = await createImageBitmap(blob);
+        width = bitmap.width;
+        height = bitmap.height;
+        bitmap.close?.();
+      }
+      const words = await readPage(`${invoiceId}:image:${source.pageNumber}`, blob, width, height);
+      return words.length ? words : null;
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+/** The longest side of a lassoed cut-out sent to be read: plenty for a value, small to send. */
+const CROP_SIDE = 1200;
+
+/**
+ * The lassoed `box` (a fraction of the unrotated page) cut out of the page
+ * at full resolution, a little larger than drawn, as a JPEG data URL —
+ * decision 0699. A PDF page is drawn large first; an image page is read
+ * from its own bytes (a picture shown from another origin cannot be read
+ * back from the screen).
+ */
+async function realCropRegion(source, loaded, box, { invoiceId } = {}) {
+  let picture;
+  let width;
+  let height;
+  if (source.kind === "pdf" && loaded?.render) {
+    const base = loaded.getViewport({ scale: 1, rotation: 0 });
+    const viewport = loaded.getViewport({ scale: Math.min(5, 3000 / Math.max(base.width, base.height)), rotation: 0 });
+    picture = document.createElement("canvas");
+    picture.width = width = Math.round(viewport.width);
+    picture.height = height = Math.round(viewport.height);
+    await loaded.render({ canvasContext: picture.getContext("2d"), viewport }).promise;
+  } else {
+    const url = await source.urlFor();
+    const blob = await (await fetch(url)).blob();
+    picture = await createImageBitmap(blob);
+    width = picture.width;
+    height = picture.height;
+  }
+  const padX = Math.max(0.01, box.w * 0.08);
+  const padY = Math.max(0.006, box.h * 0.25);
+  const sx = Math.max(0, (box.x - padX) * width);
+  const sy = Math.max(0, (box.y - padY) * height);
+  const sw = Math.min(width - sx, (box.w + 2 * padX) * width);
+  const sh = Math.min(height - sy, (box.h + 2 * padY) * height);
+  const scale = Math.min(1, CROP_SIDE / Math.max(sw, sh));
+  const out = document.createElement("canvas");
+  out.width = Math.max(1, Math.round(sw * scale));
+  out.height = Math.max(1, Math.round(sh * scale));
+  const ctx = out.getContext("2d");
+  ctx.fillStyle = "#fff";
+  ctx.fillRect(0, 0, out.width, out.height);
+  ctx.drawImage(picture, sx, sy, sw, sh, 0, 0, out.width, out.height);
+  picture.close?.();
+  void invoiceId;
+  return out.toDataURL("image/jpeg", 0.88);
+}
+
+/** Sends a cut-out to be read; `{ ok, text, field, reason }`. */
+async function realReadRegion(invoiceId, payload) {
   try {
-    const content = await loaded.getTextContent();
-    const words = pdfWords(content, loaded.getViewport({ scale: 1, rotation: 0 }), measureText());
-    return words.length ? words : null;
+    const res = await fetch(`/api/invoices/${encodeURIComponent(invoiceId)}/read-region`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) return { ok: false, reason: body.reason ?? "ai_failed" };
+    return { ok: true, text: body.text ?? "", field: body.field ?? null };
   } catch {
-    return null;
+    return { ok: false, reason: "ai_failed" };
   }
 }
 
@@ -217,6 +323,9 @@ export const REAL_DEPS = {
   pageWords: realPageWords,
   // The link to the invoice form beside it, or in the other window — decision 0697.
   docLink: (invoiceId) => docLink(invoiceId),
+  // A lassoed area cut out of the page, and read by the vision model — decision 0699.
+  cropRegion: realCropRegion,
+  readRegion: realReadRegion,
   // The widget calls `deps.resolvePages`, not the module-level export
   // directly, so a widget-level test can stub the whole page list in
   // one go instead of every fetch and every pdf.js call beneath it.
@@ -351,7 +460,7 @@ export function pageViewer(invoiceId, contentType, deps = REAL_DEPS) {
         source,
         (async () => {
           const loaded = await source.load(deps);
-          return (deps.pageWords ? await deps.pageWords(source, loaded) : null) ?? null;
+          return (deps.pageWords ? await deps.pageWords(source, loaded, { invoiceId }) : null) ?? null;
         })()
       );
     }
@@ -372,11 +481,25 @@ export function pageViewer(invoiceId, contentType, deps = REAL_DEPS) {
 
   const lassoBtn = iconButton("lasso", t("viewer.lasso"), () => setLassoMode(!lassoMode));
 
+  /**
+   * Waits for `work` (a page being read — 0698), saying so on the toolbar
+   * if it takes more than a moment, as the first read of a scan does.
+   */
+  async function whileReading(work) {
+    const timer = setTimeout(() => setHint("viewer.ocr.reading"), 300);
+    try {
+      return await work;
+    } finally {
+      clearTimeout(timer);
+      if (hint.textContent === t("viewer.ocr.reading")) setHint(null);
+    }
+  }
+
   async function showValue(message) {
     lassoed = null;
     const all = [];
     for (const source of pages) {
-      const words = await wordsFor(source);
+      const words = await whileReading(wordsFor(source));
       if (words) all.push({ pageNumber: source.pageNumber, words });
     }
     if (!all.length) {
@@ -386,7 +509,10 @@ export function pageViewer(invoiceId, contentType, deps = REAL_DEPS) {
       link?.send("located", { field: message.field, count: 0, readable: false });
       return;
     }
-    located = locate(all, { field: message.field, value: message.value, kind: message.kind, near: message.near ?? null });
+    // A line's value is looked for beside its description: find that first (0697).
+    const nearFound = message.near?.value ? locate(all, message.near)[0] : null;
+    const near = nearFound ? { pageNumber: nearFound.pageNumber, box: nearFound.box } : null;
+    located = locate(all, { field: message.field, value: message.value, kind: message.kind, near });
     setHint(located.length ? null : "viewer.locate.notfound");
     link?.send("located", { field: message.field, count: located.length, readable: true, best: located[0] ? { pageNumber: located[0].pageNumber, box: located[0].box } : null });
     const best = located[0];
@@ -416,22 +542,79 @@ export function pageViewer(invoiceId, contentType, deps = REAL_DEPS) {
     const xs = path.map((p) => p.x * box.width);
     const ys = path.map((p) => p.y * box.height);
     if (Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)) < MIN_DRAG) return;
-    const words = await wordsFor(source);
-    if (!words) {
-      setHint("viewer.lasso.notext");
-      return;
-    }
+    // A page with no words at all is one Tesseract could not read (0698): the lasso can still go to the AI (0699).
+    const words = (await whileReading(wordsFor(source))) ?? [];
+    const read = words.length === 0 || words.some((w) => w.conf !== undefined) ? "ocr" : "text";
     const polygon = path.map((p) => unrotatePoint(p, rotation));
     const taken = wordsInLasso(words, polygon);
-    if (!taken.words.length) {
+    if (!taken.words.length && read === "text") {
       setHint("viewer.lasso.empty");
       return;
     }
-    lassoed = { pageNumber: source.pageNumber, box: taken.box };
+    const area = polygonBox(polygon);
+    lassoed = { pageNumber: source.pageNumber, box: taken.box ?? area, area, source };
     located = [];
     setHint(null);
     renderHighlights();
-    link?.send("lassoed", { text: taken.text, pageNumber: source.pageNumber, box: taken.box, wordCount: taken.words.length, source: "text" });
+    link?.send("lassoed", {
+      text: taken.text,
+      pageNumber: source.pageNumber,
+      box: taken.box,
+      wordCount: taken.words.length,
+      source: read,
+      // How sure Tesseract was of the least certain word: the form asks the AI below a threshold (0699).
+      confidence: read === "ocr" ? (taken.words.length ? Math.min(...taken.words.map((w) => w.conf ?? 0)) : 0) : 100,
+      context: contextFor(words, taken.box ?? area, taken.words),
+    });
+  }
+
+  /**
+   * **The AI reads the lassoed part of the page — decision 0699.** Asked
+   * by the form, which knows the field: when Tesseract was unsure of the
+   * words, they were not the field's kind of value, or no field had focus
+   * and the form wants to know which field this is. The cut-out is the
+   * lasso's own area, a little larger, at full resolution.
+   */
+  async function readWithAi(request) {
+    const shownLasso = lassoed;
+    if (!shownLasso || !deps.cropRegion || !deps.readRegion) return link?.send("filled", { ok: false, reason: "viewer.lasso.ai.failed" });
+    setHint("viewer.lasso.ai.reading");
+    try {
+      const loaded = await shownLasso.source.load(deps);
+      const image = await deps.cropRegion(shownLasso.source, loaded, shownLasso.area, { invoiceId });
+      const answer = await deps.readRegion(invoiceId, {
+        image,
+        contentType: "image/jpeg",
+        kind: request.kind ?? null,
+        label: request.label ?? null,
+        ocrText: request.ocrText ?? "",
+        context: request.context ?? "",
+        fields: request.fields ?? [],
+      });
+      if (lassoed !== shownLasso) return;
+      if (!answer.ok) {
+        setHint(answer.reason === "ai_allowance" ? "viewer.lasso.ai.allowance" : "viewer.lasso.ai.failed");
+        return;
+      }
+      setHint(null);
+      link?.send("lassoed", {
+        text: answer.text ?? "",
+        pageNumber: shownLasso.pageNumber,
+        box: shownLasso.box,
+        source: "ai",
+        suggested: answer.field ?? null,
+        confidence: 100,
+      });
+    } catch {
+      if (lassoed === shownLasso) setHint("viewer.lasso.ai.failed");
+    }
+  }
+
+  /** "Looks like Due date · Put it there" — the AI's suggestion, offered, not applied (0699). */
+  function offerSuggestion(message) {
+    const put = el("button", { class: "vsuggest", text: t("viewer.lasso.suggest.put") });
+    put.onclick = () => link?.send("fillField", { field: message.suggestion.field, text: message.text ?? "" });
+    hint.replaceChildren(document.createTextNode(`${t("viewer.lasso.suggest").replace("{field}", message.suggestion.label ?? "")} · `), put);
   }
 
   /**
@@ -456,8 +639,12 @@ export function pageViewer(invoiceId, contentType, deps = REAL_DEPS) {
     });
   });
   // The form's answer to a lasso: which field it filled, or why it could not.
+  link?.on("readRegion", (request) => {
+    if (live() && lassoed) readWithAi(request);
+  });
   link?.on("filled", (message) => {
     if (!live() || !lassoed) return;
+    if (!message.ok && message.suggestion) return offerSuggestion(message);
     hint.textContent = message.ok
       ? t("viewer.lasso.filled").replace("{field}", message.label ?? "")
       : t(message.reason ?? "viewer.lasso.nofield").replace("{field}", message.label ?? "");

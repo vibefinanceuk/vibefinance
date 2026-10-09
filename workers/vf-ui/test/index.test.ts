@@ -838,6 +838,7 @@ describe("paths the app is allowed to reach (decision 0212)", () => {
     // Everything received with an invoice — decision 0571.
     "/invoices/inv-1/attachments",
     "/invoices/inv-1/attachments/MSG-7A86-7670-F2A5/1/url",
+    "/invoices/inv-1/read-region",
     // Create → Upload documents — decision 0573.
     "/uploads/targets",
     "/uploads",
