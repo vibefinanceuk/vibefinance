@@ -4007,6 +4007,20 @@ export async function openViewer(task, onClose) {
         ? actionLink("recordsupplier", {
             label: alsoOffer.label,
             onclick: async () => {
+              /**
+               * **Opens a form rather than recording blind — decision 0706.**
+               * Dan, 9 October 2026: Record New Supplier answered *"a
+               * supplier needs a name"* on a scan whose seller name the
+               * reading had missed, though he had typed the name into the
+               * search box. The form shows what will be recorded, filled
+               * from the document and from what was typed, and lets it be
+               * completed.
+               */
+              if (alsoOffer.open) {
+                close();
+                alsoOffer.open(input.value.trim());
+                return;
+              }
               try {
                 const response = await alsoOffer.run();
                 if (!response.ok) {
@@ -4138,28 +4152,8 @@ export async function openViewer(task, onClose) {
        */
       alsoOffer: {
         label: t("viewer.supplier.record"),
-        run: async () => {
-          const facts = stored.facts ?? {};
-          const response = await fetch("/api/suppliers", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              name: facts["BT-27"] ?? "",
-              vatId: facts["BT-31"] ?? "",
-              electronicAddress: facts["BT-34"] ?? "",
-              country: facts["BT-40"] ?? "",
-            }),
-          });
-          if (!response.ok) return response;
-
-          // And attach this invoice to it, which is why we are here.
-          const { id } = await response.json();
-          return fetch(`/api/invoices/${encodeURIComponent(current.subject.id)}/supplier`, {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ supplierId: id }),
-          });
-        },
+        // Decision 0706: the New Seller form, with the name typed in the search where the document gave none.
+        open: (typed) => openNewSellerForm({ name: typed }),
       },
       /**
        * **`orgUnitId`, so results rank by the invoice's own buying
@@ -4230,9 +4224,10 @@ export async function openViewer(task, onClose) {
    * this just does the one thing" shape `openSupplierSearch()` above
    * already has.
    */
-  function openNewSellerForm() {
+  function openNewSellerForm(prefill = {}) {
     const facts = stored.facts ?? {};
-    const nameInput = el("input", { type: "text", value: facts["BT-27"] ?? "" });
+    // Decision 0706: the document's seller name (BT-27), else what was typed in the search.
+    const nameInput = el("input", { type: "text", value: facts["BT-27"] || prefill.name || "" });
     const vatInput = el("input", { type: "text", value: facts["BT-31"] ?? "" });
     const emailInput = el("input", { type: "email", value: "" });
     const addressLineInput = el("input", { type: "text", value: "" });

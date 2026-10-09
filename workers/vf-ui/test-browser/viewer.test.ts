@@ -3899,7 +3899,7 @@ describe("each party card carries its own action (decision 0228)", () => {
     expect(popout.querySelector("button.secondary")).toBeNull();
   });
 
-  it("posts the invoice's own facts and attaches the new supplier when Record New Supplier is clicked", async () => {
+  it("posts the invoice's own facts and attaches the new supplier when Record New Supplier is clicked and the form saved (0706)", async () => {
     const calls: string[] = [];
     vi.stubGlobal(
       "fetch",
@@ -3941,11 +3941,64 @@ describe("each party card carries its own action (decision 0228)", () => {
     record.click();
     await new Promise((r) => setTimeout(r, 0));
 
+    // Decision 0706: a form showing what will be recorded, filled from the document.
+    const form = document.querySelector(".popout") as HTMLElement;
+    expect((form.querySelector("input") as HTMLInputElement).value).toBe("New Co Ltd");
+    (form.querySelector(".cardhead .actionlink") as HTMLButtonElement).click();
+    await new Promise((r) => setTimeout(r, 0));
+
     expect(calls).toContain("POST /api/suppliers");
     expect(calls).toContain("PUT /api/invoices/inv-1/supplier");
     // Attach happens after create, not before.
     expect(calls.indexOf("POST /api/suppliers")).toBeLessThan(calls.indexOf("PUT /api/invoices/inv-1/supplier"));
     expect(document.querySelector(".backdrop")).toBeFalsy();
+  });
+
+  it("names the new supplier from what was typed in the search when the document gave no name (0706)", async () => {
+    const posted: unknown[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        const path = String(url).split("?")[0];
+        const bodies: Record<string, unknown> = {
+          "/api/ui-strings": STRINGS,
+          "/api/code-lists": { fields: {} },
+          "/api/field-visibility": FIELDS,
+          "/api/invoices/inv-1": {
+            facts: { "BT-31": "111350965", "BT-40": "GB" },
+            lines: [],
+            ...MATCHED,
+            validation: { passed: true, checked: [], failures: [] },
+          },
+          "/api/invoices/inv-1/document-url": { url: null },
+          "/api/invoices/inv-1/progress": { inProcess: false, stages: [] },
+          "/api/suppliers/search": { suppliers: [] },
+          "/api/suppliers": { id: "local:new-1" },
+          "/api/invoices/inv-1/supplier": { invoiceId: "inv-1", supplierId: "local:new-1" },
+        };
+        if (path === "/api/suppliers" && init?.method === "POST") posted.push(JSON.parse(String(init.body)));
+        if (!(path in bodies)) throw new Error(`no stub for ${path}`);
+        return { ok: true, json: async () => bodies[path] } as Response;
+      })
+    );
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { openViewer } = await import("/viewer.js");
+    await openViewer(TASK, () => {});
+    await new Promise((r) => setTimeout(r, 0));
+
+    ([...document.querySelectorAll("button")].find((b) => b.textContent === "Change Seller") as HTMLButtonElement).click();
+    await new Promise((r) => setTimeout(r, 0));
+    const search = document.querySelector(".popout input") as HTMLInputElement;
+    search.value = "The Thornbury Deli";
+    ([...document.querySelectorAll(".popout .actionlink")].find((a) => a.querySelector("span")?.textContent === "Record New Supplier") as HTMLButtonElement).click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    const inputs = [...document.querySelectorAll(".popout input")] as HTMLInputElement[];
+    expect(inputs.map((i) => i.value)).toEqual(["The Thornbury Deli", "111350965", "", "", "", "", "GB"]);
+    (document.querySelector(".popout .cardhead .actionlink") as HTMLButtonElement).click();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(posted[0]).toMatchObject({ name: "The Thornbury Deli", vatId: "111350965", country: "GB" });
   });
 
   it("offers no Record button on Change Buyer's own pop-out — only Close, since there is no alsoOffer there", async () => {

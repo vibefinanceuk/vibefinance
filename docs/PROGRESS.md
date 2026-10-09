@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 9 October 2026 (decision 0705). A living document: what
+Last updated 9 October 2026 (decision 0706). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,15 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Record New Supplier opens the form (0706)
+
+Find a supplier's Record New Supplier opens the New Seller form, filled from the
+document (name, VAT number, country) and, where the document gave no name,
+from what was typed in the search. It used to record straight away and refused a
+supplier with no name.
+
+Full reasoning is in decision 0706.
 
 ### A supplier's line table is learned; quantity, unit price and VAT rate read (0705)
 
