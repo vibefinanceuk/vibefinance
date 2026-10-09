@@ -556,9 +556,13 @@ function layoutsSection(s) {
         section.hidden = true;
         return;
       }
-      const { layouts = [], invoices = 0, corrections = null } = await res.json();
+      const { layouts = [], invoices = 0, corrections = null, columns = [] } = await res.json();
       const measure = correctionLines(corrections);
-      if (!layouts.length) {
+      // Decision 0705: the line table's columns known, each with the heading printed over it.
+      const columnLine = columns.length
+        ? [el("div", { text: t("suppliers.layouts.columns").replace("{columns}", columns.map((c) => `${t(`field.${c.field.toLowerCase()}`)}${c.heading ? ` ("${c.heading}")` : ""}`).join(", ")) })]
+        : [];
+      if (!layouts.length && !columns.length) {
         body.replaceChildren(el("div", { text: t("suppliers.layouts.none") }), ...measure);
         return;
       }
@@ -569,8 +573,13 @@ function layoutsSection(s) {
         body.replaceChildren(done?.ok ? t("suppliers.layouts.forgotten") : t("suppliers.changefailed"));
       };
       body.replaceChildren(
-        el("div", { text: t("suppliers.layouts.summary").replace("{layouts}", String(layouts.length)).replace("{invoices}", String(invoices)) }),
-        el("div", { text: t("suppliers.layouts.fields").replace("{fields}", fields.join(", ")) }),
+        ...(layouts.length
+          ? [
+              el("div", { text: t("suppliers.layouts.summary").replace("{layouts}", String(layouts.length)).replace("{invoices}", String(invoices)) }),
+              el("div", { text: t("suppliers.layouts.fields").replace("{fields}", fields.join(", ")) }),
+            ]
+          : []),
+        ...columnLine,
         ...measure,
         forget
       );

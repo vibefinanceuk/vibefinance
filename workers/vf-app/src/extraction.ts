@@ -240,7 +240,7 @@ export function buildExtractionSchema(
   vocabulary: VocabularyInput = "invoice",
   settings?: ExtractionSettings,
   /** Decision 0688: a scanned page's lines are asked for in a call of their own. */
-  options: { lines?: boolean } = {}
+  options: { lines?: boolean; columns?: readonly LineColumnAsk[] | null } = {}
 ): Record<string, unknown> {
   const v = asResolved(vocabulary);
   const properties: Record<string, unknown> = {};
@@ -266,7 +266,7 @@ export function buildExtractionSchema(
   // unit price are common on product invoices and absent from freight
   // ones; these two are what the line-sum validation check needs, and
   // more can be added when something needs them.
-  if (options.lines !== false) properties.lines = linesProperty(settings);
+  if (options.lines !== false) properties.lines = linesProperty(settings, options.columns);
 
   properties._confidence = {
     type: "number",
@@ -291,7 +291,8 @@ export function buildExtractionSchema(
 }
 
 /** The `lines` property: what a line item is, and the two keys every row must carry (0686). */
-function linesProperty(settings?: ExtractionSettings): Record<string, unknown> {
+function linesProperty(settings?: ExtractionSettings, columns?: readonly LineColumnAsk[] | null): Record<string, unknown> {
+  const extra = columnProperties(columns);
   return {
     type: ["array", "null"],
     description:
@@ -301,11 +302,12 @@ function linesProperty(settings?: ExtractionSettings): Record<string, unknown> {
       properties: {
         description: { type: ["string", "null"], description: "what this line is for, as printed" },
         amount: { type: ["number", "null"], description: "the line's own total amount as PRINTED, excluding VAT where the document separates them. Never calculated." },
+        ...extra,
       },
       // Decision 0686: both keys required, as at the top level. Without
       // this, guided decoding let the model answer `lines: [{}]` — one
       // empty row, set aside as amount-less — on every one of Dan's scans.
-      required: ["description", "amount"],
+      required: ["description", "amount", ...Object.keys(extra)],
     },
   };
 }
@@ -319,8 +321,8 @@ function linesProperty(settings?: ExtractionSettings): Record<string, unknown> {
  * whatever happens to the lines, and `maxItems` plus a lower token cap
  * bound how long a line answer can run.
  */
-export function buildLinesSchema(settings?: ExtractionSettings): Record<string, unknown> {
-  const lines = linesProperty(settings);
+export function buildLinesSchema(settings?: ExtractionSettings, columns?: readonly LineColumnAsk[] | null): Record<string, unknown> {
+  const lines = linesProperty(settings, columns);
   return {
     type: "object",
     properties: { lines: { ...lines, type: "array", maxItems: settings?.maxExtractedLines ?? MAX_EXTRACTED_LINES } },
@@ -328,7 +330,7 @@ export function buildLinesSchema(settings?: ExtractionSettings): Record<string, 
   };
 }
 
-export function buildLinesPrompt(pageCount = 1, pageNumber?: number): string {
+export function buildLinesPrompt(pageCount = 1, pageNumber?: number, columns?: readonly LineColumnAsk[] | null): string {
   const page = pageCount > 1 && pageNumber ? `This image is page ${pageNumber} of a ${pageCount}-page invoice. ` : "";
   return `${page}You are reading a photograph or scan of a supplier invoice. Return only its line items: each charge or product row of the main table, in order, as printed.
 
@@ -337,7 +339,7 @@ export function buildLinesPrompt(pageCount = 1, pageNumber?: number): string {
 - amount: the row's own line total as printed, excluding VAT where the document separates them — a plain number, a dot for the decimal point, no currency symbol or thousands separator. Never calculated.
 - A row you cannot read: null for that value. Never guess.
 - No table of line items on this page: an empty list.
-
+${columnInstructions(columns)}
 Return only the JSON object described by the schema.`;
 }
 
@@ -388,6 +390,43 @@ Return only the JSON object described by the schema.`;
 /** Decision 0703: what a reading is told beyond the document, where anything is known. */
 export interface ReadingContext {
   hint?: string | null;
+  /** Decision 0705: the supplier's line columns beyond item and amount, with the heading printed over each. */
+  columns?: readonly LineColumnAsk[] | null;
+}
+
+/**
+ * **A line column asked for because the supplier's table is known — decision
+ * 0705.** Quantity, unit price and VAT rate are read only for a supplier
+ * whose columns have been learned: asking every reading for them is what
+ * made scans time out in 0686.
+ */
+export interface LineColumnAsk {
+  field: "BT-129" | "BT-146" | "BT-152";
+  heading: string | null;
+}
+
+const COLUMN_KEYS: Record<LineColumnAsk["field"], { key: string; what: string }> = {
+  "BT-129": { key: "quantity", what: "the quantity invoiced, a plain number" },
+  "BT-146": { key: "unitPrice", what: "the price of one unit, excluding VAT, a plain number" },
+  "BT-152": { key: "vatRate", what: "the VAT rate as a percentage, a plain number (19 for 19%)" },
+};
+
+/** The extra properties of a line row for the columns asked (0705). */
+function columnProperties(columns?: readonly LineColumnAsk[] | null): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const c of columns ?? []) {
+    const k = COLUMN_KEYS[c.field];
+    if (k) out[k.key] = { type: ["number", "null"], description: `${k.what}${c.heading ? `, from the column headed "${c.heading}"` : ""}. Null if the row has none.` };
+  }
+  return out;
+}
+
+/** The lines prompt's words for the columns asked (0705). */
+function columnInstructions(columns?: readonly LineColumnAsk[] | null): string {
+  const lines = (columns ?? [])
+    .filter((c) => COLUMN_KEYS[c.field])
+    .map((c) => `- ${COLUMN_KEYS[c.field].key}: ${COLUMN_KEYS[c.field].what}${c.heading ? `, in the column headed "${c.heading}" (lower case, no punctuation, as it was learned)` : ""}. As printed, never calculated; null if the row has none.`);
+  return lines.length ? `\nThis supplier's table also has these columns; read them too:\n${lines.join("\n")}\n` : "";
 }
 
 /** A line in the canonical shape the rest of the system already uses:
@@ -634,6 +673,8 @@ export interface MultiPageExtractionResult extends ExtractionResult {
 
 /** The separate lines call's token ceiling: 25 rows need about a thousand. */
 export const LINES_MAX_TOKENS = 2500;
+/** Decision 0705: what each extra column asked for adds to the lines answer's cap. */
+export const LINES_TOKENS_PER_COLUMN = 400;
 
 /**
  * **A scanned page's lines, asked for on their own — decision 0688.**
@@ -648,10 +689,13 @@ async function readPageLines(
   image: { bytes: Uint8Array; contentType: string },
   pageCount: number,
   pageNumber: number,
-  settings: ExtractionSettings
+  settings: ExtractionSettings,
+  columns?: readonly LineColumnAsk[] | null
 ): Promise<void> {
   try {
-    const raw = await model.extract(buildLinesPrompt(pageCount, pageNumber), [image], buildLinesSchema(settings), { maxTokens: LINES_MAX_TOKENS });
+    // Decision 0705: a row with more columns is a longer answer.
+    const maxTokens = LINES_MAX_TOKENS + (columns?.length ?? 0) * LINES_TOKENS_PER_COLUMN;
+    const raw = await model.extract(buildLinesPrompt(pageCount, pageNumber, columns), [image], buildLinesSchema(settings, columns), { maxTokens });
     const read = parseLinesResponse(raw, settings);
     result.lines = read.lines;
     result.linesTruncated = read.linesTruncated;
@@ -754,6 +798,12 @@ export function readLineRows(
     // line table, rules, coding suggestions and the ERP export read one
     // field whichever way the invoice arrived.
     if (descriptionCheck.ok) line["BT-153"] = descriptionCheck.value;
+    // Decision 0705: the columns asked for because the supplier's table is known. One that cannot be read is left out, never discards the row.
+    for (const [field, { key }] of Object.entries(COLUMN_KEYS)) {
+      if (row[key] === null || row[key] === undefined) continue;
+      const v = lineAmount(row[key]);
+      if (v.ok) line[field] = v.value;
+    }
     lines.push(line);
   }
   // A line whose AMOUNT could not be coerced means the list is
@@ -872,7 +922,7 @@ export async function extractInvoiceFromImages(
         raw = await ask();
       }
       const result = parseExtractionResponse(raw, vocabulary, settings);
-      await readPageLines(model, result, { bytes, contentType: sniffed }, pages.length, pageNumber, settings);
+      await readPageLines(model, result, { bytes, contentType: sniffed }, pages.length, pageNumber, settings, context.columns);
       perPage.push({ page: pageNumber, result });
     } catch (err) {
       // Decision 0696: no allowance left means no page will be read now; the document waits whole.
@@ -1125,7 +1175,7 @@ export async function extractInvoiceFromPdfText(
   const raw = await model.extract(
     `${prompt}\n\nThe invoice's text${truncated ? " (cut short: the document is longer than one request can carry)" : ""}:\n\n${text}`,
     [],
-    buildExtractionSchema(vocabulary, settings)
+    buildExtractionSchema(vocabulary, settings, { columns: context.columns })
   );
   return parseExtractionResponse(raw, vocabulary, settings);
 }

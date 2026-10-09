@@ -173,6 +173,7 @@ export async function supplierEvidence(db: D1Database, supplierId: string): Prom
        FROM invoice_field_regions r
        JOIN invoice_headers h ON h.id = r.invoice_id
        WHERE h.supplier_id = ?1
+         AND r.field GLOB 'BT-[0-9]*'
          AND r.recorded_at > COALESCE((SELECT reset_at FROM supplier_layout_resets WHERE supplier_id = ?1), '')
          AND r.invoice_id IN (SELECT id FROM invoice_headers WHERE supplier_id = ?1 ORDER BY created_at DESC LIMIT ${RECENT_INVOICES})`
     )
@@ -214,8 +215,8 @@ export async function supplierLayouts(db: D1Database, supplierId: string): Promi
 
 /** The supplier's page: what is learned, and whether it is helping (0704). */
 export async function supplierLearning(db: D1Database, supplierId: string) {
-  const [learned, corrections] = await Promise.all([supplierLayouts(db, supplierId), supplierCorrections(db, supplierId)]);
-  return { ...learned, corrections };
+  const [learned, corrections, columns] = await Promise.all([supplierLayouts(db, supplierId), supplierCorrections(db, supplierId), supplierColumns(db, supplierId)]);
+  return { ...learned, corrections, columns };
 }
 
 /** The layouts of the supplier an invoice is from: what the viewer uses for "usually here". */
@@ -303,4 +304,109 @@ export async function supplierCorrections(db: D1Database, supplierId: string): P
     helped: count(rows.filter((r) => r.helped)),
     unhelped: count(rows.filter((r) => !r.helped)),
   };
+}
+
+/**
+ * **A supplier's line table: which column holds what — decision 0705.**
+ * Design §3, step 4. From where line values were (0701's regions, for lines:
+ * `line.<n>.BT-129`), where across the page each column is and the heading
+ * printed over it ("Menge", "Einzelpreis", "MwSt").
+ *
+ * A column is a band across the page, so only **across** matters: each
+ * invoice contributes once per column (the middle of its rows, the
+ * strongest kind of evidence it gave), so a twenty-line invoice does not
+ * outvote nineteen one-line ones. Columns agree when their middles are
+ * within `SAME_COLUMN` and their headings match where both have one. A
+ * column is learned at `LEARNED_AT`, as a header field is.
+ */
+export const SAME_COLUMN = 0.04;
+/** The columns learned, by the field each holds: quantity, line amount, unit price, VAT rate, item name. */
+export const LINE_COLUMN_FIELDS = ["BT-129", "BT-131", "BT-146", "BT-152", "BT-153"] as const;
+
+export interface ColumnEvidence {
+  invoiceId: string;
+  field: string;
+  x: number;
+  w: number;
+  heading: string | null;
+  source: RegionSource;
+}
+
+export interface LineColumn {
+  field: string;
+  /** Middle of the column, across the page (0–1), and its usual width. */
+  x: number;
+  w: number;
+  heading: string | null;
+  evidence: number;
+  disagreements: number;
+}
+
+export function learnColumns(evidence: readonly ColumnEvidence[]): LineColumn[] {
+  // One vote per invoice and field: the middle of its rows, at the strongest weight it gave.
+  const votes = new Map<string, ColumnEvidence[]>();
+  for (const e of evidence) {
+    const key = `${e.invoiceId}|${e.field}`;
+    if (!votes.has(key)) votes.set(key, []);
+    votes.get(key)!.push(e);
+  }
+  const byField = new Map<string, { x: number; w: number; heading: string | null; weight: number }[]>();
+  for (const rows of votes.values()) {
+    const field = rows[0].field;
+    if (!byField.has(field)) byField.set(field, []);
+    byField.get(field)!.push({
+      x: median(rows.map((r) => r.x + r.w / 2)),
+      w: median(rows.map((r) => r.w)),
+      heading: mostCommon(rows.map((r) => r.heading)),
+      weight: Math.max(...rows.map((r) => WEIGHT[r.source])),
+    });
+  }
+  const out: LineColumn[] = [];
+  for (const [field, list] of byField) {
+    const total = list.reduce((n, v) => n + v.weight, 0);
+    let best: typeof list = [];
+    let bestWeight = 0;
+    for (const seed of list) {
+      const group = list.filter((v) => Math.abs(v.x - seed.x) <= SAME_COLUMN && (!v.heading || !seed.heading || v.heading === seed.heading));
+      const weight = group.reduce((n, v) => n + v.weight, 0);
+      if (weight > bestWeight) [best, bestWeight] = [group, weight];
+    }
+    if (bestWeight >= LEARNED_AT && bestWeight > total - bestWeight) {
+      out.push({
+        field,
+        x: median(best.map((v) => v.x)),
+        w: median(best.map((v) => v.w)),
+        heading: mostCommon(best.map((v) => v.heading)),
+        evidence: bestWeight,
+        disagreements: total - bestWeight,
+      });
+    }
+  }
+  return out.sort((a, b) => a.x - b.x);
+}
+
+/** A supplier's learned line columns, from its recent invoices since its learning was last forgotten. */
+export async function supplierColumns(db: D1Database, supplierId: string): Promise<LineColumn[]> {
+  const rows = await db
+    .prepare(
+      `SELECT r.invoice_id, r.field, r.x, r.w, r.label_text, r.source
+       FROM invoice_field_regions r
+       JOIN invoice_headers h ON h.id = r.invoice_id
+       WHERE h.supplier_id = ?1
+         AND r.field GLOB 'line.*'
+         AND r.recorded_at > COALESCE((SELECT reset_at FROM supplier_layout_resets WHERE supplier_id = ?1), '')
+         AND r.invoice_id IN (SELECT id FROM invoice_headers WHERE supplier_id = ?1 ORDER BY created_at DESC LIMIT ${RECENT_INVOICES})`
+    )
+    .bind(supplierId)
+    .all<{ invoice_id: string; field: string; x: number; w: number; label_text: string | null; source: RegionSource }>();
+  return learnColumns(
+    rows.results.map((r) => ({
+      invoiceId: r.invoice_id,
+      field: r.field.slice(r.field.lastIndexOf(".") + 1),
+      x: r.x,
+      w: r.w,
+      heading: r.label_text,
+      source: r.source,
+    }))
+  );
 }

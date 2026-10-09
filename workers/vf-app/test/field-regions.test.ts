@@ -71,7 +71,7 @@ describe("handleRecordRegion", () => {
   });
 
   it.each([
-    ["a line field", "line.1.BT-131", { pageNumber: 1, box: BOX, value: "1", source: "found" }],
+    ["a line field no table is learned from", "line.1.BT-133", { pageNumber: 1, box: BOX, value: "1", source: "found" }],
     ["no box", "BT-112", { pageNumber: 1, value: "1", source: "found" }],
     ["a box off the page", "BT-112", { pageNumber: 1, box: { ...BOX, x: 1.4 }, value: "1", source: "found" }],
     ["no value", "BT-112", { pageNumber: 1, box: BOX, value: "", source: "found" }],

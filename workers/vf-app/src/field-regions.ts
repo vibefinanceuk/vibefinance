@@ -26,8 +26,14 @@ export interface FieldRegion {
   current: boolean;
 }
 
-/** A header field by its EN 16931 code. Lines are a different problem (design §3, step 4). */
+/** A header field by its EN 16931 code. */
 const HEADER_FIELD = /^BT-\d{1,3}$/;
+/**
+ * **A line's value, by line and column — decision 0705** (design §3, step 4):
+ * `line.3.BT-129`. The columns a supplier's table is learned from:
+ * quantity, line amount, unit price, VAT rate and the item's name.
+ */
+const LINE_FIELD = /^line\.(\d{1,4})\.(BT-129|BT-131|BT-146|BT-152|BT-153)$/;
 const STRENGTH: Record<RegionSource, number> = { found: 1, lassoed: 3, lassoed_corrected: 5 };
 
 function squash(text: unknown): string {
@@ -79,7 +85,9 @@ export async function handleRecordRegion(
   userId: string | null,
   body: unknown
 ): Promise<{ status: number; body: Record<string, unknown> }> {
-  if (!HEADER_FIELD.test(field)) return { status: 400, body: { error: "field must be a header field code such as BT-112" } };
+  if (!HEADER_FIELD.test(field) && !LINE_FIELD.test(field)) {
+    return { status: 400, body: { error: "field must be a header field code such as BT-112, or a line's such as line.1.BT-129" } };
+  }
   const b = (body ?? {}) as Record<string, unknown>;
   const box = (b.box ?? {}) as Record<string, unknown>;
   const pageNumber = Number(b.pageNumber);
@@ -119,10 +127,31 @@ export async function handleRecordRegion(
   return { status: 200, body: { recorded: source } };
 }
 
+/** A line's stored facts, by line number. */
+async function lineFactsOf(db: D1Database, invoiceId: string): Promise<Map<number, Record<string, unknown>>> {
+  const rows = await db.prepare("SELECT line_number, facts_json FROM invoice_lines WHERE invoice_id = ?").bind(invoiceId).all<{ line_number: number; facts_json: string | null }>();
+  const out = new Map<number, Record<string, unknown>>();
+  for (const r of rows.results) {
+    try {
+      out.set(r.line_number, JSON.parse(r.facts_json ?? "{}"));
+    } catch {
+      out.set(r.line_number, {});
+    }
+  }
+  return out;
+}
+
+/** The stored value a region's field refers to: a header fact, or a line's. */
+function storedValue(facts: Record<string, unknown>, lines: Map<number, Record<string, unknown>>, field: string): unknown {
+  const line = field.match(LINE_FIELD);
+  return line ? lines.get(Number(line[1]))?.[line[2]] : facts[field];
+}
+
 /** Every recorded region of an invoice, each saying whether its value is still the invoice's. */
 export async function listRegions(db: D1Database, invoiceId: string): Promise<FieldRegion[] | null> {
   const facts = await factsOf(db, invoiceId);
   if (!facts) return null;
+  const lines = await lineFactsOf(db, invoiceId);
   const rows = await db
     .prepare(
       `SELECT field, page_number, x, y, w, h, label_text, value, source, recorded_at
@@ -138,7 +167,7 @@ export async function listRegions(db: D1Database, invoiceId: string): Promise<Fi
     value: r.value,
     source: r.source,
     recordedAt: r.recorded_at,
-    current: sameValue(facts[r.field], r.value),
+    current: sameValue(storedValue(facts, lines, r.field), r.value),
   }));
 }
 
@@ -156,7 +185,7 @@ export async function regionTimeline(db: D1Database, invoiceId: string) {
         .prepare(
           `SELECT r.field, r.page_number, r.value, r.source, r.recorded_at, u.name AS user_name
            FROM invoice_field_regions r LEFT JOIN org_users u ON u.id = r.recorded_by
-           WHERE r.invoice_id = ? AND r.source IN ('lassoed', 'lassoed_corrected')`
+           WHERE r.invoice_id = ? AND r.source IN ('lassoed', 'lassoed_corrected') AND r.field GLOB 'BT-[0-9]*'`
         )
         .bind(invoiceId)
         .all<(typeof rows)[number]>()

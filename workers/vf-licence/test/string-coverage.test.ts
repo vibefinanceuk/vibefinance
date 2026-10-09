@@ -3637,6 +3637,8 @@ const KEYS_THE_INTERFACE_USES = [
   "suppliers.learning.recent",
   "suppliers.learning.recentonly",
   "suppliers.learning.helped",
+  // A supplier's line columns (decision 0705).
+  "suppliers.layouts.columns",
   "routes.format.supplier_csv",
   "routes.formats.supplier_csv",
   "routes.formats.supplier_csv.syntax",

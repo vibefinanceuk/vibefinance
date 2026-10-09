@@ -19,7 +19,8 @@
  * Otherwise nothing is said, and the invoice is read as it always was. A
  * hint never overrides the document: the prompt says the document wins.
  */
-import { supplierLayouts, type Layout } from "./supplier-layouts.js";
+import { supplierLayouts, supplierColumns, type Layout, type LineColumn } from "./supplier-layouts.js";
+import type { LineColumnAsk } from "./extraction.js";
 
 /** How a field is named in a hint. The header fields learned first (design §5, decision 1). */
 const FIELD_NAMES: Record<string, string> = {
@@ -143,14 +144,27 @@ export function layoutHint(layouts: readonly Layout[], supplierName: string): La
   };
 }
 
+/**
+ * **The line columns to ask for — decision 0705.** Quantity, unit price and
+ * VAT rate, where the supplier's table is known to have them, with the
+ * heading printed over each. Item name and amount are always asked.
+ */
+export function columnAsks(columns: readonly LineColumn[]): LineColumnAsk[] {
+  return columns
+    .filter((c): c is LineColumn & { field: LineColumnAsk["field"] } => c.field === "BT-129" || c.field === "BT-146" || c.field === "BT-152")
+    .map((c) => ({ field: c.field, heading: c.heading }));
+}
+
 /** What the extraction prompt should be told about a document from `sender`, if anything. */
 export async function hintBeforeReading(
   db: D1Database,
   sender: string | null | undefined
-): Promise<(LayoutHint & { supplierId: string; supplierName: string; how: KnownSupplier["how"] }) | null> {
+): Promise<{ text: string | null; fields: string[]; columns: LineColumnAsk[]; supplierId: string; supplierName: string; how: KnownSupplier["how"] } | null> {
   const supplier = await supplierForSender(db, sender);
   if (!supplier) return null;
-  const { layouts } = await supplierLayouts(db, supplier.supplierId);
+  const [{ layouts }, columns] = await Promise.all([supplierLayouts(db, supplier.supplierId), supplierColumns(db, supplier.supplierId)]);
   const hint = layoutHint(layouts, supplier.name);
-  return hint ? { ...hint, supplierId: supplier.supplierId, supplierName: supplier.name, how: supplier.how } : null;
+  const asks = columnAsks(columns);
+  if (!hint && !asks.length) return null;
+  return { text: hint?.text ?? null, fields: hint?.fields ?? [], columns: asks, supplierId: supplier.supplierId, supplierName: supplier.name, how: supplier.how };
 }

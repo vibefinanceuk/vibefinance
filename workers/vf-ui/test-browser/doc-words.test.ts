@@ -12,6 +12,7 @@ import {
   valueFromLasso,
   squash,
   ocrWords,
+  columnHeading,
 } from "/doc-words.js";
 import { parseAmount } from "/money.js";
 
@@ -317,5 +318,32 @@ describe("ocrWords — Tesseract's words as boxes on the page (decision 0698)", 
 
   it("is nothing without the image's size", () => {
     expect(ocrWords(blocks, 0, 0)).toEqual([]);
+  });
+});
+
+describe("columnHeading — the heading over a value's column (decision 0705)", () => {
+  // Beschreibung at 50, Menge from 300, Betrag from 500; two line rows below.
+  function table() {
+    const at = (text: string, x: number, row: number) => ({ text, x: x / 1000, y: (100 + row * 40) / 1000, w: (text.length * 8) / 1000, h: 0.02 });
+    return readingOrder([
+      at("Rechnung", 50, 0),
+      at("Beschreibung", 50, 1), at("Menge", 300, 1), at("Betrag", 500, 1),
+      at("Kopierpapier", 50, 2), at("A4", 160, 2), at("10", 310, 2), at("1.234,50", 500, 2),
+      at("Toner", 50, 3), at("schwarz", 100, 3), at("2", 315, 3), at("180,00", 500, 3),
+    ]);
+  }
+
+  it("finds the heading row above, past the rows of numbers", () => {
+    const words = table();
+    const two = words.find((w: { text: string }) => w.text === "2")!;
+    expect(columnHeading(words, two)).toBe("Menge");
+    const amount = words.find((w: { text: string }) => w.text === "180,00")!;
+    expect(columnHeading(words, amount)).toBe("Betrag");
+  });
+
+  it("is empty with no heading row above", () => {
+    const words = table();
+    const rechnung = words.find((w: { text: string }) => w.text === "Rechnung")!;
+    expect(columnHeading(words, rechnung)).toBe("");
   });
 });

@@ -243,6 +243,33 @@ export function contextFor(words, box, taken = [], max = 200) {
   return text.slice(0, max);
 }
 
+/**
+ * The heading of the table column a value sits in — decision 0705: going up
+ * from the value, the first line that reads like a table's heading row
+ * (three or more words, none of them an amount) and has a word over the
+ * value's column. `""` when there is none within reach.
+ */
+export function columnHeading(words, box, reach = 0.45) {
+  if (!box) return "";
+  const lines = new Map();
+  for (const w of words) {
+    if (w.y + w.h > box.y + 0.002 || box.y - (w.y + w.h) > reach) continue;
+    if (!lines.has(w.line)) lines.set(w.line, []);
+    lines.get(w.line).push(w);
+  }
+  const numeric = (t) => amountCandidates(t).length > 0 && !/[a-z]{2}/i.test(t);
+  const left = box.x - 0.01;
+  const right = box.x + box.w + 0.01;
+  for (const line of [...lines.keys()].sort((a, b) => b - a)) {
+    const row = lines.get(line);
+    const wordsOnly = row.filter((w) => !numeric(w.text));
+    if (wordsOnly.length < 3 || wordsOnly.length < row.length) continue;
+    const over = row.filter((w) => w.x < right && w.x + w.w > left);
+    if (over.length) return over.map((w) => w.text).join(" ");
+  }
+  return "";
+}
+
 /** The smallest box around a lasso's points. */
 export function polygonBox(points) {
   if (!points?.length) return null;

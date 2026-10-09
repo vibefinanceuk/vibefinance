@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 9 October 2026 (decision 0704). A living document: what
+Last updated 9 October 2026 (decision 0705). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,15 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### A supplier's line table is learned; quantity, unit price and VAT rate read (0705)
+
+Step 4 of learning supplier layouts. Where line values are is recorded with their
+column's heading; each supplier's columns are learned (one vote per invoice); and for a
+supplier whose quantity, unit price or VAT rate column is learned, the lines reading
+asks for those columns too, under their headings. Others are read as before.
+
+Full reasoning is in decision 0705.
 
 ### Whether learning helps: fields corrected per invoice (0704)
 

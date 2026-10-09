@@ -95,6 +95,16 @@ function isHeader(node) {
   return /^BT-\d{1,3}$/.test(node.dataset.field ?? "") && node.dataset.line === undefined;
 }
 
+/** Decision 0705: the line columns whose place is recorded, to learn a supplier's table. */
+const LINE_FIELDS = new Set(["BT-129", "BT-131", "BT-146", "BT-152", "BT-153"]);
+
+/** What a field's place is recorded under: `BT-112`, or `line.3.BT-129` for a line's; null if not recorded. */
+function regionField(node) {
+  if (isHeader(node)) return node.dataset.field;
+  if (node.dataset.line !== undefined && LINE_FIELDS.has(node.dataset.field)) return `line.${Number(node.dataset.line) + 1}.${node.dataset.field}`;
+  return null;
+}
+
 function record(field, body) {
   if (!state.invoiceId || !state.regionsApi) return;
   const key = `${field}|${body.source}|${body.pageNumber}|${[body.box.x, body.box.y, body.box.w, body.box.h].map((n) => n.toFixed(3)).join(",")}|${body.value}`;
@@ -110,8 +120,10 @@ function record(field, body) {
  */
 function onLocated(message) {
   const asked = state.lastLocate;
-  if (!asked || asked.field !== message.field || !message.best || !message.unambiguous || !asked.header) return;
-  record(message.field, { pageNumber: message.best.pageNumber, box: message.best.box, label: message.best.label ?? null, value: asked.value, source: "found" });
+  if (!asked || asked.field !== message.field || !message.best || !message.unambiguous || !asked.recordAs || !asked.value) return;
+  // A line's value is labelled by its column's heading, a header value by the words beside it (0705).
+  const label = asked.header ? message.best.label : message.best.heading;
+  record(asked.recordAs, { pageNumber: message.best.pageNumber, box: message.best.box, label: label ?? null, value: asked.value, source: "found" });
 }
 
 function isEditable(node) {
@@ -138,7 +150,7 @@ function locateFor(node) {
     return;
   }
   const message = { field: node.dataset.field, label: labelOf(node), kind: node.dataset.kind, value };
-  state.lastLocate = { field: node.dataset.field, value, header: isHeader(node) };
+  state.lastLocate = { field: node.dataset.field, value, header: isHeader(node), recordAs: regionField(node) };
   // Decision 0701: a value taken from the page with the box is shown exactly where it was taken.
   const region = isHeader(node) ? state.regions.get(node.dataset.field) : null;
   if (region && region.source !== "found" && sameValue(region.value, value)) message.region = { pageNumber: region.pageNumber, box: region.box };
@@ -206,7 +218,7 @@ function fillableFields() {
  * field it looks like, and the answer is offered, never applied unasked.
  */
 export function fillTarget(message) {
-  if (message.box && message.pageNumber) state.lastLasso = { pageNumber: message.pageNumber, box: message.box, label: message.label ?? null };
+  if (message.box && message.pageNumber) state.lastLasso = { pageNumber: message.pageNumber, box: message.box, label: message.label ?? null, heading: message.heading ?? null };
   /**
    * **Nothing on screen can be changed — decision 0700.** Dan, 9 October
    * 2026, having lassoed on a task he had not claimed: *"the lasso was
@@ -265,9 +277,11 @@ export function fillTarget(message) {
   // Decision 0701: a person pointed at where this value is. The strongest evidence there is.
   const where = state.lastLasso;
   const value = String(valueOf(target) ?? "").trim();
-  if (where && value && isHeader(target)) {
-    record(target.dataset.field, { pageNumber: where.pageNumber, box: where.box, label: where.label, value, previous, source: "lassoed" });
-    state.regions.set(target.dataset.field, { pageNumber: where.pageNumber, box: where.box, value, source: previous && !sameValue(previous, value) ? "lassoed_corrected" : "lassoed" });
+  const recordAs = regionField(target);
+  if (where && value && recordAs) {
+    const header = isHeader(target);
+    record(recordAs, { pageNumber: where.pageNumber, box: where.box, label: header ? where.label : where.heading, value, previous, source: "lassoed" });
+    if (header) state.regions.set(target.dataset.field, { pageNumber: where.pageNumber, box: where.box, value, source: previous && !sameValue(previous, value) ? "lassoed_corrected" : "lassoed" });
   }
 }
 

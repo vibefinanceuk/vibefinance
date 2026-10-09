@@ -303,6 +303,7 @@ import lassoBoxStringsSql from "../migrations/0312_lasso_box_strings.sql?raw";
 import valueFromDocumentStringsSql from "../migrations/0313_value_from_document_strings.sql?raw";
 import supplierLayoutStringsSql from "../migrations/0314_supplier_layout_strings.sql?raw";
 import supplierLearningStringsSql from "../migrations/0315_supplier_learning_strings.sql?raw";
+import lineColumnsStringsSql from "../migrations/0316_line_columns_strings.sql?raw";
 
 function stripSqlComments(sql: string): string {
   return sql
@@ -639,5 +640,6 @@ export async function applyTestSchema(): Promise<void> {
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(valueFromDocumentStringsSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(supplierLayoutStringsSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(supplierLearningStringsSql)));
+  await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(lineColumnsStringsSql)));
 
 }

@@ -659,3 +659,71 @@ describe("usually here for this supplier — decision 0702", () => {
     expect(root.querySelector(".vhint")?.textContent).toBe("");
   });
 });
+
+describe("a line's place, by column — decision 0705", () => {
+  beforeEach(async () => {
+    FakeChannel.all = [];
+    document.body.replaceChildren();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        if (String(url).startsWith("/api/ui-strings")) return { ok: true, json: async () => STRINGS } as Response;
+        throw new Error(`no stub for ${url}`);
+      })
+    );
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const link = (id: string) => docLink(id, FakeChannel as unknown as typeof BroadcastChannel);
+  // A table: heading row, then two lines with a quantity column.
+  const at = (text: string, x: number, row: number) => ({ text, x: x / 1000, y: (100 + row * 50) / 1000, w: (text.length * 10) / 1000, h: 20 / 1000 });
+  const TABLE = readingOrder([
+    at("Beschreibung", 100, 0), at("Menge", 300, 0), at("Betrag", 500, 0),
+    at("Papier", 100, 1), at("10", 310, 1), at("740,70", 500, 1),
+    at("Toner", 100, 2), at("2", 315, 2), at("180,00", 500, 2),
+  ]);
+
+  it("records a line value found on its own row, under its column's heading", async () => {
+    const regionsApi = { list: vi.fn(async () => []), record: vi.fn(async () => {}) };
+    mountViewer(TABLE);
+    const input = markField(document.createElement("input"), { field: "BT-129", kind: "number", line: 1 }) as HTMLInputElement;
+    input.value = "2";
+    document.body.append(input);
+    connectFields("inv-1", { lineDescription: () => "Toner", makeLink: link, regionsApi });
+    input.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
+    await flush();
+    expect(regionsApi.record).toHaveBeenCalledWith("inv-1", "line.2.BT-129", expect.objectContaining({ source: "found", value: "2", label: "Menge" }));
+  });
+
+  it("records a value boxed into a line cell, under its column's heading", async () => {
+    const regionsApi = { list: vi.fn(async () => []), record: vi.fn(async () => {}) };
+    const { root } = mountViewer(TABLE);
+    const input = markField(document.createElement("input"), { field: "BT-129", kind: "number", line: 0 }) as HTMLInputElement;
+    document.body.append(input);
+    connectFields("inv-1", { lineDescription: () => "Papier", makeLink: link, regionsApi });
+    input.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
+    await flush();
+    // Round "10" on the Papier row: x 310–330, y 150–170.
+    lassoRound(root, 305, 145, 335, 175);
+    await flush();
+    expect(input.value).toBe("10");
+    expect(regionsApi.record).toHaveBeenCalledWith("inv-1", "line.1.BT-129", expect.objectContaining({ source: "lassoed", value: "10", label: "Menge" }));
+  });
+
+  it("does not record a line field the table is not learned from", async () => {
+    const regionsApi = { list: vi.fn(async () => []), record: vi.fn(async () => {}) };
+    mountViewer(TABLE);
+    const input = markField(document.createElement("input"), { field: "BT-133", kind: "text", line: 0 }) as HTMLInputElement;
+    input.value = "Papier";
+    document.body.append(input);
+    connectFields("inv-1", { makeLink: link, regionsApi });
+    input.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
+    await flush();
+    expect(regionsApi.record).not.toHaveBeenCalled();
+  });
+});

@@ -20,6 +20,16 @@ const STRINGS = {
   locale: "en",
   strings: {
     "suppliers.heading": "Suppliers",
+    // Decisions 0702, 0704, 0705.
+    "suppliers.layouts.title": "Invoice layouts learned",
+    "suppliers.layouts.none": "Nothing learned yet.",
+    "suppliers.layouts.summary": "{layouts} layout(s), learned from {invoices} invoices",
+    "suppliers.layouts.fields": "Knows where to find: {fields}",
+    "suppliers.layouts.columns": "Line columns known: {columns}",
+    "suppliers.layouts.forget": "Forget what was learned",
+    "suppliers.learning.recent": "Fields corrected per invoice: {recent} over the last {n} read ({earlier} before)",
+    "suppliers.learning.recentonly": "Fields corrected per invoice: {recent} over the last {n} read",
+    "suppliers.learning.helped": "Read with what was learned: {helped} per invoice ({unhelped} without)",
     "suppliers.mirror": "Loaded from your ERP.",
     "suppliers.none": "No suppliers have been loaded yet.",
     "suppliers.neverloaded": "No supplier file has ever been loaded.",
@@ -1006,3 +1016,84 @@ describe("the New supplier pop-out's actions, top right (decision 0666)", () => 
   });
 });
 
+
+/**
+ * Decisions 0702, 0704 and 0705: what is learned about a supplier's invoices.
+ * (0704's tests were described in its record but not committed with it;
+ * added here, with 0705.)
+ */
+const LEARNING_SUPPLIER = [{ id: "s1", erpIdentifier: "E1", name: "Acme", status: "active", onHold: false }];
+
+async function openWithLearning(learning: unknown) {
+  stubFetch({ suppliers: LEARNING_SUPPLIER, lastLoad: null });
+  const base = globalThis.fetch as unknown as (url: string, init?: RequestInit) => Promise<Response>;
+  const posted: string[] = [];
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (url: string, init?: RequestInit) => {
+      const path = String(url).split("?")[0];
+      if (path.endsWith("/layouts")) return { ok: true, json: async () => learning } as Response;
+      if (path.endsWith("/layouts/forget")) {
+        posted.push(init?.method ?? "GET");
+        return { ok: true, json: async () => ({ forgotten: true }) } as Response;
+      }
+      return base(url, init);
+    })
+  );
+  const { loadStrings } = await import("/strings.js");
+  await loadStrings();
+  const { open } = await import("/suppliers.js");
+  await open();
+  (document.querySelector("tbody tr") as HTMLElement).click();
+  for (let i = 0; i < 10; i++) await Promise.resolve();
+  await new Promise((r) => setTimeout(r, 0));
+  return { section: document.querySelector(".popout .supplierlayouts") as HTMLElement, posted };
+}
+
+describe("what is learned about a supplier's invoices — decisions 0702 and 0704", () => {
+  it("shows the layouts, the fields known, and whether it is helping, and can forget", async () => {
+    const { section, posted } = await openWithLearning({
+      invoices: 7,
+      layouts: [{ id: "L1", invoices: 7, fields: [{ field: "BT-112" }, { field: "BT-1" }] }],
+      columns: [],
+      corrections: {
+        recent: { invoices: 20, corrections: 8, perInvoice: 0.4 },
+        earlier: { invoices: 12, corrections: 25, perInvoice: 2.1 },
+        helped: { invoices: 10, corrections: 3, perInvoice: 0.3 },
+        unhelped: { invoices: 22, corrections: 30, perInvoice: 1.4 },
+      },
+    });
+    const lines = [...section.querySelectorAll(".muted > div")].map((d) => d.textContent ?? "");
+    expect(lines.some((l) => l.includes("0.4") && l.includes("20") && l.includes("2.1"))).toBe(true);
+    expect(lines.some((l) => l.includes("0.3") && l.includes("1.4"))).toBe(true);
+    (section.querySelector("button") as HTMLButtonElement).click();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(posted).toEqual(["POST"]);
+  });
+
+  it("with nothing learned, still says how many fields are corrected, and offers no Forget", async () => {
+    const { section } = await openWithLearning({
+      invoices: 0,
+      layouts: [],
+      columns: [],
+      corrections: {
+        recent: { invoices: 3, corrections: 6, perInvoice: 2 },
+        earlier: { invoices: 0, corrections: 0, perInvoice: null },
+        helped: { invoices: 0, corrections: 0, perInvoice: null },
+        unhelped: { invoices: 3, corrections: 6, perInvoice: 2 },
+      },
+    });
+    const lines = [...section.querySelectorAll(".muted > div")].map((d) => d.textContent ?? "");
+    expect(lines).toEqual(["Nothing learned yet.", "Fields corrected per invoice: 2 over the last 3 read"]);
+    expect(lines[1]).toContain("2");
+    expect(section.querySelector("button")).toBeNull();
+  });
+});
+
+describe("a supplier's line columns — decision 0705", () => {
+  it("names the columns known, with their headings, and offers Forget even with no header layout", async () => {
+    const { section } = await openWithLearning({ invoices: 0, layouts: [], columns: [{ field: "BT-129", heading: "menge" }], corrections: null });
+    expect(section.textContent).toContain('("menge")');
+    expect(section.querySelector("button")).toBeTruthy();
+  });
+});

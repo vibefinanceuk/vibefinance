@@ -8,7 +8,7 @@ import { mergePoMatchFacts, mergeReceiptFactsForInvoice } from "./po-matching.js
 import { mergeCodingValidityForInvoice } from "./coding-validation.js";
 import { handleCreateProcessInstance, visitCurrentStage } from "./workflow-engine.js";
 import { extractEmbeddedInvoiceXml, looksLikePdf, PdfExtractionError } from "./pdf-attachment.js";
-import { extractInvoiceFromImage, extractInvoiceFromImages, extractInvoiceFromPdfText, mergePageResults, sniffImageType, ExtractionRefusal, type ExtractionModel, type ExtractionResult } from "./extraction.js";
+import { extractInvoiceFromImage, extractInvoiceFromImages, extractInvoiceFromPdfText, mergePageResults, sniffImageType, ExtractionRefusal, type ExtractionModel, type ExtractionResult, type LineColumnAsk } from "./extraction.js";
 import { loadPendingPages, loadPageExtractions, markFinalised, type PendingDocumentStorage } from "./pending-document-route.js";
 import { loadCustomFields } from "./custom-field-route.js";
 import { loadExtractionSettings, toValidationSettings } from "./extraction-settings.js";
@@ -612,7 +612,7 @@ export async function handleCaptureImage(
 
   let extraction;
   try {
-    extraction = await extractInvoiceFromImage(model, bytes, vocabulary, settings, { hint: hint?.text });
+    extraction = await extractInvoiceFromImage(model, bytes, vocabulary, settings, { hint: hint?.text, columns: hint?.columns });
   } catch (err) {
     if (err instanceof ExtractionRefusal) {
       // A refusal, never a half-populated invoice: the compiler's own
@@ -645,8 +645,10 @@ export async function handleCaptureImage(
 
 /** Decision 0703: what a reading was told about the supplier beforehand. */
 export interface ReadingHint {
-  text: string;
+  text: string | null;
   fields: string[];
+  /** Decision 0705: the supplier's known line columns to read as well. */
+  columns?: LineColumnAsk[];
   supplierName: string;
   how: string;
 }
@@ -657,7 +659,8 @@ export interface ReadingHint {
  */
 function hintFacts(hint: ReadingHint | null | undefined): Record<string, string> {
   if (!hint) return {};
-  return { "intake.layoutHint": `${hint.supplierName} (${hint.how === "supplier_email" ? "supplier's email address" : "earlier invoices from this sender"}): ${hint.fields.join(", ")}` };
+  const columns = hint.columns?.length ? `; line columns ${hint.columns.map((c) => c.field).join(", ")}` : "";
+  return { "intake.layoutHint": `${hint.supplierName} (${hint.how === "supplier_email" ? "supplier's email address" : "earlier invoices from this sender"}): ${hint.fields.join(", ") || "no header fields"}${columns}` };
 }
 
 /**
@@ -754,10 +757,10 @@ export async function handleCaptureOrdinaryPdf(
   let how: string;
   try {
     if (read.kind === "text") {
-      extraction = await extractInvoiceFromPdfText(model, read.pages, vocabulary, settings, read.truncated, { hint: smaller.hint?.text });
+      extraction = await extractInvoiceFromPdfText(model, read.pages, vocabulary, settings, read.truncated, { hint: smaller.hint?.text, columns: smaller.hint?.columns });
       how = "pdf_text";
     } else if (read.kind === "images") {
-      extraction = await extractInvoiceFromImages(model, read.images, vocabulary, settings, { hint: smaller.hint?.text });
+      extraction = await extractInvoiceFromImages(model, read.images, vocabulary, settings, { hint: smaller.hint?.text, columns: smaller.hint?.columns });
       how = read.pageCount > read.images.length ? `pdf_images (${read.images.length} of ${read.pageCount} pages)` : "pdf_images";
     } else {
       throw new ExtractionRefusal(read.reason, undefined, true);

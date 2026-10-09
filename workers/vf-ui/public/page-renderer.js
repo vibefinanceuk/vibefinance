@@ -16,7 +16,7 @@
 import { t } from "/strings.js";
 import { el } from "/tasks.js";
 import { icon } from "/icons.js";
-import { pdfWords, locate, rotateBox, unrotatePoint, wordsInLasso, contextFor, polygonBox, labelBeside, squash } from "/doc-words.js";
+import { pdfWords, locate, rotateBox, unrotatePoint, wordsInLasso, contextFor, polygonBox, labelBeside, squash, columnHeading } from "/doc-words.js";
 import { docLink } from "/doc-link.js";
 import { readPage } from "/ocr.js";
 
@@ -561,13 +561,18 @@ export function pageViewer(invoiceId, contentType, deps = REAL_DEPS) {
     }
     const top = located[0];
     const topWords = top ? all.find((p) => p.pageNumber === top.pageNumber)?.words ?? [] : [];
+    // Decision 0705: a line's value is without doubt when found on its own row, beside its description.
+    const onRow =
+      Boolean(top && near) && top.pageNumber === near.pageNumber && Math.abs(top.box.y + top.box.h / 2 - (near.box.y + near.box.h / 2)) < Math.max(top.box.h, near.box.h) * 0.7;
     link?.send("located", {
       field: message.field,
       count: located.length,
       readable: true,
-      best: top ? { pageNumber: top.pageNumber, box: top.box, label: labelBeside(topWords, top.box, top.words) } : null,
+      best: top
+        ? { pageNumber: top.pageNumber, box: top.box, label: labelBeside(topWords, top.box, top.words), heading: columnHeading(topWords, top.box) }
+        : null,
       // Decision 0701: no doubt where it is — once on the document, or beside its own label.
-      unambiguous: Boolean(top) && (located.length === 1 || top.byLabel === true),
+      unambiguous: Boolean(top) && (located.length === 1 || top.byLabel === true || onRow),
     });
     const best = located[0];
     if (best) {
@@ -634,7 +639,9 @@ export function pageViewer(invoiceId, contentType, deps = REAL_DEPS) {
     }
     const area = polygonBox(polygon);
     const label = labelBeside(words, taken.box ?? area, taken.words);
-    lassoed = { pageNumber: source.pageNumber, box: taken.box ?? area, area, source, label };
+    // Decision 0705: the column it is in, for a value boxed into a line.
+    const heading = columnHeading(words, taken.box ?? area);
+    lassoed = { pageNumber: source.pageNumber, box: taken.box ?? area, area, source, label, heading };
     located = [];
     setHint(null);
     renderHighlights();
@@ -649,6 +656,7 @@ export function pageViewer(invoiceId, contentType, deps = REAL_DEPS) {
       context: contextFor(words, taken.box ?? area, taken.words),
       // Decision 0701: the label beside it, recorded with where the value is.
       label,
+      heading,
     });
   }
 
@@ -687,6 +695,7 @@ export function pageViewer(invoiceId, contentType, deps = REAL_DEPS) {
         box: shownLasso.box,
         source: "ai",
         label: shownLasso.label,
+        heading: shownLasso.heading,
         suggested: answer.field ?? null,
         confidence: 100,
       });
