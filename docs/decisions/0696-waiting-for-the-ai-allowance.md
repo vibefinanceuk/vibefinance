@@ -1,6 +1,6 @@
 # 0696: A document not read for want of AI allowance waits, and is read after the reset
 
-**Status: built**, in bundle 0996. vf-app; vf-licence migration
+**Status: live** at `66535e8`, pushed and deployed 9 October 2026, migration applied. vf-app; vf-licence migration
 `0309_ai_allowance_strings.sql`.
 
 ## What was asked
