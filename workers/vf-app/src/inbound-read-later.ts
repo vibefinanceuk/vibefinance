@@ -46,6 +46,15 @@ export interface ReadLaterDeps {
 const LEASE_MS = 10 * 60 * 1000;
 /** A run starts no new attachment after this long, so it ends well inside the cron's 15 minutes. */
 const RUN_BUDGET_MS = 6 * 60 * 1000;
+/** Decision 0696: a message waiting for the AI allowance is tried again this long after 00:00 UTC. */
+const RESUME_AFTER_RESET_MS = 5 * 60 * 1000;
+
+/** The next 00:00 UTC after `at`, in milliseconds. */
+export function nextUtcMidnight(at: number): number {
+  const d = new Date(at);
+  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + 1);
+}
+
 /** Claims before a message's unread attachments are failed. */
 export const MAX_READS = 3;
 
@@ -89,7 +98,9 @@ export async function readQueuedInbound(
     if ((claim.meta?.changes ?? 0) !== 1) continue;
     read.push(id);
     const done = await readOne(db, id, deps, deadline, now);
-    if (done) settled.push(id);
+    if (done === "settled") settled.push(id);
+    // Decision 0696: no allowance left, so nothing else can be read this run either.
+    if (done === "deferred") break;
   }
   return { read, settled };
 }
@@ -100,7 +111,7 @@ async function readOne(
   deps: ReadLaterDeps,
   deadline: number,
   now: () => number,
-): Promise<boolean> {
+): Promise<"settled" | "stopped" | "deferred"> {
   const m = await db
     .prepare(
       "SELECT instance_id, counterparty, recipient, read_count FROM route_messages WHERE id = ?",
@@ -112,7 +123,7 @@ async function readOne(
       recipient: string | null;
       read_count: number;
     }>();
-  if (!m) return false;
+  if (!m) return "stopped";
   const parts = (
     await db
       .prepare(
@@ -163,7 +174,7 @@ async function readOne(
         .prepare("UPDATE route_messages SET reading_until = NULL WHERE id = ?")
         .bind(id)
         .run();
-      return false;
+      return "stopped";
     }
     await db
       .prepare("UPDATE route_messages SET reading_until = ? WHERE id = ?")
@@ -186,7 +197,7 @@ async function readOne(
       r2Key: part.r2_key,
     };
     try {
-      await captureAttachmentPart(db, {
+      const outcome = await captureAttachmentPart(db, {
         messageId: id,
         sourceId: m.instance_id,
         seq: part.seq,
@@ -199,6 +210,21 @@ async function readOne(
         sender: m.counterparty ?? undefined,
         shrink: deps.shrink,
       });
+      /**
+       * **Waiting for the AI allowance — decision 0696.** Nothing more can
+       * be read today, here or in any other message. This one is held
+       * until just after 00:00 UTC (the lease), its read does not count
+       * towards MAX_READS, and the run stops.
+       */
+      if (outcome.deferred) {
+        const resume = nextUtcMidnight(now()) + RESUME_AFTER_RESET_MS;
+        await db
+          .prepare("UPDATE route_messages SET reading_until = ?, read_count = max(0, read_count - 1) WHERE id = ?")
+          .bind(new Date(resume).toISOString(), id)
+          .run();
+        await addRouteEvent(db, id, "read_deferred", { detail: `${outcome.why ?? "the AI allowance for today is used up"}`.slice(0, 300) });
+        return "deferred";
+      }
     } catch (err) {
       // An attachment that throws is failed with why, rather than tried again every five minutes.
       await setPartOutcome(
@@ -251,5 +277,5 @@ async function readOne(
       // Deliberately silent, as when receiving.
     }
   }
-  return status !== "received";
+  return status !== "received" ? "settled" : "stopped";
 }

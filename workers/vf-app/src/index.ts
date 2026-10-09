@@ -236,6 +236,7 @@ import { handleCaptureFromSource } from "./source-capture-route.js";
 import { handleInboundEmail, handleListInboundEmail, type EmailMessage } from "./inbound-email.js";
 import { handleGetRouteMessage, handleListRouteMessages, routeMessagePart } from "./route-monitor-route.js";
 import { readQueuedInbound } from "./inbound-read-later.js";
+import { isAllowanceError } from "./extraction.js";
 import { imagesShrinker } from "./page-shrink.js";
 import { handleDeleteDestination, handleListRoutes, handleProcessRoutes, handleRenameDestination, handleRetireDestination, handleSetInstanceStatus } from "./routes-route.js";
 import { handleDismissMessage, handleReprocessMessage } from "./route-reprocess.js";
@@ -1178,7 +1179,10 @@ export default {
         );
         return json(result.body, result.status);
       } catch (err) {
-        return json({ error: t("rulesModelFailed", locale, { detail: String(err).slice(0, 300) }) }, 502);
+        const detail = String(err).slice(0, 300);
+        // Decision 0696: an exhausted allowance is said as that, not as a failure.
+        if (isAllowanceError(detail)) return json({ error: t("rulesModelAllowance", locale, { detail }), reason: "ai_allowance" }, 503);
+        return json({ error: t("rulesModelFailed", locale, { detail }) }, 502);
       }
     }
 

@@ -296,6 +296,7 @@ import inboundReadLaterStringsSql from "../migrations/0305_inbound_read_later_st
 import emailSizeLimitStringsSql from "../migrations/0306_email_size_limit_strings.sql?raw";
 import taskSearchHintSql from "../migrations/0307_task_search_hint.sql?raw";
 import documentsSearchHintSql from "../migrations/0308_documents_search_hint.sql?raw";
+import aiAllowanceStringsSql from "../migrations/0309_ai_allowance_strings.sql?raw";
 
 function stripSqlComments(sql: string): string {
   return sql
@@ -625,5 +626,6 @@ export async function applyTestSchema(): Promise<void> {
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(emailSizeLimitStringsSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(taskSearchHintSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(documentsSearchHintSql)));
+  await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(aiAllowanceStringsSql)));
 
 }

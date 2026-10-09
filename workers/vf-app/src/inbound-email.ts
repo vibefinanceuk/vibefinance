@@ -309,7 +309,7 @@ export async function handleInboundEmail(
 export async function captureAttachmentPart(
   db: D1Database,
   args: CapturePartArgs
-): Promise<{ captured: boolean; invoiceId?: string; invoiceIds?: string[]; why?: string }> {
+): Promise<{ captured: boolean; invoiceId?: string; invoiceIds?: string[]; why?: string; deferred?: boolean }> {
   /**
    * **A supplier's CSV holding several invoices — decision 0577.** Each
    * invoice's rows are read as a file of their own, through the same
@@ -379,7 +379,7 @@ interface CapturePartArgs {
 async function captureOnePart(
   db: D1Database,
   args: CapturePartArgs
-): Promise<{ captured: boolean; invoiceId?: string; why?: string }> {
+): Promise<{ captured: boolean; invoiceId?: string; why?: string; deferred?: boolean }> {
   const { messageId, seq, stored } = args;
   const result = await handleCaptureFromSource(
     db,
@@ -424,6 +424,15 @@ async function captureOnePart(
       mappingMiss: read.mappingMiss ?? null,
     });
   };
+  /**
+   * **Waiting for the AI allowance — decision 0696.** Nothing was made and
+   * nothing is wrong with the file: the part keeps no outcome, so the
+   * background reader (or Reprocess) reads it after the reset.
+   */
+  if ((read as { allowance?: boolean } | undefined)?.allowance) {
+    const why = read?.error ?? "the AI allowance for today is used up";
+    return { captured: false, deferred: true, why };
+  }
   if (result.status >= 400) {
     await recordFormat();
     /**
@@ -716,6 +725,8 @@ async function receiveInboundEmail(
 
   const failures: string[] = [];
   let incomplete = false;
+  // Decision 0696: attachments not read because the AI allowance is used up.
+  let deferred = 0;
   for (const [index, attachment] of attachments.entries()) {
     const seq = index + 1;
     const stored = storedParts[index];
@@ -732,6 +743,7 @@ async function receiveInboundEmail(
       sender: message.from,
       shrink: options.shrink,
     });
+    if (outcome.deferred) deferred += 1;
     if (!outcome.captured) failures.push(outcome.why ? `${attachment.filename}: ${outcome.why}` : attachment.filename);
     // Decision 0577: a CSV of several invoices where some were not made is only partly delivered.
     else if (outcome.why) incomplete = true;
@@ -741,6 +753,25 @@ async function receiveInboundEmail(
   // invoice and one broken attachment has delivered an invoice, and
   // bouncing it would ask the supplier to send the good one again.
   const captured = attachments.length - failures.length;
+
+  /**
+   * **Nothing read only for want of AI allowance — decision 0696.** Not
+   * bounced: the file is fine and the sender did nothing wrong. Failed at
+   * translation with `ai_allowance`, its parts left unread, so Reprocess
+   * reads it after 00:00 UTC.
+   */
+  if (captured === 0 && deferred === attachments.length) {
+    await record(db, message, "captured", "ai_allowance", source.id, attachments.length, 0);
+    if (messageId) {
+      await finishRouteMessage(db, messageId, {
+        status: "failed",
+        failedPart: "translation",
+        errorCode: "ai_allowance",
+        errorText: failures.join(" · ").slice(0, 1000),
+      });
+    }
+    return { id: messageId };
+  }
 
   if (captured === 0) {
     await record(

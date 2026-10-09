@@ -139,6 +139,8 @@ export async function handleReprocessMessage(
   );
   const toRun = attachments.filter((a) => a.outcome !== "captured" && !alreadyMade.has(a.seq));
   const reasons: string[] = [];
+  // Decision 0696: attachments left unread because the AI allowance is used up.
+  let deferred = 0;
   for (const a of toRun) {
     const object = await deps.bucket.get(a.r2_key);
     if (!object) {
@@ -160,10 +162,15 @@ export async function handleReprocessMessage(
       sender: (m as { counterparty?: string | null }).counterparty ?? undefined,
       shrink: deps.shrink,
     });
+    if (outcome.deferred) deferred += 1;
     if (!outcome.captured) reasons.push(outcome.why ? `${a.filename}: ${outcome.why}` : a.filename);
   }
 
   const status = await settleInbound(db, id, attachments.length, reasons);
+  if (status === "failed" && deferred > 0 && deferred === reasons.length) {
+    // Said as what it is: Reprocess again after 00:00 UTC reads it.
+    await db.prepare("UPDATE route_messages SET error_code = 'ai_allowance' WHERE id = ?").bind(id).run();
+  }
   await db.prepare("UPDATE route_messages SET reading_until = NULL WHERE id = ?").bind(id).run();
   return { status: 200, body: { id, status, ran: toRun.length, failed: reasons.length } };
 }

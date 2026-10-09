@@ -51,12 +51,32 @@ export class ExtractionRefusal extends Error {
    */
   readonly unanswered: boolean;
 
-  constructor(message: string, rawModelOutput?: string, unanswered = false) {
+  /**
+   * **The day's AI allowance is used up — decision 0696.** Workers AI
+   * refused before looking (`4006`/`3036`, "daily free allocation"). Not a
+   * fact about the document, and not even a fault: it passes at 00:00 UTC.
+   * So a document is never failed or kept for keying for it; an emailed
+   * one waits, and is read after the reset.
+   */
+  readonly allowance: boolean;
+
+  constructor(message: string, rawModelOutput?: string, unanswered = false, allowance = false) {
     super(message);
     this.name = "ExtractionRefusal";
     this.rawModelOutput = rawModelOutput;
-    this.unanswered = unanswered;
+    this.unanswered = unanswered || allowance;
+    this.allowance = allowance;
   }
+}
+
+/** Decision 0696: Workers AI's "daily free allocation used up" refusal, by its codes or its words. */
+export function isAllowanceError(message: string): boolean {
+  return /\b(4006|3036)\b/.test(message) || /daily free allocation/i.test(message);
+}
+
+/** The words for it, with the model's own message kept (decision 0163's rule: never discard the evidence). */
+export function allowanceMessage(detail: string): string {
+  return `the AI allowance for today is used up, so this was not read; it will be read after the allowance resets at 00:00 UTC (${detail.slice(0, 200)})`;
 }
 
 /** Injected rather than a hardcoded env.AI call, exactly like
@@ -633,6 +653,8 @@ async function readPageLines(
     if (read.problem !== null) result.facts["extraction.lineProblem"] = read.problem;
     else delete result.facts["extraction.lineProblem"];
   } catch (err) {
+    // Decision 0696: not a fact about the lines; the document waits for the allowance, header and all.
+    if (err instanceof ExtractionRefusal && err.allowance) throw err;
     const why = err instanceof Error ? err.message : String(err);
     const began = err instanceof ExtractionRefusal && err.rawModelOutput ? `; it began: ${err.rawModelOutput.slice(0, 160)}` : "";
     result.lines = [];
@@ -845,6 +867,8 @@ export async function extractInvoiceFromImages(
       await readPageLines(model, result, { bytes, contentType: sniffed }, pages.length, pageNumber, settings);
       perPage.push({ page: pageNumber, result });
     } catch (err) {
+      // Decision 0696: no allowance left means no page will be read now; the document waits whole.
+      if (err instanceof ExtractionRefusal && err.allowance) throw err;
       // One unreadable page does not sink the document. The others
       // may carry everything needed, and the failure is recorded so
       // that a later validation mismatch has a visible explanation.

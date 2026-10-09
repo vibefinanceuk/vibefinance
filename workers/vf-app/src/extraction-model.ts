@@ -1,5 +1,5 @@
 import type { AiRunnable } from "./compiler-model.js";
-import { ExtractionRefusal } from "./extraction.js";
+import { ExtractionRefusal, allowanceMessage, isAllowanceError } from "./extraction.js";
 import type { ExtractionModel } from "./extraction.js";
 
 /**
@@ -185,6 +185,10 @@ export function createWorkersAiExtractionModel(ai: AiRunnable, modelId?: string)
         // from outside. A helpful message that discards its own
         // evidence is worse than a blunt one that keeps it.
         const detail = message.slice(0, 300);
+        // Decision 0696: the day's allowance used up passes at 00:00 UTC; said so, and marked to wait.
+        if (isAllowanceError(message)) {
+          throw new ExtractionRefusal(allowanceMessage(detail), undefined, true, true);
+        }
         if (message.includes("3046") || message.toLowerCase().includes("timeout")) {
           throw new ExtractionRefusal(
             `the model did not respond in time — a large image or a long line table can exceed the time available (${detail})`,

@@ -67,6 +67,7 @@ describe("t — completeness across every locale and message key", () => {
     "licenceBlockedFallback",
     "ruleSetIdSourceTextRequired",
     "rulesModelFailed",
+    "rulesModelAllowance",
     "confirmedByRequired",
     "exampleDoesNotExist",
     "activatedByRequired",

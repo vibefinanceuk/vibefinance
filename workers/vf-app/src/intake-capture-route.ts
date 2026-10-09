@@ -631,7 +631,7 @@ export async function handleCaptureImage(
           // The caller keeps the document when it did not, rather than
           // discarding a perfectly good invoice because our model was
           // busy.
-          unanswered: err.unanswered,
+          unanswered: err.unanswered, allowance: err.allowance,
         },
       };
     }
@@ -746,7 +746,7 @@ export async function handleCaptureOrdinaryPdf(
   } catch (err) {
     if (err instanceof ExtractionRefusal) {
       await recordCaptureEvent(db, channelId, "rejected", err.message, null);
-      return { status: 422, body: { error: err.message, rawModelOutput: err.rawModelOutput?.slice(0, 2000), unanswered: err.unanswered } };
+      return { status: 422, body: { error: err.message, rawModelOutput: err.rawModelOutput?.slice(0, 2000), unanswered: err.unanswered, allowance: err.allowance } };
     }
     throw err;
   }
@@ -827,7 +827,7 @@ export async function handleFinalisePendingDocument(
           // The caller keeps the document when it did not, rather than
           // discarding a perfectly good invoice because our model was
           // busy.
-          unanswered: err.unanswered,
+          unanswered: err.unanswered, allowance: err.allowance,
         },
       };
     }

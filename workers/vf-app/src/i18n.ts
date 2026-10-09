@@ -27,6 +27,7 @@ export type MessageKey =
   | "licenceBlockedFallback"
   | "ruleSetIdSourceTextRequired"
   | "rulesModelFailed"
+  | "rulesModelAllowance"
   | "confirmedByRequired"
   | "exampleDoesNotExist"
   | "activatedByRequired"
@@ -125,6 +126,15 @@ const MESSAGES: Record<MessageKey, Record<Locale, string>> = {
     es: "El modelo de reglas no respondió, así que la regla no se interpretó. Inténtelo de nuevo. ({detail})",
     it: "Il modello delle regole non ha risposto, quindi la regola non è stata interpretata. Riprovare. ({detail})",
     nl: "Het regelmodel gaf geen antwoord, dus de regel is niet uitgewerkt. Probeer het opnieuw. ({detail})",
+  },
+  // Decision 0696: the day's AI allowance is used up; said as that, with when it passes.
+  rulesModelAllowance: {
+    en: "The AI allowance for today is used up, so the rule could not be worked out. It resets at 00:00 UTC; please try again then. ({detail})",
+    de: "Das KI-Kontingent für heute ist aufgebraucht, daher konnte die Regel nicht ausgewertet werden. Es wird um 00:00 UTC zurückgesetzt; bitte versuchen Sie es dann erneut. ({detail})",
+    fr: "Le quota d'IA du jour est épuisé, la règle n'a donc pas pu être interprétée. Il est réinitialisé à 00:00 UTC ; veuillez réessayer ensuite. ({detail})",
+    es: "La cuota de IA de hoy se ha agotado, así que la regla no se pudo interpretar. Se restablece a las 00:00 UTC; inténtelo de nuevo entonces. ({detail})",
+    it: "La quota di IA di oggi è esaurita, quindi la regola non è stata interpretata. Si azzera alle 00:00 UTC; riprovare allora. ({detail})",
+    nl: "Het AI-tegoed voor vandaag is op, dus de regel kon niet worden uitgewerkt. Het wordt om 00:00 UTC teruggezet; probeer het dan opnieuw. ({detail})",
   },
   ruleSetIdSourceTextRequired: {
     en: "ruleSetId and sourceText (both strings) are required",

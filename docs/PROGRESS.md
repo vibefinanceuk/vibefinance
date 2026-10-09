@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 9 October 2026 (decision 0695). A living document: what
+Last updated 9 October 2026 (decision 0696). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,15 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Waiting for the AI allowance (0696)
+
+An invoice that cannot be read because the day's Workers AI allowance is used
+up is no longer failed. An emailed one waits ("Waiting for the AI allowance")
+and is read automatically after 00:00 UTC; nothing is bounced or kept for
+keying. The Rules screen says the allowance is used up and when it resets.
+
+Full reasoning is in decision 0696.
 
 ### The Documents search reads a term the way Tasks does (0695)
 

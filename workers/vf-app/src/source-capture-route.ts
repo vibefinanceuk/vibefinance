@@ -520,6 +520,18 @@ export async function handleCaptureFromSource(
      * the document and produced nonsense; it is wrong for one that
      * never got to look.
      */
+    /**
+     * **The day's AI allowance used up — decision 0696.** Not kept for
+     * keying and not refused: nothing is made, and the caller is told it
+     * can be read after 00:00 UTC. An emailed document waits in the
+     * background reader and is read then; a direct upload is answered 503.
+     */
+    if ((result.body as { allowance?: boolean })?.allowance) {
+      return {
+        status: 503,
+        body: { error: (result.body as { error?: string }).error ?? "the AI allowance for today is used up", allowance: true, reason: "ai_allowance" },
+      };
+    }
     if (result.status === 422 && (result.body as { unanswered?: boolean })?.unanswered) {
       return captureWithoutFacts(
         db,
