@@ -1,6 +1,6 @@
 # 0699: The AI reads a lasso Tesseract was unsure of, and says which field it looks like
 
-**Status: built**, not yet pushed. vf-app route `POST /invoices/:id/read-region`
+**Status: live** at `e0c12b2`, pushed and deployed 9 October 2026, migration applied. vf-app route `POST /invoices/:id/read-region`
 (`region-read.ts`); vf-ui; vf-licence migration `0311_scan_lasso_strings.sql`
 (shared with 0698).
 

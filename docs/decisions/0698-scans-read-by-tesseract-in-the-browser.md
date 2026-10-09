@@ -1,6 +1,6 @@
 # 0698: Scanned pages are read into words by Tesseract, in the browser
 
-**Status: built**, not yet pushed. vf-ui (vendored tesseract.js); vf-licence migration
+**Status: live** at `e0c12b2`, pushed and deployed 9 October 2026, migration applied. vf-ui (vendored tesseract.js); vf-licence migration
 `0311_scan_lasso_strings.sql` (shared with 0699). No vf-app change.
 
 ## What was asked
