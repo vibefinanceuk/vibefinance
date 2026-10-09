@@ -1,6 +1,6 @@
 # 0695: The Documents search reads a term the way the Tasks search does
 
-**Status: built**, in bundle 0995. vf-app (`search-terms.ts`,
+**Status: live** at `cacb6dd`, pushed and deployed 9 October 2026, migration applied. vf-app (`search-terms.ts`,
 `documents-route.ts`, `task-list-route.ts`) and vf-licence migration
 `0308_documents_search_hint.sql`.
 
