@@ -3633,6 +3633,10 @@ const KEYS_THE_INTERFACE_USES = [
   "suppliers.layouts.fields",
   "suppliers.layouts.forget",
   "suppliers.layouts.forgotten",
+  // Whether learning is helping (decision 0704).
+  "suppliers.learning.recent",
+  "suppliers.learning.recentonly",
+  "suppliers.learning.helped",
   "routes.format.supplier_csv",
   "routes.formats.supplier_csv",
   "routes.formats.supplier_csv.syntax",

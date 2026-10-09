@@ -240,7 +240,7 @@ import { isAllowanceError } from "./extraction.js";
 import { imagesShrinker } from "./page-shrink.js";
 import { handleReadRegion } from "./region-read.js";
 import { handleRecordRegion, listRegions } from "./field-regions.js";
-import { forgetLayouts, invoiceLayouts, supplierLayouts } from "./supplier-layouts.js";
+import { forgetLayouts, invoiceLayouts, supplierLearning } from "./supplier-layouts.js";
 import { handleDeleteDestination, handleListRoutes, handleProcessRoutes, handleRenameDestination, handleRetireDestination, handleSetInstanceStatus } from "./routes-route.js";
 import { handleDismissMessage, handleReprocessMessage } from "./route-reprocess.js";
 import {
@@ -4309,7 +4309,8 @@ export default {
       if (!(await hasPermission(db, auth.user.id, "Admin.Configure")) && !(await hasPermission(db, auth.user.id, "AP.Validate"))) {
         return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
       }
-      return json(await supplierLayouts(db, supplierId), 200);
+      // Decision 0704: with whether it is helping — corrections per invoice.
+      return json(await supplierLearning(db, supplierId), 200);
     }
 
     const regionMatch = pathname.match(/^\/invoices\/([^/]+)\/read-region$/);

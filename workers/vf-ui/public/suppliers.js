@@ -523,6 +523,29 @@ function newSupplier() {
  * edited; this shows what is known, with a way to forget a layout that went
  * wrong. The route refuses Forget to anyone but an administrator.
  */
+/**
+ * **Is it helping? — decision 0704.** Fields corrected per invoice read by
+ * the model: the latest against those before, and readings helped by what
+ * was learned against those not. Each said only when both sides have
+ * invoices to compare.
+ */
+function correctionLines(c) {
+  if (!c?.recent?.invoices) return [];
+  const n = (v) => (v === null || v === undefined ? "" : String(v));
+  const lines = [
+    el("div", {
+      text: (c.earlier?.invoices ? t("suppliers.learning.recent") : t("suppliers.learning.recentonly"))
+        .replace("{recent}", n(c.recent.perInvoice))
+        .replace("{n}", n(c.recent.invoices))
+        .replace("{earlier}", n(c.earlier?.perInvoice)),
+    }),
+  ];
+  if (c.helped?.invoices && c.unhelped?.invoices) {
+    lines.push(el("div", { text: t("suppliers.learning.helped").replace("{helped}", n(c.helped.perInvoice)).replace("{unhelped}", n(c.unhelped.perInvoice)) }));
+  }
+  return lines;
+}
+
 function layoutsSection(s) {
   const body = el("div", { class: "muted sm" });
   const section = el("div", { class: "supplierlayouts" }, [el("h4", { text: t("suppliers.layouts.title") }), body]);
@@ -533,9 +556,10 @@ function layoutsSection(s) {
         section.hidden = true;
         return;
       }
-      const { layouts = [], invoices = 0 } = await res.json();
+      const { layouts = [], invoices = 0, corrections = null } = await res.json();
+      const measure = correctionLines(corrections);
       if (!layouts.length) {
-        body.replaceChildren(t("suppliers.layouts.none"));
+        body.replaceChildren(el("div", { text: t("suppliers.layouts.none") }), ...measure);
         return;
       }
       const fields = [...new Set(layouts.flatMap((l) => l.fields.map((f) => f.field)))].map((f) => t(`field.${f.toLowerCase()}`));
@@ -547,6 +571,7 @@ function layoutsSection(s) {
       body.replaceChildren(
         el("div", { text: t("suppliers.layouts.summary").replace("{layouts}", String(layouts.length)).replace("{invoices}", String(invoices)) }),
         el("div", { text: t("suppliers.layouts.fields").replace("{fields}", fields.join(", ")) }),
+        ...measure,
         forget
       );
     } catch {

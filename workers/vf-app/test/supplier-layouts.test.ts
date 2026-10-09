@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { applyTestSchema } from "./setup.js";
 import worker from "../src/index.js";
 import type { Env } from "../src/index.js";
-import { learnLayouts, supplierLayouts, invoiceLayouts, forgetLayouts, type Evidence } from "../src/supplier-layouts.js";
+import { learnLayouts, supplierLayouts, invoiceLayouts, forgetLayouts, supplierCorrections, RECENT_FOR_MEASURE, type Evidence } from "../src/supplier-layouts.js";
 import { handleRecordRegion } from "../src/field-regions.js";
 import { generateApiKey, hashApiKey } from "../src/user-auth.js";
 import { PERMISSIONS } from "../src/permissions.js";
@@ -171,5 +171,64 @@ describe("routes", () => {
     expect((await call("GET", "/suppliers/sup-ln/layouts", apiKey)).status).toBe(200);
     expect((await call("POST", "/suppliers/sup-ln/layouts/forget", apiKey)).status).toBe(403);
     expect((await call("GET", "/invoices/i1/layouts", null)).status).toBe(401);
+  });
+});
+
+describe("corrections per invoice — decision 0704", () => {
+  beforeEach(async () => {
+    await applyTestSchema();
+    await env.DB.prepare("INSERT INTO org_users (id, email, name) VALUES ('u-dan', 'dan@acme.com', 'Dan')").run();
+    await env.DB.prepare("INSERT INTO suppliers (id, name) VALUES ('sup-ln', 'Lager Nord GmbH')").run();
+  });
+
+  let n = 0;
+  async function invoice(opts: { corrected?: string[]; helped?: boolean; structure?: string; lines?: number } = {}) {
+    const id = `inv-${++n}`;
+    const facts: Record<string, unknown> = { "BT-112": 100 };
+    if (opts.helped) facts["intake.layoutHint"] = "Lager Nord GmbH (supplier's email address): BT-112";
+    if (opts.structure !== undefined) facts["intake.structure"] = opts.structure;
+    await env.DB.prepare("INSERT INTO invoice_headers (id, facts_json, supplier_id, created_at) VALUES (?, ?, 'sup-ln', ?)")
+      .bind(id, JSON.stringify(facts), `2026-10-${String(1 + Math.floor(n / 24)).padStart(2, "0")} ${String(n % 24).padStart(2, "0")}:00:00`)
+      .run();
+    for (const field of opts.corrected ?? []) {
+      // Saved twice: counted once.
+      for (let i = 0; i < 2; i++) {
+        await env.DB.prepare("INSERT INTO keyed_fields (id, invoice_id, field, previous_value, new_value, keyed_by) VALUES (?, ?, ?, NULL, '\"x\"', 'u-dan')")
+          .bind(crypto.randomUUID(), id, field)
+          .run();
+      }
+    }
+    for (let l = 0; l < (opts.lines ?? 0); l++) {
+      await env.DB.prepare("INSERT INTO keyed_fields (id, invoice_id, field, previous_value, new_value, keyed_by) VALUES (?, ?, ?, NULL, '1', 'u-dan')")
+        .bind(crypto.randomUUID(), id, `line.${l + 1}.BT-131`)
+        .run();
+    }
+  }
+
+  it("counts header fields corrected per invoice, the latest against those before", async () => {
+    for (let i = 0; i < 5; i++) await invoice({ corrected: ["BT-1", "BT-112"] });
+    for (let i = 0; i < RECENT_FOR_MEASURE; i++) await invoice({ corrected: i % 2 ? ["BT-1"] : [] });
+    const c = await supplierCorrections(env.DB, "sup-ln");
+    expect(c.recent).toEqual({ invoices: RECENT_FOR_MEASURE, corrections: RECENT_FOR_MEASURE / 2, perInvoice: 0.5 });
+    expect(c.earlier).toEqual({ invoices: 5, corrections: 10, perInvoice: 2 });
+  });
+
+  it("compares readings helped by a learned layout with those not", async () => {
+    await invoice({ helped: true });
+    await invoice({ helped: true, corrected: ["BT-2"] });
+    await invoice({ corrected: ["BT-1", "BT-2", "BT-112"] });
+    const c = await supplierCorrections(env.DB, "sup-ln");
+    expect(c.helped).toEqual({ invoices: 2, corrections: 1, perInvoice: 0.5 });
+    expect(c.unhelped).toEqual({ invoices: 1, corrections: 3, perInvoice: 3 });
+  });
+
+  it("leaves out invoices not read by the model, and line changes", async () => {
+    await invoice({ structure: "structured_pdfa", corrected: ["BT-1"] });
+    await invoice({ structure: "keyed", corrected: ["BT-1"] });
+    await invoice({ structure: "", corrected: ["BT-1"] });
+    await invoice({ structure: "ordinary_pdf", lines: 3 });
+    const c = await supplierCorrections(env.DB, "sup-ln");
+    expect(c.recent).toEqual({ invoices: 1, corrections: 0, perInvoice: 0 });
+    expect(c.earlier.perInvoice).toBeNull();
   });
 });

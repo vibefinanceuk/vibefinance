@@ -212,6 +212,12 @@ export async function supplierLayouts(db: D1Database, supplierId: string): Promi
   return { layouts: learnLayouts(evidence), invoices: new Set(evidence.map((e) => e.invoiceId)).size, forgottenAt: reset?.reset_at ?? null };
 }
 
+/** The supplier's page: what is learned, and whether it is helping (0704). */
+export async function supplierLearning(db: D1Database, supplierId: string) {
+  const [learned, corrections] = await Promise.all([supplierLayouts(db, supplierId), supplierCorrections(db, supplierId)]);
+  return { ...learned, corrections };
+}
+
 /** The layouts of the supplier an invoice is from: what the viewer uses for "usually here". */
 export async function invoiceLayouts(db: D1Database, invoiceId: string): Promise<{ supplierId: string | null; layouts: Layout[] } | null> {
   const row = await db.prepare("SELECT supplier_id FROM invoice_headers WHERE id = ?").bind(invoiceId).first<{ supplier_id: string | null }>();
@@ -236,4 +242,65 @@ export async function forgetLayouts(db: D1Database, supplierId: string, userId: 
     .bind(supplierId, userId)
     .run();
   return { status: 200, body: { forgotten: true } };
+}
+
+/**
+ * **Is it working? Corrections per invoice — decision 0704.** Design §4:
+ * if learning works, people correct fewer fields on a supplier's invoices
+ * as its layout fills in. Counted from `keyed_fields`, which already records
+ * every change a person makes: the header fields changed on each invoice
+ * (a field missed by the reading counts as well as one read wrong), once per
+ * field however often it was saved.
+ *
+ * Only invoices **read by the model**: a structured invoice (UBL, Factur-X,
+ * a mapping), one keyed by hand, or one nothing could read says nothing
+ * about reading. Split two ways: the latest `RECENT_FOR_MEASURE` against
+ * those before, and readings helped by a learned layout (0703,
+ * `intake.layoutHint`) against those not.
+ */
+export const RECENT_FOR_MEASURE = 20;
+
+export interface CorrectionCount {
+  invoices: number;
+  corrections: number;
+  /** Fields corrected per invoice, to one decimal place; null with no invoices. */
+  perInvoice: number | null;
+}
+
+export interface SupplierCorrections {
+  recent: CorrectionCount;
+  earlier: CorrectionCount;
+  helped: CorrectionCount;
+  unhelped: CorrectionCount;
+}
+
+function count(rows: { corrections: number }[]): CorrectionCount {
+  const corrections = rows.reduce((n, r) => n + r.corrections, 0);
+  return { invoices: rows.length, corrections, perInvoice: rows.length ? Math.round((corrections / rows.length) * 10) / 10 : null };
+}
+
+const NOT_READ_BY_MODEL = ["structured_pdfa", "structured_xml", "structured_ubl", "structured_csv", "keyed", ""];
+
+export async function supplierCorrections(db: D1Database, supplierId: string): Promise<SupplierCorrections> {
+  const rows = (
+    await db
+      .prepare(
+        `SELECT h.id, h.created_at,
+                json_extract(h.facts_json, '$."intake.layoutHint"') IS NOT NULL AS helped,
+                json_extract(h.facts_json, '$."intake.structure"') AS structure,
+                (SELECT count(DISTINCT k.field) FROM keyed_fields k WHERE k.invoice_id = h.id AND k.field GLOB 'BT-[0-9]*') AS corrections
+         FROM invoice_headers h
+         WHERE h.supplier_id = ?
+         ORDER BY h.created_at DESC
+         LIMIT 500`
+      )
+      .bind(supplierId)
+      .all<{ id: string; created_at: string; helped: number; structure: string | null; corrections: number }>()
+  ).results.filter((r) => r.structure === null || !NOT_READ_BY_MODEL.includes(r.structure));
+  return {
+    recent: count(rows.slice(0, RECENT_FOR_MEASURE)),
+    earlier: count(rows.slice(RECENT_FOR_MEASURE)),
+    helped: count(rows.filter((r) => r.helped)),
+    unhelped: count(rows.filter((r) => !r.helped)),
+  };
 }
