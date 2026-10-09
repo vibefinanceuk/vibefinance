@@ -53,6 +53,8 @@ export const EVENTS = {
   route_to_approver: { tone: "act", icon: "route_to_approver" },
   po_link: { tone: "act", icon: "purchaseorders" },
   po_pair: { tone: "act", icon: "purchaseorders" },
+  // Decision 0701 — a value taken from the document with the box.
+  value_from_document: { tone: "act", icon: "lasso" },
   line_corrected: { tone: "act", icon: "rename" },
   line_repointed: { tone: "act", icon: "rename" },
   collaborator_added: { tone: "act", icon: "newperson" },

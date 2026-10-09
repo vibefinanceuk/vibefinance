@@ -496,3 +496,86 @@ describe("the lasso is a box, and says why it cannot fill — decision 0700", ()
     expect(root.querySelector(".vhint")?.textContent).toContain("This stage does not allow changes");
   });
 });
+
+describe("where each value is, recorded — decision 0701", () => {
+  beforeEach(async () => {
+    FakeChannel.all = [];
+    document.body.replaceChildren();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        if (String(url).startsWith("/api/ui-strings")) return { ok: true, json: async () => STRINGS } as Response;
+        throw new Error(`no stub for ${url}`);
+      })
+    );
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const link = (id: string) => docLink(id, FakeChannel as unknown as typeof BroadcastChannel);
+  function api(regions: unknown[] = []) {
+    return { list: vi.fn(async () => regions), record: vi.fn(async () => {}) };
+  }
+
+  it("records where a boxed-in value came from, with the label beside it and what it replaced", async () => {
+    const regionsApi = api();
+    const { root } = mountViewer();
+    const input = markField(document.createElement("input"), { field: "BT-112", kind: "amount" }) as HTMLInputElement;
+    input.value = "5";
+    document.body.append(input);
+    connectFields("inv-1", { currency: () => "EUR", makeLink: link, regionsApi });
+    input.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
+    await flush();
+    lassoRound(root, 155, 195, 230, 225);
+    await flush();
+    expect(regionsApi.record).toHaveBeenCalledWith("inv-1", "BT-112", expect.objectContaining({ source: "lassoed", pageNumber: 1, value: "740.7", previous: "5", label: "Total" }));
+  });
+
+  it("records a value found beside its own label, once", async () => {
+    const regionsApi = api();
+    mountViewer();
+    const input = markField(document.createElement("input"), { field: "BT-112", kind: "amount" }) as HTMLInputElement;
+    input.value = "740.70";
+    document.body.append(input);
+    connectFields("inv-1", { makeLink: link, regionsApi });
+    input.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
+    await flush();
+    input.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
+    await flush();
+    expect(regionsApi.record).toHaveBeenCalledTimes(1);
+    expect(regionsApi.record).toHaveBeenCalledWith("inv-1", "BT-112", expect.objectContaining({ source: "found", value: "740.7", label: "Total" }));
+  });
+
+  it("does not record a value that appears twice with nothing to tell them apart", async () => {
+    const regionsApi = api();
+    mountViewer(words([["ACME", "Ltd"], ["ACME", "Ltd"]]));
+    const input = markField(document.createElement("input"), { field: "BT-27", kind: "text" }) as HTMLInputElement;
+    input.value = "ACME Ltd";
+    document.body.append(input);
+    connectFields("inv-1", { makeLink: link, regionsApi });
+    input.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
+    await flush();
+    expect(regionsApi.record).not.toHaveBeenCalled();
+  });
+
+  it("shows a value taken with the box exactly where it was taken, not where a search would find it", async () => {
+    const regionsApi = api([{ field: "BT-112", pageNumber: 1, box: { x: 0.5, y: 0.6, w: 0.1, h: 0.02 }, value: "740.7", source: "lassoed", current: true }]);
+    const { root } = mountViewer();
+    const input = markField(document.createElement("input"), { field: "BT-112", kind: "amount" }) as HTMLInputElement;
+    input.value = "740.70";
+    document.body.append(input);
+    connectFields("inv-1", { makeLink: link, regionsApi });
+    await flush();
+    input.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
+    await flush();
+    const boxes = root.querySelectorAll(".vlocate");
+    expect(boxes).toHaveLength(1);
+    expect((boxes[0] as HTMLElement).getAttribute("style")).toMatch(/top:59\.\d+%/);
+    // Shown from the record, not found again, so not recorded again.
+    expect(regionsApi.record).not.toHaveBeenCalled();
+  });
+});

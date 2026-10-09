@@ -157,6 +157,7 @@ import emailSizeLimitSql from "../../../migrations/0150_source_email_size_limit.
 import invoicePagesSql from "../../../migrations/0151_invoice_pages.sql?raw";
 import growingIndexesSql from "../../../migrations/0152_indexes_for_growing_tables.sql?raw";
 import processEndsSql from "../../../migrations/0153_process_ends_follow_current_version.sql?raw";
+import fieldRegionsSql from "../../../migrations/0154_invoice_field_regions.sql?raw";
 
 // Another known divergence from production, on top of the one below:
 // D1's exec() splits its input by newline and executes each non-empty
@@ -208,7 +209,7 @@ const TABLES_IN_DROP_ORDER = [
   // route_messages, so both go first, invoice_documents before it.
   "route_alert_log", "route_alerts",
   // Supplier mappings (decision 0561): parts reference mappings, versions reference messages.
-  "partner_connector_copies", "outbound_mapping_versions", "destination_requests", "destination_deliveries", "connector_secrets", "source_keys", "route_message_items", "route_message_events", "route_message_parts", "supplier_mapping_versions", "supplier_mappings", "lookup_entries", "lookup_lists", "invoice_pages", "invoice_documents", "route_messages",
+  "partner_connector_copies", "outbound_mapping_versions", "destination_requests", "destination_deliveries", "connector_secrets", "source_keys", "route_message_items", "route_message_events", "route_message_parts", "supplier_mapping_versions", "supplier_mappings", "lookup_entries", "lookup_lists", "invoice_field_regions", "invoice_pages", "invoice_documents", "route_messages",
   // Routes, slice 3 (decision 0557): instances reference sources and processes.
   "route_instances", "route_versions", "routes",
   "erp_export_rows", "erp_export_invoices", "erp_exports", "invoice_line_coding_splits", "invoice_line_po_pairings", "cost_centre_gl_codes", "document_comments",
@@ -512,6 +513,7 @@ export async function applyTestSchema(): Promise<void> {
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(invoicePagesSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(growingIndexesSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(processEndsSql)));
+  await env.DB.exec(toOneStatementPerLine(stripSqlComments(fieldRegionsSql)));
 }
 
 /**

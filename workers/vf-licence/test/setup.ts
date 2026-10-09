@@ -300,6 +300,7 @@ import aiAllowanceStringsSql from "../migrations/0309_ai_allowance_strings.sql?r
 import lassoStringsSql from "../migrations/0310_lasso_strings.sql?raw";
 import ocrReadingStringSql from "../migrations/0311_scan_lasso_strings.sql?raw";
 import lassoBoxStringsSql from "../migrations/0312_lasso_box_strings.sql?raw";
+import valueFromDocumentStringsSql from "../migrations/0313_value_from_document_strings.sql?raw";
 
 function stripSqlComments(sql: string): string {
   return sql
@@ -633,5 +634,6 @@ export async function applyTestSchema(): Promise<void> {
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(lassoStringsSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(ocrReadingStringSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(lassoBoxStringsSql)));
+  await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(valueFromDocumentStringsSql)));
 
 }

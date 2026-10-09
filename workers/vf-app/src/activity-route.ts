@@ -1,4 +1,5 @@
 import { chronological } from "./timeline-time.js";
+import { regionTimeline } from "./field-regions.js";
 import type { RouteResult } from "./examples-route.js";
 import { t } from "./i18n.js";
 import type { Locale } from "./i18n.js";
@@ -463,7 +464,7 @@ export async function handleGetActivity(db: D1Database, invoiceId: string, viewe
     return { status: 404, body: { error: `document ${invoiceId} does not exist` } };
   }
 
-  const [received, stageCompletions, ruleFirings, comments, taskActions, taskEnded, erpExports, reminders, receiptClosed] = await Promise.all([
+  const [received, stageCompletions, ruleFirings, comments, taskActions, taskEnded, erpExports, reminders, receiptClosed, fromDocument] = await Promise.all([
     receivedEvent(db, invoiceId),
     stageCompletedEvents(db, invoiceId),
     ruleFiredEvents(db, invoiceId),
@@ -483,10 +484,12 @@ export async function handleGetActivity(db: D1Database, invoiceId: string, viewe
       })) as ActivityItem[]
     ),
     receiptClosedEvents(db, invoiceId),
+    // Decision 0701: a value a person took from the document with the box, and kept.
+    regionTimeline(db, invoiceId) as Promise<ActivityItem[]>,
   ]);
 
   // Decision 0674: every moment in one form, ordered as time, not text.
-  const items = chronological([...received, ...stageCompletions, ...ruleFirings, ...comments, ...taskActions, ...taskEnded, ...erpExports, ...reminders, ...receiptClosed]);
+  const items = chronological([...received, ...stageCompletions, ...ruleFirings, ...comments, ...taskActions, ...taskEnded, ...erpExports, ...reminders, ...receiptClosed, ...fromDocument]);
 
   return { status: 200, body: { items } };
 }

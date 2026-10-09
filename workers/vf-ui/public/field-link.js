@@ -47,8 +47,72 @@ const state = {
   currency: () => "",
   lineDescription: () => "",
   readOnlyReason: () => null,
+  // Decision 0701: where each header value is on the page, as recorded; and how to record more.
+  regions: new Map(),
+  regionsApi: null,
+  recorded: new Set(),
+  lastLocate: null,
+  lastLasso: null,
 };
 let installed = false;
+
+/**
+ * **Where values are, recorded and read back — decision 0701.** The real
+ * API calls; `connectFields({ regionsApi })` replaces them in tests.
+ */
+export const REGIONS_API = {
+  async list(invoiceId) {
+    try {
+      const res = await fetch(`/api/invoices/${encodeURIComponent(invoiceId)}/regions`);
+      if (!res.ok) return [];
+      return (await res.json()).regions ?? [];
+    } catch {
+      return [];
+    }
+  },
+  async record(invoiceId, field, body) {
+    try {
+      await fetch(`/api/invoices/${encodeURIComponent(invoiceId)}/regions/${encodeURIComponent(field)}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+    } catch {
+      // Recording where a value is helps learning later; it never stops anyone working.
+    }
+  },
+};
+
+/** The same value: numbers by amount, text without case or punctuation (as vf-app's `sameValue`). */
+function sameValue(a, b) {
+  const x = Number(a);
+  const y = Number(b);
+  if (String(a ?? "").trim() !== "" && String(b ?? "").trim() !== "" && Number.isFinite(x) && Number.isFinite(y)) return Math.abs(x - y) < 0.005;
+  return squash(a) !== "" && squash(a) === squash(b);
+}
+
+function isHeader(node) {
+  return /^BT-\d{1,3}$/.test(node.dataset.field ?? "") && node.dataset.line === undefined;
+}
+
+function record(field, body) {
+  if (!state.invoiceId || !state.regionsApi) return;
+  const key = `${field}|${body.source}|${body.pageNumber}|${[body.box.x, body.box.y, body.box.w, body.box.h].map((n) => n.toFixed(3)).join(",")}|${body.value}`;
+  if (state.recorded.has(key)) return;
+  state.recorded.add(key);
+  state.regionsApi.record(state.invoiceId, field, body);
+}
+
+/**
+ * The viewer found a value. Recorded as where that field is (`found`) only
+ * when there is no doubt: it appears once on the document, or beside its own
+ * label — design §5, decision 4.
+ */
+function onLocated(message) {
+  const asked = state.lastLocate;
+  if (!asked || asked.field !== message.field || !message.best || !message.unambiguous || !asked.header) return;
+  record(message.field, { pageNumber: message.best.pageNumber, box: message.best.box, label: message.best.label ?? null, value: asked.value, source: "found" });
+}
 
 function isEditable(node) {
   return node && /^(INPUT|SELECT|TEXTAREA)$/.test(node.tagName) && !node.disabled && !node.readOnly;
@@ -73,6 +137,10 @@ function locateFor(node) {
     return;
   }
   const message = { field: node.dataset.field, label: labelOf(node), kind: node.dataset.kind, value };
+  state.lastLocate = { field: node.dataset.field, value, header: isHeader(node) };
+  // Decision 0701: a value taken from the page with the box is shown exactly where it was taken.
+  const region = isHeader(node) ? state.regions.get(node.dataset.field) : null;
+  if (region && region.source !== "found" && sameValue(region.value, value)) message.region = { pageNumber: region.pageNumber, box: region.box };
   // A line's amount is looked for on its own row: beside its description.
   if (node.dataset.line !== undefined && node.dataset.field !== "BT-153") {
     const description = String(state.lineDescription(Number(node.dataset.line)) ?? "").trim();
@@ -137,6 +205,7 @@ function fillableFields() {
  * field it looks like, and the answer is offered, never applied unasked.
  */
 export function fillTarget(message) {
+  if (message.box && message.pageNumber) state.lastLasso = { pageNumber: message.pageNumber, box: message.box, label: message.label ?? null };
   /**
    * **Nothing on screen can be changed — decision 0700.** Dan, 9 October
    * 2026, having lassoed on a task he had not claimed: *"the lasso was
@@ -171,6 +240,7 @@ export function fillTarget(message) {
     }
   }
 
+  const previous = String(valueOf(target) ?? "").trim();
   if (target.tagName === "SELECT") {
     const value = choose(target, message.text);
     if (value === null) return reply(false, "viewer.lasso.notinlist", label);
@@ -190,6 +260,14 @@ export function fillTarget(message) {
   target.classList.add("lassofilled");
   setTimeout(() => target.classList.remove("lassofilled"), 1200);
   reply(true, null, label);
+
+  // Decision 0701: a person pointed at where this value is. The strongest evidence there is.
+  const where = state.lastLasso;
+  const value = String(valueOf(target) ?? "").trim();
+  if (where && value && isHeader(target)) {
+    record(target.dataset.field, { pageNumber: where.pageNumber, box: where.box, label: where.label, value, previous, source: "lassoed" });
+    state.regions.set(target.dataset.field, { pageNumber: where.pageNumber, box: where.box, value, source: previous && !sameValue(previous, value) ? "lassoed_corrected" : "lassoed" });
+  }
 }
 
 /** The editable header control for `field`, if it is on screen. */
@@ -211,12 +289,25 @@ export function fillField(message) {
  * for showing a lassoed amount; `lineDescription(i)` is line `i`'s
  * description, to find that line's other values beside it.
  */
-export function connectFields(invoiceId, { currency, lineDescription, readOnlyReason, makeLink = docLink } = {}) {
+export function connectFields(invoiceId, { currency, lineDescription, readOnlyReason, makeLink = docLink, regionsApi = REGIONS_API } = {}) {
   // A fresh link each time, so nothing heard for the previous invoice lands on this one.
   state.link?.close();
   state.link = invoiceId ? makeLink(invoiceId) : null;
   state.link?.on("lassoed", fillTarget);
   state.link?.on("fillField", fillField);
+  state.link?.on("located", onLocated);
+  state.regionsApi = regionsApi;
+  state.regions = new Map();
+  state.recorded = new Set();
+  state.lastLocate = null;
+  state.lastLasso = null;
+  if (invoiceId && regionsApi) {
+    const forInvoice = invoiceId;
+    regionsApi.list(invoiceId).then((regions) => {
+      if (state.invoiceId !== forInvoice) return;
+      for (const r of regions ?? []) if (r.current) state.regions.set(r.field, r);
+    });
+  }
   state.invoiceId = invoiceId;
   state.target = null;
   state.currency = currency ?? (() => "");

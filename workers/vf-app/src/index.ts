@@ -239,6 +239,7 @@ import { readQueuedInbound } from "./inbound-read-later.js";
 import { isAllowanceError } from "./extraction.js";
 import { imagesShrinker } from "./page-shrink.js";
 import { handleReadRegion } from "./region-read.js";
+import { handleRecordRegion, listRegions } from "./field-regions.js";
 import { handleDeleteDestination, handleListRoutes, handleProcessRoutes, handleRenameDestination, handleRetireDestination, handleSetInstanceStatus } from "./routes-route.js";
 import { handleDismissMessage, handleReprocessMessage } from "./route-reprocess.js";
 import {
@@ -4238,6 +4239,37 @@ export default {
      * it is; the vision model reads it. Gated as the document itself is: who
      * may see the invoice may read part of it.
      */
+    /**
+     * **Where each header value is on the page — decision 0701.** Recorded by
+     * the viewer (found without doubt, or boxed in with the lasso), and read
+     * back so a value taken from the page is shown exactly where it came from.
+     * Gated as the document is.
+     */
+    const regionsMatch = pathname.match(/^\/invoices\/([^/]+)\/regions(?:\/([^/]+))?$/);
+    if (regionsMatch && ((regionsMatch[2] === undefined && request.method === "GET") || (regionsMatch[2] !== undefined && request.method === "PUT"))) {
+      const { db } = resolveTenant(request, env);
+      const auth = await authenticatePerson(db, request, env);
+      if (!auth.user) {
+        return json({ error: auth.reason }, 401);
+      }
+      const invoiceId = regionsMatch[1];
+      if (
+        !(await hasPermission(db, auth.user.id, "AP.Validate")) &&
+        !(await hasPermission(db, auth.user.id, "AP.Code")) &&
+        !(await hasPermission(db, auth.user.id, "AP.Match")) &&
+        !(await canViewInvoiceAsCollaborator(db, auth.user.id, invoiceId))
+      ) {
+        return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
+      }
+      if (regionsMatch[2] === undefined) {
+        const regions = await listRegions(db, invoiceId);
+        return regions ? json({ regions }, 200) : json({ error: `invoice ${invoiceId} does not exist` }, 404);
+      }
+      const body = await request.json().catch(() => null);
+      const result = await handleRecordRegion(db, invoiceId, decodeURIComponent(regionsMatch[2]), auth.user.id, body);
+      return json(result.body, result.status);
+    }
+
     const regionMatch = pathname.match(/^\/invoices\/([^/]+)\/read-region$/);
     if (regionMatch && request.method === "POST") {
       const { db } = resolveTenant(request, env);

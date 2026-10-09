@@ -3622,6 +3622,9 @@ const KEYS_THE_INTERFACE_USES = [
   // The lasso as a box, and why it cannot fill (decision 0700).
   "viewer.lasso.claim",
   "viewer.lasso.readonly",
+  // A value taken from the document, on the Timeline (decision 0701).
+  "activity.fromdocument",
+  "activity.fromdocument.corrected",
   "routes.format.supplier_csv",
   "routes.formats.supplier_csv",
   "routes.formats.supplier_csv.syntax",

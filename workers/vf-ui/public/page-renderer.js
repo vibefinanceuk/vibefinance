@@ -16,7 +16,7 @@
 import { t } from "/strings.js";
 import { el } from "/tasks.js";
 import { icon } from "/icons.js";
-import { pdfWords, locate, rotateBox, unrotatePoint, wordsInLasso, contextFor, polygonBox } from "/doc-words.js";
+import { pdfWords, locate, rotateBox, unrotatePoint, wordsInLasso, contextFor, polygonBox, labelBeside } from "/doc-words.js";
 import { docLink } from "/doc-link.js";
 import { readPage } from "/ocr.js";
 
@@ -507,6 +507,17 @@ export function pageViewer(invoiceId, contentType, deps = REAL_DEPS) {
 
   async function showValue(message) {
     lassoed = null;
+    // Decision 0701: a value taken from the page with the box is shown exactly where it was taken.
+    if (message.region && pages.some((p) => p.pageNumber === message.region.pageNumber)) {
+      located = [{ pageNumber: message.region.pageNumber, box: message.region.box, words: [], text: "" }];
+      setHint(null);
+      link?.send("located", { field: message.field, count: 1, readable: true, best: { pageNumber: message.region.pageNumber, box: message.region.box }, unambiguous: false, taken: true });
+      const index = pages.findIndex((p) => p.pageNumber === message.region.pageNumber);
+      if (index !== current) await selectPage(index, { keepLocated: true });
+      else renderHighlights();
+      scrollToBox(message.region.box);
+      return;
+    }
     const all = [];
     for (const source of pages) {
       const words = await whileReading(wordsFor(source));
@@ -524,7 +535,16 @@ export function pageViewer(invoiceId, contentType, deps = REAL_DEPS) {
     const near = nearFound ? { pageNumber: nearFound.pageNumber, box: nearFound.box } : null;
     located = locate(all, { field: message.field, value: message.value, kind: message.kind, near });
     setHint(located.length ? null : "viewer.locate.notfound");
-    link?.send("located", { field: message.field, count: located.length, readable: true, best: located[0] ? { pageNumber: located[0].pageNumber, box: located[0].box } : null });
+    const top = located[0];
+    const topWords = top ? all.find((p) => p.pageNumber === top.pageNumber)?.words ?? [] : [];
+    link?.send("located", {
+      field: message.field,
+      count: located.length,
+      readable: true,
+      best: top ? { pageNumber: top.pageNumber, box: top.box, label: labelBeside(topWords, top.box, top.words) } : null,
+      // Decision 0701: no doubt where it is — once on the document, or beside its own label.
+      unambiguous: Boolean(top) && (located.length === 1 || top.byLabel === true),
+    });
     const best = located[0];
     if (best) {
       const index = pages.findIndex((p) => p.pageNumber === best.pageNumber);
@@ -562,7 +582,8 @@ export function pageViewer(invoiceId, contentType, deps = REAL_DEPS) {
       return;
     }
     const area = polygonBox(polygon);
-    lassoed = { pageNumber: source.pageNumber, box: taken.box ?? area, area, source };
+    const label = labelBeside(words, taken.box ?? area, taken.words);
+    lassoed = { pageNumber: source.pageNumber, box: taken.box ?? area, area, source, label };
     located = [];
     setHint(null);
     renderHighlights();
@@ -575,6 +596,8 @@ export function pageViewer(invoiceId, contentType, deps = REAL_DEPS) {
       // How sure Tesseract was of the least certain word: the form asks the AI below a threshold (0699).
       confidence: read === "ocr" ? (taken.words.length ? Math.min(...taken.words.map((w) => w.conf ?? 0)) : 0) : 100,
       context: contextFor(words, taken.box ?? area, taken.words),
+      // Decision 0701: the label beside it, recorded with where the value is.
+      label,
     });
   }
 
@@ -612,6 +635,7 @@ export function pageViewer(invoiceId, contentType, deps = REAL_DEPS) {
         pageNumber: shownLasso.pageNumber,
         box: shownLasso.box,
         source: "ai",
+        label: shownLasso.label,
         suggested: answer.field ?? null,
         confidence: 100,
       });

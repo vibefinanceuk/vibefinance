@@ -1,6 +1,6 @@
 # Design: Learning each supplier's invoice layout
 
-**Status: proposed**, 9 October 2026. Nothing built yet. Builds on the
+**Status: agreed**, 9 October 2026 (Dan: *"Agreed with this proposal"*, including the four decisions in §5). Step 1 built as decision 0701. Builds on the
 document viewer's find-and-lasso work (decisions 0697–0700).
 
 ---

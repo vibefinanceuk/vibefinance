@@ -163,6 +163,12 @@ function actionTakenLine(item) {
     case "erp_export_undone":
       return t("activity.erpexportundone").replace("{who}", who);
     // Decision 0648 — a receipt rule's task closed by itself once the goods arrived.
+    // Decision 0701 — a value taken from the document with the box, and kept.
+    case "value_from_document":
+      return t(item.corrected ? "activity.fromdocument.corrected" : "activity.fromdocument")
+        .replace("{who}", who)
+        .replace("{field}", t(`field.${String(item.field ?? "").toLowerCase()}`))
+        .replace("{page}", String(item.pageNumber ?? ""));
     case "receipt_closed":
       return t("activity.receiptclosed").replace("{rule}", item.ruleName ?? "").replace("{receipt}", item.receiptNumber ?? "").replace("{who}", who);
     default:

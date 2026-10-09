@@ -220,6 +220,16 @@ export function wordsInLasso(words, polygon) {
  * line to its left (a label, usually), then the line just above it, left
  * to right. At most `max` characters.
  */
+/**
+ * The label printed beside a value — decision 0701: the words to its left
+ * on the same line, or failing those the line above it. What a supplier's
+ * layout is recognised by ("Gesamtbetrag", "Rechnungsnr.").
+ */
+export function labelBeside(words, box, taken = []) {
+  const [left, above = ""] = contextFor(words, box, taken).split("|").map((part) => part.trim());
+  return left || above;
+}
+
 export function contextFor(words, box, taken = [], max = 200) {
   if (!box) return "";
   const mid = box.y + box.h / 2;
@@ -516,11 +526,12 @@ export function locate(pages, { field, value, kind = "text", near = null }) {
     for (const run of findValue(page.words ?? [], value, kind)) {
       const box = unionBox(run);
       let score = labelDistance(page.words, box, field);
+      const byLabel = score < Infinity;
       if (near && near.pageNumber === page.pageNumber) {
         const dy = Math.abs(near.box.y + near.box.h / 2 - (box.y + box.h / 2));
         score = Math.min(score, dy < Math.max(near.box.h, box.h) * 0.7 ? 0.001 : dy * 4);
       }
-      found.push({ pageNumber: page.pageNumber, box, words: run, text: run.map((w) => w.text).join(" "), score, order: order++ });
+      found.push({ pageNumber: page.pageNumber, box, words: run, text: run.map((w) => w.text).join(" "), score, order: order++, byLabel });
     }
   }
   const totals = new Set(["BT-106", "BT-109", "BT-110", "BT-112", "BT-115"]);

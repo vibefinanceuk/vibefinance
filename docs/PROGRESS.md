@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 9 October 2026 (decision 0700). A living document: what
+Last updated 9 October 2026 (decision 0701). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,16 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Where each header value is on its document is recorded (0701)
+
+Step 1 of learning supplier layouts (`docs/design/supplier-layout-learning.md`). The
+viewer records where a header value is when it finds it without doubt, or when a
+person boxes it in (`invoice_field_regions`, with the label beside it). A value
+boxed in is shown exactly there when clicked, and is a Timeline line: "Dan took
+Invoice total from page 1 of the document".
+
+Full reasoning is in decision 0701.
 
 ### The lasso draws a box, and says why it cannot fill (0700)
 
