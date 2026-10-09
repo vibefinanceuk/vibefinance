@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 9 October 2026 (decision 0708). A living document: what
+Last updated 9 October 2026 (decision 0709). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,19 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Tasks for lines: one per line, or combined (0709)
+
+A stage evaluated once per line has a **Tasks for lines** setting: one task per line (as
+before), or **combined by who handles them**, where lines going to the same team, person and
+permission share one task. Matching, account coding and approval stages that check lines
+default to combined. A draft stage's name in Processes opens its settings (name, evaluated,
+Tasks for lines); stage settings are not versioned, so an edit applies to the next invoice
+to reach the stage. Complete on a combined task re-checks every line it covers (when the
+stage re-checks on Complete) and names any still failing. The Tasks list and the invoice's
+"Here because" banner name the lines.
+
+Full reasoning is in decision 0709.
 
 ### The line net amount is suggested (0708)
 

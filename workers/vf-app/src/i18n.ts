@@ -45,7 +45,8 @@ export type MessageKey =
   | "ruleDoesNotExistInRuleSet"
   | "invoiceDoesNotExist"
   | "unsupportedLocale"
-  | "completeBlockedRuleStillFires";
+  | "completeBlockedRuleStillFires"
+  | "completeBlockedRuleStillFiresLines";
 
 type MessageParams = Record<string, string | number>;
 
@@ -295,6 +296,16 @@ const MESSAGES: Record<MessageKey, Record<Locale, string>> = {
     es: 'la condición que generó esta tarea («{rule}») sigue siendo válida — todavía no ha cambiado nada',
     it: 'la condizione che ha generato questa attività ("{rule}") è ancora valida — non è ancora cambiato nulla',
     nl: 'de voorwaarde die deze taak heeft veroorzaakt („{rule}”) geldt nog steeds — er is nog niets veranderd',
+  },
+  // Decision 0709 — the same, for a task covering several lines: which
+  // of its lines the condition still holds on.
+  completeBlockedRuleStillFiresLines: {
+    en: 'the condition that raised this task ("{rule}") still holds on line {lines}',
+    de: 'die Bedingung, die diese Aufgabe ausgelöst hat („{rule}“), gilt weiterhin für Position {lines}',
+    fr: "la condition qui a déclenché cette tâche (« {rule} ») est toujours vraie pour la ligne {lines}",
+    es: 'la condición que generó esta tarea («{rule}») sigue siendo válida en la línea {lines}',
+    it: 'la condizione che ha generato questa attività ("{rule}") è ancora valida sulla riga {lines}',
+    nl: 'de voorwaarde die deze taak heeft veroorzaakt („{rule}”) geldt nog steeds voor regel {lines}',
   },
 };
 

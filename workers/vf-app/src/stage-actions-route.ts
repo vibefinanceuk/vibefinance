@@ -148,6 +148,27 @@ interface TaskForReverify {
   rule_id: string | null;
   stage_visit_id: string | null;
   line_number: number | null;
+  lines_json: string | null;
+}
+
+/**
+ * The lines a task covers, each with the rule that sent it — decision
+ * 0709. A combined task lists them in `lines_json`; any other task is
+ * its one line (or the header, `null`) and its one rule.
+ */
+export function taskLines(task: { rule_id: string | null; line_number: number | null; lines_json?: string | null }): { line: number | null; rule: string | null }[] {
+  if (task.lines_json) {
+    try {
+      const parsed = JSON.parse(task.lines_json) as { line?: unknown; rule?: unknown }[];
+      const lines = parsed
+        .filter((p) => typeof p?.line === "number")
+        .map((p) => ({ line: p.line as number, rule: typeof p.rule === "string" ? p.rule : null }));
+      if (lines.length > 0) return lines;
+    } catch {
+      // fall through to the task's own line
+    }
+  }
+  return [{ line: task.line_number, rule: task.rule_id }];
 }
 
 /**
@@ -178,9 +199,11 @@ interface TaskForReverify {
 export async function ruleStillFiresForTask(
   db: D1Database,
   taskId: string
-): Promise<{ blocked: boolean; ruleName: string | null }> {
+): Promise<{ blocked: boolean; ruleName: string | null; lines: number[]; combined: boolean }> {
   const check = await checkTaskRule(db, taskId);
-  return check.state === "fires" ? { blocked: true, ruleName: check.ruleName } : { blocked: false, ruleName: null };
+  return check.state === "fires"
+    ? { blocked: true, ruleName: check.ruleName, lines: check.firingLines, combined: check.combined }
+    : { blocked: false, ruleName: null, lines: [], combined: check.combined };
 }
 
 /**
@@ -195,41 +218,14 @@ export async function ruleStillFiresForTask(
 export async function checkTaskRule(
   db: D1Database,
   taskId: string
-): Promise<{ state: "fires" | "cleared" | "unknown"; ruleName: string | null; compiledJson: string | null }> {
-  const notBlocked = { state: "unknown" as const, ruleName: null, compiledJson: null };
+): Promise<{ state: "fires" | "cleared" | "unknown"; ruleName: string | null; compiledJson: string | null; firingLines: number[]; combined: boolean }> {
+  const notBlocked = { state: "unknown" as const, ruleName: null, compiledJson: null, firingLines: [] as number[], combined: false };
 
   const task = await db
-    .prepare("SELECT rule_id, stage_visit_id, line_number FROM tasks WHERE id = ?")
+    .prepare("SELECT rule_id, stage_visit_id, line_number, lines_json FROM tasks WHERE id = ?")
     .bind(taskId)
     .first<TaskForReverify>();
   if (!task?.rule_id || !task.stage_visit_id) return notBlocked;
-
-  // The exact VERSION that actually fired, not "whichever is active
-  // now" — an edited rule should not change what "resolved" means for
-  // a task already in flight. `line_number IS ?` is SQLite's own
-  // NULL-safe comparison, so a header-scope task's own NULL matches
-  // the step's NULL correctly, not just a header-scope task's real
-  // number against a real number.
-  const step = await db
-    .prepare(
-      `SELECT rule_version FROM stage_visit_steps
-       WHERE stage_visit_id = ? AND rule_id = ? AND matched = 1 AND line_number IS ?
-       ORDER BY seq DESC LIMIT 1`
-    )
-    .bind(task.stage_visit_id, task.rule_id, task.line_number)
-    .first<{ rule_version: number }>();
-  if (!step) return notBlocked;
-
-  const version = await db
-    .prepare(
-      `SELECT r.name AS rule_name, rv.compiled_json AS compiled_json
-       FROM rules r
-       JOIN rule_versions rv ON rv.rule_id = r.id AND rv.version = ?
-       WHERE r.id = ?`
-    )
-    .bind(step.rule_version, task.rule_id)
-    .first<{ rule_name: string; compiled_json: string }>();
-  if (!version) return notBlocked;
 
   // Which invoice, and whether it even is one — the same
   // stage_visits -> process_instances join decision 0486's own claim
@@ -248,21 +244,79 @@ export async function checkTaskRule(
   const live = await loadLiveInvoiceFacts(db, instance.subject_id);
   if (!live) return notBlocked;
 
-  // Line-scope: merge that one line's own facts over the header's,
-  // the exact precedence workflow-engine.ts's own per-line evaluation
-  // already uses ({ ...facts, ...line }) — the line wins where both
-  // name the same term.
-  const facts: InvoiceFacts =
-    task.line_number != null
-      ? { ...live.facts, ...(live.lines.find((l) => l.lineNumber === task.line_number) ?? {}) }
-      : live.facts;
+  /**
+   * **Every line the task covers — decision 0709.** A combined task is
+   * still firing while any of its lines is; it has cleared only when every
+   * line has. A line that cannot be worked out makes the whole answer
+   * `unknown` unless another line definitely still fires.
+   */
+  const parts = taskLines(task);
+  const combined = parts.length > 1;
+  const firingLines: number[] = [];
+  let firingRuleName: string | null = null;
+  let firstRuleName: string | null = null;
+  const compiledSeen: string[] = [];
+  let anyUnknown = false;
+  let anyFires = false;
+  for (const part of parts) {
+    if (!part.rule) {
+      anyUnknown = true;
+      continue;
+    }
+    // The exact VERSION that actually fired, not "whichever is active
+    // now" — an edited rule should not change what "resolved" means for
+    // a task already in flight. `line_number IS ?` is SQLite's own
+    // NULL-safe comparison, so a header-scope task's own NULL matches
+    // the step's NULL correctly.
+    const step = await db
+      .prepare(
+        `SELECT rule_version FROM stage_visit_steps
+         WHERE stage_visit_id = ? AND rule_id = ? AND matched = 1 AND line_number IS ?
+         ORDER BY seq DESC LIMIT 1`
+      )
+      .bind(task.stage_visit_id, part.rule, part.line)
+      .first<{ rule_version: number }>();
+    if (!step) {
+      anyUnknown = true;
+      continue;
+    }
+    const version = await db
+      .prepare(
+        `SELECT r.name AS rule_name, rv.compiled_json AS compiled_json
+         FROM rules r
+         JOIN rule_versions rv ON rv.rule_id = r.id AND rv.version = ?
+         WHERE r.id = ?`
+      )
+      .bind(step.rule_version, part.rule)
+      .first<{ rule_name: string; compiled_json: string }>();
+    if (!version) {
+      anyUnknown = true;
+      continue;
+    }
+    firstRuleName ??= version.rule_name;
+    if (!compiledSeen.includes(version.compiled_json)) compiledSeen.push(version.compiled_json);
 
-  // `compiled_json` stores the whole compiled rule — `{ conditions,
-  // actions }` (the same shape `rule-set-loader.ts`'s own
-  // `loadActiveRuleSet` already parses it as) — not the bare
-  // conditions tree alone.
-  const compiled = JSON.parse(version.compiled_json) as { conditions: RuleNode };
-  const stillMatches = evaluateConditions(compiled.conditions, facts);
+    // Line-scope: merge that one line's own facts over the header's,
+    // the exact precedence workflow-engine.ts's own per-line evaluation
+    // already uses ({ ...facts, ...line }) — the line wins where both
+    // name the same term.
+    const facts: InvoiceFacts =
+      part.line != null ? { ...live.facts, ...(live.lines.find((l) => l.lineNumber === part.line) ?? {}) } : live.facts;
 
-  return { state: stillMatches ? "fires" : "cleared", ruleName: version.rule_name, compiledJson: version.compiled_json };
+    // `compiled_json` stores the whole compiled rule — `{ conditions,
+    // actions }` — not the bare conditions tree alone.
+    const compiled = JSON.parse(version.compiled_json) as { conditions: RuleNode };
+    if (evaluateConditions(compiled.conditions, facts)) {
+      anyFires = true;
+      firingRuleName ??= version.rule_name;
+      if (part.line != null && !firingLines.includes(part.line)) firingLines.push(part.line);
+    }
+  }
+
+  // Several rules' compiled forms are joined so a caller looking for the
+  // facts they read (0648's receipt re-check) sees all of them.
+  const compiledJson = compiledSeen.length === 0 ? null : compiledSeen.length === 1 ? compiledSeen[0] : `[${compiledSeen.join(",")}]`;
+  if (anyFires) return { state: "fires", ruleName: firingRuleName, compiledJson, firingLines: firingLines.sort((a, b) => a - b), combined };
+  if (anyUnknown) return { ...notBlocked, ruleName: firstRuleName, compiledJson, combined };
+  return { state: "cleared", ruleName: firstRuleName, compiledJson, firingLines: [], combined };
 }

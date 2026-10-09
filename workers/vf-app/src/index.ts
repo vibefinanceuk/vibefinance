@@ -150,6 +150,7 @@ import {
   handleStartDraft,
   handleAddDraftStage,
   handleRemoveDraftStage,
+  handleUpdateStage,
   handlePublishDraft,
   handleDiscardDraft,
   handleReorderDraftStages,
@@ -3895,6 +3896,18 @@ export default {
       return json(result.body, result.status);
     }
 
+    // Edit a stage: name, evaluated per invoice or per line, Tasks for lines — decision 0709.
+    if (removeDraftStageMatch && request.method === "PUT") {
+      const { db } = resolveTenant(request, env);
+      const auth = await requirePermission(db, request, "Admin.Configure", sessionContext(env));
+      if (!auth.authorized) {
+        return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
+      }
+      const body = await request.json().catch(() => null);
+      const result = await handleUpdateStage(db, removeDraftStageMatch[1], removeDraftStageMatch[2], (body ?? {}) as Record<string, unknown>);
+      return json(result.body, result.status);
+    }
+
     const publishDraftMatch = pathname.match(/^\/processes\/([^/]+)\/publish$/);
     if (publishDraftMatch && request.method === "POST") {
       const { db } = resolveTenant(request, env);
@@ -7015,9 +7028,14 @@ export default {
           if (reverify.blocked) {
             return json(
               {
-                error: t("completeBlockedRuleStillFires", locale, { rule: reverify.ruleName ?? "" }),
+                // Decision 0709 — a task covering several lines names the ones still failing.
+                error:
+                  reverify.combined && reverify.lines.length > 0
+                    ? t("completeBlockedRuleStillFiresLines", locale, { rule: reverify.ruleName ?? "", lines: reverify.lines.join(", ") })
+                    : t("completeBlockedRuleStillFires", locale, { rule: reverify.ruleName ?? "" }),
                 reason: "rule_still_fires",
                 ruleName: reverify.ruleName,
+                lines: reverify.lines,
               },
               409
             );

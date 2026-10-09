@@ -149,7 +149,7 @@ describe("ruleStillFiresForTask fails open when the exact thing to re-check cann
   it("a system_reason task (decision 0480) has no rule_id — nothing to re-check", async () => {
     const taskId = await seedTeamTask({ ruleId: null, stageVisitId: null });
     const result = await ruleStillFiresForTask(env.DB, taskId);
-    expect(result).toEqual({ blocked: false, ruleName: null });
+    expect(result).toEqual({ blocked: false, ruleName: null, lines: [], combined: false });
   });
 
   it("a task created directly via POST /tasks (decision 0018) has a rule_id but no stage_visit_id", async () => {
@@ -157,7 +157,7 @@ describe("ruleStillFiresForTask fails open when the exact thing to re-check cann
     await env.DB.prepare("INSERT INTO rules (id, rule_set_id, sort_order, enabled) VALUES ('r1', 'rs1', 0, 1)").run();
     const taskId = await seedTeamTask({ ruleId: "r1", stageVisitId: null });
     const result = await ruleStillFiresForTask(env.DB, taskId);
-    expect(result).toEqual({ blocked: false, ruleName: null });
+    expect(result).toEqual({ blocked: false, ruleName: null, lines: [], combined: false });
   });
 
   it("no matching stage_visit_steps row — should not happen per migration 0009, but does not become a permanent lock if it does", async () => {
@@ -192,6 +192,6 @@ describe("ruleStillFiresForTask fails open when the exact thing to re-check cann
       .run();
 
     const result = await ruleStillFiresForTask(env.DB, taskId);
-    expect(result).toEqual({ blocked: false, ruleName: null });
+    expect(result).toEqual({ blocked: false, ruleName: null, lines: [], combined: false });
   });
 });

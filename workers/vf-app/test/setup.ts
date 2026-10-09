@@ -160,6 +160,7 @@ import processEndsSql from "../../../migrations/0153_process_ends_follow_current
 import fieldRegionsSql from "../../../migrations/0154_invoice_field_regions.sql?raw";
 import layoutResetsSql from "../../../migrations/0155_supplier_layout_resets.sql?raw";
 import senderIndexSql from "../../../migrations/0156_sender_lookup_index.sql?raw";
+import combinedLineTasksSql from "../../../migrations/0157_combined_line_tasks.sql?raw";
 
 // Another known divergence from production, on top of the one below:
 // D1's exec() splits its input by newline and executes each non-empty
@@ -518,6 +519,7 @@ export async function applyTestSchema(): Promise<void> {
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(fieldRegionsSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(layoutResetsSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(senderIndexSql)));
+  await env.DB.exec(toOneStatementPerLine(stripSqlComments(combinedLineTasksSql)));
 }
 
 /**

@@ -44,6 +44,8 @@ interface CreateStageBody {
 }
 
 const KNOWN_EVALUATION_SCOPES = ["header", "line"] as const;
+/** Tasks for lines — decision 0709. */
+const KNOWN_LINE_TASKS = ["per_line", "combined"] as const;
 
 export async function handleCreateStage(
   db: D1Database,
@@ -153,6 +155,8 @@ interface StageDetail {
   ruleSetId: string | null;
   ruleSetName: string | null;
   evaluationScope: string;
+  /** Tasks for lines — decision 0709: `per_line` or `combined`. */
+  lineTasks: string;
   /**
    * Whether the Stage Restrictions screen (decision 0483) offers this
    * stage at all — decision 0485. A stage a person can never open for
@@ -194,7 +198,7 @@ interface StageDetail {
 async function stagesAtVersion(db: D1Database, processId: string, version: number): Promise<StageDetail[]> {
   const rows = await db
     .prepare(
-      `SELECT s.id, s.name, v.sequence, s.rule_set_id, r.name AS rule_set_name, s.evaluation_scope,
+      `SELECT s.id, s.name, v.sequence, s.rule_set_id, r.name AS rule_set_name, s.evaluation_scope, s.line_tasks,
               s.offer_field_restrictions, sa.reverify_rule_on_complete, sd.discard_allowed
        FROM process_stage_versions v
        JOIN process_stages s ON s.id = v.stage_id
@@ -212,6 +216,7 @@ async function stagesAtVersion(db: D1Database, processId: string, version: numbe
       rule_set_id: string | null;
       rule_set_name: string | null;
       evaluation_scope: string;
+      line_tasks: string;
       offer_field_restrictions: number;
       reverify_rule_on_complete: number | null;
       discard_allowed: number | null;
@@ -262,6 +267,7 @@ async function stagesAtVersion(db: D1Database, processId: string, version: numbe
     ruleSetId: r.rule_set_id,
     ruleSetName: r.rule_set_name,
     evaluationScope: r.evaluation_scope,
+    lineTasks: r.line_tasks,
     offerFieldRestrictions: r.offer_field_restrictions === 1,
     reverifyRuleOnComplete: r.reverify_rule_on_complete === 1,
     // Absence of a row (r.discard_allowed is null, nothing configured
@@ -348,6 +354,7 @@ interface AddDraftStageBody {
   name?: unknown;
   ruleSetId?: unknown;
   evaluationScope?: unknown;
+  lineTasks?: unknown;
 }
 
 /**
@@ -368,9 +375,12 @@ export async function handleAddDraftStage(
   processId: string,
   body: AddDraftStageBody
 ): Promise<RouteResult> {
-  const { id, name, ruleSetId, evaluationScope } = body;
+  const { id, name, ruleSetId, evaluationScope, lineTasks } = body;
   if (typeof id !== "string" || !id || typeof name !== "string" || !name) {
     return { status: 400, body: { error: "id and name (both strings) are required" } };
+  }
+  if (lineTasks !== undefined && !KNOWN_LINE_TASKS.includes(lineTasks as (typeof KNOWN_LINE_TASKS)[number])) {
+    return { status: 400, body: { error: `lineTasks, if provided, must be one of: ${KNOWN_LINE_TASKS.join(", ")}` } };
   }
   if (ruleSetId !== undefined && ruleSetId !== null && (typeof ruleSetId !== "string" || !ruleSetId)) {
     return { status: 400, body: { error: "ruleSetId, if provided, must be a non-empty string" } };
@@ -409,11 +419,13 @@ export async function handleAddDraftStage(
     .first<{ next: number }>();
 
   const scope = (evaluationScope as string) ?? "header";
+  // A stage evaluated once per invoice has no lines to combine (0709).
+  const lines = scope === "line" ? ((lineTasks as string) ?? "per_line") : "per_line";
   await db
     .prepare(
-      "INSERT INTO process_stages (id, process_id, name, sequence, rule_set_id, evaluation_scope) VALUES (?, ?, ?, ?, ?, ?)"
+      "INSERT INTO process_stages (id, process_id, name, sequence, rule_set_id, evaluation_scope, line_tasks) VALUES (?, ?, ?, ?, ?, ?, ?)"
     )
-    .bind(id, processId, name, nextTableSequence!.next, (ruleSetId as string) ?? null, scope)
+    .bind(id, processId, name, nextTableSequence!.next, (ruleSetId as string) ?? null, scope, lines)
     .run();
   await db
     .prepare("INSERT INTO process_stage_versions (process_id, version, stage_id, sequence) VALUES (?, ?, ?, ?)")
@@ -422,8 +434,50 @@ export async function handleAddDraftStage(
 
   return {
     status: 201,
-    body: { id, processId, name, ruleSetId: ruleSetId ?? null, evaluationScope: scope, draftVersion },
+    body: { id, processId, name, ruleSetId: ruleSetId ?? null, evaluationScope: scope, lineTasks: lines, draftVersion },
   };
+}
+
+/**
+ * **Edit a stage — decision 0709.** Its name, whether its rules are
+ * evaluated once per invoice or once per line, and, for a per-line stage,
+ * whether the lines that need attention share a task ("Tasks for lines").
+ *
+ * A stage's own settings are not versioned (only its membership and
+ * order are, in `process_stage_versions`), so an edit takes effect for
+ * the next visit to the stage, published or not. Tasks already open are
+ * left as they were raised.
+ */
+export async function handleUpdateStage(
+  db: D1Database,
+  processId: string,
+  stageId: string,
+  body: { name?: unknown; evaluationScope?: unknown; lineTasks?: unknown }
+): Promise<RouteResult> {
+  const { name, evaluationScope, lineTasks } = body ?? {};
+  if (name !== undefined && (typeof name !== "string" || !name.trim())) {
+    return { status: 400, body: { error: "name, if provided, must be a non-empty string" } };
+  }
+  if (evaluationScope !== undefined && !KNOWN_EVALUATION_SCOPES.includes(evaluationScope as (typeof KNOWN_EVALUATION_SCOPES)[number])) {
+    return { status: 400, body: { error: `evaluationScope, if provided, must be one of: ${KNOWN_EVALUATION_SCOPES.join(", ")}` } };
+  }
+  if (lineTasks !== undefined && !KNOWN_LINE_TASKS.includes(lineTasks as (typeof KNOWN_LINE_TASKS)[number])) {
+    return { status: 400, body: { error: `lineTasks, if provided, must be one of: ${KNOWN_LINE_TASKS.join(", ")}` } };
+  }
+  const stage = await db
+    .prepare("SELECT id, name, evaluation_scope, line_tasks FROM process_stages WHERE id = ? AND process_id = ?")
+    .bind(stageId, processId)
+    .first<{ id: string; name: string; evaluation_scope: string; line_tasks: string }>();
+  if (!stage) return { status: 404, body: { error: `stage ${stageId} is not in process ${processId}` } };
+
+  const nextName = name !== undefined ? (name as string).trim() : stage.name;
+  const nextScope = (evaluationScope as string | undefined) ?? stage.evaluation_scope;
+  const nextLines = nextScope === "line" ? ((lineTasks as string | undefined) ?? stage.line_tasks) : "per_line";
+  await db
+    .prepare("UPDATE process_stages SET name = ?, evaluation_scope = ?, line_tasks = ? WHERE id = ?")
+    .bind(nextName, nextScope, nextLines, stageId)
+    .run();
+  return { status: 200, body: { id: stageId, processId, name: nextName, evaluationScope: nextScope, lineTasks: nextLines } };
 }
 
 /**

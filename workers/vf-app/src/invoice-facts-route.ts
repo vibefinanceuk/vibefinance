@@ -1,3 +1,4 @@
+import { linesOf } from "./task-list-route.js";
 import { loadSplits } from "./coding-splits.js";
 import { supplierProjectOnly } from "./supplier-project-only.js";
 import type { InvoiceFacts } from "@vibefinance/shared";
@@ -387,6 +388,8 @@ async function currentOpenTaskReason(
   systemReason: string | null;
   name: string;
   sourceText: string | null;
+  /** The lines a combined task covers — decision 0709. Null for any other task. */
+  lines: number[] | null;
 } | null> {
   // Two kinds of open task, one banner — decision 0478's own rule-
   // attributed kind, and decision 0480's engine-created kind (no rule
@@ -397,9 +400,9 @@ async function currentOpenTaskReason(
   // guessing which table to check first.
   const row = await db
     .prepare(
-      `SELECT rule_id, rule_name, source_text, translated_name, system_reason, created_at FROM (
+      `SELECT rule_id, rule_name, source_text, translated_name, system_reason, lines_json, created_at FROM (
          SELECT r.id AS rule_id, r.name AS rule_name, rv.source_text AS source_text,
-                rnt.name AS translated_name, NULL AS system_reason, t.created_at AS created_at
+                rnt.name AS translated_name, NULL AS system_reason, t.lines_json AS lines_json, t.created_at AS created_at
          FROM tasks t
          JOIN stage_visits v ON v.id = t.stage_visit_id
          JOIN process_instances pi ON pi.id = v.process_instance_id
@@ -411,7 +414,7 @@ async function currentOpenTaskReason(
            AND t.status = 'open' AND t.rule_id IS NOT NULL
          UNION ALL
          SELECT NULL AS rule_id, NULL AS rule_name, NULL AS source_text,
-                NULL AS translated_name, t.system_reason AS system_reason, t.created_at AS created_at
+                NULL AS translated_name, t.system_reason AS system_reason, NULL AS lines_json, t.created_at AS created_at
          FROM tasks t
          JOIN stage_visits v ON v.id = t.stage_visit_id
          JOIN process_instances pi ON pi.id = v.process_instance_id
@@ -428,6 +431,7 @@ async function currentOpenTaskReason(
       source_text: string | null;
       translated_name: string | null;
       system_reason: string | null;
+      lines_json: string | null;
     }>();
 
   if (!row) return null;
@@ -450,6 +454,7 @@ async function currentOpenTaskReason(
       // row.rule_name below.
       name: row.system_reason,
       sourceText: null,
+      lines: null,
     };
   }
 
@@ -465,6 +470,7 @@ async function currentOpenTaskReason(
     systemReason: null,
     name: standard ? standard.name : row.translated_name ?? row.rule_name ?? "",
     sourceText: row.source_text,
+    lines: linesOf(row.lines_json),
   };
 }
 

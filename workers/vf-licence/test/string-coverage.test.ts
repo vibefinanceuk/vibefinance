@@ -3639,6 +3639,15 @@ const KEYS_THE_INTERFACE_USES = [
   "suppliers.learning.helped",
   // A supplier's line columns (decision 0705).
   "suppliers.layouts.columns",
+  // Tasks for lines and the stage settings (decision 0709).
+  "processes.linetasks",
+  "processes.linetasks.combined",
+  "processes.linetasks.combined.help",
+  "processes.linetasks.per_line",
+  "processes.linetasks.per_line.help",
+  "processes.editstage",
+  "processes.editstagenote",
+  "tasks.lines",
   // The line net amount's suggestion (decision 0708).
   "viewer.linecalc.calc",
   "viewer.linecalc.gross",

@@ -98,6 +98,8 @@ export interface TaskRow {
   /** Set only when `locked` — who holds it, and since when. */
   /** Which invoice line, where a stage is scoped per line (0027, 0183). */
   lineNumber: number | null;
+  /** Every line a combined task covers, in order — decision 0709. Null for any other task. */
+  lineNumbers: number[] | null;
   splitRows: number[] | null;
   /** Who it belongs to — decision 0180. Not the same as who has it. */
   ownedBy?: { id: string; name: string; email: string | null };
@@ -142,6 +144,7 @@ interface Raw {
   owner_user_id: string | null;
   owner_team_id: string | null;
   line_number: number | null;
+  lines_json: string | null;
   split_rows: string | null;
   claimed_by: string | null;
   claimed_at: string | null;
@@ -695,7 +698,7 @@ export async function handleListMyTasks(
     .prepare(
       `SELECT
          t.id, t.stage_id, t.required_permission, t.owner_user_id, t.owner_team_id,
-         t.line_number, t.split_rows,
+         t.line_number, t.lines_json, t.split_rows,
          t.claimed_by, t.claimed_at, t.created_at,
          claimer.name AS claimed_by_name,
          claimer.email AS claimed_by_email,
@@ -830,6 +833,7 @@ export async function handleListMyTasks(
        * *"this is about the whole document"*.
        */
       lineNumber: row.line_number,
+      lineNumbers: linesOf(row.lines_json),
       // Decision 0551 — the rows of a split line this task is for; null for a whole line or document.
       splitRows: row.split_rows ? row.split_rows.split(",").map(Number) : null,
     };
@@ -956,4 +960,15 @@ export async function handleListMyTasks(
       pageSize,
     },
   };
+}
+
+/** The distinct lines a combined task lists, in order — decision 0709. */
+export function linesOf(linesJson: string | null): number[] | null {
+  if (!linesJson) return null;
+  try {
+    const lines = (JSON.parse(linesJson) as { line?: unknown }[]).map((l) => l?.line).filter((n): n is number => typeof n === "number");
+    return lines.length > 0 ? [...new Set(lines)].sort((a, b) => a - b) : null;
+  } catch {
+    return null;
+  }
 }

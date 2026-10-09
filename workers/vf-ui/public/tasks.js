@@ -366,7 +366,7 @@ function taskRow(task) {
           class: task.subject?.invoiceNumber ? "" : "muted",
           text:
             (task.subject?.invoiceNumber ?? (task.subject ? t("tasks.notkeyed") : t("tasks.nodocument"))) +
-            (task.lineNumber ? ` · ${t("tasks.line")} ${task.lineNumber}` : ""),
+            lineLabel(task),
         }),
       ]),
       el("td", {}, [stagePill(task)]),
@@ -1674,4 +1674,15 @@ export async function relaunchAfterLanguageChange() {
   }
 
   await go(current);
+}
+
+/**
+ * **Which lines a task is about — decisions 0183 and 0709.** One line,
+ * or the lines a combined task covers ("lines 1, 2, 4"); nothing for a
+ * task about the whole document.
+ */
+export function lineLabel(task) {
+  if (task.lineNumbers?.length > 1) return ` · ${t("tasks.lines")} ${task.lineNumbers.join(", ")}`;
+  const one = task.lineNumber ?? task.lineNumbers?.[0];
+  return one ? ` · ${t("tasks.line")} ${one}` : "";
 }

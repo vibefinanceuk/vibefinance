@@ -59,6 +59,7 @@ const STRINGS = {
     "tasks.received": "Received Date",
     "tasks.action": "Action",
     "tasks.line": "line",
+    "tasks.lines": "lines",
     "tasks.supplier": "Supplier",
     "tasks.amount": "Amount",
     "tasks.waiting": "Waiting",
@@ -1902,6 +1903,11 @@ describe("the Tasks list's columns and stage pills (decisions 0521, 0522)", () =
   it("keeps a line-level task's line beside its number", async () => {
     await openList([{ ...NUMBERED, lineNumber: 3 }]);
     expect(document.querySelector("tbody tr:first-child td")?.textContent).toBe("INV-1042 · line 3");
+  });
+
+  it("names every line a combined task covers — decision 0709", async () => {
+    await openList([{ ...NUMBERED, lineNumber: null, lineNumbers: [1, 2, 4] }]);
+    expect(document.querySelector("tbody tr:first-child td")?.textContent).toBe("INV-1042 · lines 1, 2, 4");
   });
 });
 

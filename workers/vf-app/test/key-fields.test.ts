@@ -914,6 +914,8 @@ describe("why this task is here (decision 0478)", () => {
       systemReason: null,
       name: "Supplier Not Matching in ERP",
       sourceText: "If the supplier is not matching in the ERP, assign a task to the AP team requiring AP.Review permission.",
+      // A task about one line or the whole document lists no lines (decision 0709).
+      lines: null,
     });
   });
 
@@ -1013,6 +1015,7 @@ describe("why this task is here (decision 0478)", () => {
       systemReason: "supplier_unidentified",
       name: "supplier_unidentified",
       sourceText: null,
+      lines: null,
     });
   });
 

@@ -124,6 +124,7 @@ const STRINGS = {
     "viewer.workflow.stageerror": "This invoice stopped moving because of a processing error:",
     "invoice.reasonline.label": "Here because:",
     "invoice.reasonline.expand": "click for details",
+    "tasks.lines": "Lines",
     "matching.standardrule.po_line_not_found.name": "Standard rule: PO line not found",
     "action.changebuyer": "Change Buyer",
     "action.changeseller": "Change Seller",
@@ -4141,6 +4142,13 @@ describe("why this task is here (decision 0478)", () => {
   it("shows nothing when the invoice has no open task reason — the ordinary case", async () => {
     await open({ openTaskReason: null });
     expect(document.querySelector(".panel.reasonline")).toBeNull();
+  });
+
+  it("names the lines a combined task covers — decision 0709", async () => {
+    await open({ openTaskReason: { ruleId: "r-po", standardKey: null, name: "PO line match", sourceText: null, lines: [1, 2, 4] } });
+    expect(document.querySelector(".reasonline-row .reasonline-lines")?.textContent).toBe("Lines 1, 2, 4");
+    await open({ openTaskReason: { ruleId: "r-po", standardKey: null, name: "PO line match", sourceText: null, lines: null } });
+    expect(document.querySelector(".reasonline-lines")).toBeNull();
   });
 
   it("names a custom rule, already resolved to this viewer's own locale by the server", async () => {

@@ -228,6 +228,10 @@ function reasonLinePanel() {
     el("span", { class: "reasonline-icon" }, [alertIcon]),
     el("span", { class: "reasonline-label", text: t("invoice.reasonline.label") }),
     el("b", { text: name }),
+    // Decision 0709 — a task covering several lines names them.
+    ...(Array.isArray(reason.lines) && reason.lines.length > 0
+      ? [el("span", { class: "chip reasonline-lines", text: `${t(reason.lines.length > 1 ? "tasks.lines" : "tasks.line")} ${reason.lines.join(", ")}` })]
+      : []),
   ]);
 
   const children = [row];

@@ -994,6 +994,18 @@ export async function visitCurrentStage(
     // can genuinely need different approvers. Now safe: the
     // stage_visits row this references was already inserted above.
     let tasksCreated = 0;
+    /**
+     * **Tasks for lines — decision 0709.** A stage set to `combined`
+     * raises one task for all the lines going to the same team, person
+     * and permission, rather than one per line. Lines are gathered here
+     * and their tasks created after the loop. A task for a split line's
+     * rows (0551) stays its own: its rows belong to that line alone.
+     */
+    const combineLines =
+      stage.evaluation_scope === "line" && pendingTaskActions.some((a) => a.lineNumber !== null)
+        ? (await db.prepare("SELECT line_tasks FROM process_stages WHERE id = ?").bind(stage.id).first<{ line_tasks: string }>())?.line_tasks === "combined"
+        : false;
+    const combinedGroups = new Map<string, { teamId?: string; userId?: string; permission: string | undefined; lines: { line: number; rule: string | null }[] }>();
     for (const { params, lineNumber, facts: rowFacts, ruleId, splitRows } of pendingTaskActions) {
       /**
        * **For a split line, the rows the rule matched — decision 0550.**
@@ -1116,6 +1128,14 @@ export async function visitCurrentStage(
       }
 
       for (const { teamId, userId, requiredPermission, rows } of targets) {
+        if (combineLines && lineNumber !== null && !(rows && rows.length > 0)) {
+          const permission = (requiredPermission ?? stage.required_permission ?? params.permission) as string | undefined;
+          const key = JSON.stringify([teamId ?? null, userId ?? null, permission ?? null]);
+          const group = combinedGroups.get(key) ?? { teamId, userId, permission, lines: [] };
+          group.lines.push({ line: lineNumber, rule: ruleId ?? null });
+          combinedGroups.set(key, group);
+          continue;
+        }
         const createResult = await handleCreateTask(db, {
           id: crypto.randomUUID(),
           stageId: stage.id,
@@ -1145,6 +1165,29 @@ export async function visitCurrentStage(
           .run();
         tasksCreated++;
       }
+    }
+
+    // The combined tasks — decision 0709. One line alone is stored exactly
+    // as a per-line task; several keep line_number NULL and list each line
+    // with the rule that sent it here.
+    for (const group of combinedGroups.values()) {
+      const lines = [...group.lines].sort((a, b) => a.line - b.line);
+      const distinct = [...new Set(lines.map((l) => l.line))];
+      const createResult = await handleCreateTask(db, {
+        id: crypto.randomUUID(),
+        stageId: stage.id,
+        teamId: group.teamId,
+        userId: group.userId,
+        requiredPermission: group.permission,
+      });
+      if (createResult.status !== 201) {
+        return { status: 500, body: { error: `assign_task fired an invalid task: ${JSON.stringify(createResult.body)}` } };
+      }
+      await db
+        .prepare("UPDATE tasks SET stage_visit_id = ?, line_number = ?, rule_id = ?, lines_json = ? WHERE id = ?")
+        .bind(visitId, distinct.length === 1 ? distinct[0] : null, lines[0].rule, lines.length > 1 ? JSON.stringify(lines) : null, (createResult.body as { id: string }).id)
+        .run();
+      tasksCreated++;
     }
 
     /**

@@ -226,7 +226,9 @@ export async function findLineCoder(
     .prepare(
       `SELECT t.completed_by FROM tasks t
        JOIN stage_visits v ON v.id = t.stage_visit_id
-       WHERE v.process_instance_id = ? AND v.stage_id = ? AND t.line_number = ? AND t.completed_by IS NOT NULL
+       WHERE v.process_instance_id = ? AND v.stage_id = ? AND t.completed_by IS NOT NULL
+         -- A combined task (decision 0709) codes every line it lists.
+         AND (t.line_number = ?3 OR EXISTS (SELECT 1 FROM json_each(t.lines_json) j WHERE json_extract(j.value, '$.line') = ?3))
        ORDER BY t.completed_at DESC LIMIT 1`
     )
     .bind(instanceId, prev.id, lineNumber)

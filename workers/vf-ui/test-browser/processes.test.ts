@@ -65,6 +65,14 @@ const STRINGS = {
     "action.discard": "Discard",
     "action.create": "Create",
     "action.close": "Close",
+    "action.save": "Save",
+    "processes.linetasks": "Tasks for lines",
+    "processes.linetasks.combined": "Combined by who handles them",
+    "processes.linetasks.combined.help": "Lines going to the same team, person and permission share one task.",
+    "processes.linetasks.per_line": "One per line",
+    "processes.linetasks.per_line.help": "Each line has its own task.",
+    "processes.editstage": "Stage settings",
+    "processes.editstagenote": "Applies to the next invoice to reach this stage.",
   },
 };
 
@@ -87,7 +95,7 @@ const DETAIL_WITH_DRAFT = {
     version: 2,
     stages: [
       ...DETAIL_NO_DRAFT.stages,
-      { id: "s3", name: "Coding", sequence: 3, ruleSetId: null, ruleSetName: null, evaluationScope: "line" },
+      { id: "s3", name: "Coding", sequence: 3, ruleSetId: null, ruleSetName: null, evaluationScope: "line", lineTasks: "combined" },
     ],
   },
 };
@@ -415,5 +423,81 @@ describe("adding a stage to a draft", () => {
     await new Promise((r) => setTimeout(r, 0));
 
     expect(posted).toContain("/api/processes/p1/draft/stages");
+  });
+});
+
+describe("stage settings — decision 0709", () => {
+  async function openDraft(puts: { path: string; body: unknown }[] = [], permissions = ["Admin.Configure"]) {
+    await open({ "/api/processes/p1": DETAIL_WITH_DRAFT, "/api/processes/p1/draft/stages/s3": { id: "s3" } }, permissions, [], [], puts);
+    const row = [...document.querySelectorAll("tr")].find((r) => r.textContent?.includes("Standard AP"));
+    row?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await new Promise((r) => setTimeout(r, 0));
+  }
+  const settle = () => new Promise((r) => setTimeout(r, 0));
+
+  it("a draft stage's name opens its settings; the live version's does not", async () => {
+    await openDraft();
+    const names = [...document.querySelectorAll(".stage .stagename")].map((b) => b.textContent);
+    // Only the draft's three stages.
+    expect(names).toEqual(["Received", "Approval", "Coding"]);
+  });
+
+  it("shows the stage's own settings, and Tasks for lines only when evaluated per line", async () => {
+    await openDraft();
+    const coding = [...document.querySelectorAll(".stage .stagename")].find((b) => b.textContent === "Coding") as HTMLButtonElement;
+    coding.click();
+    const popout = document.querySelector(".popout")!;
+    expect((popout.querySelector("input[type=text]") as HTMLInputElement).value).toBe("Coding");
+    expect((popout.querySelector("select") as HTMLSelectElement).value).toBe("line");
+    expect((popout.querySelector("input[value=combined]") as HTMLInputElement).checked).toBe(true);
+    const choices = popout.querySelector(".radiochoices") as HTMLElement;
+    expect(choices.hidden).toBe(false);
+    expect(popout.textContent).toContain("Applies to the next invoice");
+
+    const select = popout.querySelector("select") as HTMLSelectElement;
+    select.value = "header";
+    select.dispatchEvent(new Event("change"));
+    expect(choices.hidden).toBe(true);
+  });
+
+  it("Save sends the name, evaluated and Tasks for lines", async () => {
+    const puts: { path: string; body: unknown }[] = [];
+    await openDraft(puts);
+    ([...document.querySelectorAll(".stage .stagename")].find((b) => b.textContent === "Coding") as HTMLButtonElement).click();
+    const popout = document.querySelector(".popout")!;
+    (popout.querySelector("input[type=text]") as HTMLInputElement).value = "Account coding";
+    (popout.querySelector("input[value=per_line]") as HTMLInputElement).checked = true;
+    ([...popout.querySelectorAll("button")].find((b) => b.textContent?.includes("Save")) as HTMLButtonElement).click();
+    await settle();
+    expect(puts).toContainEqual({ path: "/api/processes/p1/draft/stages/s3", body: { name: "Account coding", evaluationScope: "line", lineTasks: "per_line" } });
+  });
+
+  it("without Admin.Configure, a stage's name is plain text", async () => {
+    await openDraft([], ["AP.Dashboard"]);
+    expect(document.querySelectorAll(".stage .stagename")).toHaveLength(0);
+  });
+
+  it("adding a stage evaluated per line can choose Tasks for lines", async () => {
+    const posted: string[] = [];
+    const bodies: unknown[] = [];
+    await open({ "/api/processes/p1": DETAIL_NO_DRAFT }, ["Admin.Configure"], posted);
+    const fetchMock = globalThis.fetch as unknown as { mock: { calls: [string, RequestInit?][] } };
+    const row = [...document.querySelectorAll("tr")].find((r) => r.textContent?.includes("Standard AP"));
+    row?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await settle();
+    ([...document.querySelectorAll("button")].find((b) => b.textContent?.includes("Add stage")) as HTMLButtonElement).click();
+    const popout = document.querySelector(".popout")!;
+    expect((popout.querySelector(".radiochoices") as HTMLElement).hidden).toBe(true);
+    (popout.querySelectorAll("input[type=text]")[0] as HTMLInputElement).value = "s3";
+    (popout.querySelectorAll("input[type=text]")[1] as HTMLInputElement).value = "Matching";
+    const select = popout.querySelector("select") as HTMLSelectElement;
+    select.value = "line";
+    select.dispatchEvent(new Event("change"));
+    expect((popout.querySelector(".radiochoices") as HTMLElement).hidden).toBe(false);
+    (popout.querySelector("input[value=combined]") as HTMLInputElement).checked = true;
+    ([...popout.querySelectorAll("button")].find((b) => b.textContent?.includes("Create")) as HTMLButtonElement).click();
+    await settle();
+    for (const [url, init] of fetchMock.mock.calls) if (init?.method === "POST" && String(url).endsWith("/draft/stages")) bodies.push(JSON.parse(String(init.body)));
+    expect(bodies).toEqual([{ id: "s3", name: "Matching", evaluationScope: "line", lineTasks: "combined" }]);
   });
 });

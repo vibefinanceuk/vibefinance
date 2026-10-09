@@ -54,7 +54,7 @@ function stageLabel(stage) {
 // here — drag source and drop target are always the same page.
 let draggedStageId = null;
 
-function stageChevrons(stages, onRemove, onReorder) {
+function stageChevrons(stages, onRemove, onReorder, onEdit) {
   return el(
     "div",
     { class: "process" },
@@ -99,7 +99,10 @@ function stageChevrons(stages, onRemove, onReorder) {
             : {}),
         },
         [
-          el("span", { text: stage.name }),
+          // Decision 0709 — on a draft, the stage's name opens its settings.
+          onEdit
+            ? el("button", { class: "stagename", title: t("processes.editstage"), onclick: () => onEdit(stage), text: stage.name })
+            : el("span", { text: stage.name }),
           el("span", { class: "count", text: stageLabel(stage) }),
           ...(onRemove
             ? [
@@ -181,6 +184,11 @@ function openAddStageForm(processId) {
     el("option", { value: "header", text: t("processes.scopeheader") }),
     el("option", { value: "line", text: t("processes.scopeline") }),
   ]);
+  const lines = lineTasksChoices("add", "per_line");
+  const linesRow = [el("label", { text: t("processes.linetasks") }), lines.node];
+  const showLines = () => linesRow.forEach((n) => (n.hidden = scopePicker.value !== "line"));
+  scopePicker.onchange = showLines;
+  showLines();
 
   const close = () => backdrop.remove();
   const add = actionLink("create", {
@@ -197,7 +205,7 @@ function openAddStageForm(processId) {
         const response = await fetch(`/api/processes/${encodeURIComponent(processId)}/draft/stages`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ id, name, evaluationScope: scopePicker.value }),
+          body: JSON.stringify({ id, name, evaluationScope: scopePicker.value, ...(scopePicker.value === "line" ? { lineTasks: lines.value() } : {}) }),
         });
         if (!response.ok) {
           problem.textContent = (await response.json()).error ?? t("processes.savefailed");
@@ -223,6 +231,7 @@ function openAddStageForm(processId) {
         nameInput,
         el("label", { text: t("processes.scope") }),
         scopePicker,
+        ...linesRow,
       ]),
       problem,
     ]),
@@ -233,6 +242,100 @@ function openAddStageForm(processId) {
   };
   document.body.append(backdrop);
   idInput.focus();
+}
+
+/**
+ * **Tasks for lines — decision 0709.** Two options, each with a line
+ * saying what it means: lines going to the same team, person and
+ * permission share a task, or each line has its own.
+ */
+function lineTasksChoices(prefix, current) {
+  const choice = (value) =>
+    el("label", { class: "radiochoice", for: `linetasks-${prefix}-${value}` }, [
+      el("input", {
+        type: "radio",
+        name: `linetasks-${prefix}`,
+        value,
+        id: `linetasks-${prefix}-${value}`,
+        ...(current === value ? { checked: "checked" } : {}),
+      }),
+      el("span", {}, [el("b", { text: t(`processes.linetasks.${value}`) }), el("span", { class: "muted sm", text: t(`processes.linetasks.${value}.help`) })]),
+    ]);
+  const node = el("div", { class: "radiochoices" }, [choice("combined"), choice("per_line")]);
+  return { node, value: () => node.querySelector("input:checked")?.value ?? "per_line" };
+}
+
+/**
+ * **Edit a stage — decision 0709.** Its name, whether its rules are
+ * evaluated once per invoice or once per line, and Tasks for lines.
+ * A stage's settings are not versioned, so the note says the change
+ * applies to the next invoice to reach the stage.
+ */
+export function openEditStageForm(processId, stage) {
+  const problem = el("div", { class: "warn" });
+  const nameInput = el("input", { type: "text", value: stage.name });
+  const scopePicker = el("select", {}, [
+    el("option", { value: "header", text: t("processes.scopeheader") }),
+    el("option", { value: "line", text: t("processes.scopeline") }),
+  ]);
+  scopePicker.value = stage.evaluationScope ?? "header";
+  const lines = lineTasksChoices("edit", stage.lineTasks ?? "per_line");
+  const linesRow = [el("label", { text: t("processes.linetasks") }), lines.node];
+  const showLines = () => linesRow.forEach((n) => (n.hidden = scopePicker.value !== "line"));
+  scopePicker.onchange = showLines;
+  showLines();
+
+  const close = () => backdrop.remove();
+  const save = actionLink("save", {
+    primary: true,
+    onclick: async () => {
+      problem.textContent = "";
+      const name = nameInput.value.trim();
+      if (!name) {
+        problem.textContent = t("processes.needidandname");
+        return;
+      }
+      try {
+        const response = await fetch(`/api/processes/${encodeURIComponent(processId)}/draft/stages/${encodeURIComponent(stage.id)}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name, evaluationScope: scopePicker.value, ...(scopePicker.value === "line" ? { lineTasks: lines.value() } : {}) }),
+        });
+        if (!response.ok) {
+          problem.textContent = (await response.json()).error ?? t("processes.savefailed");
+          return;
+        }
+        backdrop.remove();
+        await load();
+        render();
+      } catch {
+        problem.textContent = t("processes.savefailed");
+      }
+    },
+  });
+
+  const backdrop = el("div", { class: "backdrop" }, [
+    el("div", { class: "popout" }, [
+      el("div", { class: "cardhead" }, [el("h3", { text: stage.name }), el("div", { class: "statebuttons" }, [save, actionLink("close", { onclick: close })])]),
+      el("div", { class: "editgrid" }, [
+        el("label", { text: t("processes.id") }),
+        el("div", { class: "muted", text: stage.id }),
+        el("label", { text: t("processes.name") }),
+        nameInput,
+        el("label", { text: t("processes.scope") }),
+        scopePicker,
+        ...linesRow,
+      ]),
+      el("p", { class: "muted sm", text: t("processes.editstagenote") }),
+      problem,
+    ]),
+  ]);
+  backdrop.onclick = (e) => {
+    if (e.target === backdrop) backdrop.remove();
+  };
+  document.body.append(backdrop);
+  nameInput.focus();
+  return backdrop;
 }
 
 async function removeDraftStage(processId, stage) {
@@ -396,7 +499,8 @@ function processDetailPanel(canManage) {
     stageChevrons(
       detail.draft.stages,
       canManage ? (stage) => removeDraftStage(detail.id, stage) : null,
-      canManage ? (order) => reorderDraftStages(detail.id, order) : null
+      canManage ? (order) => reorderDraftStages(detail.id, order) : null,
+      canManage ? (stage) => openEditStageForm(detail.id, stage) : null
     ),
     el("p", { class: "muted sm", text: t("processes.draftnote") }),
   ]);
