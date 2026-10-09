@@ -1,6 +1,6 @@
 # 0702: Each supplier's invoice layout is learned, and the viewer says where a field usually is
 
-**Status: built**, not yet pushed. vf-app `supplier-layouts.ts`, migration
+**Status: live** at `e1efec9`, pushed and deployed 9 October 2026, migrations applied. vf-app `supplier-layouts.ts`, migration
 `0155_supplier_layout_resets.sql`, routes `GET /invoices/:id/layouts`,
 `GET /suppliers/:id/layouts`, `POST /suppliers/:id/layouts/forget`; vf-ui; vf-licence
 migration `0314_supplier_layout_strings.sql`. Also adds
