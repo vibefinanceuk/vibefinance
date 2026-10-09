@@ -240,6 +240,7 @@ import { isAllowanceError } from "./extraction.js";
 import { imagesShrinker } from "./page-shrink.js";
 import { handleReadRegion } from "./region-read.js";
 import { handleRecordRegion, listRegions } from "./field-regions.js";
+import { forgetLayouts, invoiceLayouts, supplierLayouts } from "./supplier-layouts.js";
 import { handleDeleteDestination, handleListRoutes, handleProcessRoutes, handleRenameDestination, handleRetireDestination, handleSetInstanceStatus } from "./routes-route.js";
 import { handleDismissMessage, handleReprocessMessage } from "./route-reprocess.js";
 import {
@@ -4268,6 +4269,47 @@ export default {
       const body = await request.json().catch(() => null);
       const result = await handleRecordRegion(db, invoiceId, decodeURIComponent(regionsMatch[2]), auth.user.id, body);
       return json(result.body, result.status);
+    }
+
+    /**
+     * **A supplier's learned invoice layouts — decision 0702.** For an
+     * invoice (the viewer's "usually here"), gated as the document is; and
+     * for a supplier (its page, and forgetting them), gated as suppliers are.
+     */
+    const invoiceLayoutsMatch = pathname.match(/^\/invoices\/([^/]+)\/layouts$/);
+    if (invoiceLayoutsMatch && request.method === "GET") {
+      const { db } = resolveTenant(request, env);
+      const auth = await authenticatePerson(db, request, env);
+      if (!auth.user) return json({ error: auth.reason }, 401);
+      const invoiceId = invoiceLayoutsMatch[1];
+      if (
+        !(await hasPermission(db, auth.user.id, "AP.Validate")) &&
+        !(await hasPermission(db, auth.user.id, "AP.Code")) &&
+        !(await hasPermission(db, auth.user.id, "AP.Match")) &&
+        !(await canViewInvoiceAsCollaborator(db, auth.user.id, invoiceId))
+      ) {
+        return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
+      }
+      const result = await invoiceLayouts(db, invoiceId);
+      return result ? json(result, 200) : json({ error: `invoice ${invoiceId} does not exist` }, 404);
+    }
+    const supplierLayoutsMatch = pathname.match(/^\/suppliers\/([^/]+)\/layouts(\/forget)?$/);
+    if (supplierLayoutsMatch && ((supplierLayoutsMatch[2] === undefined && request.method === "GET") || (supplierLayoutsMatch[2] !== undefined && request.method === "POST"))) {
+      const { db } = resolveTenant(request, env);
+      const auth = await authenticatePerson(db, request, env);
+      if (!auth.user) return json({ error: auth.reason }, 401);
+      const supplierId = decodeURIComponent(supplierLayoutsMatch[1]);
+      if (supplierLayoutsMatch[2] !== undefined) {
+        if (!(await hasPermission(db, auth.user.id, "Admin.Configure"))) {
+          return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
+        }
+        const result = await forgetLayouts(db, supplierId, auth.user.id);
+        return json(result.body, result.status);
+      }
+      if (!(await hasPermission(db, auth.user.id, "Admin.Configure")) && !(await hasPermission(db, auth.user.id, "AP.Validate"))) {
+        return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
+      }
+      return json(await supplierLayouts(db, supplierId), 200);
     }
 
     const regionMatch = pathname.match(/^\/invoices\/([^/]+)\/read-region$/);

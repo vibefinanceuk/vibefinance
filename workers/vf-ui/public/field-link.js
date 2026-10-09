@@ -132,7 +132,8 @@ function labelOf(node) {
 function locateFor(node) {
   if (!state.link) return;
   const value = String(valueOf(node) ?? "").trim();
-  if (!value) {
+  // An empty header field is still asked about: the supplier's layout may say where it usually is (0702).
+  if (!value && !(isHeader(node) && isEditable(node))) {
     state.link.send("clear");
     return;
   }

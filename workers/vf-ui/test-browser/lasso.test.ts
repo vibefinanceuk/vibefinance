@@ -32,6 +32,7 @@ const STRINGS = {
     "viewer.lasso.suggest": "Looks like {field}",
     "viewer.lasso.suggest.put": "Put it there",
     "field.bt-9": "Due date",
+    "viewer.layout.usually": "Usually here for this supplier",
     "field.bt-112": "Invoice total",
     "field.bt-2": "Invoice date",
   },
@@ -577,5 +578,84 @@ describe("where each value is, recorded — decision 0701", () => {
     expect((boxes[0] as HTMLElement).getAttribute("style")).toMatch(/top:59\.\d+%/);
     // Shown from the record, not found again, so not recorded again.
     expect(regionsApi.record).not.toHaveBeenCalled();
+  });
+});
+
+describe("usually here for this supplier — decision 0702", () => {
+  beforeEach(async () => {
+    FakeChannel.all = [];
+    document.body.replaceChildren();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        if (String(url).startsWith("/api/ui-strings")) return { ok: true, json: async () => STRINGS } as Response;
+        throw new Error(`no stub for ${url}`);
+      })
+    );
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const link = (id: string) => docLink(id, FakeChannel as unknown as typeof BroadcastChannel);
+  const noRegions = { list: async () => [], record: async () => {} };
+  // The page has a "date" label on its first row (y 100–120); the layout puts the due date beside it.
+  const LAYOUTS = [
+    { id: "L1", invoices: 5, fields: [{ field: "BT-9", pageNumber: 1, box: { x: 0.2, y: 0.1, w: 0.1, h: 0.02 }, label: "invoicedate", evidence: 5, disagreements: 0 }] },
+  ];
+
+  it("outlines where the supplier usually puts an empty field", async () => {
+    const loadLayouts = vi.fn(async () => LAYOUTS);
+    const { root } = mountViewer(PAGE_WORDS, { loadLayouts });
+    const input = markField(document.createElement("input"), { field: "BT-9", kind: "date" }) as HTMLInputElement;
+    document.body.append(input);
+    connectFields("inv-1", { makeLink: link, regionsApi: noRegions });
+    input.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
+    await flush();
+    const expected = root.querySelector(".vexpected") as HTMLElement;
+    expect(expected).toBeTruthy();
+    expect(expected.getAttribute("style")).toMatch(/top:9\.\d+%/);
+    expect(root.querySelector(".vhint")?.textContent).toBe("Usually here for this supplier");
+    // Fetched once, however many fields are clicked.
+    input.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
+    await flush();
+    expect(loadLayouts).toHaveBeenCalledTimes(1);
+  });
+
+  it("outlines it too when the field's value is not on the page", async () => {
+    const { root } = mountViewer(PAGE_WORDS, { loadLayouts: async () => LAYOUTS });
+    const input = markField(document.createElement("input"), { field: "BT-9", kind: "date" }) as HTMLInputElement;
+    input.value = "2031-01-01";
+    document.body.append(input);
+    connectFields("inv-1", { makeLink: link, regionsApi: noRegions });
+    input.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
+    await flush();
+    expect(root.querySelector(".vexpected")).toBeTruthy();
+  });
+
+  it("does not outline a guess when the value was found", async () => {
+    const { root } = mountViewer(PAGE_WORDS, { loadLayouts: async () => LAYOUTS });
+    const input = markField(document.createElement("input"), { field: "BT-9", kind: "date" }) as HTMLInputElement;
+    input.value = "2026-10-09";
+    document.body.append(input);
+    connectFields("inv-1", { makeLink: link, regionsApi: noRegions });
+    input.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
+    await flush();
+    expect(root.querySelector(".vexpected")).toBeNull();
+    expect(root.querySelector(".vlocate.best")).toBeTruthy();
+  });
+
+  it("says nothing for a supplier with no layout learned", async () => {
+    const { root } = mountViewer(PAGE_WORDS, { loadLayouts: async () => [] });
+    const input = markField(document.createElement("input"), { field: "BT-9", kind: "date" }) as HTMLInputElement;
+    document.body.append(input);
+    connectFields("inv-1", { makeLink: link, regionsApi: noRegions });
+    input.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
+    await flush();
+    expect(root.querySelector(".vexpected")).toBeNull();
+    expect(root.querySelector(".vhint")?.textContent).toBe("");
   });
 });

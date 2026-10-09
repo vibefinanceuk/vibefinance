@@ -16,7 +16,7 @@
 import { t } from "/strings.js";
 import { el } from "/tasks.js";
 import { icon } from "/icons.js";
-import { pdfWords, locate, rotateBox, unrotatePoint, wordsInLasso, contextFor, polygonBox, labelBeside } from "/doc-words.js";
+import { pdfWords, locate, rotateBox, unrotatePoint, wordsInLasso, contextFor, polygonBox, labelBeside, squash } from "/doc-words.js";
 import { docLink } from "/doc-link.js";
 import { readPage } from "/ocr.js";
 
@@ -326,6 +326,12 @@ export const REAL_DEPS = {
   // A lassoed area cut out of the page, and read by the vision model — decision 0699.
   cropRegion: realCropRegion,
   readRegion: realReadRegion,
+  // A supplier's learned layouts, for "usually here" — decision 0702.
+  loadLayouts: async (invoiceId) => {
+    const res = await fetch(`/api/invoices/${encodeURIComponent(invoiceId)}/layouts`);
+    if (!res.ok) return [];
+    return (await res.json()).layouts ?? [];
+  },
   // The widget calls `deps.resolvePages`, not the module-level export
   // directly, so a widget-level test can stub the whole page list in
   // one go instead of every fetch and every pdf.js call beneath it.
@@ -533,8 +539,26 @@ export function pageViewer(invoiceId, contentType, deps = REAL_DEPS) {
     // A line's value is looked for beside its description: find that first (0697).
     const nearFound = message.near?.value ? locate(all, message.near)[0] : null;
     const near = nearFound ? { pageNumber: nearFound.pageNumber, box: nearFound.box } : null;
-    located = locate(all, { field: message.field, value: message.value, kind: message.kind, near });
-    setHint(located.length ? null : "viewer.locate.notfound");
+    located = message.value ? locate(all, { field: message.field, value: message.value, kind: message.kind, near }) : [];
+    setHint(located.length || !message.value ? null : "viewer.locate.notfound");
+    /**
+     * **"Usually here for this supplier" — decision 0702.** A field with no
+     * value, or whose value is not on the page, is outlined where this
+     * supplier's layout puts it, ready to box in.
+     */
+    if (!located.length && !message.near) {
+      const expected = await expectedPlace(message.field, all);
+      if (expected) {
+        located = [{ ...expected, words: [], text: "", expected: true }];
+        setHint("viewer.layout.usually");
+        link?.send("located", { field: message.field, count: 0, readable: true, expected: true });
+        const index = pages.findIndex((p) => p.pageNumber === expected.pageNumber);
+        if (index >= 0 && index !== current) await selectPage(index, { keepLocated: true });
+        else renderHighlights();
+        scrollToBox(expected.box);
+        return;
+      }
+    }
     const top = located[0];
     const topWords = top ? all.find((p) => p.pageNumber === top.pageNumber)?.words ?? [] : [];
     link?.send("located", {
@@ -554,6 +578,33 @@ export function pageViewer(invoiceId, contentType, deps = REAL_DEPS) {
     } else {
       renderHighlights();
     }
+  }
+
+  /**
+   * The supplier's layouts, fetched once (decision 0702), and the one this
+   * document follows: the layout most of whose labels are printed beside
+   * where it puts them on these pages. With none recognised, the supplier's
+   * most used layout, if it has only one.
+   */
+  let layoutsLoaded = null;
+  async function expectedPlace(field, all) {
+    if (!deps.loadLayouts) return null;
+    layoutsLoaded ??= deps.loadLayouts(invoiceId).catch(() => []);
+    const layouts = (await layoutsLoaded) ?? [];
+    if (!layouts.length) return null;
+    let chosen = null;
+    let bestScore = 0;
+    for (const layout of layouts) {
+      let score = 0;
+      for (const f of layout.fields) {
+        const words = all.find((p) => p.pageNumber === f.pageNumber)?.words;
+        if (f.label && words && squash(labelBeside(words, f.box)).includes(f.label)) score++;
+      }
+      if (score > bestScore) [chosen, bestScore] = [layout, score];
+    }
+    chosen ??= layouts.length === 1 ? layouts[0] : null;
+    const place = chosen?.fields.find((f) => f.field === field);
+    return place && pages.some((p) => p.pageNumber === place.pageNumber) ? { pageNumber: place.pageNumber, box: place.box } : null;
   }
 
   /** Brings a found value into view when the page is zoomed past the card. */
@@ -883,7 +934,7 @@ export function pageViewer(invoiceId, contentType, deps = REAL_DEPS) {
       ...(dragBox ? [el("div", { class: "vhighlight vhighlightdraft", style: highlightStyle(dragBox) })] : []),
       // Decision 0697: where the field's value is — the best place solid, any other dashed.
       ...onPage.map((found) =>
-        el("div", { class: found === located[0] ? "vlocate best" : "vlocate", style: highlightStyle(pad(rotateBox(found.box, rotation))) })
+        el("div", { class: found.expected ? "vexpected" : found === located[0] ? "vlocate best" : "vlocate", style: highlightStyle(pad(rotateBox(found.box, rotation))) })
       ),
       ...(lassoed && lassoed.pageNumber === pageNumber ? [el("div", { class: "vlassoed", style: highlightStyle(pad(rotateBox(lassoed.box, rotation))) })] : []),
       ...(lassoPath && lassoPath.length > 1 ? [lassoShape(lassoPath)] : [])

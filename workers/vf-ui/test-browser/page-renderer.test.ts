@@ -54,6 +54,8 @@ describe("REAL_DEPS carries everything the widget and resolvePages call", () => 
     // Decision 0699.
     "cropRegion",
     "readRegion",
+    // Decision 0702.
+    "loadLayouts",
   ])("defines %s as a function", (key) => {
     expect(typeof (REAL_DEPS as Record<string, unknown>)[key]).toBe("function");
   });

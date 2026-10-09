@@ -3625,6 +3625,14 @@ const KEYS_THE_INTERFACE_USES = [
   // A value taken from the document, on the Timeline (decision 0701).
   "activity.fromdocument",
   "activity.fromdocument.corrected",
+  // Learned supplier layouts (decision 0702).
+  "viewer.layout.usually",
+  "suppliers.layouts.title",
+  "suppliers.layouts.none",
+  "suppliers.layouts.summary",
+  "suppliers.layouts.fields",
+  "suppliers.layouts.forget",
+  "suppliers.layouts.forgotten",
   "routes.format.supplier_csv",
   "routes.formats.supplier_csv",
   "routes.formats.supplier_csv.syntax",

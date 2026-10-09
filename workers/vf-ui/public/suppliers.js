@@ -517,6 +517,46 @@ function newSupplier() {
  *
  * So the third is separated, and warns.
  */
+/**
+ * **What has been learned about this supplier's invoices — decision 0702.**
+ * Design §5, decision 3: layouts are only ever learned from invoices, never
+ * edited; this shows what is known, with a way to forget a layout that went
+ * wrong. The route refuses Forget to anyone but an administrator.
+ */
+function layoutsSection(s) {
+  const body = el("div", { class: "muted sm" });
+  const section = el("div", { class: "supplierlayouts" }, [el("h4", { text: t("suppliers.layouts.title") }), body]);
+  async function show() {
+    try {
+      const res = await fetch(`/api/suppliers/${encodeURIComponent(s.id)}/layouts`);
+      if (!res.ok) {
+        section.hidden = true;
+        return;
+      }
+      const { layouts = [], invoices = 0 } = await res.json();
+      if (!layouts.length) {
+        body.replaceChildren(t("suppliers.layouts.none"));
+        return;
+      }
+      const fields = [...new Set(layouts.flatMap((l) => l.fields.map((f) => f.field)))].map((f) => t(`field.${f.toLowerCase()}`));
+      const forget = el("button", { class: "vsuggest", text: t("suppliers.layouts.forget") });
+      forget.onclick = async () => {
+        const done = await fetch(`/api/suppliers/${encodeURIComponent(s.id)}/layouts/forget`, { method: "POST" }).catch(() => null);
+        body.replaceChildren(done?.ok ? t("suppliers.layouts.forgotten") : t("suppliers.changefailed"));
+      };
+      body.replaceChildren(
+        el("div", { text: t("suppliers.layouts.summary").replace("{layouts}", String(layouts.length)).replace("{invoices}", String(invoices)) }),
+        el("div", { text: t("suppliers.layouts.fields").replace("{fields}", fields.join(", ")) }),
+        forget
+      );
+    } catch {
+      section.hidden = true;
+    }
+  }
+  show();
+  return section;
+}
+
 function openSupplier(s) {
   const problem = el("div", { class: "warn" });
   const fields = {};
@@ -737,6 +777,7 @@ function openSupplier(s) {
       s.erpIdentifier ? null : el("div", { class: "warn", text: t("suppliers.awaitingerp") }),
       form,
       projectOnlyRow,
+      layoutsSection(s),
       problem,
     ].filter(Boolean)
   );

@@ -345,6 +345,10 @@ const PROXIED_TO_INSTANCE: RegExp[] = [
   // Where each header value is on the page — decision 0701.
   /^\/invoices\/[^/]+\/regions$/,
   /^\/invoices\/[^/]+\/regions\/[^/]+$/,
+  // A supplier's learned invoice layouts — decision 0702.
+  /^\/invoices\/[^/]+\/layouts$/,
+  /^\/suppliers\/[^/]+\/layouts$/,
+  /^\/suppliers\/[^/]+\/layouts\/forget$/,
   // The standard's own code lists, so a person picks a currency rather
   // than types one (decision 0113).
   /^\/code-lists$/,

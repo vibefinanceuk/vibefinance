@@ -841,6 +841,9 @@ describe("paths the app is allowed to reach (decision 0212)", () => {
     "/invoices/inv-1/read-region",
     "/invoices/inv-1/regions",
     "/invoices/inv-1/regions/BT-112",
+    "/invoices/inv-1/layouts",
+    "/suppliers/s-1/layouts",
+    "/suppliers/s-1/layouts/forget",
     // Create → Upload documents — decision 0573.
     "/uploads/targets",
     "/uploads",

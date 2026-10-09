@@ -1,6 +1,6 @@
 # 0701: Where each header value is on its document is recorded
 
-**Status: built**, not yet pushed. vf-app migration `0154_invoice_field_regions.sql`,
+**Status: pushed** at `2165798`, 9 October 2026; deploy and migrations to be confirmed. vf-app migration `0154_invoice_field_regions.sql`,
 `field-regions.ts`, routes `GET /invoices/:id/regions` and `PUT /invoices/:id/regions/:field`;
 vf-ui; vf-licence migration `0313_value_from_document_strings.sql`.
 

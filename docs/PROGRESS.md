@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 9 October 2026 (decision 0701). A living document: what
+Last updated 9 October 2026 (decision 0702). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,16 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Each supplier's invoice layout is learned (0702)
+
+Step 2 of learning supplier layouts: from where values were on a supplier's
+invoices, where it usually puts each header field (one or more layouts per
+supplier, learned at three agreeing invoices or one correction). The viewer outlines
+"Usually here for this supplier" for an empty or unfound field; the supplier's page
+shows what is learned and can forget it.
+
+Full reasoning is in decision 0702.
 
 ### Where each header value is on its document is recorded (0701)
 
