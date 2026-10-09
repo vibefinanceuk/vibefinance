@@ -1,6 +1,6 @@
 # 0703: An emailed invoice's reading is told what its supplier's invoices look like
 
-**Status: built**, not yet pushed. vf-app `layout-hints.ts`, extraction and capture
+**Status: live** at `a6cdabb`, pushed and deployed 9 October 2026, migration applied. vf-app `layout-hints.ts`, extraction and capture
 changes, migration `0156_sender_lookup_index.sql`. No vf-ui or vf-licence change.
 
 ## What was asked
