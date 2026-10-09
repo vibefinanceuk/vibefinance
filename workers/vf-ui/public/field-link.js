@@ -46,6 +46,7 @@ const state = {
   target: null,
   currency: () => "",
   lineDescription: () => "",
+  readOnlyReason: () => null,
 };
 let installed = false;
 
@@ -94,8 +95,8 @@ function onClick(event) {
   locateFor(node);
 }
 
-function reply(ok, reason, label) {
-  state.link?.send("filled", { ok, reason: reason ?? null, label: label ?? null });
+function reply(ok, reason, label, read) {
+  state.link?.send("filled", { ok, reason: reason ?? null, label: label ?? null, read: read ?? null });
 }
 
 function choose(select, text) {
@@ -136,6 +137,15 @@ function fillableFields() {
  * field it looks like, and the answer is offered, never applied unasked.
  */
 export function fillTarget(message) {
+  /**
+   * **Nothing on screen can be changed — decision 0700.** Dan, 9 October
+   * 2026, having lassoed on a task he had not claimed: *"the lasso was
+   * having no effect"*. It says why (claim the task, or this stage does
+   * not allow changes) and shows the words it read, so a look-up still
+   * works; it does not ask the AI to fill a field nobody may fill.
+   */
+  const locked = state.readOnlyReason();
+  if (locked) return reply(false, locked, null, message.text ?? "");
   const target = state.target;
   if (!target?.isConnected || !isEditable(target)) {
     if (message.source === "ai") {
@@ -201,7 +211,7 @@ export function fillField(message) {
  * for showing a lassoed amount; `lineDescription(i)` is line `i`'s
  * description, to find that line's other values beside it.
  */
-export function connectFields(invoiceId, { currency, lineDescription, makeLink = docLink } = {}) {
+export function connectFields(invoiceId, { currency, lineDescription, readOnlyReason, makeLink = docLink } = {}) {
   // A fresh link each time, so nothing heard for the previous invoice lands on this one.
   state.link?.close();
   state.link = invoiceId ? makeLink(invoiceId) : null;
@@ -211,6 +221,7 @@ export function connectFields(invoiceId, { currency, lineDescription, makeLink =
   state.target = null;
   state.currency = currency ?? (() => "");
   state.lineDescription = lineDescription ?? (() => "");
+  state.readOnlyReason = readOnlyReason ?? (() => null);
   if (!installed && typeof document !== "undefined") {
     document.addEventListener("focusin", onFocus);
     document.addEventListener("click", onClick);

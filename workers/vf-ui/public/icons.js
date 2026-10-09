@@ -663,9 +663,9 @@ Object.assign(ICONS, {
 });
 
 /**
- * The lasso — decision 0697. A dashed loop (a selection) with the rope's
- * tail trailing from it: the conventional shape for "select by drawing round".
+ * The lasso — decision 0697, a box since decision 0700: a dashed selection
+ * rectangle with the pointer at its corner, "drag a box round it".
  */
 Object.assign(ICONS, {
-  lasso: '<ellipse cx="12" cy="10" rx="9" ry="6" stroke-dasharray="3 2.5"/><path d="M7.5 15c-1.2 1.8-.8 4 1.2 6"/>',
+  lasso: '<rect x="3.5" y="5.5" width="17" height="11" rx="1" stroke-dasharray="3 2.5"/><path d="M17 14.5v6.5l1.8-1.7 1.3 2.7 1.3-.6-1.3-2.7 2.4-.2z"/>',
 });

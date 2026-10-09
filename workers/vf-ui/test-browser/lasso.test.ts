@@ -23,6 +23,8 @@ const STRINGS = {
     "viewer.lasso.empty": "No text inside the lasso",
     "viewer.lasso.filled": "Put in {field}",
     "viewer.lasso.nofield": "Click the field to fill first",
+    "viewer.lasso.claim": "Claim this task to fill fields from the document",
+    "viewer.lasso.readonly": "This stage does not allow changes",
     "viewer.lasso.wrongkind.amount": "No amount in the lasso for {field}",
     "viewer.ocr.reading": "Reading the page…",
     "viewer.lasso.ai.reading": "Reading it with AI…",
@@ -164,7 +166,7 @@ describe("the lasso and finding a value — decision 0697", () => {
     holder.dispatchEvent(new MouseEvent("pointermove", { clientX: 300, clientY: 190 }));
     holder.dispatchEvent(new MouseEvent("pointermove", { clientX: 300, clientY: 230 }));
     holder.dispatchEvent(new MouseEvent("pointermove", { clientX: 90, clientY: 230 }));
-    holder.dispatchEvent(new MouseEvent("pointerup", { clientX: 90, clientY: 230 }));
+    holder.dispatchEvent(new MouseEvent("pointerup", { clientX: 300, clientY: 230 }));
     await flush();
 
     expect(typed).toHaveBeenCalled();
@@ -183,7 +185,7 @@ describe("the lasso and finding a value — decision 0697", () => {
     holder.dispatchEvent(new MouseEvent("pointerdown", { clientX: 90, clientY: 190 }));
     holder.dispatchEvent(new MouseEvent("pointermove", { clientX: 300, clientY: 190 }));
     holder.dispatchEvent(new MouseEvent("pointermove", { clientX: 300, clientY: 230 }));
-    holder.dispatchEvent(new MouseEvent("pointerup", { clientX: 90, clientY: 230 }));
+    holder.dispatchEvent(new MouseEvent("pointerup", { clientX: 300, clientY: 230 }));
     await flush();
     expect(root.querySelector(".vhint")?.textContent).toBe("Click the field to fill first");
   });
@@ -201,7 +203,7 @@ describe("the lasso and finding a value — decision 0697", () => {
     holder.dispatchEvent(new MouseEvent("pointerdown", { clientX: 90, clientY: 190 }));
     holder.dispatchEvent(new MouseEvent("pointermove", { clientX: 300, clientY: 190 }));
     holder.dispatchEvent(new MouseEvent("pointermove", { clientX: 300, clientY: 230 }));
-    holder.dispatchEvent(new MouseEvent("pointerup", { clientX: 90, clientY: 230 }));
+    holder.dispatchEvent(new MouseEvent("pointerup", { clientX: 300, clientY: 230 }));
     await flush();
     await flush();
     expect(readRegion).toHaveBeenCalled();
@@ -331,7 +333,7 @@ function lassoRound(root: HTMLElement, x0: number, y0: number, x1: number, y1: n
   holder.dispatchEvent(new MouseEvent("pointerdown", { clientX: x0, clientY: y0 }));
   holder.dispatchEvent(new MouseEvent("pointermove", { clientX: x1, clientY: y0 }));
   holder.dispatchEvent(new MouseEvent("pointermove", { clientX: x1, clientY: y1 }));
-  holder.dispatchEvent(new MouseEvent("pointerup", { clientX: x0, clientY: y1 }));
+  holder.dispatchEvent(new MouseEvent("pointerup", { clientX: x1, clientY: y1 }));
 }
 
 describe("the AI reads a lasso Tesseract was unsure of — decision 0699", () => {
@@ -423,5 +425,74 @@ describe("the AI reads a lasso Tesseract was unsure of — decision 0699", () =>
     (root.querySelector(".vsuggest") as HTMLButtonElement).click();
     await flush();
     expect(due.value).toBe("2026-10-30");
+  });
+});
+
+describe("the lasso is a box, and says why it cannot fill — decision 0700", () => {
+  beforeEach(async () => {
+    FakeChannel.all = [];
+    document.body.replaceChildren();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        if (String(url).startsWith("/api/ui-strings")) return { ok: true, json: async () => STRINGS } as Response;
+        throw new Error(`no stub for ${url}`);
+      })
+    );
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("draws a box from where the button went down to where the pointer is, and takes the words inside it", async () => {
+    const { root } = mountViewer();
+    const input = markField(document.createElement("input"), { field: "BT-112", kind: "amount" }) as HTMLInputElement;
+    document.body.append(input);
+    connectFields("inv-1", { currency: () => "EUR", makeLink: (id: string) => docLink(id, FakeChannel as unknown as typeof BroadcastChannel) });
+    input.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
+    await flush();
+    (root.querySelector('[aria-label="Lasso"]') as HTMLButtonElement).click();
+    const holder = root.querySelector(".vcanvasholder") as HTMLElement;
+    // Only two points: press at one corner of "740,70" on the Total row, let go at the other.
+    holder.dispatchEvent(new MouseEvent("pointerdown", { clientX: 150, clientY: 195 }));
+    holder.dispatchEvent(new MouseEvent("pointermove", { clientX: 230, clientY: 225 }));
+    const draft = root.querySelector(".vlassopath polygon")!.getAttribute("points")!.split(" ");
+    expect(draft).toHaveLength(4);
+    holder.dispatchEvent(new MouseEvent("pointerup", { clientX: 230, clientY: 225 }));
+    await flush();
+    expect(input.value).toContain("740.70");
+    expect(root.querySelector(".vlassopath")).toBeNull();
+  });
+
+  it("on a task not claimed, says to claim it and shows what it read", async () => {
+    const { root } = mountViewer();
+    connectFields("inv-1", {
+      readOnlyReason: () => "viewer.lasso.claim",
+      makeLink: (id: string) => docLink(id, FakeChannel as unknown as typeof BroadcastChannel),
+    });
+    await flush();
+    (root.querySelector('[aria-label="Lasso"]') as HTMLButtonElement).click();
+    const holder = root.querySelector(".vcanvasholder") as HTMLElement;
+    holder.dispatchEvent(new MouseEvent("pointerdown", { clientX: 90, clientY: 190 }));
+    holder.dispatchEvent(new MouseEvent("pointerup", { clientX: 300, clientY: 230 }));
+    await flush();
+    expect(root.querySelector(".vhint")?.textContent).toBe("Claim this task to fill fields from the document · “Total 740,70”");
+  });
+
+  it("on a scan, a task not claimed is not sent to the AI", async () => {
+    const readRegion = vi.fn();
+    const { root } = mountViewer(scanned([[["74O,7O", 20]]]), { cropRegion: vi.fn(), readRegion });
+    connectFields("inv-1", {
+      readOnlyReason: () => "viewer.lasso.readonly",
+      makeLink: (id: string) => docLink(id, FakeChannel as unknown as typeof BroadcastChannel),
+    });
+    await flush();
+    lassoRound(root, 90, 90, 300, 130);
+    await flush();
+    expect(readRegion).not.toHaveBeenCalled();
+    expect(root.querySelector(".vhint")?.textContent).toContain("This stage does not allow changes");
   });
 });

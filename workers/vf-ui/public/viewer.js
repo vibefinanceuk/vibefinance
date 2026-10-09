@@ -3822,6 +3822,13 @@ export async function openViewer(task, onClose) {
   connectFields(task.subject?.id ?? null, {
     currency: () => document.getElementById("f-BT-5")?.value || stored.facts?.["BT-5"] || "",
     lineDescription: (i) => lines[i]?.["BT-153"] ?? lines[i]?.["BT-154"] ?? "",
+    // Decision 0700: why the lasso cannot fill anything here, if it cannot.
+    readOnlyReason: () =>
+      canEditAnything
+        ? null
+        : headerFields.some((f) => f.visibility === "edit") || lineFields.some((f) => f.visibility === "edit")
+          ? "viewer.lasso.claim"
+          : "viewer.lasso.readonly",
   });
 
   const known = task.subject ?? {};

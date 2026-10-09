@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 9 October 2026 (decision 0699). A living document: what
+Last updated 9 October 2026 (decision 0700). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,14 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### The lasso draws a box, and says why it cannot fill (0700)
+
+The lasso is now a box: press, drag to the opposite corner, let go. On a task not
+claimed, or a stage that allows no changes, it says so ("Claim this task to fill
+fields from the document") and shows the words it read.
+
+Full reasoning is in decision 0700.
 
 ### The AI reads a lasso Tesseract was unsure of (0699)
 

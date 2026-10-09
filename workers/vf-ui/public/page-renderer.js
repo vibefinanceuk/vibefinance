@@ -446,6 +446,16 @@ export function pageViewer(invoiceId, contentType, deps = REAL_DEPS) {
   let located = [];
   let lassoMode = false;
   let lassoPath = null;
+  let lassoStart = null;
+  /** The four corners of the box from `a` to `b`, clockwise. */
+  function boxPath(a, b) {
+    return [
+      { x: a.x, y: a.y },
+      { x: b.x, y: a.y },
+      { x: b.x, y: b.y },
+      { x: a.x, y: b.y },
+    ];
+  }
   let lassoed = null;
   const wordCache = new Map();
   const hint = el("span", { class: "vhint", role: "status" });
@@ -648,6 +658,8 @@ export function pageViewer(invoiceId, contentType, deps = REAL_DEPS) {
     hint.textContent = message.ok
       ? t("viewer.lasso.filled").replace("{field}", message.label ?? "")
       : t(message.reason ?? "viewer.lasso.nofield").replace("{field}", message.label ?? "");
+    // Decision 0700: where nothing may be filled, the words read are still shown.
+    if (!message.ok && message.read) hint.textContent += ` · “${message.read}”`;
   });
   link?.on("clear", () => {
     if (!live()) return;
@@ -725,8 +737,16 @@ export function pageViewer(invoiceId, contentType, deps = REAL_DEPS) {
   }
 
   canvasHolder.addEventListener("pointerdown", (e) => {
+    /**
+     * **A box, not a freehand loop — decision 0700.** Dan: *"draws a
+     * rectangle when the mouse button is depressed … I think this would be
+     * easier than a free form lasso."* Press, drag to the opposite corner,
+     * let go. It is still sent on as a shape of four corners, so everything
+     * after it (words by their centres, the cut-out, rotation) is unchanged.
+     */
     if (lassoMode) {
-      lassoPath = [pointToFraction(e)];
+      lassoStart = pointToFraction(e);
+      lassoPath = boxPath(lassoStart, lassoStart);
       canvasHolder.setPointerCapture?.(e.pointerId);
       return;
     }
@@ -750,8 +770,8 @@ export function pageViewer(invoiceId, contentType, deps = REAL_DEPS) {
   });
   canvasHolder.addEventListener("pointermove", (e) => {
     if (lassoMode) {
-      if (!lassoPath) return;
-      lassoPath.push(pointToFraction(e));
+      if (!lassoStart) return;
+      lassoPath = boxPath(lassoStart, pointToFraction(e));
       renderHighlights();
       return;
     }
@@ -792,7 +812,8 @@ export function pageViewer(invoiceId, contentType, deps = REAL_DEPS) {
   };
   canvasHolder.addEventListener("pointerup", (e) => {
     if (lassoMode) {
-      const path = lassoPath ? [...lassoPath, pointToFraction(e)] : [];
+      const path = lassoStart ? boxPath(lassoStart, pointToFraction(e)) : [];
+      lassoStart = null;
       lassoPath = null;
       renderHighlights();
       return finishLasso(path);
@@ -802,6 +823,7 @@ export function pageViewer(invoiceId, contentType, deps = REAL_DEPS) {
   });
   canvasHolder.addEventListener("pointercancel", () => {
     if (lassoMode) {
+      lassoStart = null;
       lassoPath = null;
       renderHighlights();
       return;
