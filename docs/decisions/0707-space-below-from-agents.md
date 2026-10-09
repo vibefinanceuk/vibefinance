@@ -1,6 +1,6 @@
 # 0707: A space between From agents and the Tasks search bar
 
-**Status: built**, not yet pushed. vf-ui `app.css` only.
+**Status: live** at `08f9e43`, pushed and deployed 9 October 2026. vf-ui `app.css` only.
 
 Dan, 9 October 2026, with a screenshot: *"please could you create a small space
 between the From Agents card and the Invoice search bar?"*
