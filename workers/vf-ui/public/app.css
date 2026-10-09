@@ -1120,6 +1120,17 @@
   .panel:last-child { margin-bottom: 0; }
 
   /*
+    **The Tasks screen's From agents and Conversations cards — decision
+    0707.** Each is a panel alone in its own holder, so the rule above
+    took its margin as "last in a column" and the card touched the search
+    bar below it. Reported by Dan, 9 October 2026: "please could you create
+    a small space between the From Agents card and the Invoice search bar".
+    The holder carries the stack's usual gap while it is shown.
+  */
+  #agentnotes:not([hidden]),
+  #receiptconversations:not([hidden]) { margin-bottom: 14px; }
+
+  /*
     **A grid spaces its own children** — decision 0179.
 
     Decision 0178 gave every panel a bottom margin, which is right for a
