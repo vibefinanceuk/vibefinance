@@ -1,6 +1,6 @@
 # 0697: Clicking a field shows where its value is; a lasso fills the field with focus (PDFs with text)
 
-**Status: built**, not yet pushed. vf-ui; vf-licence migration `0310_lasso_strings.sql`. No vf-app change.
+**Status: live** at `1580b81`, pushed and deployed 9 October 2026, migration applied. vf-ui; vf-licence migration `0310_lasso_strings.sql`. No vf-app change.
 
 ## What was asked
 
