@@ -1,6 +1,6 @@
 # 0700: The lasso draws a box, and says why when it cannot fill a field
 
-**Status: built**, not yet pushed. vf-ui; vf-licence migration `0312_lasso_box_strings.sql`.
+**Status: live** at `dbbdc21`, pushed and deployed 9 October 2026, migration applied. vf-ui; vf-licence migration `0312_lasso_box_strings.sql`.
 
 ## What was asked
 
