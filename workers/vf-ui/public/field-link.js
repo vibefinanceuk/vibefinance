@@ -1,0 +1,159 @@
+/**
+ * **The invoice form's half of the lasso — decision 0697.**
+ *
+ * Clicking a field (or tabbing into it) asks the document to show where
+ * its value is. The last editable field to have focus is the lasso's
+ * **target**: when the document sends back what was lassoed, it is read as
+ * that field's kind of value and put there, exactly as if typed — the
+ * same `input` and `change` events, so the line totals, the exception
+ * marks and Save all see it the ordinary way.
+ *
+ * Listeners sit on the `document`, once, and read the `data-field` marks
+ * `markField()` puts on every field: the header, the line table and the
+ * Header Fields pop-out are built in different places, and none of them
+ * needs to know about the lasso.
+ */
+import { MONEY_FIELDS, formatMoney, parseAmount, plainAmount } from "/money.js";
+import { valueFromLasso, squash } from "/doc-words.js";
+import { docLink } from "/doc-link.js";
+import { t } from "/strings.js";
+
+/** How a field's value is written: `amount`, `date`, `number` or `text`. */
+export function fieldKind(spec) {
+  if (MONEY_FIELDS.has(spec.field)) return "amount";
+  if (spec.type === "date") return "date";
+  if (spec.type === "number") return "number";
+  return "text";
+}
+
+/**
+ * Marks `node` as a field's control (an input, a picker, or the text of a
+ * read-only field). `value` is needed only for read-only text, whose shown
+ * form (`£1,234.50`) is not its value; `line` is the row of a line field.
+ */
+export function markField(node, { field, kind, value, line }) {
+  if (!node?.dataset) return node;
+  node.dataset.field = field;
+  node.dataset.kind = kind;
+  if (value !== undefined && value !== null) node.dataset.value = String(value);
+  if (line !== undefined && line !== null) node.dataset.line = String(line);
+  return node;
+}
+
+const state = {
+  invoiceId: null,
+  link: null,
+  target: null,
+  currency: () => "",
+  lineDescription: () => "",
+};
+let installed = false;
+
+function isEditable(node) {
+  return node && /^(INPUT|SELECT|TEXTAREA)$/.test(node.tagName) && !node.disabled && !node.readOnly;
+}
+
+function valueOf(node) {
+  if (/^(INPUT|SELECT|TEXTAREA)$/.test(node.tagName)) {
+    return node.dataset.kind === "amount" ? parseAmount(node.value) : node.value;
+  }
+  return node.dataset.value ?? "";
+}
+
+function labelOf(node) {
+  return t(`field.${node.dataset.field.toLowerCase()}`);
+}
+
+function locateFor(node) {
+  if (!state.link) return;
+  const value = String(valueOf(node) ?? "").trim();
+  if (!value) {
+    state.link.send("clear");
+    return;
+  }
+  const message = { field: node.dataset.field, label: labelOf(node), kind: node.dataset.kind, value };
+  // A line's amount is looked for on its own row: beside its description.
+  if (node.dataset.line !== undefined && node.dataset.field !== "BT-153") {
+    const description = String(state.lineDescription(Number(node.dataset.line)) ?? "").trim();
+    if (description) message.near = { field: "BT-153", kind: "text", value: description };
+  }
+  state.link.send("locate", message);
+}
+
+function onFocus(event) {
+  const node = event.target?.closest?.("[data-field]");
+  if (!node || !isEditable(node)) return;
+  state.target = node;
+  locateFor(node);
+}
+
+function onClick(event) {
+  const node = event.target?.closest?.("[data-field]");
+  // An editable field was handled on focus; this is read-only text.
+  if (!node || /^(INPUT|SELECT|TEXTAREA)$/.test(node.tagName)) return;
+  locateFor(node);
+}
+
+function reply(ok, reason, label) {
+  state.link?.send("filled", { ok, reason: reason ?? null, label: label ?? null });
+}
+
+function choose(select, text) {
+  const wanted = squash(text);
+  const options = [...select.options].filter((o) => o.value);
+  const hit =
+    options.find((o) => squash(o.value) === wanted) ??
+    options.find((o) => wanted && squash(o.textContent).includes(wanted)) ??
+    options.find((o) => wanted.includes(squash(o.value)) && o.value.length >= 3);
+  return hit?.value ?? null;
+}
+
+/** What the document lassoed, put in the field that last had focus. */
+export function fillTarget(message) {
+  const target = state.target;
+  if (!target?.isConnected || !isEditable(target)) return reply(false, "viewer.lasso.nofield");
+  const kind = target.dataset.kind ?? "text";
+  const label = labelOf(target);
+
+  if (target.tagName === "SELECT") {
+    const value = choose(target, message.text);
+    if (value === null) return reply(false, "viewer.lasso.notinlist", label);
+    target.value = value;
+  } else {
+    const value = valueFromLasso(message.text, kind, parseAmount);
+    if (value === null) return reply(false, `viewer.lasso.wrongkind.${kind}`, label);
+    if (kind === "amount") {
+      const field = target.dataset.field;
+      target.value = document.activeElement === target ? plainAmount(value) : formatMoney(value, state.currency(), field);
+    } else {
+      target.value = value;
+    }
+  }
+  target.dispatchEvent(new Event("input", { bubbles: true }));
+  target.dispatchEvent(new Event("change", { bubbles: true }));
+  target.classList.add("lassofilled");
+  setTimeout(() => target.classList.remove("lassofilled"), 1200);
+  reply(true, null, label);
+}
+
+/**
+ * Connects the form on screen to the document of `invoiceId` — called
+ * each time an invoice is opened. `currency()` is the invoice's currency
+ * for showing a lassoed amount; `lineDescription(i)` is line `i`'s
+ * description, to find that line's other values beside it.
+ */
+export function connectFields(invoiceId, { currency, lineDescription, makeLink = docLink } = {}) {
+  // A fresh link each time, so nothing heard for the previous invoice lands on this one.
+  state.link?.close();
+  state.link = invoiceId ? makeLink(invoiceId) : null;
+  state.link?.on("lassoed", fillTarget);
+  state.invoiceId = invoiceId;
+  state.target = null;
+  state.currency = currency ?? (() => "");
+  state.lineDescription = lineDescription ?? (() => "");
+  if (!installed && typeof document !== "undefined") {
+    document.addEventListener("focusin", onFocus);
+    document.addEventListener("click", onClick);
+    installed = true;
+  }
+}

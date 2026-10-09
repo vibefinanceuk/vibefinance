@@ -48,6 +48,9 @@ describe("REAL_DEPS carries everything the widget and resolvePages call", () => 
     "drawPdfPage",
     "drawImage",
     "resolvePages",
+    // Decision 0697.
+    "pageWords",
+    "docLink",
   ])("defines %s as a function", (key) => {
     expect(typeof (REAL_DEPS as Record<string, unknown>)[key]).toBe("function");
   });

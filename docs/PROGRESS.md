@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 9 October 2026 (decision 0696). A living document: what
+Last updated 9 October 2026 (decision 0697). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,17 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Clicking a field shows where its value is; a lasso fills it (0697)
+
+On a PDF with its own text (an ordinary PDF, Factur-X, ZUGFeRD), clicking a
+field outlines its value on the document, beside its label where the value
+appears twice. A Lasso button beside Highlight lets someone draw round a value;
+it goes into the field that last had focus, read as that field's kind (amount,
+date, picker, text). Works in the card and the pop-out window. Scans come with
+0698 (Tesseract in the browser).
+
+Full reasoning is in decision 0697.
 
 ### Waiting for the AI allowance (0696)
 

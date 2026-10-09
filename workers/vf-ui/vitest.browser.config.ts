@@ -176,6 +176,10 @@ export default defineConfig({
        */
       "/collaborators.js": resolve(__dirname, "public/collaborators.js"),
       "/page-renderer.js": resolve(__dirname, "public/page-renderer.js"),
+      // Finding a value on the document, and the lasso — decision 0697.
+      "/doc-words.js": resolve(__dirname, "public/doc-words.js"),
+      "/doc-link.js": resolve(__dirname, "public/doc-link.js"),
+      "/field-link.js": resolve(__dirname, "public/field-link.js"),
       "/document-window.js": resolve(__dirname, "public/document-window.js"),
       "/help.js": resolve(__dirname, "public/help.js"),
       "/po-match.js": resolve(__dirname, "public/po-match.js"),

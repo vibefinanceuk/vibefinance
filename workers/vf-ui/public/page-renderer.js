@@ -16,6 +16,8 @@
 import { t } from "/strings.js";
 import { el } from "/tasks.js";
 import { icon } from "/icons.js";
+import { pdfWords, locate, rotateBox, unrotatePoint, wordsInLasso } from "/doc-words.js";
+import { docLink } from "/doc-link.js";
 
 export const ZOOM_STEPS = [0.5, 0.75, 1, 1.25, 1.5, 2, 3];
 /** Index into ZOOM_STEPS for 1×, and where every document starts. */
@@ -136,6 +138,34 @@ async function realDrawPdfPage(pdfPage, canvas, { zoom, rotation, fitWidth }) {
   await pdfPage.render({ canvasContext: canvas.getContext("2d"), viewport }).promise;
 }
 
+/** Text widths in a font like the PDF's, so each word's box starts where its ink does (0697). */
+let measurer = null;
+function measureText() {
+  if (measurer !== null) return measurer || null;
+  try {
+    const ctx = document.createElement("canvas").getContext("2d");
+    if (!ctx?.measureText) throw new Error("no canvas");
+    measurer = (text, family) => {
+      ctx.font = `100px ${family}`;
+      return ctx.measureText(text).width;
+    };
+  } catch {
+    measurer = false;
+  }
+  return measurer || null;
+}
+
+async function realPageWords(source, loaded) {
+  if (source.kind !== "pdf" || !loaded?.getTextContent) return null;
+  try {
+    const content = await loaded.getTextContent();
+    const words = pdfWords(content, loaded.getViewport({ scale: 1, rotation: 0 }), measureText());
+    return words.length ? words : null;
+  } catch {
+    return null;
+  }
+}
+
 async function realLoadPdfDocument(url) {
   // Loaded only when a page turns out to be a PDF — most invoices are
   // an image or a set of retained pages and never need pdf.js's ~1.7MB
@@ -179,6 +209,14 @@ export const REAL_DEPS = {
   loadImage: (urlFor) => urlFor().then((url) => (url ? loadImageElement(url) : null)),
   drawPdfPage: realDrawPdfPage,
   drawImage: realDrawImage,
+  /**
+   * The words on a page and where each one is — decision 0697. A PDF's
+   * own text layer through pdf.js; `null` for a page with none to give
+   * (an image, or a scan inside a PDF) — decision 0698 reads those.
+   */
+  pageWords: realPageWords,
+  // The link to the invoice form beside it, or in the other window — decision 0697.
+  docLink: (invoiceId) => docLink(invoiceId),
   // The widget calls `deps.resolvePages`, not the module-level export
   // directly, so a widget-level test can stub the whole page list in
   // one go instead of every fetch and every pdf.js call beneath it.
@@ -277,8 +315,159 @@ export function pageViewer(invoiceId, contentType, deps = REAL_DEPS) {
 
   const highlightBtn = iconButton("highlight", t("viewer.highlight"), () => {
     highlightMode = !highlightMode;
+    if (highlightMode) setLassoMode(false);
     highlightBtn.classList.toggle("on", highlightMode);
     canvasHolder.classList.toggle("highlighting", highlightMode);
+  });
+
+  /**
+   * **Where a field's value is, and the lasso — decision 0697.**
+   *
+   * `located` is where the value of the field just clicked in the form
+   * was found, best first, each a box on the **unrotated page** (a
+   * fraction of it) with its page number — so, unlike a drawn
+   * highlight, it survives rotation and turning the page: it is drawn
+   * on whichever page it belongs to, turned with the page.
+   *
+   * The lasso is drawn freehand; on release the words whose centres are
+   * inside it are sent to the form, which puts them in the field that
+   * had focus. `wordsFor()` gives a page's words once and keeps them.
+   */
+  const link = deps.docLink ? deps.docLink(invoiceId) : null;
+  let located = [];
+  let lassoMode = false;
+  let lassoPath = null;
+  let lassoed = null;
+  const wordCache = new Map();
+  const hint = el("span", { class: "vhint", role: "status" });
+
+  function setHint(key) {
+    hint.textContent = key ? t(key) : "";
+  }
+
+  async function wordsFor(source) {
+    if (!wordCache.has(source)) {
+      wordCache.set(
+        source,
+        (async () => {
+          const loaded = await source.load(deps);
+          return (deps.pageWords ? await deps.pageWords(source, loaded) : null) ?? null;
+        })()
+      );
+    }
+    return wordCache.get(source);
+  }
+
+  function setLassoMode(on) {
+    lassoMode = on;
+    lassoBtn.classList.toggle("on", on);
+    canvasHolder.classList.toggle("lassoing", on);
+    if (on && highlightMode) {
+      highlightMode = false;
+      highlightBtn.classList.remove("on");
+      canvasHolder.classList.remove("highlighting");
+    }
+    setHint(on ? "viewer.lasso.hint" : null);
+  }
+
+  const lassoBtn = iconButton("lasso", t("viewer.lasso"), () => setLassoMode(!lassoMode));
+
+  async function showValue(message) {
+    lassoed = null;
+    const all = [];
+    for (const source of pages) {
+      const words = await wordsFor(source);
+      if (words) all.push({ pageNumber: source.pageNumber, words });
+    }
+    if (!all.length) {
+      located = [];
+      setHint("viewer.locate.notext");
+      renderHighlights();
+      link?.send("located", { field: message.field, count: 0, readable: false });
+      return;
+    }
+    located = locate(all, { field: message.field, value: message.value, kind: message.kind, near: message.near ?? null });
+    setHint(located.length ? null : "viewer.locate.notfound");
+    link?.send("located", { field: message.field, count: located.length, readable: true, best: located[0] ? { pageNumber: located[0].pageNumber, box: located[0].box } : null });
+    const best = located[0];
+    if (best) {
+      const index = pages.findIndex((p) => p.pageNumber === best.pageNumber);
+      if (index >= 0 && index !== current) await selectPage(index, { keepLocated: true });
+      else renderHighlights();
+      scrollToBox(best.box);
+    } else {
+      renderHighlights();
+    }
+  }
+
+  /** Brings a found value into view when the page is zoomed past the card. */
+  function scrollToBox(box) {
+    const shown = rotateBox(box, rotation);
+    const cx = canvas.offsetLeft + (shown.x + shown.w / 2) * canvas.offsetWidth;
+    const cy = canvas.offsetTop + (shown.y + shown.h / 2) * canvas.offsetHeight;
+    canvasHolder.scrollLeft = Math.max(0, cx - canvasHolder.clientWidth / 2);
+    canvasHolder.scrollTop = Math.max(0, cy - canvasHolder.clientHeight / 2);
+  }
+
+  async function finishLasso(path) {
+    const source = pages[current];
+    if (!source || path.length < 3) return;
+    const box = canvas.getBoundingClientRect();
+    const xs = path.map((p) => p.x * box.width);
+    const ys = path.map((p) => p.y * box.height);
+    if (Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)) < MIN_DRAG) return;
+    const words = await wordsFor(source);
+    if (!words) {
+      setHint("viewer.lasso.notext");
+      return;
+    }
+    const polygon = path.map((p) => unrotatePoint(p, rotation));
+    const taken = wordsInLasso(words, polygon);
+    if (!taken.words.length) {
+      setHint("viewer.lasso.empty");
+      return;
+    }
+    lassoed = { pageNumber: source.pageNumber, box: taken.box };
+    located = [];
+    setHint(null);
+    renderHighlights();
+    link?.send("lassoed", { text: taken.text, pageNumber: source.pageNumber, box: taken.box, wordCount: taken.words.length, source: "text" });
+  }
+
+  /**
+   * Whether this viewer is still on screen. One that has been replaced
+   * (another invoice opened, the card redrawn) closes its end of the link
+   * the next time it hears anything, rather than answering for a page
+   * nobody can see.
+   */
+  let shown = false;
+  function live() {
+    if (root.isConnected) {
+      shown = true;
+      return true;
+    }
+    if (shown) link?.close();
+    return false;
+  }
+
+  link?.on("locate", (message) => {
+    ready.then(() => {
+      if (live()) showValue(message);
+    });
+  });
+  // The form's answer to a lasso: which field it filled, or why it could not.
+  link?.on("filled", (message) => {
+    if (!live() || !lassoed) return;
+    hint.textContent = message.ok
+      ? t("viewer.lasso.filled").replace("{field}", message.label ?? "")
+      : t(message.reason ?? "viewer.lasso.nofield").replace("{field}", message.label ?? "");
+  });
+  link?.on("clear", () => {
+    if (!live()) return;
+    located = [];
+    lassoed = null;
+    if (!lassoMode) setHint(null);
+    renderHighlights();
   });
 
   const controls = el("div", { class: "vcontrols" }, [
@@ -288,6 +477,8 @@ export function pageViewer(invoiceId, contentType, deps = REAL_DEPS) {
     prevBtn,
     nextBtn,
     highlightBtn,
+    lassoBtn,
+    hint,
     status,
   ]);
   const canvasHolder = el("div", { class: "vcanvasholder" }, [canvas]);
@@ -347,6 +538,11 @@ export function pageViewer(invoiceId, contentType, deps = REAL_DEPS) {
   }
 
   canvasHolder.addEventListener("pointerdown", (e) => {
+    if (lassoMode) {
+      lassoPath = [pointToFraction(e)];
+      canvasHolder.setPointerCapture?.(e.pointerId);
+      return;
+    }
     if (highlightMode) {
       const frac = pointToFraction(e);
       dragOriginXFrac = frac.x;
@@ -366,6 +562,12 @@ export function pageViewer(invoiceId, contentType, deps = REAL_DEPS) {
     canvasHolder.setPointerCapture?.(e.pointerId);
   });
   canvasHolder.addEventListener("pointermove", (e) => {
+    if (lassoMode) {
+      if (!lassoPath) return;
+      lassoPath.push(pointToFraction(e));
+      renderHighlights();
+      return;
+    }
     if (highlightMode) {
       if (!dragBox) return;
       const frac = pointToFraction(e);
@@ -402,10 +604,21 @@ export function pageViewer(invoiceId, contentType, deps = REAL_DEPS) {
     canvasHolder.classList.remove("dragging");
   };
   canvasHolder.addEventListener("pointerup", (e) => {
+    if (lassoMode) {
+      const path = lassoPath ? [...lassoPath, pointToFraction(e)] : [];
+      lassoPath = null;
+      renderHighlights();
+      return finishLasso(path);
+    }
     if (highlightMode) return stopHighlightDrag(e);
     stopDragging();
   });
   canvasHolder.addEventListener("pointercancel", () => {
+    if (lassoMode) {
+      lassoPath = null;
+      renderHighlights();
+      return;
+    }
     if (highlightMode) {
       dragBox = null;
       renderHighlights();
@@ -430,10 +643,39 @@ export function pageViewer(invoiceId, contentType, deps = REAL_DEPS) {
     highlightLayer.style.top = `${canvas.offsetTop}px`;
     highlightLayer.style.width = `${canvas.offsetWidth}px`;
     highlightLayer.style.height = `${canvas.offsetHeight}px`;
+    const pageNumber = pages[current]?.pageNumber;
+    const onPage = located.filter((found) => found.pageNumber === pageNumber);
     highlightLayer.replaceChildren(
       ...highlights.map((box) => el("div", { class: "vhighlight", style: highlightStyle(box) })),
-      ...(dragBox ? [el("div", { class: "vhighlight vhighlightdraft", style: highlightStyle(dragBox) })] : [])
+      ...(dragBox ? [el("div", { class: "vhighlight vhighlightdraft", style: highlightStyle(dragBox) })] : []),
+      // Decision 0697: where the field's value is — the best place solid, any other dashed.
+      ...onPage.map((found) =>
+        el("div", { class: found === located[0] ? "vlocate best" : "vlocate", style: highlightStyle(pad(rotateBox(found.box, rotation))) })
+      ),
+      ...(lassoed && lassoed.pageNumber === pageNumber ? [el("div", { class: "vlassoed", style: highlightStyle(pad(rotateBox(lassoed.box, rotation))) })] : []),
+      ...(lassoPath && lassoPath.length > 1 ? [lassoShape(lassoPath)] : [])
     );
+  }
+
+  /** A found box a touch larger than its words, so the outline does not sit on the ink. */
+  function pad(box) {
+    const px = 0.004;
+    const py = 0.003;
+    return { x: Math.max(0, box.x - px), y: Math.max(0, box.y - py), w: Math.min(1, box.w + 2 * px), h: Math.min(1, box.h + 2 * py) };
+  }
+
+  /** The lasso being drawn: an SVG line over the page, in the same fractions as everything else. */
+  function lassoShape(path) {
+    const ns = "http://www.w3.org/2000/svg";
+    const svg = document.createElementNS(ns, "svg");
+    svg.setAttribute("class", "vlassopath");
+    svg.setAttribute("viewBox", "0 0 1 1");
+    svg.setAttribute("preserveAspectRatio", "none");
+    const line = document.createElementNS(ns, "polygon");
+    line.setAttribute("points", path.map((p) => `${p.x},${p.y}`).join(" "));
+    line.setAttribute("vector-effect", "non-scaling-stroke");
+    svg.append(line);
+    return svg;
   }
 
   function pageLabel(pageNumber, total) {
@@ -468,15 +710,16 @@ export function pageViewer(invoiceId, contentType, deps = REAL_DEPS) {
     renderHighlights();
   }
 
-  function selectPage(index) {
+  function selectPage(index, { keepLocated = false } = {}) {
     current = index;
+    if (!keepLocated) lassoed = null;
     for (const [i, btn] of railButtons.entries()) btn.className = i === index ? "vrailthumb on" : "vrailthumb";
     // A highlight is drawn against one page's own content — carrying
     // it over to whichever page happens to occupy the same box
     // fraction on arrival would be showing it over the wrong thing,
     // the same reasoning the rotation handler above already follows.
     highlights = [];
-    draw();
+    return draw();
   }
 
   async function load() {
@@ -510,7 +753,9 @@ export function pageViewer(invoiceId, contentType, deps = REAL_DEPS) {
   // Fire-and-forget from the caller's point of view, matching
   // `showPreview()`'s own contract — the caller gets the root node
   // immediately and content fills in once the first fetch resolves.
-  load();
+  // Kept so a field clicked before the pages arrive waits for them (0697).
+  // A page that fails to draw must not stop its words being searched.
+  const ready = load().catch(() => {});
 
   return root;
 }

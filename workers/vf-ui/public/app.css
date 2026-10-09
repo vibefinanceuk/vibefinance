@@ -4239,6 +4239,28 @@
   .vhighlightdraft { background: rgba(255, 213, 79, 0.22); border-style: dashed; }
 
   /**
+   * Where a field's value is, and the lasso — decision 0697. Blue, not the
+   * highlight tool's yellow: one is the system pointing, the other is the
+   * person's own mark. The best place is solid; another place the same
+   * value appears is dashed.
+   */
+  .vcanvasholder.lassoing { cursor: crosshair; }
+  .vlocate {
+    position: absolute;
+    border: 1.5px dashed rgba(37, 99, 235, 0.7);
+    border-radius: 3px;
+  }
+  .vlocate.best { border-style: solid; border-width: 2px; background: rgba(37, 99, 235, 0.14); box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.18); }
+  .vlassoed { position: absolute; border: 2px solid rgba(22, 163, 74, 0.85); background: rgba(22, 163, 74, 0.14); border-radius: 3px; }
+  .vlassopath { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+  .vlassopath polygon { fill: rgba(37, 99, 235, 0.08); stroke: rgba(37, 99, 235, 0.9); stroke-width: 1.5px; stroke-dasharray: 4 3; }
+  .vhint { margin-left: auto; font-size: var(--text-sm); color: var(--text-secondary); }
+  .vhint + .vpagestatus { margin-left: 12px; }
+  .vhint:empty + .vpagestatus { margin-left: auto; }
+  /* A field whose value the lasso just filled — decision 0697. */
+  .lassofilled { box-shadow: 0 0 0 2px rgba(22, 163, 74, 0.6); transition: box-shadow 0.6s; }
+
+  /**
    * A toggled tool, not a one-shot action — the same `.on` shape
    * `.doctab` and `.vrailthumb` already give a currently-active choice,
    * reused here rather than inventing a second "this is active" look

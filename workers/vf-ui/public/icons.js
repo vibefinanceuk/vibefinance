@@ -661,3 +661,11 @@ Object.assign(ICONS, {
 Object.assign(ICONS, {
   highlight: '<path d="M6 16l9-9 3 3-9 9H6z"/><path d="M4 20h16"/>',
 });
+
+/**
+ * The lasso — decision 0697. A dashed loop (a selection) with the rope's
+ * tail trailing from it: the conventional shape for "select by drawing round".
+ */
+Object.assign(ICONS, {
+  lasso: '<ellipse cx="12" cy="10" rx="9" ry="6" stroke-dasharray="3 2.5"/><path d="M7.5 15c-1.2 1.8-.8 4 1.2 6"/>',
+});

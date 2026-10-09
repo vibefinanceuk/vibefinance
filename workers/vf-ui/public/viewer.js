@@ -19,6 +19,7 @@ import { buildActivityTab } from "/activity.js";
 import { buildCollaboratorsControl } from "/collaborators.js";
 import { buildAttachmentsTab } from "/attachments.js";
 import { pageViewer } from "/page-renderer.js";
+import { connectFields, fieldKind, markField } from "/field-link.js";
 import { openPoMatchingPanel, matchChip, matchLegend, openLineMatchPopout } from "/po-match.js";
 
 let current = null;
@@ -560,6 +561,9 @@ function field(spec, existing, options = {}) {
           value,
         });
 
+  // Decision 0697: clicking it shows where its value is on the document; the lasso fills it.
+  markField(control, { field: spec.field, kind: fieldKind(spec), value });
+
   return el("div", { class: "kf" }, [
     // Labels by key, so a customer's language reaches the fields too.
     el("label", {
@@ -1002,7 +1006,10 @@ function lineRow(line, index) {
     if (spec.visibility === "read" || !canEditAnything) {
       // Decision 0677: an amount as money.
       const shown = MONEY_FIELDS.has(spec.field) && line[spec.field] !== undefined && line[spec.field] !== "" ? formatMoney(line[spec.field], stored.facts?.["BT-5"], spec.field) : line[spec.field];
-      return el("td", MONEY_FIELDS.has(spec.field) ? { class: "num" } : {}, [el("div", { class: "readonly", text: shown ?? "—" })]);
+      return el("td", MONEY_FIELDS.has(spec.field) ? { class: "num" } : {}, [
+        // Decision 0697: a read-only line value still shows where it is on the document.
+        markField(el("div", { class: "readonly", text: shown ?? "—" }), { field: spec.field, kind: fieldKind(spec), value: line[spec.field] ?? "", line: index }),
+      ]);
     }
 
     // Decision 0548 — a split line's cost centre, project and GL code are its rows', changed in the Coding pop-out.
@@ -1023,6 +1030,7 @@ function lineRow(line, index) {
             value: line[spec.field] ?? "",
           }));
 
+    markField(input, { field: spec.field, kind: fieldKind(spec), line: index });
     input.addEventListener(picker ? "change" : "input", (event) => {
       // Decision 0677: an amount is kept as the plain number, whatever it shows.
       line[spec.field] = money ? parseAmount(event.target.value) : event.target.value;
@@ -3806,6 +3814,15 @@ export async function openViewer(task, onClose) {
   );
 
   const shell = document.getElementById("viewer");
+
+  /**
+   * The form and its document, linked — decision 0697: a field clicked
+   * shows where its value is, and a lasso fills the field with focus.
+   */
+  connectFields(task.subject?.id ?? null, {
+    currency: () => document.getElementById("f-BT-5")?.value || stored.facts?.["BT-5"] || "",
+    lineDescription: (i) => lines[i]?.["BT-153"] ?? lines[i]?.["BT-154"] ?? "",
+  });
 
   const known = task.subject ?? {};
   /**
