@@ -265,6 +265,25 @@ describe("searching — real SQL now, decision 0448", () => {
     expect((await list("q=nordwind")).documents[0]?.sender).toBe("ap@nordwind.example");
   });
 
+  it("finds by the amount as the row shows it, grouped, with a currency, or in German (decision 0695)", async () => {
+    await seedDocument("inv-1", { "BT-1": "A", "BT-112": 2595.31 });
+    await seedDocument("inv-2", { "BT-1": "B", "BT-112": 250 });
+    const numbers = async (q: string) => (await list(`q=${encodeURIComponent(q)}`)).documents.map((d: { number: string }) => d.number);
+    expect(await numbers("2,595.31")).toEqual(["A"]);
+    expect(await numbers("2,595.31 GBP")).toEqual(["A"]);
+    expect(await numbers("2.595,31")).toEqual(["A"]);
+    expect(await numbers("250.00")).toEqual(["B"]);
+  });
+
+  it("finds by VAT number, with or without its spaces, and by PO number (decision 0695)", async () => {
+    await seedDocument("inv-1", { "BT-1": "A", "BT-31": "GB 126 7764 47", "BT-13": "1210065335" });
+    await seedDocument("inv-2", { "BT-1": "B", "BT-31": "GB 927351812" });
+    const numbers = async (q: string) => (await list(`q=${encodeURIComponent(q)}`)).documents.map((d: { number: string }) => d.number);
+    expect(await numbers("GB 126 7764 47")).toEqual(["A"]);
+    expect(await numbers("gb126776447")).toEqual(["A"]);
+    expect(await numbers("12100653")).toEqual(["A"]);
+  });
+
   it("ignores case", async () => {
     await seedDocument("inv-1", { "BT-27": "Nordwind Logistik", "BT-1": "A" });
     expect((await list("q=NORDWIND")).documents).toHaveLength(1);

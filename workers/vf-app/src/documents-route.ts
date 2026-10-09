@@ -1,3 +1,4 @@
+import { searchTerms } from "./search-terms.js";
 import { agentDocumentIds } from "./agents.js";
 import { windowDays } from "./workload-handling-time-route.js";
 import type { RouteResult } from "./examples-route.js";
@@ -100,9 +101,8 @@ function statusOf(row: DocumentRow, facts: Record<string, unknown>): string {
  * `purchase-order-route.ts`'s own `searchClause()` already applies.
  */
 function documentSearchPattern(search: string | null): string | null {
-  const term = search?.trim();
-  if (!term) return null;
-  return `%${term.replace(/[\\%_]/g, "\\$&")}%`;
+  // Decision 0695: the same reading of a term as the Tasks search (0693).
+  return searchTerms(search);
 }
 
 /** Page sizes offered in the UI dropdown — anything else is rejected back to the default, the same list `purchase-order-route.ts` already offers. */
@@ -515,10 +515,20 @@ export async function handleListDocuments(
          AND (
            ?16 IS NULL
            OR (
-             h.invoice_number LIKE ?16 ESCAPE '\\'
-             OR CAST(h.total_with_vat AS TEXT) LIKE ?16 ESCAPE '\\'
-             OR e.sender LIKE ?16 ESCAPE '\\'
-             OR COALESCE(sup.name, json_extract(h.facts_json, '$."BT-27"')) LIKE ?16 ESCAPE '\\'
+             -- Decision 0695: what the row shows, as it shows it, and as the
+             -- Tasks search reads it (0693). The document number; the
+             -- supplier, by the name shown or the one on the invoice, or by
+             -- its VAT number with or without spaces; the sender's address;
+             -- the PO number; and the amount, read from "2,595.31 GBP" as
+             -- typed and matched with two decimals.
+             h.invoice_number LIKE json_extract(?16, '$.text') ESCAPE '\\'
+             OR e.sender LIKE json_extract(?16, '$.text') ESCAPE '\\'
+             OR sup.name LIKE json_extract(?16, '$.text') ESCAPE '\\'
+             OR json_extract(h.facts_json, '$."BT-27"') LIKE json_extract(?16, '$.text') ESCAPE '\\'
+             OR replace(h.supplier_vat_id, ' ', '') LIKE json_extract(?16, '$.compact') ESCAPE '\\'
+             OR json_extract(h.facts_json, '$."BT-13"') LIKE json_extract(?16, '$.text') ESCAPE '\\'
+             OR (json_extract(?16, '$.amount') IS NOT NULL
+                 AND printf('%.2f', h.total_with_vat) LIKE json_extract(?16, '$.amount') ESCAPE '\\')
            )
          )`;
 

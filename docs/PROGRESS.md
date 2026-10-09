@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 8 October 2026 (decision 0694). A living document: what
+Last updated 9 October 2026 (decision 0695). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,14 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### The Documents search reads a term the way Tasks does (0695)
+
+Amounts as written ("2,595.31 GBP", "2.595,31", "250.00"), VAT numbers and PO
+numbers are now found. The term reading is shared with Tasks
+(`search-terms.ts`).
+
+Full reasoning is in decision 0695.
 
 ### A process's entry and exit stages follow the version published (0694)
 
