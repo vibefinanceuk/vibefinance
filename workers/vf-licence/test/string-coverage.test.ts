@@ -3639,6 +3639,10 @@ const KEYS_THE_INTERFACE_USES = [
   "suppliers.learning.helped",
   // A supplier's line columns (decision 0705).
   "suppliers.layouts.columns",
+  // The line net amount's suggestion (decision 0708).
+  "viewer.linecalc.calc",
+  "viewer.linecalc.gross",
+  "viewer.linecalc.use",
   "routes.format.supplier_csv",
   "routes.formats.supplier_csv",
   "routes.formats.supplier_csv.syntax",

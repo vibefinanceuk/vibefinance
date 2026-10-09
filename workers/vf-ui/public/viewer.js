@@ -20,6 +20,7 @@ import { buildCollaboratorsControl } from "/collaborators.js";
 import { buildAttachmentsTab } from "/attachments.js";
 import { pageViewer } from "/page-renderer.js";
 import { connectFields, fieldKind, markField } from "/field-link.js";
+import { lineNetSuggestion } from "/line-calc.js";
 import { openPoMatchingPanel, matchChip, matchLegend, openLineMatchPopout } from "/po-match.js";
 
 let current = null;
@@ -991,6 +992,13 @@ function updateTotals() {
 }
 
 function lineRow(line, index) {
+  /**
+   * **The net amount's suggestion — decision 0708.** Under the Line net
+   * amount: quantity × unit price where the amount is empty or differs, or
+   * the net of a VAT-inclusive figure, with Use. Redrawn as any cell of the
+   * row changes.
+   */
+  let refreshNet = () => {};
   const cell = (spec) => {
     /**
      * **`canEditAnything` joins the field's own visibility here too** —
@@ -1035,7 +1043,37 @@ function lineRow(line, index) {
       // Decision 0677: an amount is kept as the plain number, whatever it shows.
       line[spec.field] = money ? parseAmount(event.target.value) : event.target.value;
       updateTotals();
+      refreshNet();
     });
+
+    if (spec.field === "BT-131") {
+      const td = el("td", {}, [input]);
+      const hint = el("div", { class: "linecalc" });
+      td.append(hint);
+      const currency = stored.facts?.["BT-5"];
+      refreshNet = () => {
+        const s = lineNetSuggestion(line);
+        td.classList.toggle("linecalcwarn", Boolean(s && (s.mismatch || s.kind === "gross")));
+        if (!s) {
+          hint.replaceChildren();
+          return;
+        }
+        const amount = formatMoney(s.amount, currency, "BT-131");
+        const text =
+          s.kind === "gross"
+            ? t("viewer.linecalc.gross").replace("{rate}", String(s.rate)).replace("{amount}", amount)
+            : t("viewer.linecalc.calc").replace("{amount}", amount).replace("{qty}", String(s.qty)).replace("{price}", String(s.price));
+        const use = el("button", { type: "button", class: "linecalcuse", text: t("viewer.linecalc.use") });
+        use.onclick = () => {
+          input.value = document.activeElement === input ? String(s.amount) : formatMoney(s.amount, currency, "BT-131");
+          input.dispatchEvent(new Event("input", { bubbles: true }));
+          input.dispatchEvent(new Event("change", { bubbles: true }));
+        };
+        hint.replaceChildren(el("span", { text }), use);
+      };
+      refreshNet();
+      return td;
+    }
 
     // BT-130 is three characters, so its column is narrow.
     return el("td", { class: spec.field === "BT-130" ? "short" : undefined }, [input]);

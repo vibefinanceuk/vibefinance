@@ -180,6 +180,8 @@ export default defineConfig({
       "/doc-words.js": resolve(__dirname, "public/doc-words.js"),
       "/doc-link.js": resolve(__dirname, "public/doc-link.js"),
       "/field-link.js": resolve(__dirname, "public/field-link.js"),
+      // The line net amount's suggestion — decision 0708.
+      "/line-calc.js": resolve(__dirname, "public/line-calc.js"),
       // Scanned pages read by Tesseract in the browser — decision 0698.
       "/ocr.js": resolve(__dirname, "public/ocr.js"),
       "/vendor/tesseract/tesseract.esm.min.js": resolve(__dirname, "public/vendor/tesseract/tesseract.esm.min.js"),

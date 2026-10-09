@@ -615,6 +615,57 @@ describe("three-tier severity on key fields (decision 0400)", () => {
     expect(css).not.toContain(".linetable th:nth-child(4)");
   });
 
+  it("suggests the line net amount from quantity × price, and fills it on Use (decision 0708)", async () => {
+    const lineFields = {
+      fields: [
+        { field: "BT-153", visibility: "edit", type: "text", line: true, description: "name" },
+        { field: "BT-146", visibility: "edit", type: "number", line: true, description: "price" },
+        { field: "BT-129", visibility: "edit", type: "number", line: true, description: "quantity" },
+        { field: "BT-131", visibility: "edit", type: "number", line: true, description: "line net" },
+        { field: "BT-152", visibility: "edit", type: "number", line: true, description: "VAT rate" },
+      ],
+    };
+    stubFetch({
+      "/api/code-lists": { fields: {} },
+      "/api/ui-strings": {
+        ...STRINGS,
+        strings: { ...STRINGS.strings, "viewer.linecalc.calc": "= {amount} ({qty} × {price})", "viewer.linecalc.gross": "Includes {rate}% VAT: net {amount}", "viewer.linecalc.use": "Use" },
+      },
+      "/api/field-visibility": lineFields,
+      "/api/invoices/inv-1": {
+        facts: { "BT-5": "GBP" },
+        lines: [
+          { lineNumber: 1, facts: { "BT-153": "Rolls", "BT-129": 21, "BT-146": 2.9 } },
+          { lineNumber: 2, facts: { "BT-153": "Lunch", "BT-129": 19, "BT-146": 7.3, "BT-152": 20, "BT-131": 166.44 } },
+          { lineNumber: 3, facts: { "BT-153": "Rolls", "BT-129": 21, "BT-146": 2.9, "BT-131": 60.9 } },
+        ],
+        validation: { passed: true, checked: [], failures: [] },
+      },
+    });
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { openViewer } = await import("/viewer.js");
+    await openViewer(TASK, () => {});
+
+    const hints = [...document.querySelectorAll(".linetable tbody tr")].map((tr) => tr.querySelector(".linecalc span")?.textContent ?? "");
+    expect(hints[0]).toBe("= £60.90 (21 × 2.9)");
+    expect(hints[1]).toBe("Includes 20% VAT: net £138.70");
+    expect(hints[2]).toBe("");
+
+    // Use puts the suggested amount in, and the suggestion goes.
+    const firstRow = document.querySelector(".linetable tbody tr") as HTMLElement;
+    (firstRow.querySelector(".linecalcuse") as HTMLButtonElement).click();
+    expect(parseFloat((firstRow.querySelector('input[data-field="BT-131"]') as HTMLInputElement).value.replace(/[^\d.]/g, ""))).toBe(60.9);
+    expect(firstRow.querySelector(".linecalc span")).toBeNull();
+
+    // Changing the quantity redraws it.
+    const qty = firstRow.querySelector('input[data-field="BT-129"]') as HTMLInputElement;
+    qty.value = "20";
+    qty.dispatchEvent(new Event("input", { bubbles: true }));
+    expect(firstRow.querySelector(".linecalc span")?.textContent).toBe("= £58.00 (20 × 2.9)");
+    expect(firstRow.querySelector(".linecalcwarn")).toBeTruthy();
+  });
+
   it("marks the named line field's own cell, not its neighbour", async () => {
     // A regression test for a pre-existing off-by-one in `markOne()`,
     // found while screenshotting this decision's own line-cell

@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 9 October 2026 (decision 0706). A living document: what
+Last updated 9 October 2026 (decision 0708). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,15 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### The line net amount is suggested (0708)
+
+Under each line's net amount the viewer suggests quantity × unit price where the amount
+is empty or differs (outlined amber), or the net of a figure that included VAT at the
+line's rate, with Use. Never filled silently. A space now separates From agents from the
+Tasks search (0707).
+
+Full reasoning is in decision 0708.
 
 ### Record New Supplier opens the form (0706)
 

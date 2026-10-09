@@ -4272,6 +4272,11 @@
   .vsuggest { background: none; border: 0; padding: 0; font: inherit; color: var(--text-accent); text-decoration: underline; cursor: pointer; }
   /* Where this supplier usually puts a field — decision 0702. Amber: a suggestion, not a find. */
   .vexpected { position: absolute; border: 2px dashed rgba(217, 119, 6, 0.9); background: rgba(245, 158, 11, 0.1); border-radius: 3px; }
+  /* The line net amount's suggestion — decision 0708. */
+  .linecalc { display: flex; gap: 6px; align-items: baseline; flex-wrap: wrap; margin-top: 3px; font-size: var(--text-sm); color: var(--text-secondary); }
+  .linecalc:empty { display: none; }
+  .linecalcuse { background: none; border: 0; padding: 0; font: inherit; color: var(--text-accent); text-decoration: underline; cursor: pointer; }
+  .linecalcwarn .moneyinput { border-color: rgba(217, 119, 6, 0.9); }
   /* A field whose value the lasso just filled — decision 0697. */
   .lassofilled { box-shadow: 0 0 0 2px rgba(22, 163, 74, 0.6); transition: box-shadow 0.6s; }
 
