@@ -1,6 +1,6 @@
 # 0708: The line net amount is suggested from quantity × price, and a VAT-inclusive figure recognised
 
-**Status: live** at `c8672d7`, pushed and deployed 9 October 2026. vf-ui (`line-calc.js`, the line table); vf-licence
+**Status: live** at `c8672d7`, pushed and deployed 9 October 2026, migration applied. vf-ui (`line-calc.js`, the line table); vf-licence
 migration `0317_line_net_suggestion_strings.sql`.
 
 ## What was asked
