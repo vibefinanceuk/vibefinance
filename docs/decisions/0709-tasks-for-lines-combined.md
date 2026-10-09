@@ -1,6 +1,6 @@
 # 0709: Tasks for lines: one per line, or combined by who handles them
 
-**Status: built**, not yet deployed. vf-app (`workflow-engine.ts`, `stage-actions-route.ts`,
+**Status: live** at `a0ac478`, pushed and deployed 9 October 2026, migrations applied. vf-app (`workflow-engine.ts`, `stage-actions-route.ts`,
 `approval-hierarchy.ts`, `task-list-route.ts`, `invoice-facts-route.ts`, `process-route.ts`,
 `index.ts`, `i18n.ts`), migration `0157_combined_line_tasks.sql`; vf-ui (`processes.js`,
 `tasks.js`, `viewer.js`, `app.css`); vf-licence migration `0318_line_tasks_strings.sql`.
