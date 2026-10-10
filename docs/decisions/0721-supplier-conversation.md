@@ -61,6 +61,14 @@ the pop-out"*. The box was named `askquestion`, which is already Help's question
 (0519) with `max-width: 85%`. Renamed `asksupplierquestion`; a browser test checks the box is
 as wide as its field.
 
+## Afterwards: the supplier's own message readable in Night
+
+Dan, against a screenshot of the network: *"when they comment - it's not possible to see their
+reply. Is this a font colour issue?"* It was. The supplier's message used `--severity-ok-bg`,
+which stays light in both themes, under Night's light text. It now uses `--bg-success`, which
+follows the theme as the customer's `--bg-warning` already did. A vf-portal test refuses any
+fixed severity background without its own text colour.
+
 ## Not in this
 
 A corrected document with a reply (2b). Return to supplier landing as a portal query. Customer

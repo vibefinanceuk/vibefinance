@@ -169,3 +169,19 @@ describe("replying — decision 0721", () => {
     expect((await reply(deps({}), "stale", "pl-acme", "i1", { body: "x" })).status).toBe(401);
   });
 });
+
+describe("readable in Night too", () => {
+  /**
+   * Dan, against a screenshot: the supplier's own message could not be
+   * read in Night. `--severity-*-bg` stays light in both themes, so a rule
+   * using one must set its own `--severity-*-text` colour too.
+   */
+  it("pairs every fixed severity background with its own text colour", async () => {
+    const css = (await import("../public/portal.css?raw")).default as string;
+    const unpaired = [...css.matchAll(/([^{}]+)\{([^}]*)\}/g)]
+      .filter(([, , body]) => /var\(--severity-(\w+)-bg\)/.test(body))
+      .filter(([, , body]) => !/color:\s*var\(--severity-\w+-text\)/.test(body))
+      .map(([, selector]) => selector.trim());
+    expect(unpaired).toEqual([]);
+  });
+});
