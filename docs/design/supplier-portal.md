@@ -1,7 +1,8 @@
 # Design: A supplier portal across the network
 
-**Status: proposed**, 10 October 2026. Direction agreed (Dan: *"I'd prefer the Live fan-out
-approach as well. No duplication of customer data"*); the decisions in §7 are open.
+**Status: agreed**, 10 October 2026. Direction (Dan: *"I'd prefer the Live fan-out approach
+as well. No duplication of customer data"*) and the decisions in §7 agreed the same day, with
+access scoped to a company within a customer (§6). Not yet built.
 
 ---
 
@@ -57,7 +58,7 @@ customer's instance keeps its invoices and answers for them when asked.
 | Piece | Holds | New work |
 | --- | --- | --- |
 | **vf-portal** (new worker) | Nothing durable but its own sessions. Pages, and the fan-out | All of it |
-| **vf-licence** | Supplier organisations, their users and credentials, and the links: *supplier org S is supplier record `sup-ln` in environment Acme-production* | Three tables, invitations, a portal sign-in, token minting |
+| **vf-licence** | Supplier organisations, their users and credentials, and the links: *this user sees supplier record `sup-ln`, for the company Acme UK Ltd, in environment Acme-production* | Three tables, invitations, a portal sign-in, token minting |
 | **vf-app** (each customer) | The invoices, as now; the supplier's messages on the Timeline | A narrow `/portal/...` API that accepts only a portal token, and an Invite to portal action on a supplier |
 
 **Why the control plane holds the directory.** It already knows every customer instance
@@ -74,13 +75,16 @@ A supplier user is one more kind of person signing in to it.
    portal audience.
 2. vf-portal asks vf-licence for the supplier's **active links**. For each, vf-licence mints
    a token with claims:
-   `{ kind: "portal", environmentId, supplierId: "sup-ln", supplierOrgId, user, expiresAt }`,
+   `{ kind: "portal", environmentId, supplierId: "sup-ln", orgUnitIds: ["acme-uk"], supplierOrgId, user, expiresAt }`,
    lasting minutes, not hours.
 3. vf-portal calls each linked instance **in parallel**:
    `GET {instance_url}/portal/invoices?status=…` with that instance's token.
 4. Each vf-app verifies the token (the same key and checks as a session token, plus
    `kind = "portal"`), then answers with **only** invoices whose `supplier_id` is the
-   token's `supplierId`. The supplier ID comes from the token, never from the request.
+   token's `supplierId` **and** whose company (`org_unit_id`) is one of the token's
+   `orgUnitIds`. Both come from the token, never from the request. An invoice not yet placed in a
+   company (decision 0111) is not shown until it is: it belongs to no company yet, so
+   nobody's invitation covers it.
 5. vf-portal merges the answers into one list, labelled by customer. An instance that does
    not answer in time is shown as *"Acme: not available just now"*, never silently left out.
 
@@ -123,49 +127,61 @@ approvers, the duplicate score, or anything about another supplier.
 
 ---
 
-## 6. Linking a supplier to a customer
+## 6. Linking a supplier to a customer, one company at a time
 
-1. On a customer's **Suppliers** screen: *Invite to portal*, with an email address. Needs
-   `Supplier.Maintain`.
+**Access is per company, not per installation** (Dan: *"A supplier can only see their
+invoices for that Org / Company code. Not across the whole installation."*). A customer's
+instance may hold several companies (`org_units`); an invitation names the supplier record
+**and** the company or companies it covers. A supplier selling to Acme UK and Acme Ireland
+sees Acme Ireland's invoices only if invited for Acme Ireland too.
+
+**Several invitations per supplier.** A customer can invite as many people from one supplier
+as it needs (credit control, the account manager, a shared accounts mailbox), each with its
+own login and its own company scope. Two people from the same supplier may see different
+companies.
+
+1. On a customer's **Suppliers** screen: *Invite to portal*, with an email address and the
+   company or companies. Needs `Supplier.Maintain`; the companies offered are those the
+   inviting user may act for.
 2. vf-app asks vf-licence to create an invitation (the existing invitations pattern),
-   carrying `environmentId` and `supplierId`.
-3. The supplier accepts: a new supplier organisation is created, or the invitation joins
-   one that exists (same verified email domain, or an admin of that organisation approves).
-4. The link is live. Either side can end it: the customer from the supplier's page, the
-   supplier from the portal.
+   carrying `environmentId`, `supplierId` and `orgUnitIds`.
+3. The person accepts. The first acceptance for a supplier creates its supplier
+   organisation in the directory; later ones join it, so one login can hold links to
+   several customers.
+4. The link is live. The customer can change its companies or end it from the supplier's
+   page; the supplier can end it from the portal. Each invited person's link is separate.
 
-A supplier that already uses the portal for another customer is linked the same way. The
-customer still invites; the supplier sees one more customer in the same login.
+People are added by the customer's invitations. A supplier-side admin inviting colleagues
+is not in the first phase.
 
 ---
 
-## 7. Decisions to make
+## 7. Decisions, agreed 10 October 2026
 
-1. **Who may join a supplier organisation.** Proposed: the first user invited is its admin;
-   further users are invited by that admin. No self-service sign-up at first.
-2. **Status vocabulary per customer?** Proposed: fixed (§5) at first. Customers wanting
-   their own wording is a later decision.
-3. **Payment information.** Proposed: show *Sent for payment* and, once an ERP connector
-   supplies it, *Paid on* a date. No remittance detail in version 1.
-4. **Bank details.** Proposed: **not editable from the portal** in version 1. Changing bank
-   details is the commonest route for invoice fraud. If added later, only as a request a
-   customer user with `Supplier.Maintain` approves.
-5. **Invoice submission through the portal.** Proposed: later. When it comes it is one more
-   intake channel per customer (the portal posts to that instance's capture route), still
-   with nothing stored centrally.
-6. **Licensing.** Proposed: the portal is free to suppliers; a customer's plan includes
-   linking suppliers. A feature flag in the licence claims turns the vf-app API on.
+| # | Decision | Agreed |
+| --- | --- | --- |
+| 1 | Who may see what | Several invitations per supplier, each person invited by the customer, each scoped to a supplier record **and** one or more companies (§6). Never the whole installation. |
+| 2 | Status wording | One fixed vocabulary for every customer (§5). |
+| 3 | Payment information | *Sent for payment*, then *Paid on* a date once an ERP supplies it. **Remittance detail in a later phase.** |
+| 4 | Bank details | Not in the portal at first. **A later phase**, and then only as a request a customer user with `Supplier.Maintain` approves. |
+| 5 | Submitting invoices | **Wanted, in a later phase.** One more intake channel per customer and company: the portal posts to that instance's capture route; nothing stored centrally. |
+| 6 | Licensing | **Always free for suppliers.** Included in the customer's plan, turned on by a feature flag in the licence claims. |
 
 ---
 
 ## 8. Build order
 
+**Phase 1: status.**
+
 | Step | What | Where |
 | --- | --- | --- |
-| 1 | Supplier organisations, users, links; invitations; portal sign-in; token minting | vf-licence |
-| 2 | `/portal/invoices`, `/portal/invoices/:id`, the status mapping, token verification | vf-app |
-| 3 | Invite to portal on a supplier; the link shown on the supplier's page | vf-app, vf-ui |
+| 1 | Supplier organisations, users, links (supplier record and companies); invitations; portal sign-in; token minting | vf-licence |
+| 2 | `/portal/invoices`, `/portal/invoices/:id`, filtered by supplier and company; the status mapping; token verification; the licence flag | vf-app |
+| 3 | Invite to portal on a supplier, with its companies; the people linked shown on the supplier's page | vf-app, vf-ui |
 | 4 | vf-portal: sign-in, the cross-customer list, an invoice's page | vf-portal |
-| 5 | Messages both ways on the Timeline; Return to supplier as a portal query | vf-app, vf-portal |
 
-Steps 1–4 give status checking; step 5 adds collaboration.
+**Phase 2: collaboration.** Messages both ways on the Timeline; Return to supplier as a
+portal query; a corrected document against a query.
+
+**Later phases**, in an order to choose: invoice submission through the portal; remittance
+detail; bank detail changes as approved requests.
