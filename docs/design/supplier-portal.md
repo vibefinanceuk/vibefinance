@@ -185,7 +185,11 @@ portal query; a corrected document against a query.
 
 - **2a, built as 0721:** the invoice's own Supplier tab, Ask supplier (the invoice and task
   stay put), Query raised in the network until the supplier replies, both sides by email.
-- **2b, next:** a corrected PDF attached to a supplier's reply.
+- **2b, paused** (Dan, 10 October 2026): a corrected PDF attached to a supplier's reply. *"I'm
+  hesitant to allow a PDF attachment… there may need to be more official means of correcting
+  invoices. For example, using a credit note. Also for compliance purposes, I think an invoice
+  revision might need to be used."* To reconsider later, alongside a credit note or a formal
+  invoice revision as the way an invoice is corrected.
 
 **Later phases**, in an order to choose: invoice submission through the portal; remittance
 detail; bank detail changes as approved requests.
