@@ -1,6 +1,6 @@
 # 0712: Open tasks by user: the person picker sits in the card's heading
 
-**Status: built**, not yet deployed. vf-ui only (`workload-open-tasks.js`, `app.css`).
+**Status: live** at `a88700f`, pushed and deployed 10 October 2026. vf-ui only (`workload-open-tasks.js`, `app.css`).
 
 ## What was asked
 
