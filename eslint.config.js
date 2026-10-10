@@ -72,7 +72,7 @@ export default [
     // document and fetch are real globals there. Kept as its own block
     // rather than widening the Worker config, so a Worker file cannot
     // quietly start using a browser global and pass.
-    files: ["workers/vf-ui/public/**/*.js"],
+    files: ["workers/vf-ui/public/**/*.js", "workers/vf-portal/public/**/*.js"],
     languageOptions: {
       globals: { ...globals.browser },
       sourceType: "module",

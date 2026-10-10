@@ -146,11 +146,11 @@ function linkView(row: LinkRow) {
 export function portalInvitationEmail(customerName: string, supplierName: string, companies: string[], link: string, code: string, expiresAt: string) {
   const when = `${expiresAt.slice(0, 16).replace("T", " ")} UTC`;
   return {
-    subject: `${customerName} has invited you to the VibeFinance supplier portal`,
+    subject: `${customerName} has invited you to the VibeFinance supplier network`,
     text: [
       "Hello,",
       "",
-      `${customerName} has invited you to see ${supplierName}'s invoices with them on the VibeFinance supplier portal: where each invoice is, and when it is sent for payment.`,
+      `${customerName} has invited you to the VibeFinance supplier network, to see ${supplierName}'s invoices with them: where each invoice is, and when it is sent for payment.`,
       "",
       `For: ${companies.join(", ")}`,
       "",
@@ -160,7 +160,7 @@ export function portalInvitationEmail(customerName: string, supplierName: string
       `Your code: ${code.slice(0, 3)} ${code.slice(3)}`,
       "",
       `The link and code work once, until ${when}.`,
-      "If you already use the portal, sign in with your existing password when you accept.",
+      "If you already use the supplier network, give your existing password when you accept.",
       "If you were not expecting this, you can ignore this email.",
       "",
       "VibeFinance",

@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>VibeFinance supplier network</title>
+<!-- The supplier network — decision 0717. -->
+<script src="/mood.js"></script>
+<link rel="stylesheet" href="/tokens.css">
+<link rel="stylesheet" href="/portal.css">
+</head>
+<body>
+<header class="topbar">
+  <span class="brand">VibeFinance</span>
+  <span class="what" data-t="network.title"></span>
+  <span class="who" id="who" hidden></span>
+  <button class="linkbutton" id="signout" data-t="network.signout" hidden></button>
+</header>
+
+<main>
+  <section id="signin" class="card signin" hidden>
+    <h1 data-t="network.signin.title"></h1>
+    <p class="sub" data-t="network.subtitle"></p>
+    <form id="signin-form">
+      <div class="field">
+        <label for="email" data-t="network.email"></label>
+        <input id="email" type="email" autocomplete="username" required>
+      </div>
+      <div class="field">
+        <label for="password" data-t="network.password"></label>
+        <input id="password" type="password" autocomplete="current-password" required>
+      </div>
+      <button class="primary" type="submit" data-t="network.signin"></button>
+      <div class="problem" id="signin-problem" role="alert"></div>
+    </form>
+  </section>
+
+  <section id="list" hidden>
+    <h1 data-t="network.invoices"></h1>
+    <p class="sub" id="customers"></p>
+    <div class="notice" id="unavailable" role="status" hidden></div>
+    <div class="filters">
+      <input id="search" type="search" data-t-placeholder="network.search" aria-label="search">
+      <select id="status" aria-label="status"></select>
+    </div>
+    <div class="tablewrap">
+      <table>
+        <thead><tr>
+          <th data-t="network.col.customer"></th>
+          <th data-t="network.col.invoice"></th>
+          <th class="hide-narrow" data-t="network.col.date"></th>
+          <th class="num" data-t="network.col.amount"></th>
+          <th class="hide-narrow" data-t="network.col.po"></th>
+          <th class="hide-narrow" data-t="network.col.company"></th>
+          <th data-t="network.col.status"></th>
+        </tr></thead>
+        <tbody id="rows"></tbody>
+      </table>
+      <div class="empty" id="empty" hidden data-t="network.none"></div>
+    </div>
+  </section>
+</main>
+
+<script type="module" src="/portal.js"></script>
+</body>
+</html>

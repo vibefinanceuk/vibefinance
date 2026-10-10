@@ -41,7 +41,7 @@ function mailer(): InvitationMailer & { sent: Sent[] } {
     sent,
     apiKey: "re_test",
     from: "VibeFinance <noreply@vibefinance-ai.com>",
-    linkBase: "https://portal.vibefinance-ai.com/welcome.html",
+    linkBase: "https://network.vibefinance-ai.com/welcome.html",
     fetcher: (async (_url: string, init: RequestInit) => {
       sent.push(JSON.parse(String(init.body)) as Sent);
       return new Response(JSON.stringify({ id: "m" }), { status: 200 });
@@ -89,7 +89,7 @@ describe("inviting a supplier's person", () => {
     const r = await invite(m, "Jo@Lager-Nord.example", [UK, IE]);
     expect(r.status).toBe(201);
     expect((r.body as { invitation: unknown }).invitation).toMatchObject({ email: "jo@lager-nord.example", supplierId: "sup-ln", orgUnits: [UK, IE], status: "pending", createdBy: "ap@acme.example" });
-    expect(m.sent[0].subject).toBe("Acme Ltd has invited you to the VibeFinance supplier portal");
+    expect(m.sent[0].subject).toBe("Acme Ltd has invited you to the VibeFinance supplier network");
     expect(m.sent[0].text).toContain("For: Acme UK Ltd, Acme Ireland Ltd");
     const { token } = fromEmail(m.sent[0]);
     const stored = await db().prepare("SELECT token_hash FROM portal_invitations").first<{ token_hash: string }>();
@@ -107,7 +107,7 @@ describe("inviting a supplier's person", () => {
     const { text } = portalInvitationEmail("Acme Ltd", "Lager Nord GmbH", ["Acme UK Ltd"], "https://p/#t=abc", "123456", "2026-10-13T12:00:00.000Z");
     expect(text).toContain("Your code: 123 456");
     expect(text).toContain("until 2026-10-13 12:00 UTC");
-    expect(text).toContain("If you already use the portal, sign in with your existing password when you accept.");
+    expect(text).toContain("If you already use the supplier network, give your existing password when you accept.");
   });
 });
 

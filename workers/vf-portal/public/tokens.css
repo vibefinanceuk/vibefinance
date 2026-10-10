@@ -1,0 +1,501 @@
+/*
+  Carlito, shipped rather than hoped for — decision 0124.
+
+  **Calibri is not on macOS or Linux** unless Office installed it, so
+  naming it in a stack gave Calibri on Windows and San Francisco
+  everywhere else — which is what the operator saw after deploying and
+  correctly reported as "no changes".
+
+  Carlito is **metric-compatible with Calibri**: the same widths and
+  shapes, openly licensed (SIL OFL). Shipping it is the only way to get
+  the same face on every machine, including a customer's.
+
+  Three faces, 92KB total. Bold italic is deliberately absent — nothing
+  in this interface uses it, and a fourth file for a combination nobody
+  asks for is 30KB nobody needs. A browser will synthesise one if it is
+  ever needed, badly, and that will be the signal to ship it properly.
+
+  `font-display: swap` so text is readable immediately in the fallback
+  and reflows once: a person keying an invoice should not wait on a
+  font, and the fallback is metric-compatible so the reflow is slight.
+*/
+@font-face {
+  font-family: "Carlito";
+  src: url("/fonts/carlito-latin-400-normal.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Carlito";
+  src: url("/fonts/carlito-latin-700-normal.woff2") format("woff2");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Carlito";
+  src: url("/fonts/carlito-latin-400-italic.woff2") format("woff2");
+  font-weight: 400;
+  font-style: italic;
+  font-display: swap;
+}
+
+/*
+  Big Shoulders Display, shipped the same way Carlito was — decision
+  0396, the second of the four pieces borrowed from
+  e-invoicingcompliancecorner.com and agreed with the operator: "the
+  title fonts, orange bold heading." A named font in a stack is a font
+  somebody has to already own; naming it and shipping nothing would
+  repeat decision 0124's own mistake, reported back that time as "no
+  changes" when it was actually a silent fallback.
+
+  One face, one weight: the mockup used exactly `wght@800`, and nothing
+  in this interface asks for any other weight of it, so only 800 is
+  shipped. Openly licensed, SIL OFL, the same terms as Carlito.
+*/
+@font-face {
+  font-family: "Big Shoulders Display";
+  src: url("/fonts/big-shoulders-display-latin-800-normal.woff2") format("woff2");
+  font-weight: 800;
+  font-style: normal;
+  font-display: swap;
+}
+
+/*
+ * Design tokens for vf-ui — decision 0099.
+ *
+ * Carried across from docs/design/mockups/tokens.css, where the split
+ * these files depend on was worked out: every colour is a token, so a
+ * customer or partner livery is a substitution and nowhere else.
+ *
+ * **The brand block below is overridden at runtime**, by a stylesheet
+ * fetched from vf-licence for whichever customer is being served
+ * (decision 0096). The values here are the fallback — what somebody
+ * sees before a customer is known, and what a customer with no livery
+ * keeps.
+ *
+ * Everything above the brand block is structural and is NOT settable by
+ * a customer: spacing, type scale and radius are how a screen stays
+ * readable, and somebody who could change them could make a queue
+ * unusable and then report it as a bug.
+ */
+
+:root {
+  color-scheme: light dark;
+
+  /*
+    Daytime — decision 0139.
+    **Lighter blues**, asked for by name. Cool where this was warm grey,
+    and the surfaces stay close together so decision 0108's panels
+    separate by border rather than by contrast.
+  */
+  --surface-0: #f2f6fb;
+  --surface-1: #e8eff8;
+  --surface-2: #ffffff;
+
+  --text-primary: #121a26;
+  --text-secondary: #4a5768;
+  --text-muted: #7b8798;
+
+  --border: rgba(18, 26, 38, 0.10);
+  --border-strong: rgba(18, 26, 38, 0.18);
+
+  --bg-accent: #e6f1fb;
+  --text-accent: #185fa5;
+  --border-accent: #378add;
+
+  --bg-warning: #faeeda;
+  --text-warning: #854f0b;
+  --border-warning: #ef9f27;
+
+  /*
+    **A heading accent, not a new warning** — decision 0395, evaluating
+    a look from another product this team built
+    (e-invoicingcompliancecorner.com): a bold condensed title face in a
+    single accent colour, for panel titles across the app.
+
+    The same two amber values `--text-warning` already carries in both
+    moods, reused under their own name rather than aliased with
+    `var(--text-warning)`: a heading and a warning are different
+    concerns, and aliasing would let a future retuning of warning's own
+    meaning silently retint every panel title in the app. Picked over
+    the reference site's own raw `#c98a3a` because that value reads
+    under 3:1 against `--surface-2` in Day time — this pair is already
+    proven at 3:1+ in both moods, since the app ships it today.
+  */
+  --heading-accent: #854f0b;
+
+  --bg-success: #eaf3de;
+  --text-success: #3b6d11;
+
+  /*
+    **A fourth state, decision 0395.** `--bg-warning` has been carrying
+    two different claims on the validation screen's key fields:
+    *look at this* and *this is wrong*. A field that mismatches a
+    linked purchase order is not the same claim as one whose format
+    merely could not be confirmed, and colouring both amber meant a
+    hard failure read no differently from a note to double-check.
+    This is the *stop* tier; `--bg-warning` keeps *look at this*.
+  */
+  --bg-danger: #fbe4e1;
+  --text-danger: #9c2b1f;
+
+  /*
+    **A chart palette** — decision 0242.
+
+    Until now three colours carried every chart in the mock-ups: accent,
+    success and warning. **Those mean something** — accent is *this*,
+    warning is *look at this*, success is *good* — and a five-category
+    chart that borrowed them would say a category was a problem because
+    it happened to be third.
+
+    So these are **categorical and deliberately quiet**: distinguishable
+    side by side and carrying no verdict. A chart that needs to say
+    *this one is late* still uses `--text-warning`, which is the point of
+    keeping them apart.
+
+    Five, because a chart needing a sixth is a chart needing a table.
+  */
+  --chart-1: #1f6fb2;
+  --chart-2: #1b8f77;
+  /*
+    **Deepened at the operator's asking** — decision 0258. `#7a4fa8`
+    read as lavender rather than the saturated violet they pointed at
+    in a reference dashboard. Still no verdict attached to it — a
+    richer purple is still just the third category, not a warning
+    wearing a disguise.
+  */
+  --chart-3: #6a3aa0;
+  --chart-4: #c06a2a;
+  --chart-5: #3d7a96;
+
+  /*
+    **The side menu's icon colours — decision 0527.** The operator chose
+    the "Vivid" set over the chart palette above: the chart colours are
+    deliberately quiet, and on the pale menu they read almost as grey.
+    Used only for a nav icon that is hovered or selected, never for data,
+    so they carry no meaning beyond telling the icons apart.
+  */
+  --nav-1: #2563eb;
+  --nav-2: #0d9488;
+  --nav-3: #7c3aed;
+  --nav-4: #ea580c;
+  --nav-5: #db2777;
+
+  --border-success: #639922;
+  /*
+    Not redefined below, decision 0395 — the same choice this file
+    already made for `--border-warning`/`--border-success`: a single
+    value doing double duty in both moods, rather than every semantic
+    colour needing a Night pairing. A border is a thin line, not a
+    fill or a body of text, so this file has not so far treated it as
+    contrast-critical the way `--bg-*`/`--text-*` are.
+  */
+  --border-danger: #d64a36;
+
+  /*
+    **An active tab lifts off the pill, in Day only** — decision 0398,
+    the third of the four pieces from e-invoicingcompliancecorner.com:
+    the Document/XML/Timeline & Chat tabs restyled as a segmented pill,
+    the reference site's own "Arrivals board / List view" toggle. A
+    shadow reads as depth against a light surface; against Night's own
+    dark surfaces the same shadow is either invisible or reads as a
+    smear, so it is `none` there rather than a value nobody would see
+    — the same reasoning `--border-danger`, just above, already gave a
+    value that does not need a Night pairing, applied in the other
+    direction: here Night's right answer is no shadow at all, not a
+    different one.
+  */
+  --tab-active-shadow: 0 1px 2px rgba(18, 26, 38, 0.12);
+
+  /*
+    **The severity fill stays pale in both moods, decision 0400** —
+    reported live, comparing the two against a real mockup: *"can you
+    use the paler 'day' colours for the night scheme also?"* The
+    key-field highlighting these back (red/amber/green, decision 0395's
+    own `--bg-danger`/`--text-danger` finally consumed, alongside
+    `--bg-warning`/`--text-warning`/`--bg-success`/`--text-success`)
+    gets its own dedicated tokens rather than reusing those directly,
+    because `--bg-warning`/`--text-warning`/`--bg-success`/
+    `--text-success` already carry a real Night pairing used
+    elsewhere in the app — status labels, stat tiles, rule state — and
+    darkening those globally to satisfy one screen's own request would
+    have changed every one of those, unasked. `--severity-value-text`
+    is the fourth: the fill stays fixed, so the value text inside it
+    has to as well — `--text-primary` itself flips light at Night and
+    would go invisible on a background that no longer flips with it.
+    None of the four is redefined below, the same "single value doing
+    double duty" choice `--border-danger`/`--border-warning`/
+    `--border-success` already made, just extended from borders to
+    fills for this one purpose.
+  */
+  --severity-danger-bg: #fbe4e1;
+  --severity-danger-text: #9c2b1f;
+  --severity-warning-bg: #faeeda;
+  --severity-warning-text: #854f0b;
+  --severity-ok-bg: #eaf3de;
+  --severity-ok-text: #3b6d11;
+  --severity-value-text: #121a26;
+
+  --radius: 8px;
+  /*
+    Calibri, asked for by name — decision 0124.
+
+    **Carlito is metric-compatible with Calibri** and openly licensed,
+    so a machine without Calibri gets the same shapes at the same widths
+    rather than a fallback that reflows every panel.
+
+    Calibri first for a machine that has it — a Windows customer sees
+    the face they know, and it is metrically identical to the one
+    everyone else gets. The system stack follows both, for the moment
+    before the file arrives.
+  */
+  --font-sans: Calibri, Carlito, "Segoe UI", -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
+
+  /*
+    A second face, for card titles only — decision 0396. Not a
+    replacement for `--font-sans`: the body of the app stays Calibri/
+    Carlito, and this is a condensed display face reserved for the
+    one place it was asked for. Falls through to `--font-sans` itself
+    if the file is ever slow to arrive, rather than to a bare
+    `sans-serif` that would pick a different weight and width per
+    machine.
+  */
+  --font-heading: "Big Shoulders Display", var(--font-sans);
+
+  /*
+    One type scale — decision 0124.
+
+    The interface had **seven hardcoded sizes** with 11, 12 and 13px all
+    in use, which is accumulation rather than a scale: nothing said what
+    the difference between 12 and 13 meant, so each new panel picked
+    whichever looked right beside its neighbour.
+
+    Four steps, each with a job. **A size not on this list is a
+    decision somebody should have to justify.**
+
+    Calibri sits a little smaller than the system faces at the same
+    pixel size, so these are a point above what the interface used.
+  */
+  --text-sm: 12px;   /* Labels, captions, secondary detail. */
+  --text-base: 14px; /* Body, fields, table cells — most of the screen. */
+  --text-lg: 16px;   /* Panel headings, a document's identity. */
+  --text-xl: 20px;
+
+  /*
+    **A figure, not a heading** — decision 0242.
+
+    The scale stopped at 20px because nothing displayed a number.
+    A dashboard does: a count is the whole content of its card, and read
+    at a glance from across a desk rather than in a line of prose.
+
+    Ratio kept at the scale's own 1.25 twice over, so it belongs to the
+    same series rather than being a size somebody liked.
+
+    **Stepped up once more** — decision 0257, at the operator's asking
+    that the cards read easily "across a desk." 32px was two 1.25 steps
+    above `--text-xl`; 40px is a third, keeping it a step on the scale
+    rather than a size chosen by eye.
+  */
+  --text-figure: 40px;   /* The one thing a screen is about. */
+
+  /* Brand — the only block a white-label deployment replaces. */
+  --brand-bar: #0f6e56;
+  --brand-fill: #0f6e56;
+  --brand-chip: #9fe1cb;
+  --brand-chip-text: #04342c;
+  --brand-name: "VibeFinance";
+}
+
+/*
+  Night time — decision 0139.
+
+  **Dark midnight blues**, asked for by name. Not black: a true black
+  surface makes a white document in the preview panel (decision 0123)
+  glare, and this is a screen somebody reads all day.
+
+  Written once and applied two ways: by the operating system's own
+  preference, and by an explicit choice. The rules are identical, so a
+  person switching to Night time gets exactly what somebody whose
+  machine is dark already had.
+*/
+@media (prefers-color-scheme: dark) {
+  :root:not([data-mood="day"]) {
+    --surface-0: #0d1626;
+    --surface-1: #141f33;
+    --surface-2: #1b2941;
+    --text-primary: #e8eef7;
+    --text-secondary: #9dabc0;
+    --text-muted: #6f7e94;
+    --border: rgba(232, 238, 247, 0.12);
+    --border-strong: rgba(232, 238, 247, 0.22);
+    --bg-accent: #123a66;
+    --text-accent: #9fc9f2;
+    --bg-warning: #4a3208;
+    --text-warning: #f0c477;
+    --heading-accent: #f0c477;
+    --bg-success: #1f4310;
+    --text-success: #a8cf85;
+    --bg-danger: #3d140f;
+    --text-danger: #f2a99a;
+    --tab-active-shadow: none;
+
+    /* And the chart palette, for the same reason (decisions 0242, 0247). */
+    --chart-1: #4da3f0;
+    --chart-2: #35c9a3;
+    --chart-3: #b08bff;
+    --chart-4: #ffb057;
+    --chart-5: #6fd0e8;
+
+    /* And the side menu's icon colours (decision 0527). */
+    --nav-1: #60a5fa;
+    --nav-2: #2dd4bf;
+    --nav-3: #a78bfa;
+    --nav-4: #fb923c;
+    --nav-5: #f472b6;
+  }
+}
+
+/**
+ * The same, chosen rather than inherited.
+ *
+ * **Duplicated deliberately.** A single rule cannot express "dark
+ * unless overridden, or when chosen" without `:where()` gymnastics that
+ * read worse than saying it twice — and a test asserts the two blocks
+ * agree, so they cannot drift.
+ */
+:root[data-mood="night"] {
+  --surface-0: #0d1626;
+  --surface-1: #141f33;
+  --surface-2: #1b2941;
+  --text-primary: #e8eef7;
+  --text-secondary: #9dabc0;
+  --text-muted: #6f7e94;
+  --border: rgba(232, 238, 247, 0.12);
+  --border-strong: rgba(232, 238, 247, 0.22);
+  --bg-accent: #123a66;
+  --text-accent: #9fc9f2;
+  --bg-warning: #4a3208;
+  --text-warning: #f0c477;
+  --heading-accent: #f0c477;
+  --bg-success: #1f4310;
+  --text-success: #a8cf85;
+  --bg-danger: #3d140f;
+  --text-danger: #f2a99a;
+  --tab-active-shadow: none;
+
+  /*
+    **The chart palette and the side menu's colours belong here too —
+    decision 0529.** They were written only into the media query above
+    (and, from decision 0247, a second time inside it, where this block
+    was meant to be), so choosing Night on a machine set to light mode
+    kept Day's chart and menu colours. The parity test now checks them.
+  */
+  --chart-1: #4da3f0;
+  --chart-2: #35c9a3;
+  --chart-3: #b08bff;
+  --chart-4: #ffb057;
+  --chart-5: #6fd0e8;
+  --nav-1: #60a5fa;
+  --nav-2: #2dd4bf;
+  --nav-3: #a78bfa;
+  --nav-4: #fb923c;
+  --nav-5: #f472b6;
+}
+
+body {
+  font-family: var(--font-sans);
+  font-size: var(--text-base);
+  line-height: 1.7;
+  color: var(--text-primary);
+  background: var(--surface-0);
+  margin: 0;
+  padding: 2rem 1rem;
+}
+
+.page {
+  max-width: 760px;
+  margin: 0 auto;
+}
+
+.note {
+  font-size: var(--text-base);
+  color: var(--text-secondary);
+  border-left: 2px solid var(--border-strong);
+  padding-left: 12px;
+  margin: 0 0 1.5rem;
+}
+
+h1 {
+  font-size: var(--text-xl);
+  font-weight: 500;
+  margin: 0 0 4px;
+}
+
+/*
+  Form controls take the page's font entirely — decision 0124.
+
+  **`font: inherit` rather than `font-family: inherit`.** A browser
+  gives a control its own family, size, weight and line-height, and
+  inheriting only the family leaves the other three at the browser's
+  defaults — which is why the entry cells have always looked slightly
+  larger than everything around them.
+
+  `select` is the worst offender: several platforms ignore a family set
+  any other way.
+
+  **`input` here means a text-like input, not every input** — decision
+  0282, found live: a bare `input` selector matches a checkbox exactly
+  as it matches a text box, and a checkbox styled with this rule's own
+  padding, border and background stops looking like a checkbox at all.
+  Excluded here rather than overridden later per screen, the same
+  reasoning `:not([type="checkbox"])` gives once and every future text
+  input still needs nothing extra to get this by default.
+*/
+input:not([type="checkbox"]):not([type="radio"]),
+textarea,
+button,
+select {
+  font: inherit;
+  font-size: var(--text-base);
+  color: var(--text-primary);
+  background: var(--surface-2);
+  border: 0.5px solid var(--border-strong);
+  border-radius: var(--radius);
+  padding: 6px 10px;
+}
+
+input:not([type="checkbox"]):not([type="radio"]),
+textarea {
+  min-height: 32px;
+  box-sizing: border-box;
+  /*
+    **Full width of whatever holds it.**
+
+    Nothing set one, so a browser's default of roughly twenty
+    characters applied — which looked reasonable in a narrow form and
+    absurd in a full-width panel. Reported from the rule screen, where
+    the box for a sentence sat at a fifth of the space beside it.
+
+    Set here rather than on that screen: every textarea in this
+    interface is a box somebody writes prose into, and none of them
+    wants a browser's guess.
+  */
+  width: 100%;
+}
+
+button {
+  cursor: pointer;
+  background: transparent;
+}
+
+button:hover {
+  background: var(--surface-1);
+}
+
+table {
+  border-collapse: collapse;
+}

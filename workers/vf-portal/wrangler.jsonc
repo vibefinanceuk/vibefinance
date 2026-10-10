@@ -1,0 +1,45 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "vf-portal",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-01",
+
+  // The supplier network — decision 0717 (docs/design/supplier-portal.md,
+  // Phase 1 step 4). One address for every supplier of every customer.
+  //
+  // Fetches each customer's vf-app instance at its own address, as vf-ui
+  // does: a Service Binding per instance is impossible for one shared
+  // deployment, so global fetch() goes out through the public front door.
+  "compatibility_flags": ["global_fetch_strictly_public"],
+
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS",
+    // The backend-for-frontend: the session cookie never reaches script.
+    "run_worker_first": ["/api/*"]
+  },
+
+  // Its own address. A route turns workers.dev off, so there is one.
+  "routes": [
+    {
+      "pattern": "network.vibefinance-ai.com",
+      "custom_domain": true
+    }
+  ],
+
+  // The directory, sign-in and access tokens (0713). A Service Binding:
+  // a Worker cannot plain-fetch another Worker's workers.dev URL (0005).
+  "services": [
+    {
+      "binding": "LICENCE_SERVICE",
+      "service": "vf-licence"
+    }
+  ],
+
+  "vars": {
+    // The URL shape only; the binding carries the request.
+    "LICENCE_API": "https://vf-licence.vibefinance.workers.dev"
+  },
+
+  "observability": { "enabled": true }
+}

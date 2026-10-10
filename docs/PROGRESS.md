@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 10 October 2026 (decision 0716). A living document: what
+Last updated 10 October 2026 (decision 0717). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,15 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### The supplier network site (0717)
+
+Phase 1 step 4. A new Worker, vf-portal, at network.vibefinance-ai.com: accepting an
+invitation, signing in, and one list of a supplier's invoices across every customer they are
+linked to, asked of each customer live, with each invoice's lines and any comment. Holds
+nothing; the session is an HttpOnly cookie.
+
+Full reasoning is in decision 0717.
 
 ### Supplier portal: turned on in the operator console (0716)
 

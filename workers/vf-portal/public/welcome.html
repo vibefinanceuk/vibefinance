@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>VibeFinance supplier network</title>
+<!--
+  Accepting an invitation to the supplier network — decision 0717.
+  The token is in the fragment (#t=…), which a browser never sends to a
+  server, so it is in no log.
+-->
+<script src="/mood.js"></script>
+<link rel="stylesheet" href="/tokens.css">
+<link rel="stylesheet" href="/portal.css">
+</head>
+<body>
+<header class="topbar">
+  <span class="brand">VibeFinance</span>
+  <span class="what" data-t="network.title"></span>
+</header>
+<main>
+  <section class="card welcome" id="welcome" hidden>
+    <h1 data-t="network.welcome.title"></h1>
+    <p class="sub" id="welcome-sub"></p>
+    <form id="welcome-form" hidden>
+      <input type="email" id="welcome-email" autocomplete="username" hidden readonly>
+      <div class="field">
+        <label for="welcome-code" data-t="network.welcome.code"></label>
+        <input id="welcome-code" inputmode="numeric" autocomplete="one-time-code" maxlength="7" required>
+      </div>
+      <div class="field">
+        <label for="welcome-password" id="welcome-password-label"></label>
+        <input id="welcome-password" type="password" required>
+      </div>
+      <div class="field" id="welcome-again-field">
+        <label for="welcome-again" data-t="network.welcome.again"></label>
+        <input id="welcome-again" type="password" autocomplete="new-password">
+      </div>
+      <button class="primary" type="submit" id="welcome-submit" data-t="network.welcome.submit"></button>
+    </form>
+    <div class="problem" id="welcome-problem" role="alert"></div>
+  </section>
+</main>
+<script type="module" src="/welcome.js"></script>
+</body>
+</html>
