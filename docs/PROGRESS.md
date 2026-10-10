@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 9 October 2026 (decision 0709). A living document: what
+Last updated 10 October 2026 (decision 0710). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,14 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### A passed check says what passed on hover (0710)
+
+A field a check passed (green) said the check's failure wording on hover, e.g. "Due date
+is before the issue date" on a good due date. It now says what passed ("Due date is on or
+after the issue date"), or "Checked".
+
+Full reasoning is in decision 0710.
 
 ### Tasks for lines: one per line, or combined (0709)
 

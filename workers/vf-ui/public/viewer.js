@@ -3473,13 +3473,25 @@ function markFields() {
    * dependent on which entry `validateInvoiceFacts` happened to push
    * first.
    */
-  for (const confirmed of confirms) markOne(confirmed, "ok", t(`check.${confirmed.check}`));
+  // A confirmation says what passed, never the failure's own wording
+  // (decision 0710): `check.<name>` describes the problem.
+  for (const confirmed of confirms) markOne(confirmed, "ok", confirmedReason(confirmed.check));
   for (const failure of exceptions.filter((f) => f.severity === "warning")) {
     markOne(failure, "warning", t(`check.${failure.check}`));
   }
   for (const failure of exceptions.filter((f) => f.severity === "danger")) {
     markOne(failure, "danger", t(`check.${failure.check}`));
   }
+}
+
+/**
+ * **What a passed check says on hover — decision 0710.** `check.<name>.ok`
+ * where the strings have it, otherwise a plain "Checked".
+ */
+function confirmedReason(check) {
+  const key = `check.${check}.ok`;
+  const said = t(key);
+  return said === key ? t("check.ok") : said;
 }
 
 /** Marks every field (and line-table cell) one `involves`/`confirms`

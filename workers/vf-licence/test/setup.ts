@@ -306,6 +306,7 @@ import supplierLearningStringsSql from "../migrations/0315_supplier_learning_str
 import lineColumnsStringsSql from "../migrations/0316_line_columns_strings.sql?raw";
 import lineNetStringsSql from "../migrations/0317_line_net_suggestion_strings.sql?raw";
 import lineTasksStringsSql from "../migrations/0318_line_tasks_strings.sql?raw";
+import passedCheckStringsSql from "../migrations/0319_passed_check_strings.sql?raw";
 
 function stripSqlComments(sql: string): string {
   return sql
@@ -645,5 +646,6 @@ export async function applyTestSchema(): Promise<void> {
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(lineColumnsStringsSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(lineNetStringsSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(lineTasksStringsSql)));
+  await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(passedCheckStringsSql)));
 
 }

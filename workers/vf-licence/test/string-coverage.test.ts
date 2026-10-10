@@ -3639,6 +3639,14 @@ const KEYS_THE_INTERFACE_USES = [
   "suppliers.learning.helped",
   // A supplier's line columns (decision 0705).
   "suppliers.layouts.columns",
+  // What a passed check says on hover (decision 0710).
+  "check.ok",
+  "check.vat_arithmetic.ok",
+  "check.amount_due_mismatch.ok",
+  "check.date_order.ok",
+  "check.line_sum.ok",
+  "check.po_mismatch.ok",
+  "check.code_list.ok",
   // Tasks for lines and the stage settings (decision 0709).
   "processes.linetasks",
   "processes.linetasks.combined",

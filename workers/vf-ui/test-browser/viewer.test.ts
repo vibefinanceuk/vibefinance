@@ -94,6 +94,8 @@ const STRINGS = {
     "viewer.back": "Back",
     "check.vat_arithmetic": "Net plus VAT does not equal the total",
     "check.po_mismatch": "Does not match the purchase order",
+    "check.vat_arithmetic.ok": "Net plus VAT equals the total",
+    "check.ok": "Checked",
     "viewer.exceptions": "Exceptions",
     "viewer.seller": "Seller",
     "viewer.buyer": "Buyer",
@@ -558,6 +560,26 @@ describe("three-tier severity on key fields (decision 0400)", () => {
     const box = document.getElementById("f-BT-112")?.closest(".kf") as HTMLElement;
     expect(box.classList.contains("ok")).toBe(true);
     expect(box.querySelector(".kf-dot")).not.toBeNull();
+    // Decision 0710 — a passed check says what passed, not the failure's wording.
+    expect(box.title).toBe("Net plus VAT equals the total");
+  });
+
+  it("a passed check with no wording of its own says Checked, never the failure — decision 0710", async () => {
+    stubFetch(
+      RESPONSE({
+        passed: true,
+        checked: ["amount_due_mismatch"],
+        failures: [],
+        confirms: [{ check: "amount_due_mismatch", fields: ["BT-115", "BT-112"] }],
+      })
+    );
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { openViewer } = await import("/viewer.js");
+    await openViewer(TASK, () => {});
+    const box = document.getElementById("f-BT-112")?.closest(".kf") as HTMLElement;
+    expect(box.classList.contains("ok")).toBe(true);
+    expect(box.title).toBe("Checked");
   });
 
   it("lets a danger failure win a field over a warning confirmation elsewhere on it", async () => {
