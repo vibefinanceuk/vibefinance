@@ -313,6 +313,7 @@ import portalPeopleStringsSql from "../migrations/0322_supplier_portal_people_st
 import networkStringsSql from "../migrations/0323_supplier_network_strings.sql?raw";
 import portalCompaniesStringsSql from "../migrations/0324_portal_companies_strings.sql?raw";
 import portalInviteHeadingSql from "../migrations/0325_portal_invite_heading_strings.sql?raw";
+import supplierConversationSql from "../migrations/0326_supplier_conversation_strings.sql?raw";
 
 function stripSqlComments(sql: string): string {
   return sql
@@ -659,5 +660,6 @@ export async function applyTestSchema(): Promise<void> {
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(networkStringsSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(portalCompaniesStringsSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(portalInviteHeadingSql)));
+  await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(supplierConversationSql)));
 
 }

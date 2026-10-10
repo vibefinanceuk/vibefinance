@@ -5629,3 +5629,13 @@
 }
 /* Dan: "Expand the height to fit all fields on the screen." Up to the window's height, not 80%; it scrolls only past that. */
 .popout.hfpopout { max-height: calc(100vh - 32px); }
+/* Decision 0721 — the Supplier tab and Ask supplier. */
+.suppliertab .supplierto { display: flex; align-items: center; gap: 6px; padding: 8px 14px; border-bottom: 0.5px solid var(--border); flex: 0 0 auto; }
+.suppliertab .supplierto svg { width: 16px; height: 16px; flex: 0 0 auto; }
+.supplieremailed { margin-top: 4px; font-size: var(--text-sm); color: var(--text-secondary); }
+.supplieremailed.warn { color: var(--text-warning); }
+.popout.asksupplier { width: min(560px, 100%); }
+.asksupplier textarea.askquestion { width: 100%; min-height: 96px; }
+.asklines { display: flex; flex-wrap: wrap; gap: 6px 12px; }
+.asklines .askline { display: inline-flex; align-items: center; gap: 4px; }
+.supplierquery .reasonline-row { color: var(--text-primary); }

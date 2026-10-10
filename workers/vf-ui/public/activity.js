@@ -169,6 +169,13 @@ function actionTakenLine(item) {
         .replace("{who}", who)
         .replace("{field}", t(`field.${String(item.field ?? "").toLowerCase()}`))
         .replace("{page}", String(item.pageNumber ?? ""));
+    // Decision 0721 — the conversation with the supplier; who was emailed shows as the comment.
+    case "supplier_asked":
+      return t("activity.supplierasked").replace("{who}", who).replace("{supplier}", item.supplierName ?? "");
+    case "supplier_written":
+      return t("activity.supplierwritten").replace("{who}", who).replace("{supplier}", item.supplierName ?? "");
+    case "supplier_replied":
+      return t("activity.supplierreplied").replace("{who}", who).replace("{supplier}", item.supplierName ?? "");
     case "receipt_closed":
       return t("activity.receiptclosed").replace("{rule}", item.ruleName ?? "").replace("{receipt}", item.receiptNumber ?? "").replace("{who}", who);
     default:
@@ -235,7 +242,12 @@ function itemRow(item, index, all) {
       kind: "action_taken",
       subs: [
         // A po_link's comment is the order number, already in the line above.
-        item.comment && item.action !== "po_link" && item.action !== "po_pair" ? item.comment : null,
+        // Decision 0721 — for a message to or from the supplier, the comment is who was emailed.
+        item.comment && String(item.action).startsWith("supplier_")
+          ? t("supplierchat.emailed").replace("{people}", item.comment)
+          : item.comment && item.action !== "po_link" && item.action !== "po_pair"
+            ? item.comment
+            : null,
         // Decision 0498 — the supplier-facing comment, and what happened to the email.
         item.supplierComment ?? null,
         emailStatusLine(item),

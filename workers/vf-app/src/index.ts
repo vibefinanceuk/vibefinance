@@ -163,7 +163,8 @@ import {
   handleGetSupplierPortal,
   handleInviteSupplierPerson,
 } from "./portal-people-route.js";
-import { getPortalInvoice, listPortalInvoices, portalAuth } from "./portal-route.js";
+import { getPortalInvoice, listPortalInvoices, portalAuth, replyOnPortalInvoice } from "./portal-route.js";
+import { DEFAULT_NETWORK_URL, handleGetSupplierMessages, handlePostSupplierMessage, type MessageEmail } from "./supplier-messages.js";
 import { handleCreateIntakeChannel } from "./intake-channel-route.js";
 import { handleCaptureIntake, handleCaptureUblXml, handleCapturePdf, handleCaptureImage, handleFinalisePendingDocument, handleIntakeStats } from "./intake-capture-route.js";
 import {
@@ -461,6 +462,8 @@ export interface Env {
    * DKIM/DMARC) for this customer's deployment.
    */
   RESEND_FROM_ADDRESS?: string;
+  /** The supplier network's address, for links in supplier emails (0721). Defaults to network.vibefinance-ai.com. */
+  NETWORK_URL?: string;
   /**
    * Verifies Resend's own delivery-status webhook
    * (`resend-webhook-route.ts`) — the `whsec_...` value Resend's
@@ -1028,6 +1031,17 @@ async function followUpAfterTaskCompletion(
   }
 }
 
+/** Sending the supplier conversation's emails, and the links in them — decision 0721. */
+function messageEmail(env: Env): MessageEmail {
+  const appUrl = (env.ALLOWED_ORIGINS ?? "").split(",").map((o) => o.trim()).find(Boolean) ?? null;
+  return {
+    apiKey: env.RESEND_API_KEY ?? null,
+    from: env.RESEND_FROM_ADDRESS ?? null,
+    networkUrl: env.NETWORK_URL ?? DEFAULT_NETWORK_URL,
+    appUrl: appUrl ? appUrl.replace(/\/+$/, "") : null,
+  };
+}
+
 /**
  * **What an agent's run needs from the environment — decision 0623.**
  * Resend where it is set up; the app's own address (the first allowed
@@ -1095,10 +1109,17 @@ export default {
      * token is accepted nowhere else.
      */
     if (pathname === "/portal/invoices" || pathname.startsWith("/portal/invoices/")) {
-      if (request.method !== "GET") return json({ error: "not found" }, 404);
+      const reply = pathname.match(/^\/portal\/invoices\/([^/]+)\/messages$/);
+      if (request.method !== "GET" && !(reply && request.method === "POST")) return json({ error: "not found" }, 404);
       const { db } = resolveTenant(request, env);
       const auth = await portalAuth(db, request, isPublicKeyJwk(env.LICENCE_SIGNING_PUBLIC_KEY) ? env.LICENCE_SIGNING_PUBLIC_KEY : undefined, env.ENVIRONMENT_ID);
       if (!auth.ok) return json(auth.body, auth.status);
+      // Decision 0721: the supplier writes about one of their invoices.
+      if (reply) {
+        const body = ((await request.json().catch(() => ({}))) ?? {}) as Record<string, unknown>;
+        const result = await replyOnPortalInvoice(db, auth.claims, reply[1], body, messageEmail(env));
+        return json(result.body, result.status);
+      }
       const one = pathname.match(/^\/portal\/invoices\/([^/]+)$/);
       const result = one
         ? await getPortalInvoice(db, auth.claims, one[1])
@@ -4336,6 +4357,36 @@ export default {
       const result = await invoiceLayouts(db, invoiceId);
       return result ? json(result, 200) : json({ error: `invoice ${invoiceId} does not exist` }, 404);
     }
+    /**
+     * **The conversation with the supplier on an invoice — decision 0721.**
+     * Whoever may open the invoice may read it and write; vf-licence says
+     * who at the supplier is linked for the invoice's company.
+     */
+    const supplierMessagesMatch = pathname.match(/^\/invoices\/([^/]+)\/supplier-messages$/);
+    if (supplierMessagesMatch && (request.method === "GET" || request.method === "POST")) {
+      const { db } = resolveTenant(request, env);
+      const auth = await authenticatePerson(db, request, env);
+      if (!auth.user) return json({ error: auth.reason }, 401);
+      const invoiceId = supplierMessagesMatch[1];
+      if (
+        !(await hasPermission(db, auth.user.id, "AP.Validate")) &&
+        !(await hasPermission(db, auth.user.id, "AP.Code")) &&
+        !(await hasPermission(db, auth.user.id, "AP.Match")) &&
+        !(await hasPermission(db, auth.user.id, "AP.Approve")) &&
+        !(await canViewInvoiceAsCollaborator(db, auth.user.id, invoiceId))
+      ) {
+        return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
+      }
+      const link = env.LICENCE_SERVICE && env.ENVIRONMENT_ID && env.VF_LICENCE_API_KEY ? { service: env.LICENCE_SERVICE, environmentId: env.ENVIRONMENT_ID, apiKey: env.VF_LICENCE_API_KEY } : null;
+      if (request.method === "GET") {
+        const result = await handleGetSupplierMessages(db, link, invoiceId);
+        return json(result.body, result.status);
+      }
+      const body = ((await request.json().catch(() => ({}))) ?? {}) as Record<string, unknown>;
+      const result = await handlePostSupplierMessage(db, link, invoiceId, { id: auth.user.id, name: auth.user.name }, body, messageEmail(env));
+      return json(result.body, result.status);
+    }
+
     /**
      * **A supplier's portal people — decision 0715.** Seeing them needs
      * `AP.Supplier`; inviting, cancelling, changing companies and ending a

@@ -32,6 +32,10 @@ export const EVENTS = {
   stopped: { tone: "warn", icon: "systemalert" },
   return: { tone: "warn", icon: "return" },
   return_to_supplier: { tone: "warn", icon: "return_to_supplier" },
+  // Decision 0721 — a question to the supplier waits on them; their reply is news.
+  supplier_asked: { tone: "warn", icon: "ask_supplier" },
+  supplier_written: { tone: "act", icon: "post" },
+  supplier_replied: { tone: "info", icon: "ask_supplier" },
   chase: { tone: "warn", icon: "post" },
   remind: { tone: "warn", icon: "post" },
   erp_export_undone: { tone: "warn", icon: "return" },

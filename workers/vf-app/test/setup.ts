@@ -161,6 +161,7 @@ import fieldRegionsSql from "../../../migrations/0154_invoice_field_regions.sql?
 import layoutResetsSql from "../../../migrations/0155_supplier_layout_resets.sql?raw";
 import senderIndexSql from "../../../migrations/0156_sender_lookup_index.sql?raw";
 import combinedLineTasksSql from "../../../migrations/0157_combined_line_tasks.sql?raw";
+import supplierMessagesSql from "../../../migrations/0158_supplier_messages.sql?raw";
 
 // Another known divergence from production, on top of the one below:
 // D1's exec() splits its input by newline and executes each non-empty
@@ -206,6 +207,8 @@ function toOneStatementPerLine(sql: string): string {
 // gets a genuinely clean schema regardless of what the pool does or
 // does not reset.
 const TABLES_IN_DROP_ORDER = [
+  // Decision 0721: the supplier conversation references invoices and people.
+  "supplier_messages",
   // Agents (decision 0622): notes reference runs and agents, runs reference agents, agents reference people.
   "goods_receipt_reads", "goods_receipt_events", "goods_receipt_comments", "goods_receipt_collaborators", "goods_receipt_lines", "goods_receipts", "goods_return_reasons", "absence_moves", "absences", "agent_query_days", "agent_actions", "agent_seen", "agent_events", "agent_ai_days", "agent_plan_versions", "agent_deliveries", "agent_recipients", "agent_notes", "agent_runs", "agents",
   // Routes, slice 1 (decision 0555): invoice_documents now references
@@ -520,6 +523,7 @@ export async function applyTestSchema(): Promise<void> {
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(layoutResetsSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(senderIndexSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(combinedLineTasksSql)));
+  await env.DB.exec(toOneStatementPerLine(stripSqlComments(supplierMessagesSql)));
 }
 
 /**

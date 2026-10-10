@@ -747,6 +747,9 @@ describe("the proxy carries every path a screen calls (decision 0131)", () => {
     ["DELETE", "/api/goods-receipts/gr-1/collaborators/c-1"],
     // Decision 0659: a receipt's Attachments.
     ["GET", "/api/goods-receipts/gr-1/attachments"],
+    // Decision 0721: the Supplier tab and Ask supplier.
+    ["GET", "/api/invoices/inv-1/supplier-messages"],
+    ["POST", "/api/invoices/inv-1/supplier-messages"],
     ["POST", "/api/goods-receipts/gr-1/attachments/MSG-AAAA-BBBB-CCCC/1/url"],
     // Decision 0660: Conversations.
     ["GET", "/api/receipt-conversations"],

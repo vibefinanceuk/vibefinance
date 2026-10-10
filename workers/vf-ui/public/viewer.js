@@ -18,6 +18,7 @@ import { processRow } from "/process-row.js";
 import { buildActivityTab } from "/activity.js";
 import { buildCollaboratorsControl } from "/collaborators.js";
 import { buildAttachmentsTab } from "/attachments.js";
+import { buildSupplierTab, fetchSupplierChat, openAskSupplier, supplierQueryText } from "/supplier-chat.js";
 import { pageViewer } from "/page-renderer.js";
 import { connectFields, fieldKind, markField } from "/field-link.js";
 import { lineNetSuggestion } from "/line-calc.js";
@@ -254,6 +255,21 @@ function reasonLinePanel() {
 }
 
 /**
+ * **Waiting on the supplier — decision 0721.** Ask supplier leaves the
+ * invoice and the task where they are; this says, until the supplier
+ * answers in the network, that a question is out and who asked it.
+ */
+function supplierQueryPanel() {
+  const query = stored.supplierQuery;
+  if (!query) return null;
+  const mark = icon("ask_supplier");
+  mark.setAttribute("aria-hidden", "true");
+  return el("div", { class: "panel reasonline supplierquery" }, [
+    el("div", { class: "reasonline-row" }, [el("span", { class: "reasonline-icon" }, [mark]), el("span", { text: supplierQueryText(query) })]),
+  ]);
+}
+
+/**
  * **Your share of a split line — decision 0551.** An approval task for a
  * split line (0548) is for some of its rows: the ones whose approver you
  * are (Cost-Object mode) or the ones a rule matched (0550). This names
@@ -354,6 +370,8 @@ export async function loadInvoice(invoiceId) {
   stored = { facts: {}, lines: [], document: null };
   exceptions = [];
   confirms = [];
+  // Decision 0721 — the conversation with the supplier, asked alongside the invoice.
+  const supplierChat = fetchSupplierChat(invoiceId);
   try {
     // `?locale=` — decision 0478. The viewer's own language picker
     // (currentLocale(), decision 0302/0412), not vf-app's own
@@ -407,6 +425,10 @@ export async function loadInvoice(invoiceId) {
       costObjectRule: body.costObjectRule === "exclusive" ? "exclusive" : "both",
       // Decision 0547 — the supplier site's spend is project-only expenditure.
       supplierProjectOnly: body.supplierProjectOnly === true,
+      // Decision 0721 — a question to the supplier still waiting for their answer.
+      supplierQuery: body.supplierQuery ?? null,
+      // And the conversation itself: whether the Supplier tab and Ask supplier are offered.
+      supplierChat: await supplierChat,
     };
     // **What is wrong on arrival**, not only after saving. Somebody
     // opening a document with three failures should be told, rather
@@ -3207,6 +3229,26 @@ function taskActionButtons(task, onClose) {
           }),
         ]
       : []),
+    /**
+     * **Ask supplier — decision 0721.** Beside Return to supplier, and
+     * unlike it the invoice and the task stay where they are. Offered
+     * only when somebody at this supplier is linked in the network for
+     * the invoice's company (`canWrite`). Not a server action: what it
+     * may do is decided by its own route.
+     */
+    ...(task.subject?.id && stored.supplierChat?.canWrite
+      ? [
+          actionLink("ask_supplier", {
+            onclick: () =>
+              openAskSupplier(
+                task.subject.id,
+                stored.supplierChat,
+                stored.lines.map((l, i) => l.lineNumber ?? i + 1),
+                { onAsked: () => openViewer(task, onClose) }
+              ),
+          }),
+        ]
+      : []),
   ];
 }
 
@@ -3297,6 +3339,16 @@ export function buildDocTabs(invoiceId) {
   const tabs = [{ key: "doc", label: t("viewer.document"), pane: docPane }];
   tabs.push({ key: "attachments", label: t("viewer.attachmentstab"), pane: attachments.content, onSelect: attachments.open });
   tabs.push({ key: "timeline", label: t("activity.timelinetab"), pane: timelinePane, badge: countBadge });
+  /**
+   * **Supplier — decision 0721.** What is written to the supplier, and
+   * what they answer, in its own tab: it leaves the company, so it is
+   * kept apart from the internal Timeline / Chat. Offered only when the
+   * conversation can be had or already has been.
+   */
+  if (stored.supplierChat?.available) {
+    const supplierTab = buildSupplierTab(invoiceId, stored.supplierChat);
+    tabs.push({ key: "supplier", label: t("viewer.suppliertab"), pane: el("div", { class: "vtimeline" }, [supplierTab.content]), badge: supplierTab.countBadge });
+  }
 
   /**
    * **Toggled directly, not re-rendered** — switching tabs must not
@@ -4941,7 +4993,7 @@ export async function openViewer(task, onClose) {
   // beneath both rather than confined to this column. (Decision
   // 0392 above changes what those areas are once popped out.)
   columnsEl.append(
-    el("div", { class: "c-process" }, [workflowErrorPanel(), reasonLinePanel(), splitSharePanel(), progressRow()].filter(Boolean)),
+    el("div", { class: "c-process" }, [workflowErrorPanel(), reasonLinePanel(), supplierQueryPanel(), splitSharePanel(), progressRow()].filter(Boolean)),
     el("div", { class: "c-document" }, [
       documentPanel(task, setDocPoppedOut),
       exceptionPanel(),

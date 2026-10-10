@@ -23,7 +23,8 @@
 --            route_messages and their parts/events (the Route monitor's
 --            own history, and the samples mappings were built from)
 --   CLEARED: every invoice, its lines, documents, working pages (0690),
---            where its values are on the page (0701), comments, keyed fields,
+--            where its values are on the page (0701), comments, the supplier
+--            conversation (0721), keyed fields,
 --            overrides, coding splits and saved PO line pairings;
 --            every process instance, stage visit and task, and every
 --            task's Timeline events; supplier-return emails; the intake
@@ -46,6 +47,7 @@
 -- This session has no Cloudflare credentials and cannot run this. You run it.
 
 -- 0. Newer tables pointing at tasks, instances and invoices.
+DELETE FROM supplier_messages;           -- -> invoice_headers (supplier conversation, 0721)
 DELETE FROM task_action_events;          -- -> tasks (Timeline actions, 0083-0094)
 DELETE FROM absence_moves;               -- -> tasks (0641; the absences stay)
 DELETE FROM supplier_return_emails;      -- -> tasks, process_instances (0498)

@@ -2,7 +2,7 @@
 
 **Status: agreed**, 10 October 2026. Direction (Dan: *"I'd prefer the Live fan-out approach
 as well. No duplication of customer data"*) and the decisions in §7 agreed the same day, with
-access scoped to a company within a customer (§6). Phase 1 step 1 built as decision 0713, step 2 as 0714, step 3 as 0715, step 4 as 0717 (vf-portal, at network.vibefinance-ai.com).
+access scoped to a company within a customer (§6). Phase 1 step 1 built as decision 0713, step 2 as 0714, step 3 as 0715, step 4 as 0717 (vf-portal, at network.vibefinance-ai.com). Phase 2a (the conversation) as 0721.
 
 ---
 
@@ -182,6 +182,10 @@ is not in the first phase.
 
 **Phase 2: collaboration.** Messages both ways on the Timeline; Return to supplier as a
 portal query; a corrected document against a query.
+
+- **2a, built as 0721:** the invoice's own Supplier tab, Ask supplier (the invoice and task
+  stay put), Query raised in the network until the supplier replies, both sides by email.
+- **2b, next:** a corrected PDF attached to a supplier's reply.
 
 **Later phases**, in an order to choose: invoice submission through the portal; remittance
 detail; bank detail changes as approved requests.

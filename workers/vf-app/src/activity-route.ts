@@ -464,7 +464,7 @@ export async function handleGetActivity(db: D1Database, invoiceId: string, viewe
     return { status: 404, body: { error: `document ${invoiceId} does not exist` } };
   }
 
-  const [received, stageCompletions, ruleFirings, comments, taskActions, taskEnded, erpExports, reminders, receiptClosed, fromDocument] = await Promise.all([
+  const [received, stageCompletions, ruleFirings, comments, taskActions, taskEnded, erpExports, reminders, receiptClosed, fromDocument, supplierMessages] = await Promise.all([
     receivedEvent(db, invoiceId),
     stageCompletedEvents(db, invoiceId),
     ruleFiredEvents(db, invoiceId),
@@ -486,10 +486,12 @@ export async function handleGetActivity(db: D1Database, invoiceId: string, viewe
     receiptClosedEvents(db, invoiceId),
     // Decision 0701: a value a person took from the document with the box, and kept.
     regionTimeline(db, invoiceId) as Promise<ActivityItem[]>,
+    // Decision 0721: the conversation with the supplier, one line each; the words are on the Supplier tab.
+    supplierMessageEvents(db, invoiceId),
   ]);
 
   // Decision 0674: every moment in one form, ordered as time, not text.
-  const items = chronological([...received, ...stageCompletions, ...ruleFirings, ...comments, ...taskActions, ...taskEnded, ...erpExports, ...reminders, ...receiptClosed, ...fromDocument]);
+  const items = chronological([...received, ...stageCompletions, ...ruleFirings, ...comments, ...taskActions, ...taskEnded, ...erpExports, ...reminders, ...receiptClosed, ...fromDocument, ...supplierMessages]);
 
   return { status: 200, body: { items } };
 }
@@ -528,4 +530,34 @@ export async function handlePostComment(
     .run();
 
   return { status: 201, body: { id, invoiceId, authorId, body: text.trim() } };
+}
+
+/**
+ * **The supplier conversation on the Timeline — decision 0721.** One line
+ * per message: who asked or wrote to the supplier, or that the supplier
+ * replied and who was emailed. The words themselves stay on the Supplier
+ * tab, apart from the internal chat.
+ */
+async function supplierMessageEvents(db: D1Database, invoiceId: string): Promise<ActivityItem[]> {
+  const rows = (
+    await db
+      .prepare(
+        `SELECT m.direction, m.kind, m.author_name, m.created_at AS at, m.emailed_json, s.name AS supplier_name
+         FROM supplier_messages m LEFT JOIN suppliers s ON s.id = m.supplier_id
+         WHERE m.invoice_id = ?`
+      )
+      .bind(invoiceId)
+      .all<{ direction: string; kind: string; author_name: string; at: string; emailed_json: string | null; supplier_name: string | null }>()
+  ).results;
+  return rows.map(
+    (r) =>
+      ({
+        kind: "action_taken",
+        at: r.at,
+        action: r.direction === "from_supplier" ? "supplier_replied" : r.kind === "question" ? "supplier_asked" : "supplier_written",
+        userName: r.author_name,
+        supplierName: r.supplier_name ?? "",
+        comment: r.emailed_json ? (JSON.parse(r.emailed_json) as string[]).join(", ") : null,
+      }) as unknown as ActivityItem
+  );
 }

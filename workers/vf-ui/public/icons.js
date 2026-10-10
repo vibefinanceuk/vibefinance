@@ -342,6 +342,9 @@ export const ICONS = {
   // Leaving the building entirely: an arrow out of a box.
   return_to_supplier:
     '<path d="M14 4h6v16h-6M10 8l4 4-4 4M14 12H3"/>',
+  // A speech bubble with a question mark: asking the supplier (decision 0721).
+  ask_supplier:
+    '<path d="M4 5h16v11H9l-5 4z"/><path d="M10 9a2 2 0 1 1 2.6 1.9c-.4.2-.6.5-.6.9v.4"/><path d="M12 14.2v.1"/>',
   // An archive box, NOT a waste bin: discarding archives and deletes
   // nothing.
   discard:

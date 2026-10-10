@@ -339,6 +339,8 @@ const PROXIED_TO_INSTANCE: RegExp[] = [
   /^\/invoices\/[^/]+\/pages\/\d+\/document-url$/,
   // Everything received with an invoice, for the Attachments tab — decision 0571.
   /^\/invoices\/[^/]+\/attachments$/,
+  // Decision 0721 — the conversation with the supplier (GET) and writing to them (POST).
+  /^\/invoices\/[^/]+\/supplier-messages$/,
   /^\/invoices\/[^/]+\/attachments\/[^/]+\/\d+\/url$/,
   // A lassoed part of a page read by the vision model — decision 0699.
   /^\/invoices\/[^/]+\/read-region$/,

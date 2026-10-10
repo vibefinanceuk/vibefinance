@@ -1,4 +1,4 @@
-import { invoice, invoices, me, type Deps } from "./network.js";
+import { invoice, invoices, me, reply, type Deps } from "./network.js";
 
 /**
  * **vf-portal: the supplier network — decision 0717.**
@@ -101,6 +101,12 @@ export default {
     if (url.pathname === "/api/invoices" && request.method === "GET") return signedOutClears(await invoices(deps, session, url.searchParams));
     const one = url.pathname.match(/^\/api\/invoices\/([^/]+)\/([^/]+)$/);
     if (one && request.method === "GET") return signedOutClears(await invoice(deps, session, decodeURIComponent(one[1]), decodeURIComponent(one[2])));
+    // Decision 0721: replying to a customer about one invoice.
+    const message = url.pathname.match(/^\/api\/invoices\/([^/]+)\/([^/]+)\/messages$/);
+    if (message && request.method === "POST") {
+      const body = await request.json().catch(() => ({}));
+      return signedOutClears(await reply(deps, session, decodeURIComponent(message[1]), decodeURIComponent(message[2]), body));
+    }
     const end = url.pathname.match(/^\/api\/links\/([^/]+)\/end$/);
     if (end && request.method === "POST") {
       const res = await licence(`/portal/links/${encodeURIComponent(decodeURIComponent(end[1]))}/end`, { method: "POST", headers: { Authorization: `Bearer ${session}`, "Content-Type": "application/json" }, body: "{}" });

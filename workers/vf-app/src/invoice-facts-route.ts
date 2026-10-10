@@ -801,6 +801,8 @@ export async function handleGetInvoice(
        * fault.
        */
       openTaskReason: await currentOpenTaskReason(db, invoiceId, locale),
+      // Decision 0721: a question to the supplier the invoice is waiting on.
+      supplierQuery: await openSupplierQuery(db, invoiceId),
       /**
        * **Mapped field by field, not spread — a real bug found live.**
        * `...matchedSupplier` was passing the D1 row straight through
@@ -905,4 +907,23 @@ export async function handleGetInvoice(
       },
     },
   };
+}
+
+/**
+ * **Waiting on the supplier — decision 0721.** The last question someone
+ * here asked the supplier, when the supplier has not written since; null
+ * otherwise. Said on the invoice's banner.
+ */
+async function openSupplierQuery(db: D1Database, invoiceId: string): Promise<{ askedAt: string; askedBy: string; supplierName: string | null } | null> {
+  const row = await db
+    .prepare(
+      `SELECT q.created_at, q.author_name, s.name AS supplier_name FROM supplier_messages q
+       LEFT JOIN suppliers s ON s.id = q.supplier_id
+       WHERE q.invoice_id = ? AND q.direction = 'to_supplier' AND q.kind = 'question'
+         AND NOT EXISTS (SELECT 1 FROM supplier_messages r WHERE r.invoice_id = q.invoice_id AND r.direction = 'from_supplier' AND r.created_at >= q.created_at)
+       ORDER BY q.created_at DESC LIMIT 1`
+    )
+    .bind(invoiceId)
+    .first<{ created_at: string; author_name: string; supplier_name: string | null }>();
+  return row ? { askedAt: row.created_at, askedBy: row.author_name, supplierName: row.supplier_name } : null;
 }

@@ -1,6 +1,7 @@
 import { verifyPortalAccess, type PortalAccessClaims } from "@vibefinance/shared";
 import { readLicenceState } from "./licence-cache.js";
 import type { RouteResult } from "./org-route.js";
+import { handlePortalReply, portalMessages, type MessageEmail } from "./supplier-messages.js";
 
 /**
  * **The supplier portal's view of this instance — decision 0714.** Step 2
@@ -68,6 +69,8 @@ interface PortalRow {
   task_count: number;
   exported: number;
   delivered: number;
+  /** The supplier conversation's last word and whether a question waits since (0721). */
+  query_open: number | null;
 }
 
 /**
@@ -81,12 +84,16 @@ interface PortalRow {
  * - a person has had a task on it: `in_review`;
  * - otherwise (no process yet, or nobody has had to look): `received`.
  *
- * `query_raised` comes with the portal's messages (Phase 2) and `paid`
- * with a payment date from the ERP; neither is produced yet.
+ * - the customer has asked (Ask supplier) and the supplier has not
+ *   answered since: `query_raised` (decision 0721).
+ *
+ * `paid` comes with a payment date from the ERP; it is not produced yet.
  */
-export function portalStatusOf(row: Pick<PortalRow, "instance_status" | "cur_seq" | "approval_seq" | "task_count" | "exported" | "delivered">): PortalStatus {
+export function portalStatusOf(row: Pick<PortalRow, "instance_status" | "cur_seq" | "approval_seq" | "task_count" | "exported" | "delivered"> & { query_open?: number | null }): PortalStatus {
   if (row.instance_status === "returned_manually" || row.instance_status === "archived") return "rejected";
   if (row.exported || row.delivered) return "sent_for_payment";
+  // Decision 0721: the customer has asked, and the supplier has not answered since.
+  if (row.query_open && row.instance_status !== "completed") return "query_raised";
   if (row.instance_status === "completed") return "approved";
   if (row.instance_status === "in_progress" && row.approval_seq !== null && row.cur_seq !== null && row.cur_seq > row.approval_seq) return "approved";
   if (row.task_count > 0) return "in_review";
@@ -104,7 +111,9 @@ const SELECT = `
              AND (s.uses_approval_hierarchy = 1 OR s.required_permission = 'AP.Approve')) AS approval_seq,
          (SELECT count(*) FROM tasks t JOIN stage_visits sv ON sv.id = t.stage_visit_id WHERE sv.process_instance_id = pi.id) AS task_count,
          EXISTS (SELECT 1 FROM erp_export_invoices e WHERE e.invoice_id = h.id) AS exported,
-         EXISTS (SELECT 1 FROM destination_deliveries d WHERE d.invoice_id = h.id AND d.status = 'delivered') AS delivered
+         EXISTS (SELECT 1 FROM destination_deliveries d WHERE d.invoice_id = h.id AND d.status = 'delivered') AS delivered,
+         EXISTS (SELECT 1 FROM supplier_messages q WHERE q.invoice_id = h.id AND q.direction = 'to_supplier' AND q.kind = 'question'
+                 AND NOT EXISTS (SELECT 1 FROM supplier_messages r WHERE r.invoice_id = h.id AND r.direction = 'from_supplier' AND r.created_at >= q.created_at)) AS query_open
   FROM invoice_headers h
   LEFT JOIN org_units ou ON ou.id = h.org_unit_id
   LEFT JOIN process_instances pi ON pi.id = (
@@ -199,5 +208,13 @@ export async function getPortalInvoice(db: D1Database, claims: PortalAccessClaim
       netAmount: num(f["BT-131"]),
     };
   });
-  return { status: 200, body: { invoice: { ...summary(row), lines } } };
+  return { status: 200, body: { invoice: { ...summary(row), lines, messages: await portalMessages(db, invoiceId) } } };
+}
+
+/** `POST /portal/invoices/:id/messages` — the supplier writes about one of their invoices (0721). */
+export async function replyOnPortalInvoice(db: D1Database, claims: PortalAccessClaims, invoiceId: string, body: Record<string, unknown>, email: MessageEmail): Promise<RouteResult> {
+  const { sql, binds } = scope(claims);
+  const mine = await db.prepare(`SELECT h.id FROM invoice_headers h WHERE h.id = ? AND ${sql}`).bind(invoiceId, ...binds).first();
+  if (!mine) return { status: 404, body: { error: "not found" } };
+  return handlePortalReply(db, claims, invoiceId, body, email);
 }

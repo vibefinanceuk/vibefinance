@@ -147,6 +147,7 @@ export default defineConfig({
       "/readback.js": resolve(__dirname, "public/readback.js"),
       "/activity.js": resolve(__dirname, "public/activity.js"),
       "/attachments.js": resolve(__dirname, "public/attachments.js"),
+      "/supplier-chat.js": resolve(__dirname, "public/supplier-chat.js"),
       "/create.js": resolve(__dirname, "public/create.js"),
       "/https-keys.js": resolve(__dirname, "public/https-keys.js"),
       "/destinations.js": resolve(__dirname, "public/destinations.js"),

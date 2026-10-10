@@ -86,6 +86,7 @@ export async function openInvoice(inv) {
       fact("network.col.po", body.purchaseOrder),
       fact("network.receivedat", (body.receivedAt ?? "").slice(0, 10)),
     ]),
+    conversation(body, inv),
     lines.length
       ? el("div", { class: "tablewrap" }, [
           el("table", {}, [
@@ -117,6 +118,54 @@ let customers = [];
 /** A customer and its companies, in a line: past three companies, how many, with every name on hover (0718). */
 export function customerLabel(c) {
   return c.companies.length <= 3 ? `${c.customer} (${c.companies.join(", ")})` : `${c.customer} (${t("network.companies.count", { n: c.companies.length })})`;
+}
+
+/**
+ * **The conversation with the customer about this invoice — decision 0721.**
+ * Their questions and anything either side has written, then a reply box.
+ * Replying ends a "Query raised".
+ */
+export function conversation(body, inv) {
+  const messages = body.messages ?? [];
+  const when = (at) => (at ?? "").slice(0, 16).replace("T", " ");
+  const list = messages.map((m) =>
+    el("div", { class: `msg ${m.from === "customer" ? "them" : "us"}` }, [
+      el("div", { class: "who" }, [
+        el("span", { text: m.from === "customer" ? `${body.customer}${m.lines?.length ? ` · ${t("network.msg.aboutlines", { lines: m.lines.join(", ") })}` : ""}` : m.authorName ?? body.supplier ?? "" }),
+        el("span", { class: "muted", text: when(m.at) }),
+      ]),
+      el("div", { text: m.body }),
+    ])
+  );
+  const box = el("textarea", { "aria-label": t("network.msg.write"), placeholder: t("network.msg.write") });
+  const problem = el("div", { class: "problem", role: "alert" });
+  const send = el("button", {
+    class: "primary",
+    text: t("network.msg.send"),
+    onclick: async () => {
+      problem.textContent = "";
+      if (!box.value.trim()) return;
+      send.disabled = true;
+      const { res } = await api(`/invoices/${encodeURIComponent(inv.linkId)}/${encodeURIComponent(inv.id)}/messages`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ body: box.value }),
+      });
+      send.disabled = false;
+      if (!res.ok) {
+        problem.textContent = t("network.msg.failed");
+        return;
+      }
+      document.querySelector(".backdrop")?.remove();
+      await openInvoice(inv);
+      loadInvoices();
+    },
+  });
+  return el("section", { class: "conversation" }, [
+    el("h3", { text: t(messages.length ? "network.msg.title" : "network.msg.start", { customer: body.customer }) }),
+    ...list,
+    el("div", { class: "reply" }, [box, el("div", { class: "replybar" }, [el("span", { class: "muted sm", text: t("network.msg.note", { customer: body.customer }) }), send]), problem]),
+  ]);
 }
 
 async function showList() {

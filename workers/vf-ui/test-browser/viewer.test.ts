@@ -8109,3 +8109,43 @@ describe("split coding in the Coding pop-out — decision 0548", () => {
     expect(document.getElementById("viewer-note")?.textContent).toBe("Not saved. The split on line 1 does not add up to the line's net amount.");
   });
 });
+
+/**
+ * **The conversation with the supplier — decision 0721.** The Supplier
+ * tab and Ask supplier appear only when somebody at the supplier is
+ * linked in the network; the banner says while a question waits.
+ */
+describe("the supplier conversation on an invoice — decision 0721", () => {
+  const CHAT = { available: true, canWrite: true, supplierName: "Munch GmbH", recipients: ["jo@munch.example"], awaiting: true, messages: [] };
+  async function openWith(chat: unknown, supplierQuery: unknown = null) {
+    stubFetch({
+      "/api/code-lists": { fields: {} },
+      "/api/ui-strings": { locale: "en", strings: { ...STRINGS.strings, "viewer.suppliertab": "Supplier", "action.ask_supplier": "Ask supplier", "supplierchat.banner": "Asked {supplier} ({who}), awaiting their reply" } },
+      "/api/field-visibility": FIELDS,
+      "/api/invoices/inv-1": { facts: {}, lines: [{ lineNumber: 1, facts: {} }], validation: { passed: true, checked: [], failures: [] }, supplierQuery },
+      "/api/invoices/inv-1/supplier-messages": chat,
+      "/api/documents/inv-1/activity": { items: [] },
+      "/api/invoices/inv-1/progress": { inProcess: false, stages: [] },
+    });
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { openViewer } = await import("/viewer.js");
+    await openViewer(TASK, () => {});
+  }
+  const tabLabels = () => [...document.querySelectorAll(".doctab span:first-child")].map((s) => s.textContent);
+  const actionLabels = () => [...document.querySelectorAll(".actionlink span")].map((s) => s.textContent);
+
+  it("offers the Supplier tab and Ask supplier, and says a question is waiting", async () => {
+    await openWith(CHAT, { askedAt: "2026-10-10T09:00:00Z", askedBy: "Alice McDonald", supplierName: "Munch GmbH" });
+    expect(tabLabels()).toContain("Supplier");
+    expect(actionLabels()).toContain("Ask supplier");
+    expect(document.querySelector(".supplierquery")?.textContent).toBe("Asked Munch GmbH (Alice McDonald), awaiting their reply");
+  });
+
+  it("offers neither when the conversation cannot be had", async () => {
+    await openWith({ ...CHAT, available: false, canWrite: false, recipients: [] });
+    expect(tabLabels()).not.toContain("Supplier");
+    expect(actionLabels()).not.toContain("Ask supplier");
+    expect(document.querySelector(".supplierquery")).toBeNull();
+  });
+});

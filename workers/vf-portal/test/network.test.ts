@@ -1,7 +1,7 @@
 import { env, SELF } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 import worker, { readSession, type Env } from "../src/index.js";
-import { invoice, invoices, me, type Deps } from "../src/network.js";
+import { invoice, invoices, me, reply, type Deps } from "../src/network.js";
 
 /**
  * **The supplier network — decision 0717.** vf-licence and the customers'
@@ -148,5 +148,24 @@ describe("the Worker", () => {
     const res = await call(e, "/api/me", { headers: { Cookie: "vfn_session=old" } });
     expect(res.status).toBe(401);
     expect(res.headers.get("Set-Cookie")).toContain("Max-Age=0");
+  });
+});
+
+describe("replying — decision 0721", () => {
+  it("posts to the customer that link is for, with its own token, the message alone", async () => {
+    const posted: { url: string; auth: string | null; body: string }[] = [];
+    const d = deps({});
+    d.instance = async (url, init) => {
+      posted.push({ url, auth: new Headers(init.headers).get("Authorization"), body: String(init.body) });
+      return Response.json({ messages: [] }, { status: 201 });
+    };
+    const r = await reply(d, "good", "pl-globex", "g1", { body: "Corrected invoice to follow.", extra: "ignored" });
+    expect(r.status).toBe(201);
+    expect(posted).toEqual([{ url: "https://globex.example/portal/invoices/g1/messages", auth: "Bearer tok-globex", body: '{"body":"Corrected invoice to follow."}' }]);
+  });
+
+  it("not for a link that is not theirs, and signed out for a stale session", async () => {
+    expect((await reply(deps({}), "good", "pl-someone", "i1", { body: "x" })).status).toBe(404);
+    expect((await reply(deps({}), "stale", "pl-acme", "i1", { body: "x" })).status).toBe(401);
   });
 });

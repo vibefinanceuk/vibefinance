@@ -53,6 +53,15 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-sp
 .facts div span { display: block; color: var(--text-muted); font-size: var(--text-sm); }
 .comment { border-left: 3px solid var(--border-danger); padding: 8px 12px; background: var(--bg-danger); margin: 12px 0; }
 
+/* The conversation with a customer — decision 0721. */
+.conversation h3 { font-size: var(--text-base); margin: 18px 0 6px; }
+.msg { border: 0.5px solid var(--border); border-radius: 10px; padding: 9px 12px; margin: 8px 0; font-size: var(--text-sm); }
+.msg.them { background: var(--bg-warning); margin-right: 40px; }
+.msg.us { background: var(--severity-ok-bg); margin-left: 40px; }
+.msg .who { font-weight: 700; display: flex; justify-content: space-between; gap: 10px; }
+.reply textarea { width: 100%; min-height: 80px; font: inherit; font-size: var(--text-sm); padding: 8px 10px; border-radius: var(--radius); border: 0.5px solid var(--border-strong); background: var(--surface-1); color: var(--text-primary); resize: vertical; }
+.replybar { display: flex; justify-content: space-between; align-items: center; margin-top: 8px; gap: 10px; }
+
 @media (max-width: 640px) {
   .topbar { padding: 10px 16px; flex-wrap: wrap; }
   .hide-narrow { display: none; }

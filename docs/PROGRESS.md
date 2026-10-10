@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 10 October 2026 (decision 0720). A living document: what
+Last updated 10 October 2026 (decision 0721). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,15 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### The conversation with the supplier (0721)
+
+Supplier portal Phase 2a. An invoice's Supplier tab holds what is written to the supplier and
+their replies; Ask supplier asks a question without moving the invoice; the supplier sees Query
+raised in the network and replies there; both sides are emailed. Phase 2b (a corrected PDF
+with a reply) is later.
+
+Full reasoning is in decision 0721.
 
 ### The supplier portal's actions as small icons (0720)
 
