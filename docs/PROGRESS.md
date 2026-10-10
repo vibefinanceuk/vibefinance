@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 10 October 2026 (decision 0723). A living document: what
+Last updated 10 October 2026 (decision 0724). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,14 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Return to supplier in the supplier network (0724)
+
+A returned invoice shows as Returned (apart from Rejected, now only discarded). When the
+supplier's people are linked, the return is a message in the network with its reason and
+comment, they are emailed with a link, and they can reply.
+
+Full reasoning is in decision 0724.
 
 ### The supplier network's top bar and message colours (0723)
 

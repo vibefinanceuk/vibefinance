@@ -19,7 +19,7 @@ import { handlePortalReply, portalMessages, type MessageEmail } from "./supplier
 export const PORTAL_FEATURE = "supplier_portal";
 
 /** What a supplier is told, in a vocabulary fixed for every customer (design §5). */
-export const PORTAL_STATUSES = ["received", "in_review", "query_raised", "approved", "sent_for_payment", "paid", "rejected"] as const;
+export const PORTAL_STATUSES = ["received", "in_review", "query_raised", "returned", "approved", "sent_for_payment", "paid", "rejected"] as const;
 export type PortalStatus = (typeof PORTAL_STATUSES)[number];
 
 export type PortalAuth = { ok: true; claims: PortalAccessClaims } | { ok: false; status: number; body: Record<string, unknown> };
@@ -77,8 +77,9 @@ interface PortalRow {
  * **Where an invoice is, in the supplier's words.** From facts that are
  * already there, in order:
  *
- * - returned to the supplier, or discarded: `rejected`, with the comment
- *   the customer wrote for the supplier when it was returned (0498);
+ * - returned to the supplier: `returned` (decision 0724), with the comment
+ *   the customer wrote for the supplier (0498);
+ * - discarded: `rejected`;
  * - delivered to the ERP or a Destination: `sent_for_payment`;
  * - finished, or past the first approval stage of its process: `approved`;
  * - a person has had a task on it: `in_review`;
@@ -90,7 +91,9 @@ interface PortalRow {
  * `paid` comes with a payment date from the ERP; it is not produced yet.
  */
 export function portalStatusOf(row: Pick<PortalRow, "instance_status" | "cur_seq" | "approval_seq" | "task_count" | "exported" | "delivered"> & { query_open?: number | null }): PortalStatus {
-  if (row.instance_status === "returned_manually" || row.instance_status === "archived") return "rejected";
+  // Decision 0724: returned is "correct it and send it again", apart from discarded (rejected).
+  if (row.instance_status === "returned_manually") return "returned";
+  if (row.instance_status === "archived") return "rejected";
   if (row.exported || row.delivered) return "sent_for_payment";
   // Decision 0721: the customer has asked, and the supplier has not answered since.
   if (row.query_open && row.instance_status !== "completed") return "query_raised";
@@ -157,7 +160,7 @@ function summary(row: PortalRow) {
     receivedAt: row.created_at,
     status,
     // What the customer wrote for the supplier when it returned the invoice (0498). Nothing else.
-    comment: status === "rejected" ? row.supplier_comment : null,
+    comment: status === "rejected" || status === "returned" ? row.supplier_comment : null,
   };
 }
 
@@ -208,7 +211,11 @@ export async function getPortalInvoice(db: D1Database, claims: PortalAccessClaim
       netAmount: num(f["BT-131"]),
     };
   });
-  return { status: 200, body: { invoice: { ...summary(row), lines, messages: await portalMessages(db, invoiceId) } } };
+  const messages = await portalMessages(db, invoiceId);
+  // Decision 0724: a return in the conversation already says the reason and the comment.
+  const summarised = summary(row);
+  if (messages.some((m) => m.kind === "return")) summarised.comment = null;
+  return { status: 200, body: { invoice: { ...summarised, lines, messages } } };
 }
 
 /** `POST /portal/invoices/:id/messages` — the supplier writes about one of their invoices (0721). */

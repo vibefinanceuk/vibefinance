@@ -67,7 +67,7 @@ function messageRow(m, chat) {
     node.classList.add("supplierreply");
     return node;
   }
-  const node = chatBubble({ name: `${m.authorName ?? ""}${m.kind === "question" ? ` · ${t("supplierchat.question")}` : ""}${lines}`, body: m.body, at: m.at, mine: true });
+  const node = chatBubble({ name: `${m.authorName ?? ""}${m.kind === "question" ? ` · ${t("supplierchat.question")}` : m.kind === "return" ? ` · ${t("supplierchat.returned")}` : ""}${lines}`, body: m.body, at: m.at, mine: true });
   const sent = m.emailError
     ? fill("supplierchat.emailfailed", { error: m.emailError })
     : m.emailed?.length

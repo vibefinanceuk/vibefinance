@@ -80,7 +80,7 @@ export function setSignedIn(signedIn) {
 export function openHelp() {
   document.getElementById("helppanel")?.remove();
   const close = () => panel.remove();
-  const statuses = ["received", "in_review", "query_raised", "approved", "sent_for_payment", "paid", "rejected"];
+  const statuses = ["received", "in_review", "query_raised", "returned", "approved", "sent_for_payment", "paid", "rejected"];
   const panel = el("aside", { class: "helppanel", id: "helppanel", role: "dialog", "aria-label": t("network.help") }, [
     el("div", { class: "helphead" }, [el("h2", { text: t("network.help") }), button(icon("close"), t("network.close"), close)]),
     el("p", { text: t("network.help.intro") }),

@@ -162,6 +162,7 @@ import layoutResetsSql from "../../../migrations/0155_supplier_layout_resets.sql
 import senderIndexSql from "../../../migrations/0156_sender_lookup_index.sql?raw";
 import combinedLineTasksSql from "../../../migrations/0157_combined_line_tasks.sql?raw";
 import supplierMessagesSql from "../../../migrations/0158_supplier_messages.sql?raw";
+import supplierMessagesReturnSql from "../../../migrations/0159_supplier_messages_return.sql?raw";
 
 // Another known divergence from production, on top of the one below:
 // D1's exec() splits its input by newline and executes each non-empty
@@ -524,6 +525,7 @@ export async function applyTestSchema(): Promise<void> {
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(senderIndexSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(combinedLineTasksSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(supplierMessagesSql)));
+  await env.DB.exec(toOneStatementPerLine(stripSqlComments(supplierMessagesReturnSql)));
 }
 
 /**

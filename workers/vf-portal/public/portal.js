@@ -7,7 +7,7 @@ import { mountTopbar, setSignedIn } from "/topbar.js";
  * to, asked of each customer live; an invoice opens with its lines.
  */
 
-export const STATUSES = ["received", "in_review", "query_raised", "approved", "sent_for_payment", "paid", "rejected"];
+export const STATUSES = ["received", "in_review", "query_raised", "returned", "approved", "sent_for_payment", "paid", "rejected"];
 
 const $ = (id) => document.getElementById(id);
 
@@ -132,10 +132,16 @@ export function conversation(body, inv) {
   const list = messages.map((m) =>
     el("div", { class: `msg ${m.from === "customer" ? "them" : "us"}` }, [
       el("div", { class: "who" }, [
-        el("span", { text: m.from === "customer" ? `${body.customer}${m.lines?.length ? ` · ${t("network.msg.aboutlines", { lines: m.lines.join(", ") })}` : ""}` : m.authorName ?? body.supplier ?? "" }),
+        el("span", {
+          text:
+            m.from === "customer"
+              ? // Decision 0724: a return says so.
+                `${body.customer}${m.kind === "return" ? ` · ${t("network.msg.returned")}` : ""}${m.lines?.length ? ` · ${t("network.msg.aboutlines", { lines: m.lines.join(", ") })}` : ""}`
+              : m.authorName ?? body.supplier ?? "",
+        }),
         el("span", { class: "muted", text: when(m.at) }),
       ]),
-      el("div", { text: m.body }),
+      el("div", { class: "msgbody", text: m.body }),
     ])
   );
   const box = el("textarea", { "aria-label": t("network.msg.write"), placeholder: t("network.msg.write") });

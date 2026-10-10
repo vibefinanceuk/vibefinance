@@ -4609,10 +4609,16 @@ export default {
       } catch {
         return json({ error: t("invalidJsonBody", resolveLocale(env.LOCALE)) }, 400);
       }
-      const result = await handleReturnToSupplier(db, returnSupplierMatch[1], (body ?? {}) as Record<string, unknown>, auth, {
-        apiKey: env.RESEND_API_KEY ?? null,
-        fromAddress: env.RESEND_FROM_ADDRESS ?? null,
-      });
+      // Decision 0724: and in the supplier network, when the supplier's people are linked there.
+      const networkLink = env.LICENCE_SERVICE && env.ENVIRONMENT_ID && env.VF_LICENCE_API_KEY ? { service: env.LICENCE_SERVICE, environmentId: env.ENVIRONMENT_ID, apiKey: env.VF_LICENCE_API_KEY } : null;
+      const result = await handleReturnToSupplier(
+        db,
+        returnSupplierMatch[1],
+        (body ?? {}) as Record<string, unknown>,
+        auth,
+        { apiKey: env.RESEND_API_KEY ?? null, fromAddress: env.RESEND_FROM_ADDRESS ?? null },
+        { link: networkLink, email: messageEmail(env) }
+      );
       return json(result.body, result.status);
     }
 

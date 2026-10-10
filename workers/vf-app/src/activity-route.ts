@@ -544,7 +544,7 @@ async function supplierMessageEvents(db: D1Database, invoiceId: string): Promise
       .prepare(
         `SELECT m.direction, m.kind, m.author_name, m.created_at AS at, m.emailed_json, s.name AS supplier_name
          FROM supplier_messages m LEFT JOIN suppliers s ON s.id = m.supplier_id
-         WHERE m.invoice_id = ?`
+         WHERE m.invoice_id = ? AND m.kind != 'return'`
       )
       .bind(invoiceId)
       .all<{ direction: string; kind: string; author_name: string; at: string; emailed_json: string | null; supplier_name: string | null }>()

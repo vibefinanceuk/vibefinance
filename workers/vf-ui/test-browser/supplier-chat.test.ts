@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import conversationSql from "../../vf-licence/migrations/0326_supplier_conversation_strings.sql?raw";
+import returnSql from "../../vf-licence/migrations/0328_return_in_network_strings.sql?raw";
 
 /**
  * **The conversation with the supplier — decision 0721**: the invoice's
@@ -8,7 +9,7 @@ import conversationSql from "../../vf-licence/migrations/0326_supplier_conversat
  */
 
 const strings: Record<string, string> = { "action.close": "Close" };
-for (const m of conversationSql.matchAll(/\('([^']+)', 'en', '((?:[^']|'')*)'\)/g)) strings[m[1]] = m[2].replace(/''/g, "'");
+for (const m of (conversationSql + returnSql).matchAll(/\('([^']+)', 'en', '((?:[^']|'')*)'\)/g)) strings[m[1]] = m[2].replace(/''/g, "'");
 
 const CHAT = {
   available: true,
@@ -83,6 +84,15 @@ describe("the Supplier tab", () => {
     expect(bubbles[1].classList.contains("mine")).toBe(false);
     expect(bubbles[1].querySelector(".activitywho span")?.textContent).toBe("jo@lager-nord.example · Lager Nord GmbH");
     expect(content.querySelector(".tlcard")).toBeNull();
+  });
+
+  it("labels a return to the supplier, its reason and comment on their own lines (decision 0724)", async () => {
+    stub(() => ({ status: 201, body: {} }));
+    const { buildSupplierTab } = await load();
+    const ret = { id: "m3", direction: "to_supplier", kind: "return", authorName: "Alice McDonald", authorEmail: null, body: "Duplicate invoice\n\nPlease send a credit note.", lines: null, at: "2026-10-10T11:00:00Z", emailed: ["jo@lager-nord.example"], emailError: null };
+    const { content } = buildSupplierTab("inv-1", { ...CHAT, awaiting: false, messages: [ret] });
+    expect(content.querySelector(".activitywho span")?.textContent).toBe("Alice McDonald · Returned to supplier");
+    expect(content.querySelector(".activitybody")?.textContent).toBe("Duplicate invoice\n\nPlease send a credit note.");
   });
 
   it("sends what is written and redraws from the server", async () => {

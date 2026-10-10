@@ -147,7 +147,7 @@ describe("the status, in the supplier's words", () => {
     ["finished", { instance_status: "completed" }, "approved"],
     ["exported to the ERP", { instance_status: "completed", exported: 1 }, "sent_for_payment"],
     ["delivered to a Destination", { instance_status: "completed", delivered: 1 }, "sent_for_payment"],
-    ["returned to the supplier", { instance_status: "returned_manually", task_count: 1 }, "rejected"],
+    ["returned to the supplier", { instance_status: "returned_manually", task_count: 1 }, "returned"],
     ["discarded", { instance_status: "archived" }, "rejected"],
   ])("%s", (_name, over, expected) => {
     expect(portalStatusOf({ ...base, ...over } as never)).toBe(expected);
@@ -160,7 +160,7 @@ describe("the status, in the supplier's words", () => {
       "INSERT INTO process_instances (id, process_id, subject_type, subject_id, current_stage_id, status, end_reason, supplier_comment) VALUES ('pi', 'p', 'invoice', 'inv-uk', 's1', 'returned_manually', 'Internal: wrong entity', 'Please re-issue to Acme UK Ltd with our PO number.')"
     ).run();
     const one = (await (await get("/portal/invoices/inv-uk", await access())).json()) as { invoice: { status: string; comment: string } };
-    expect(one.invoice).toMatchObject({ status: "rejected", comment: "Please re-issue to Acme UK Ltd with our PO number." });
+    expect(one.invoice).toMatchObject({ status: "returned", comment: "Please re-issue to Acme UK Ltd with our PO number." });
     expect(JSON.stringify(one)).not.toContain("Internal");
     expect(JSON.stringify(one)).not.toContain("Matching");
   });

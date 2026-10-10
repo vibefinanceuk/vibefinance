@@ -1,4 +1,6 @@
 import type { RouteResult } from "./org-route.js";
+import type { LicenceLink } from "./invitations-route.js";
+import { networkRecipientsFor, recordReturnMessage, type MessageEmail } from "./supplier-messages.js";
 import type { AuthenticatedUser } from "./user-auth.js";
 import { hasPermission } from "./enforce.js";
 import type { Permission } from "./permissions.js";
@@ -415,7 +417,9 @@ export async function handleReturnToSupplier(
   taskId: string,
   body: ReturnToSupplierBody,
   user: AuthenticatedUser,
-  emailConfig: OutboundEmailConfig
+  emailConfig: OutboundEmailConfig,
+  /** Decision 0724: the supplier network, when this deployment can reach vf-licence. */
+  network: { link: LicenceLink | null; email: MessageEmail } | null = null
 ): Promise<RouteResult> {
   const task = await loadOpenTask(db, taskId);
   if (!task) return { status: 404, body: { error: `task ${taskId} does not exist` } };
@@ -474,6 +478,15 @@ export async function handleReturnToSupplier(
     .bind(user.id, now, reasonRow.label, reasonRow.id, commentText, now, instance.id)
     .run();
 
+  /**
+   * **In the supplier network too — decision 0724.** When somebody at the
+   * supplier is linked for the invoice's company, the return is a message
+   * there (the reason and the comment), they are emailed with a link to
+   * it, and the return's own email names the network as well. Best-effort,
+   * as the email: the return has already happened.
+   */
+  const linked = network ? await networkRecipientsFor(db, network.link, instance.subject_id).catch(() => []) : [];
+
   const emailOutcome = await attemptSupplierEmail(db, {
     instanceId: instance.id,
     invoiceId: instance.subject_id,
@@ -483,7 +496,12 @@ export async function handleReturnToSupplier(
     ccApTeam: ccApTeam === true,
     createdBy: user.id,
     emailConfig,
+    networkUrl: linked.length && network ? network.email.networkUrl : null,
   });
+
+  if (linked.length && network) {
+    await recordReturnMessage(db, instance.subject_id, user, reasonRow.label, commentText, linked, emailOutcome.toAddress, network.email).catch(() => undefined);
+  }
 
   return {
     status: 200,
@@ -510,6 +528,8 @@ interface AttemptSupplierEmailArgs {
   ccApTeam: boolean;
   createdBy: string;
   emailConfig: OutboundEmailConfig;
+  /** Decision 0724: named in the email when the supplier's people are linked in the network. */
+  networkUrl?: string | null;
 }
 
 interface SupplierEmailOutcome {
@@ -556,6 +576,7 @@ async function attemptSupplierEmail(
     ``,
     `Reason: ${args.reasonLabel}`,
     ...(args.comment ? [``, args.comment] : []),
+    ...(args.networkUrl ? [``, `See it, and reply, in the VibeFinance supplier network: ${args.networkUrl.replace(/\/+$/, "")}/`] : []),
   ];
   const text = bodyLines.join("\n");
 

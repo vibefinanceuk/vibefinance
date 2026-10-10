@@ -40,7 +40,7 @@ interface InvoiceRow {
 interface MessageRow {
   id: string;
   direction: "to_supplier" | "from_supplier";
-  kind: "question" | "message";
+  kind: "question" | "message" | "return";
   author_user_id: string | null;
   author_email: string | null;
   author_name: string;
@@ -222,6 +222,63 @@ export async function handlePostSupplierMessage(
     .run();
   const row = (await db.prepare("SELECT * FROM supplier_messages WHERE id = ?").bind(id).first<MessageRow>())!;
   return { status: 201, body: { message: view(row) } };
+}
+
+/**
+ * **Return to supplier, in the network — decision 0724.** Who at the
+ * supplier is linked for this invoice's company (none when the portal is
+ * not licensed or nobody is linked).
+ */
+export async function networkRecipientsFor(db: D1Database, link: LicenceLink | null, invoiceId: string): Promise<string[]> {
+  const invoice = await invoiceOf(db, invoiceId);
+  return invoice ? recipientsFor(db, link, invoice) : [];
+}
+
+/**
+ * The return as a message to the supplier (kind `return`): the reason,
+ * then the comment for the supplier. The linked people are emailed with a
+ * link to the network, except `alreadyEmailed` (the supplier record's own
+ * address, which the return's own email already reached). Called only
+ * when somebody is linked.
+ */
+export async function recordReturnMessage(
+  db: D1Database,
+  invoiceId: string,
+  user: { id: string; name: string },
+  reason: string,
+  comment: string | null,
+  recipients: string[],
+  alreadyEmailed: string | null,
+  email: MessageEmail,
+  now = new Date()
+): Promise<void> {
+  const invoice = await invoiceOf(db, invoiceId);
+  if (!invoice) return;
+  const text = comment ? `${reason}\n\n${comment}` : reason;
+  const number = invoice.invoice_number ?? invoiceId;
+  const customer = invoice.company_name ?? "Your customer";
+  const others = recipients.filter((r) => r.toLowerCase() !== (alreadyEmailed ?? "").toLowerCase());
+  const mail = [
+    "Hello,",
+    "",
+    `${customer} has returned invoice ${number} to you.`,
+    "",
+    `Reason: ${reason}`,
+    ...(comment ? ["", comment] : []),
+    "",
+    `See it, and reply, in the VibeFinance supplier network: ${email.networkUrl.replace(/\/+$/, "")}/`,
+    "",
+    "VibeFinance",
+  ].join("\n");
+  const emailError = await send(email, others, `${customer} has returned invoice ${number}`, mail);
+  const emailed = alreadyEmailed && recipients.some((r) => r.toLowerCase() === alreadyEmailed.toLowerCase()) ? [...others, alreadyEmailed] : others;
+  await db
+    .prepare(
+      `INSERT INTO supplier_messages (id, invoice_id, supplier_id, direction, kind, author_user_id, author_name, body, emailed_json, email_error, created_at)
+       VALUES (?, ?, ?, 'to_supplier', 'return', ?, ?, ?, ?, ?, ?)`
+    )
+    .bind(crypto.randomUUID(), invoiceId, invoice.supplier_id, user.id, user.name, text, JSON.stringify(emailed), emailError, now.toISOString())
+    .run();
 }
 
 // ---------------------------------------------------------------------------

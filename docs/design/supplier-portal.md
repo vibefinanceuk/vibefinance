@@ -109,7 +109,8 @@ every customer at first:
 | Approved | Past Approval, not yet exported |
 | Sent for payment | Delivered to the ERP or a Destination |
 | Paid | A payment date known (later: from the ERP) |
-| Rejected | Discarded, with the reason the customer chooses to show |
+| Returned | Returned to the supplier, with the reason and comment (0724) |
+| Rejected | Discarded |
 
 **Per invoice:** number, date, amount, currency, the PO it quoted, status, and for "Query
 raised" the question. Never: stage names, rule names, task owners, coding, other lines'
@@ -185,6 +186,8 @@ portal query; a corrected document against a query.
 
 - **2a, built as 0721:** the invoice's own Supplier tab, Ask supplier (the invoice and task
   stay put), Query raised in the network until the supplier replies, both sides by email.
+- **Return to supplier in the network, built as 0724:** a Returned status, the reason and
+  comment in the conversation, the linked people emailed, and the supplier may reply.
 - **2b, paused** (Dan, 10 October 2026): a corrected PDF attached to a supplier's reply. *"I'm
   hesitant to allow a PDF attachment… there may need to be more official means of correcting
   invoices. For example, using a credit note. Also for compliance purposes, I think an invoice

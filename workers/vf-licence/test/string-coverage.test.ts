@@ -3641,6 +3641,11 @@ const KEYS_THE_INTERFACE_USES = [
   "suppliers.layouts.columns",
   // The supplier pop-out's portal column (decision 0719).
   "suppliers.portal.invitesomeone",
+  // Return to supplier in the network (decision 0724).
+  "network.status.returned",
+  "network.help.status.returned",
+  "network.msg.returned",
+  "supplierchat.returned",
   // The network's top bar and Help (decision 0723).
   "network.mood.day",
   "network.mood.night",

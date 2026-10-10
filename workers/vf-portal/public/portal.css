@@ -56,7 +56,7 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-sp
 
 .status { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: var(--text-sm); white-space: nowrap; background: var(--surface-2); color: var(--text-secondary); }
 .status.approved, .status.sent_for_payment, .status.paid { background: var(--severity-ok-bg); color: var(--severity-ok-text); }
-.status.query_raised { background: var(--severity-warning-bg); color: var(--severity-warning-text); }
+.status.query_raised, .status.returned { background: var(--severity-warning-bg); color: var(--severity-warning-text); }
 .status.rejected { background: var(--severity-danger-bg); color: var(--severity-danger-text); }
 
 .backdrop { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.35); display: flex; align-items: flex-start; justify-content: center; padding: 48px 16px; overflow-y: auto; z-index: 10; }
@@ -87,6 +87,7 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-sp
 .msg.them { background: color-mix(in srgb, var(--bg-accent) 35%, var(--surface-2)); margin-right: 40px; }
 .msg.us { background: var(--bg-accent); margin-left: 40px; }
 .msg .muted { color: var(--text-muted); }
+.msg .msgbody { white-space: pre-line; }
 .msg .who { font-weight: 700; display: flex; justify-content: space-between; gap: 10px; }
 .reply textarea { width: 100%; min-height: 80px; font: inherit; font-size: var(--text-sm); padding: 8px 10px; border-radius: var(--radius); border: 0.5px solid var(--border-strong); background: var(--surface-1); color: var(--text-primary); resize: vertical; }
 .replybar { display: flex; justify-content: space-between; align-items: center; margin-top: 8px; gap: 10px; }
