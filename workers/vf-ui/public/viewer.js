@@ -767,42 +767,53 @@ export async function initDocumentWindow(invoiceId, root) {
   const { tabs } = buildDocTabs(invoiceId);
   const closeButton = actionLink("close", { onclick: () => window.close() });
 
-  const timelineEntry = tabs.find((entry) => entry.key === "timeline");
-  const otherEntries = tabs.filter((entry) => entry.key !== "timeline");
-
-  if (timelineEntry) {
-    timelineEntry.pane.hidden = false;
-    timelineEntry.pane.classList.add("docwindowtimeline");
-    for (const entry of otherEntries) {
-      const selectThisTab = entry.button.onclick;
-      entry.button.onclick = () => {
-        selectThisTab();
-        timelineEntry.pane.hidden = false;
-      };
+  /**
+   * **Two groups of tabs side by side — decision 0722.** Dan: *"show the
+   * document / attachment tab on the left, but on the right show the
+   * Timeline / Chat, Supplier as two tabs."* Each side switches only its
+   * own panes: `buildDocTabs()`'s `select()` toggles every pane it built,
+   * so each button is given its own side's switch instead.
+   */
+  const RIGHT = new Set(["timeline", "supplier"]);
+  const rightEntries = tabs.filter((entry) => RIGHT.has(entry.key));
+  const leftEntries = tabs.filter((entry) => !RIGHT.has(entry.key));
+  const showIn = (group, key) => {
+    for (const entry of group) {
+      entry.button.className = entry.key === key ? "doctab on" : "doctab";
+      entry.pane.hidden = entry.key !== key;
     }
+    group.find((entry) => entry.key === key)?.onSelect?.();
+  };
+  for (const entry of leftEntries) entry.button.onclick = () => showIn(leftEntries, entry.key);
+  for (const entry of rightEntries) {
+    entry.pane.classList.add("docwindowtimeline");
+    entry.button.onclick = () => showIn(rightEntries, entry.key);
   }
+  if (rightEntries.length) showIn(rightEntries, "timeline");
 
-  const splitRow = timelineEntry
+  const splitRow = rightEntries.length
     ? el("div", { class: "docwindowsplit" }, [
         el(
           "div",
           { class: "docwindowsplitleft" },
-          otherEntries.map((entry) => entry.pane)
+          leftEntries.map((entry) => entry.pane)
         ),
-        el("div", { class: "docwindowsplitright" }, [timelineEntry.pane]),
+        el("div", { class: "docwindowsplitright" }, [
+          el("div", { class: "doctabs docwindowrighttabs" }, rightEntries.map((entry) => entry.button)),
+          ...rightEntries.map((entry) => entry.pane),
+        ]),
       ])
     : null;
 
   root.replaceChildren(
     el("div", { class: "panel" }, [
       el("div", { class: "cardhead" }, [
-        el("div", { class: "doctabs" }, otherEntries.map((entry) => entry.button)),
+        el("div", { class: "doctabs" }, leftEntries.map((entry) => entry.button)),
         closeButton,
       ]),
-      // Falls back to the plain, un-split layout `tabs.map()` always
-      // built when there is no timeline entry to split out — not
-      // expected in practice (every document has a Timeline / Chat
-      // pane), but this function should not assume it.
+      // Falls back to the plain, un-split layout when there is nothing
+      // for the right-hand side — not expected in practice (every
+      // document has a Timeline / Chat pane).
       ...(splitRow ? [splitRow] : tabs.map((entry) => entry.pane)),
     ])
   );

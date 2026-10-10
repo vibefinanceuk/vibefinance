@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 10 October 2026 (decision 0721). A living document: what
+Last updated 10 October 2026 (decision 0722). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,13 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### The expanded document window's right-hand tabs (0722)
+
+Document and Attachments on the left; Timeline / Chat and Supplier as tabs on the right, which
+is a little wider (32%, was 25%).
+
+Full reasoning is in decision 0722.
 
 ### The conversation with the supplier (0721)
 

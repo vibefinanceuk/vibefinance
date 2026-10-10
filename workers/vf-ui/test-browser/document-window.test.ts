@@ -92,8 +92,10 @@ describe("initDocumentWindow — the same panel the embedded card shows, mounted
      * timeline / chat should appear on the right of the invoice
      * image... when expanded in the separate window only."* Document
      * is still the one (and, without a hybrid PDF, only) tab.
+     * Decision 0722: the right-hand column has tabs of its own now
+     * (Timeline / Chat, Supplier); the document's row still does not.
      */
-    const labels = [...root.querySelectorAll(".doctab span")].map((n) => n.textContent);
+    const labels = [...root.querySelectorAll(".cardhead .doctab span")].map((n) => n.textContent);
     expect(labels).toContain("Document");
     expect(labels).not.toContain("Timeline / Chat");
 
@@ -193,6 +195,39 @@ describe("initDocumentWindow — the same panel the embedded card shows, mounted
 
     const timeline = root.querySelector(".docwindowtimeline") as HTMLElement;
     expect(timeline.hidden).toBe(false);
+  });
+
+  it("puts Document and Attachments tabs on the left, and Timeline / Chat and Supplier tabs on the right, each switching only its own side (decision 0722)", async () => {
+    stubFetch({
+      "/api/ui-strings": { locale: "en", strings: { ...STRINGS.strings, "viewer.suppliertab": "Supplier", "supplierchat.to": "Goes to {people} by email" } },
+      "/api/invoices/inv-1": { facts: {}, lines: [], validation: { passed: true, checked: [], failures: [] } },
+      "/api/documents/inv-1/activity": { items: [] },
+      "/api/invoices/inv-1/attachments": { messages: [], files: [] },
+      "/api/invoices/inv-1/supplier-messages": { available: true, canWrite: true, supplierName: "Munch GmbH", recipients: ["jo@munch.example"], awaiting: false, messages: [] },
+    });
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { initDocumentWindow } = await import("/viewer.js");
+    const root = document.getElementById("docwindow-root") as HTMLElement;
+    await initDocumentWindow("inv-1", root);
+
+    const labels = (scope: Element | null) => [...(scope?.querySelectorAll(".doctab > span:first-child") ?? [])].map((s) => s.textContent);
+    expect(labels(root.querySelector(".cardhead"))).toEqual(["Document", "Attachments"]);
+    const right = root.querySelector(".docwindowsplitright")!;
+    expect(labels(right)).toEqual(["Timeline / Chat", "Supplier"]);
+    const panes = [...right.querySelectorAll(":scope > .docwindowtimeline")] as HTMLElement[];
+    expect(panes.map((p) => p.hidden)).toEqual([false, true]);
+
+    ([...right.querySelectorAll(".doctab")][1] as HTMLElement).click();
+    expect(panes.map((p) => p.hidden)).toEqual([true, false]);
+    expect(right.querySelector(".supplierto")?.textContent).toContain("jo@munch.example");
+    // The document stays as it was.
+    expect((root.querySelector("#vpreview") as HTMLElement).hidden).toBe(false);
+
+    ([...root.querySelectorAll(".cardhead .doctab")][1] as HTMLElement).click();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(panes.map((p) => p.hidden)).toEqual([true, false]);
+    expect((root.querySelector("#vpreview") as HTMLElement).hidden).toBe(true);
   });
 
   it("has no expand button and no pop-out placeholder — there is nowhere further out to go", async () => {

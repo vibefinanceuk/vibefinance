@@ -4713,10 +4713,11 @@
    * off screen.
    */
   .docwindowsplit { display: flex; flex: 1; min-height: 0; gap: 20px; }
-  .docwindowsplitleft { flex: 1 1 75%; min-width: 0; display: flex; flex-direction: column; min-height: 0; }
+  .docwindowsplitleft { flex: 1 1 68%; min-width: 0; display: flex; flex-direction: column; min-height: 0; }
   .docwindowsplitleft > .vpreview { flex: 1; min-height: 0; }
+  /* Decision 0722: a little wider (was 25%), with its own Timeline / Chat and Supplier tabs. */
   .docwindowsplitright {
-    flex: 0 0 25%;
+    flex: 0 0 32%;
     min-width: 0;
     min-height: 0;
     display: flex;
@@ -4727,6 +4728,8 @@
   }
   .docwindowtimeline { display: flex; flex-direction: column; flex: 1; min-height: 0; }
   .docwindowtimeline .activitytabcontent { flex: 1; min-height: 0; }
+  .docwindowtimeline[hidden] { display: none; }
+  .docwindowrighttabs { flex: 0 0 auto; margin-bottom: 8px; }
 
   /**
    * **Stacks below the document rather than squeezing to a sliver** —
