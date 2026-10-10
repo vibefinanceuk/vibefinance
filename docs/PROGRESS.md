@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 10 October 2026 (decision 0719). A living document: what
+Last updated 10 October 2026 (decision 0720). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,13 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### The supplier portal's actions as small icons (0720)
+
+Invite to portal, Change companies, End access, Cancel invitation, and Save and Cancel when
+changing companies are small icons with their word; Invite sits beside the email address.
+
+Full reasoning is in decision 0720.
 
 ### The supplier pop-out in two columns (0719)
 

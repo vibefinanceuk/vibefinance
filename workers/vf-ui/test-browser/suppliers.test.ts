@@ -1258,3 +1258,18 @@ describe("the supplier pop-out in two columns — decision 0719", () => {
     expect((section.closest(".popout") as HTMLElement).classList.contains("supplierpop-wide")).toBe(false);
   });
 });
+
+describe("small icon-and-word actions — decision 0720", () => {
+  it("every portal action is compact, with Invite beside the email address", async () => {
+    const { section } = await openWithPortal(PORTAL);
+    const row = section.querySelector(".portalinviterow") as HTMLElement;
+    expect(row.querySelector(".portalemail")).not.toBeNull();
+    const invite = row.querySelector(".actionlink") as HTMLButtonElement;
+    expect(invite.textContent).toContain("Invite to portal");
+    for (const b of section.querySelectorAll(".portalperson button")) {
+      expect(b.classList.contains("compactlink")).toBe(true);
+      expect(b.querySelector("svg")).not.toBeNull();
+    }
+    expect(invite.classList.contains("compactlink")).toBe(true);
+  });
+});

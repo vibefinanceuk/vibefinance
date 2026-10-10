@@ -4302,6 +4302,12 @@
   .supplierportal .portalperson > span:first-child { grid-column: 1; grid-row: 1; font-weight: 700; overflow-wrap: anywhere; }
   .supplierportal .portalperson > span.muted { grid-column: 1; grid-row: 2; }
   .supplierportal .portalperson > button { grid-row: 1 / span 2; white-space: nowrap; }
+  /* Decision 0720 — small icon-and-word actions; Invite beside the email address. */
+  .portalinviterow { display: flex; gap: 10px; align-items: center; }
+  .portalinviterow .portalemail { flex: 1 1 auto; min-width: 0; }
+  .portalinviterow .actionlink { flex: 0 0 auto; }
+  .supplierportal .portalperson > .actionlink { grid-row: 1 / span 2; white-space: nowrap; }
+  .portaleditbuttons { gap: 6px; }
   .portalinvitehead { margin: 18px 0 6px; font-size: var(--text-sm); color: var(--text-secondary); font-weight: 700; }
   /* Decision 0718 — changing a person's companies in place, and choosing among many. */
   .portalpersonwrap { border-bottom: 0.5px solid var(--border); }

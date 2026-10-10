@@ -703,9 +703,8 @@ export function portalSection(s, onVisible = () => {}) {
       const buttons = data.canManage
         ? [
             data.companies.length
-              ? el("button", {
-                  class: "vsuggest",
-                  text: t("suppliers.portal.change"),
+              ? compactLink("rename", {
+                  label: t("suppliers.portal.change"),
                   onclick: () => {
                     if (!editor.hidden) {
                       editor.hidden = true;
@@ -716,7 +715,7 @@ export function portalSection(s, onVisible = () => {}) {
                     editor.replaceChildren(
                       picker.node,
                       el("div", { class: "portaleditbuttons" }, [
-                        actionLink("save", {
+                        compactLink("save", {
                           primary: true,
                           label: t("suppliers.portal.save"),
                           onclick: async () => {
@@ -730,7 +729,7 @@ export function portalSection(s, onVisible = () => {}) {
                             problem.textContent = json.error ?? t("suppliers.changefailed");
                           },
                         }),
-                        el("button", { class: "vsuggest", text: t("suppliers.portal.cancelchange"), onclick: () => (editor.hidden = true) }),
+                        compactLink("close", { label: t("suppliers.portal.cancelchange"), onclick: () => (editor.hidden = true) }),
                       ]),
                       problem
                     );
@@ -738,7 +737,7 @@ export function portalSection(s, onVisible = () => {}) {
                   },
                 })
               : null,
-            el("button", { class: "vsuggest", text: t("suppliers.portal.end"), onclick: async () => show(...((await post(`/links/${encodeURIComponent(l.id)}/end`)).res?.ok ? [""] : [t("suppliers.changefailed"), true])) }),
+            compactLink("deactivate", { label: t("suppliers.portal.end"), onclick: async () => show(...((await post(`/links/${encodeURIComponent(l.id)}/end`)).res?.ok ? [""] : [t("suppliers.changefailed"), true])) }),
           ].filter(Boolean)
         : [];
       row.append(el("span", { text: l.email }), companiesLine(l.orgUnits), ...buttons);
@@ -752,7 +751,7 @@ export function portalSection(s, onVisible = () => {}) {
           el("span", { text: i.email }),
           companiesLine(i.orgUnits, `${i.status === "pending" ? t("suppliers.portal.invited").replace("{date}", (i.expiresAt ?? "").slice(0, 10)) : t(`suppliers.portal.${i.status}`)} · `),
           data.canManage && i.status === "pending"
-            ? el("button", { class: "vsuggest", text: t("suppliers.portal.cancel"), onclick: async () => show(...((await post(`/invitations/${encodeURIComponent(i.id)}/cancel`)).res?.ok ? [""] : [t("suppliers.changefailed"), true])) })
+            ? compactLink("discard", { label: t("suppliers.portal.cancel"), onclick: async () => show(...((await post(`/invitations/${encodeURIComponent(i.id)}/cancel`)).res?.ok ? [""] : [t("suppliers.changefailed"), true])) })
             : null,
         ].filter(Boolean))
       ),
@@ -763,7 +762,7 @@ export function portalSection(s, onVisible = () => {}) {
       const email = el("input", { type: "email", class: "portalemail", placeholder: t("suppliers.portal.email"), "aria-label": t("suppliers.portal.email") });
       const picker = companyPicker(data.companies);
       const problem = el("div", { class: "warn" });
-      const invite = actionLink("create", {
+      const invite = compactLink("newperson", {
         primary: true,
         label: t("suppliers.portal.invite"),
         onclick: async () => {
@@ -781,7 +780,8 @@ export function portalSection(s, onVisible = () => {}) {
       });
       children.push(
         el("div", { class: "portalinvitehead", text: t("suppliers.portal.invitesomeone").replace("{supplier}", s.name ?? "") }),
-        el("div", { class: "portalinvite" }, [email, picker.node, invite, el("div", { class: "muted sm", text: t("suppliers.portal.help") }), problem])
+        // Decision 0720: the button beside the address it sends to.
+        el("div", { class: "portalinvite" }, [el("div", { class: "portalinviterow" }, [email, invite]), picker.node, el("div", { class: "muted sm", text: t("suppliers.portal.help") }), problem])
       );
     }
     if (message) children.unshift(el("div", { class: warn ? "warn" : "portalnote", text: message }));
