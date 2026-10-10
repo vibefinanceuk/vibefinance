@@ -1,6 +1,6 @@
 # 0715: Inviting a supplier's people to the portal, from the supplier's page
 
-**Status: built**, not yet deployed. Phase 1 step 3 of `docs/design/supplier-portal.md`.
+**Status: live** at `9614958`, pushed and deployed 10 October 2026. Phase 1 step 3 of `docs/design/supplier-portal.md`.
 vf-app (`portal-people-route.ts`, `portal-route.ts`, `index.ts`); vf-ui (`suppliers.js`,
 `app.css`, the proxy); vf-licence migration `0322_supplier_portal_people_strings.sql`.
 

@@ -1,6 +1,6 @@
 # 0716: The operator console turns the supplier portal on for a customer
 
-**Status: built**, not yet deployed. vf-admin (`public/index.html`).
+**Status: live** at `9bd3bc4`, pushed and deployed 10 October 2026. vf-admin (`public/index.html`).
 
 ## What was asked
 
