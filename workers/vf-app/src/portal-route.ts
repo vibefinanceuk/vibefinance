@@ -112,12 +112,19 @@ const SELECT = `
   )`;
 
 /**
- * Only this supplier's, only these companies'. An invoice not yet placed
- * in a company belongs to none, so no link covers it until it is.
+ * Only this supplier's, only these companies' — and the units beneath
+ * them (decision 0715): an invitation for a legal entity covers its
+ * operating units, as a role there does (`unitsWherePermitted`). An
+ * invoice not yet placed in a company belongs to none, so no link covers
+ * it until it is.
  */
 function scope(claims: PortalAccessClaims): { sql: string; binds: string[] } {
   return {
-    sql: `h.supplier_id = ? AND h.org_unit_id IN (${claims.orgUnitIds.map(() => "?").join(", ")})`,
+    sql: `h.supplier_id = ? AND h.org_unit_id IN (
+      WITH RECURSIVE covered(id) AS (
+        SELECT id FROM org_units WHERE id IN (${claims.orgUnitIds.map(() => "?").join(", ")})
+        UNION SELECT u.id FROM org_units u JOIN covered c ON u.parent_unit_id = c.id
+      ) SELECT id FROM covered)`,
     binds: [claims.supplierId, ...claims.orgUnitIds],
   };
 }

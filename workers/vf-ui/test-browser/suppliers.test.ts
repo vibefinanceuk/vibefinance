@@ -19,6 +19,13 @@ function mountShell() {
 const STRINGS = {
   locale: "en",
   strings: {
+    "suppliers.portal.title": "Supplier portal",
+    "suppliers.portal.companies": "For: {companies}",
+    "suppliers.portal.invited": "Invited, until {date}",
+    "suppliers.portal.invite": "Invite to portal",
+    "suppliers.portal.end": "End access",
+    "suppliers.portal.choose": "Choose at least one company.",
+    "suppliers.portal.sent": "Invitation sent to {email}.",
     "suppliers.heading": "Suppliers",
     // Decisions 0702, 0704, 0705.
     "suppliers.layouts.title": "Invoice layouts learned",
@@ -1095,5 +1102,90 @@ describe("a supplier's line columns — decision 0705", () => {
     const { section } = await openWithLearning({ invoices: 0, layouts: [], columns: [{ field: "BT-129", heading: "menge" }], corrections: null });
     expect(section.textContent).toContain('("menge")');
     expect(section.querySelector("button")).toBeTruthy();
+  });
+});
+
+/** Decision 0715: the supplier portal on a supplier's page. */
+async function openWithPortal(portal: unknown, answers: Record<string, { status: number; body: unknown }> = {}) {
+  stubFetch({ suppliers: LEARNING_SUPPLIER, lastLoad: null });
+  const base = globalThis.fetch as unknown as (url: string, init?: RequestInit) => Promise<Response>;
+  const posted: { path: string; body: unknown }[] = [];
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (url: string, init?: RequestInit) => {
+      const path = String(url).split("?")[0];
+      if (path.endsWith("/layouts")) return { ok: true, json: async () => ({ invoices: 0, layouts: [], columns: [], corrections: null }) } as Response;
+      if (path.endsWith("/portal")) return { ok: true, status: 200, json: async () => portal } as Response;
+      if (path.includes("/portal/")) {
+        posted.push({ path, body: init?.body ? JSON.parse(String(init.body)) : null });
+        const a = Object.entries(answers).find(([k]) => path.endsWith(k))?.[1] ?? { status: 200, body: {} };
+        return { ok: a.status < 400, status: a.status, json: async () => a.body } as Response;
+      }
+      return base(url, init);
+    })
+  );
+  const { loadStrings } = await import("/strings.js");
+  await loadStrings();
+  const { open } = await import("/suppliers.js");
+  await open();
+  (document.querySelector("tbody tr") as HTMLElement).click();
+  for (let i = 0; i < 10; i++) await Promise.resolve();
+  await new Promise((r) => setTimeout(r, 0));
+  return { section: document.querySelector(".popout .supplierportal") as HTMLElement, posted };
+}
+
+const UK = { id: "uk", name: "Acme UK Ltd" };
+const IE = { id: "ie", name: "Acme Ireland Ltd" };
+const PORTAL = {
+  licensed: true,
+  canManage: true,
+  companies: [IE, UK],
+  links: [{ id: "pl-1", email: "jo@lager-nord.example", orgUnits: [UK], status: "active" }],
+  invitations: [{ id: "inv-1", email: "kim@lager-nord.example", orgUnits: [IE], status: "pending", expiresAt: "2026-10-13T12:00:00.000Z" }],
+};
+
+describe("the supplier portal on a supplier's page — decision 0715", () => {
+  it("is hidden when the customer's licence does not include the portal", async () => {
+    const { section } = await openWithPortal({ licensed: false });
+    expect(section.hidden).toBe(true);
+  });
+
+  it("lists who is linked and who is invited, with their companies", async () => {
+    const { section } = await openWithPortal(PORTAL);
+    expect(section.hidden).toBe(false);
+    const rows = [...section.querySelectorAll(".portalperson")].map((r) => r.textContent);
+    expect(rows[0]).toContain("jo@lager-nord.example");
+    expect(rows[0]).toContain("Acme UK Ltd");
+    expect(rows[1]).toContain("kim@lager-nord.example");
+    expect(rows[1]).toContain("2026-10-13");
+  });
+
+  it("invites for the companies ticked, and says who it was sent to", async () => {
+    const { section, posted } = await openWithPortal(PORTAL, { "/portal/invitations": { status: 201, body: { invitation: { email: "new@lager-nord.example" } } } });
+    (section.querySelector(".portalemail") as HTMLInputElement).value = "new@lager-nord.example";
+    const boxes = [...section.querySelectorAll(".portalcompany input")] as HTMLInputElement[];
+    const invite = [...section.querySelectorAll("button")].find((b) => b.textContent === "Invite to portal") as HTMLButtonElement;
+    invite.click();
+    await new Promise((r) => setTimeout(r, 0));
+    // Nothing chosen: said, and nothing sent.
+    expect(posted).toEqual([]);
+    boxes[1].checked = true;
+    invite.click();
+    for (let i = 0; i < 10; i++) await Promise.resolve();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(posted).toEqual([{ path: "/api/suppliers/s1/portal/invitations", body: { email: "new@lager-nord.example", orgUnitIds: ["uk"] } }]);
+  });
+
+  it("someone who may only view sees the people, with no invite form and no End", async () => {
+    const { section } = await openWithPortal({ ...PORTAL, canManage: false, companies: [] });
+    expect(section.querySelector(".portalinvite")).toBeNull();
+    expect(section.querySelectorAll("button")).toHaveLength(0);
+  });
+
+  it("ends a person's access", async () => {
+    const { section, posted } = await openWithPortal(PORTAL);
+    (section.querySelector(".portalperson button") as HTMLButtonElement).click();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(posted[0].path).toBe("/api/suppliers/s1/portal/links/pl-1/end");
   });
 });

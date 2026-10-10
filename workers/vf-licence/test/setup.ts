@@ -309,6 +309,7 @@ import lineTasksStringsSql from "../migrations/0318_line_tasks_strings.sql?raw";
 import passedCheckStringsSql from "../migrations/0319_passed_check_strings.sql?raw";
 import duplicateCheckStringsSql from "../migrations/0320_duplicate_check_strings.sql?raw";
 import portalDirectorySql from "../migrations/0321_supplier_portal_directory.sql?raw";
+import portalPeopleStringsSql from "../migrations/0322_supplier_portal_people_strings.sql?raw";
 
 function stripSqlComments(sql: string): string {
   return sql
@@ -651,5 +652,6 @@ export async function applyTestSchema(): Promise<void> {
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(passedCheckStringsSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(duplicateCheckStringsSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(portalDirectorySql)));
+  await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(portalPeopleStringsSql)));
 
 }

@@ -844,6 +844,12 @@ describe("paths the app is allowed to reach (decision 0212)", () => {
     "/invoices/inv-1/layouts",
     "/suppliers/s-1/layouts",
     "/suppliers/s-1/layouts/forget",
+    // A supplier's portal people — decision 0715.
+    "/suppliers/s-1/portal",
+    "/suppliers/s-1/portal/invitations",
+    "/suppliers/s-1/portal/invitations/inv-1/cancel",
+    "/suppliers/s-1/portal/links/pl-1/end",
+    "/suppliers/s-1/portal/links/pl-1/companies",
     // Create → Upload documents — decision 0573.
     "/uploads/targets",
     "/uploads",

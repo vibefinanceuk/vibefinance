@@ -3639,6 +3639,21 @@ const KEYS_THE_INTERFACE_USES = [
   "suppliers.learning.helped",
   // A supplier's line columns (decision 0705).
   "suppliers.layouts.columns",
+  // The supplier portal on a supplier's page (decision 0715).
+  "suppliers.portal.title",
+  "suppliers.portal.none",
+  "suppliers.portal.companies",
+  "suppliers.portal.invited",
+  "suppliers.portal.expired",
+  "suppliers.portal.spent",
+  "suppliers.portal.end",
+  "suppliers.portal.cancel",
+  "suppliers.portal.email",
+  "suppliers.portal.invite",
+  "suppliers.portal.choose",
+  "suppliers.portal.sent",
+  "suppliers.portal.notsent",
+  "suppliers.portal.help",
   // The invoice number's duplicate check (decision 0711).
   "check.duplicate",
   "check.duplicate.ok",

@@ -4274,6 +4274,15 @@
   .vhint + .vpagestatus { margin-left: 12px; }
   .vhint:empty + .vpagestatus { margin-left: auto; }
   /* The AI's suggested field, offered on the toolbar — decision 0699. */
+  /* The supplier portal on a supplier's page — decision 0715. */
+  .supplierportal { margin-top: 14px; }
+  .portalperson { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; padding: 4px 0; border-bottom: 0.5px solid var(--border); }
+  .portalinvite { display: grid; gap: 8px; margin-top: 10px; max-width: 420px; }
+  .portalcompanies { display: flex; flex-wrap: wrap; gap: 4px 14px; }
+  .portalcompany { display: flex; align-items: center; gap: 6px; font-size: var(--text-sm); }
+  .portalcompany input { width: auto; }
+  .portalinvite .actionlink { justify-self: start; }
+  .portalnote { font-size: var(--text-sm); color: var(--text-success); margin-bottom: 6px; }
   .vsuggest { background: none; border: 0; padding: 0; font: inherit; color: var(--text-accent); text-decoration: underline; cursor: pointer; }
   /* Where this supplier usually puts a field — decision 0702. Amber: a suggestion, not a find. */
   .vexpected { position: absolute; border: 2px dashed rgba(217, 119, 6, 0.9); background: rgba(245, 158, 11, 0.1); border-radius: 3px; }

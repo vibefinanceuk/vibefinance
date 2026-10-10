@@ -2,7 +2,7 @@
 
 **Status: agreed**, 10 October 2026. Direction (Dan: *"I'd prefer the Live fan-out approach
 as well. No duplication of customer data"*) and the decisions in §7 agreed the same day, with
-access scoped to a company within a customer (§6). Phase 1 step 1 built as decision 0713, step 2 as 0714.
+access scoped to a company within a customer (§6). Phase 1 step 1 built as decision 0713, step 2 as 0714, step 3 as 0715.
 
 ---
 

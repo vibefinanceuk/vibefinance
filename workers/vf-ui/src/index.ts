@@ -349,6 +349,11 @@ const PROXIED_TO_INSTANCE: RegExp[] = [
   /^\/invoices\/[^/]+\/layouts$/,
   /^\/suppliers\/[^/]+\/layouts$/,
   /^\/suppliers\/[^/]+\/layouts\/forget$/,
+  // A supplier's portal people — decision 0715.
+  /^\/suppliers\/[^/]+\/portal$/,
+  /^\/suppliers\/[^/]+\/portal\/invitations$/,
+  /^\/suppliers\/[^/]+\/portal\/invitations\/[^/]+\/cancel$/,
+  /^\/suppliers\/[^/]+\/portal\/links\/[^/]+\/(end|companies)$/,
   // The standard's own code lists, so a person picks a currency rather
   // than types one (decision 0113).
   /^\/code-lists$/,

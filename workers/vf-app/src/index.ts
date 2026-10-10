@@ -155,6 +155,14 @@ import {
   handleDiscardDraft,
   handleReorderDraftStages,
 } from "./process-route.js";
+import {
+  companiesFor,
+  handleCancelSupplierInvitation,
+  handleChangeSupplierLinkCompanies,
+  handleEndSupplierLink,
+  handleGetSupplierPortal,
+  handleInviteSupplierPerson,
+} from "./portal-people-route.js";
 import { getPortalInvoice, listPortalInvoices, portalAuth } from "./portal-route.js";
 import { handleCreateIntakeChannel } from "./intake-channel-route.js";
 import { handleCaptureIntake, handleCaptureUblXml, handleCapturePdf, handleCaptureImage, handleFinalisePendingDocument, handleIntakeStats } from "./intake-capture-route.js";
@@ -4327,6 +4335,40 @@ export default {
       }
       const result = await invoiceLayouts(db, invoiceId);
       return result ? json(result, 200) : json({ error: `invoice ${invoiceId} does not exist` }, 404);
+    }
+    /**
+     * **A supplier's portal people — decision 0715.** Seeing them needs
+     * `AP.Supplier`; inviting, cancelling, changing companies and ending a
+     * link need `Supplier.Maintain`, and only for the companies the person
+     * holds it in. Asked of vf-licence with this environment's own key.
+     */
+    const supplierPortalMatch = pathname.match(/^\/suppliers\/([^/]+)\/portal(?:\/(invitations)(?:\/([^/]+)\/(cancel))?|\/links\/([^/]+)\/(end|companies))?$/);
+    if (supplierPortalMatch) {
+      const { db } = resolveTenant(request, env);
+      const auth = await authenticatePerson(db, request, env);
+      if (!auth.user) return json({ error: auth.reason }, 401);
+      const [, rawSupplier, invitations, invitationId, cancel, linkId, linkAction] = supplierPortalMatch;
+      const supplierId = decodeURIComponent(rawSupplier);
+      const reading = !invitations && !linkId;
+      if (reading ? request.method !== "GET" : request.method !== "POST") return json({ error: "not found" }, 404);
+      const canManage = await hasPermission(db, auth.user.id, "Supplier.Maintain");
+      if (reading ? !canManage && !(await hasPermission(db, auth.user.id, "AP.Supplier")) : !canManage) {
+        return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
+      }
+      if (!env.LICENCE_SERVICE || !env.ENVIRONMENT_ID || !env.VF_LICENCE_API_KEY) {
+        return json({ error: "LICENCE_SERVICE, ENVIRONMENT_ID and VF_LICENCE_API_KEY must be configured", reason: "not_configured" }, 503);
+      }
+      const link = { service: env.LICENCE_SERVICE, environmentId: env.ENVIRONMENT_ID, apiKey: env.VF_LICENCE_API_KEY };
+      const companies = canManage ? await companiesFor(db, await unitsWherePermitted(db, auth.user.id, "Supplier.Maintain")) : [];
+      const body = reading ? {} : (((await request.json().catch(() => ({}))) ?? {}) as Record<string, unknown>);
+      let result;
+      if (reading) result = await handleGetSupplierPortal(db, link, supplierId, companies, canManage);
+      else if (invitations && !invitationId) result = await handleInviteSupplierPerson(db, link, supplierId, body, companies, auth.user.email ?? null);
+      else if (invitations && invitationId && cancel) result = await handleCancelSupplierInvitation(link, supplierId, decodeURIComponent(invitationId));
+      else if (linkId && linkAction === "end") result = await handleEndSupplierLink(link, supplierId, decodeURIComponent(linkId), auth.user.email ?? null);
+      else if (linkId && linkAction === "companies") result = await handleChangeSupplierLinkCompanies(link, supplierId, decodeURIComponent(linkId), body, companies);
+      else return json({ error: "not found" }, 404);
+      return json(result.body, result.status);
     }
     const supplierLayoutsMatch = pathname.match(/^\/suppliers\/([^/]+)\/layouts(\/forget)?$/);
     if (supplierLayoutsMatch && ((supplierLayoutsMatch[2] === undefined && request.method === "GET") || (supplierLayoutsMatch[2] !== undefined && request.method === "POST"))) {

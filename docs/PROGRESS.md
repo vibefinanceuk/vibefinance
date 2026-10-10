@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 10 October 2026 (decision 0714). A living document: what
+Last updated 10 October 2026 (decision 0715). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,15 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Supplier portal: invite from the supplier's page (0715)
+
+Phase 1 step 3. A Supplier portal section on a supplier's page lists who is linked and
+invited, for which companies; with `Supplier.Maintain`, invite someone for the companies
+ticked (only those the person holds it in), cancel an invitation, end someone's access. A
+company now covers the units beneath it.
+
+Full reasoning is in decision 0715.
 
 ### Supplier portal: an instance answers for its invoices (0714)
 

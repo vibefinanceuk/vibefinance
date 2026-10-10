@@ -591,6 +591,107 @@ function layoutsSection(s) {
   return section;
 }
 
+/**
+ * **The supplier portal, on the supplier's page — decision 0715.** Who
+ * from this supplier may see its invoices, for which companies, and an
+ * invitation for someone new. Hidden entirely when the customer's licence
+ * does not include the portal, or the person may not see suppliers.
+ */
+export function portalSection(s) {
+  const body = el("div", { class: "portalpeople" });
+  const section = el("div", { class: "supplierportal", hidden: "" }, [el("h4", { text: t("suppliers.portal.title") }), body]);
+  const base = `/api/suppliers/${encodeURIComponent(s.id)}/portal`;
+  const names = (units) => units.map((u) => u.name).join(", ");
+
+  async function post(path, payload) {
+    const res = await fetch(`${base}${path}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload ?? {}) }).catch(() => null);
+    return { res, json: res ? await res.json().catch(() => ({})) : {} };
+  }
+
+  async function show(message, warn = false) {
+    let data;
+    try {
+      const res = await fetch(base);
+      if (!res.ok) {
+        section.hidden = true;
+        return;
+      }
+      data = await res.json();
+    } catch {
+      section.hidden = true;
+      return;
+    }
+    if (!data.licensed) {
+      section.hidden = true;
+      return;
+    }
+    section.hidden = false;
+
+    const rows = [
+      ...data.links.map((l) =>
+        el("div", { class: "portalperson" }, [
+          el("span", { text: l.email }),
+          el("span", { class: "muted sm", text: t("suppliers.portal.companies").replace("{companies}", names(l.orgUnits)) }),
+          data.canManage
+            ? el("button", { class: "vsuggest", text: t("suppliers.portal.end"), onclick: async () => show(...((await post(`/links/${encodeURIComponent(l.id)}/end`)).res?.ok ? [""] : [t("suppliers.changefailed"), true])) })
+            : null,
+        ].filter(Boolean))
+      ),
+      ...data.invitations.map((i) =>
+        el("div", { class: "portalperson" }, [
+          el("span", { text: i.email }),
+          el("span", {
+            class: "muted sm",
+            text: `${i.status === "pending" ? t("suppliers.portal.invited").replace("{date}", (i.expiresAt ?? "").slice(0, 10)) : t(`suppliers.portal.${i.status}`)} · ${t("suppliers.portal.companies").replace("{companies}", names(i.orgUnits))}`,
+          }),
+          data.canManage && i.status === "pending"
+            ? el("button", { class: "vsuggest", text: t("suppliers.portal.cancel"), onclick: async () => show(...((await post(`/invitations/${encodeURIComponent(i.id)}/cancel`)).res?.ok ? [""] : [t("suppliers.changefailed"), true])) })
+            : null,
+        ].filter(Boolean))
+      ),
+    ];
+    const children = rows.length ? rows : [el("div", { class: "muted sm", text: t("suppliers.portal.none") })];
+
+    if (data.canManage && data.companies.length) {
+      const email = el("input", { type: "email", class: "portalemail", placeholder: t("suppliers.portal.email"), "aria-label": t("suppliers.portal.email") });
+      const boxes = data.companies.map((c) => {
+        const box = el("input", { type: "checkbox", value: c.id, ...(data.companies.length === 1 ? { checked: "checked" } : {}) });
+        return { box, label: el("label", { class: "portalcompany" }, [box, el("span", { text: c.name })]) };
+      });
+      const problem = el("div", { class: "warn" });
+      const invite = el("button", {
+        class: "actionlink primary",
+        text: t("suppliers.portal.invite"),
+        onclick: async () => {
+          problem.textContent = "";
+          const orgUnitIds = boxes.filter((b) => b.box.checked).map((b) => b.box.value);
+          if (!orgUnitIds.length) {
+            problem.textContent = t("suppliers.portal.choose");
+            return;
+          }
+          const { res, json } = await post("/invitations", { email: email.value.trim(), orgUnitIds });
+          if (res?.status === 201) return show(t("suppliers.portal.sent").replace("{email}", json.invitation?.email ?? email.value.trim()));
+          if (json.reason === "not_sent") return show(t("suppliers.portal.notsent").replace("{error}", json.error ?? ""), true);
+          problem.textContent = json.error ?? t("suppliers.changefailed");
+        },
+      });
+      children.push(
+        el("div", { class: "portalinvite" }, [
+          email,
+          el("div", { class: "portalcompanies" }, boxes.map((b) => b.label)),
+          invite,
+          el("div", { class: "muted sm", text: t("suppliers.portal.help") }),
+          problem,
+        ])
+      );
+    }
+    if (message) children.unshift(el("div", { class: warn ? "warn" : "portalnote", text: message }));
+    body.replaceChildren(...children);
+  }
+  show();
+  return section;
+}
+
 function openSupplier(s) {
   const problem = el("div", { class: "warn" });
   const fields = {};
@@ -812,6 +913,7 @@ function openSupplier(s) {
       form,
       projectOnlyRow,
       layoutsSection(s),
+      portalSection(s),
       problem,
     ].filter(Boolean)
   );

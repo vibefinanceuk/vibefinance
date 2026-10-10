@@ -79,6 +79,16 @@ describe("which invoices", () => {
     expect(both.invoices.map((i) => i.id)).toEqual(["inv-ie", "inv-uk"]);
   });
 
+  it("a company covers the units beneath it — decision 0715", async () => {
+    await env.DB.prepare("INSERT INTO org_units (id, name, parent_unit_id) VALUES ('uk-north', 'Acme UK North', 'uk')").run();
+    await invoice("inv-north", "LN-4", "sup-ln", "uk-north", "2026-10-06 10:00:00");
+    const body = (await (await get("/portal/invoices", await access())).json()) as { invoices: { id: string; company: string }[] };
+    expect(body.invoices.map((i) => [i.id, i.company])).toEqual([
+      ["inv-north", "Acme UK North"],
+      ["inv-uk", "Acme UK Ltd"],
+    ]);
+  });
+
   it("one invoice with its lines, and the same 404 for another supplier's as for none", async () => {
     const token = await access();
     const one = (await (await get("/portal/invoices/inv-uk", token)).json()) as { invoice: { lines: Record<string, unknown>[] } };
