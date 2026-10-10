@@ -1,6 +1,6 @@
 # 0717: vf-portal, the supplier network at network.vibefinance-ai.com
 
-**Status: built**, not yet deployed. Phase 1 step 4 of `docs/design/supplier-portal.md`.
+**Status: live** at `6966a04`, pushed and deployed 10 October 2026, migration applied. Phase 1 step 4 of `docs/design/supplier-portal.md`.
 New worker `workers/vf-portal`; vf-licence (`portal.ts` wording, `wrangler.jsonc`),
 migration `0323_supplier_network_strings.sql`; `eslint.config.js`.
 
