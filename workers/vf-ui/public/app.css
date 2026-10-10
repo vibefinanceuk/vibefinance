@@ -2264,7 +2264,8 @@
   .opentasks-layout { display: flex; align-items: flex-start; gap: 16px 28px; }
   .opentasks-left { flex: 1 1 auto; min-width: 0; max-width: 300px; display: flex; flex-direction: column; gap: 10px; }
   .opentasks-pick { display: flex; flex-direction: column; gap: 4px; font-size: var(--text-sm); }
-  .opentasks-user { width: 100%; }
+  /* In the card's heading since decision 0712, sized like the period pickers beside it. */
+  .opentasks-user { width: auto; }
   .opentasks-find { width: 100%; font-size: var(--text-sm); }
   .opentasks-key .donutkey > span:nth-child(2) { overflow-wrap: anywhere; }
   .opentasks-ring { flex: 0 0 auto; }

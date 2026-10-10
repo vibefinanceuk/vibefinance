@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 10 October 2026 (decision 0711). A living document: what
+Last updated 10 October 2026 (decision 0712). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,13 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Open tasks by user: the picker in the heading (0712)
+
+The person drop-down on Open tasks by user sits top right in the card's heading, like the
+period pickers on the handling-time cards beside it.
+
+Full reasoning is in decision 0712.
 
 ### The invoice number shows its duplicate check (0711)
 

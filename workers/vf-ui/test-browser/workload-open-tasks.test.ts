@@ -99,14 +99,17 @@ describe("a person chosen on the left, their open tasks by stage on the right (d
   it("offers only the people with open tasks, by name, with their counts, the busiest chosen first", async () => {
     await renderOpenTasks(DATA);
     expect(document.querySelector(".barlist-row")).toBeNull();
-    const picker = document.querySelector<HTMLSelectElement>(".opentasks-pick select")!;
+    const picker = document.querySelector<HTMLSelectElement>(".cardhead .opentasks-user")!;
     expect([...picker.options].map((o) => o.textContent)).toEqual(["Dana R. (2)", "Wei C. (5)"]);
     expect(picker.value).toBe("wei");
     expect(picker.getAttribute("aria-label")).toBe("User");
-    // The picker and the key on the left, the ring on the right (decision 0613).
+    // The picker in the heading, top right like the other cards' period (decision 0712);
+    // the key on the left, the ring on the right (decision 0613).
+    expect([...document.querySelector(".cardhead")!.children].map((c) => c.tagName)).toEqual(["H3", "SELECT"]);
+    expect(picker.classList.contains("windowpick")).toBe(true);
     const layout = document.querySelector(".opentasks-layout")!;
     expect([...layout.children].map((c) => c.className)).toEqual(["opentasks-left", "opentasks-ring"]);
-    expect([...layout.querySelector(".opentasks-left")!.children].map((c) => c.className)).toEqual(["opentasks-pick", "opentasks-key"]);
+    expect([...layout.querySelector(".opentasks-left")!.children].map((c) => c.className)).toEqual(["opentasks-key"]);
   });
 
   it("draws a slice per stage the chosen person has open work at, with the total in the middle", async () => {
@@ -129,7 +132,7 @@ describe("a person chosen on the left, their open tasks by stage on the right (d
       );
     expect(ringColours()).toEqual({ Validation: "var(--chart-1)", Approval: "var(--chart-3)" });
 
-    const picker = document.querySelector<HTMLSelectElement>(".opentasks-pick select")!;
+    const picker = document.querySelector<HTMLSelectElement>(".cardhead .opentasks-user")!;
     picker.value = "dana";
     picker.dispatchEvent(new Event("change"));
     expect([...document.querySelectorAll(".opentasks-key .donutkey")].map((k) => k.textContent)).toEqual(["Coding2"]);
@@ -185,7 +188,7 @@ describe("the key stays inside the card, however narrow (decision 0613)", () => 
     });
     const box = (sel: string) => document.querySelector(sel)!.getBoundingClientRect();
     const card = box("#card-under-test .panel");
-    const result = { card, picker: box(".opentasks-pick"), key: box(".opentasks-key"), ring: box(".opentasks-ring svg"), style };
+    const result = { card, picker: box(".cardhead .opentasks-user"), key: box(".opentasks-key"), ring: box(".opentasks-ring svg"), style };
     return result;
   }
 
@@ -193,8 +196,9 @@ describe("the key stays inside the card, however narrow (decision 0613)", () => 
     it(`puts the key under the drop-down and the ring beside them, all inside a ${width}px card`, async () => {
       const { card, picker, key, ring, style } = await laidOutAt(width);
       try {
+        // The picker sits at the heading's right edge, above everything else (decision 0712).
         expect(key.top).toBeGreaterThanOrEqual(picker.bottom);
-        expect(Math.abs(key.left - picker.left)).toBeLessThan(1);
+        expect(card.right - picker.right).toBeLessThan(40);
         expect(ring.left).toBeGreaterThanOrEqual(key.right);
         for (const part of [picker, key, ring]) {
           expect(part.left).toBeGreaterThanOrEqual(card.left);

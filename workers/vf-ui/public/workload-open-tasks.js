@@ -119,12 +119,10 @@ export function renderCard() {
     ]);
   }
 
-  const head = [
-    el("div", { class: "cardhead" }, [el("h3", { text: t("workload.opentasks") })]),
-    el("div", { class: "sub", text: t("workload.opentaskssub") }),
-    el("div", { class: "muted", text: availableNote() }),
-  ];
-  if (data.users.length === 0) return el("div", { class: "panel card-graphic" }, head);
+  const sub = [el("div", { class: "sub", text: t("workload.opentaskssub") }), el("div", { class: "muted", text: availableNote() })];
+  if (data.users.length === 0) {
+    return el("div", { class: "panel card-graphic" }, [el("div", { class: "cardhead" }, [el("h3", { text: t("workload.opentasks") })]), ...sub]);
+  }
 
   if (!data.users.some((u) => u.userId === chosen)) chosen = data.users[0].userId;
   const byName = [...data.users].sort((a, b) => a.userName.localeCompare(b.userName));
@@ -138,8 +136,9 @@ export function renderCard() {
   }
   show(chosen);
 
+  // Top right of the card, where the other cards put their period — decision 0712.
   const picker = el("select", {
-    class: "opentasks-user",
+    class: "opentasks-user windowpick",
     "aria-label": t("workload.opentasksuser"),
     onchange: (e) => {
       if (!e.target.value) return;
@@ -187,7 +186,8 @@ export function renderCard() {
       : null;
 
   return el("div", { class: "panel card-graphic" }, [
-    ...head,
+    el("div", { class: "cardhead" }, [el("h3", { text: t("workload.opentasks") }), picker]),
+    ...sub,
     /**
      * **Two boxes, so the outer one can be measured** — decision 0613.
      * The layout follows the card's own width (a CSS container query on
@@ -196,10 +196,7 @@ export function renderCard() {
      */
     el("div", { class: "opentasks-body" }, [
       el("div", { class: "opentasks-layout" }, [
-        el("div", { class: "opentasks-left" }, [
-          el("label", { class: "opentasks-pick" }, [el("span", { class: "muted", text: t("workload.opentasksuser") }), find, picker].filter(Boolean)),
-          keySlot,
-        ]),
+        el("div", { class: "opentasks-left" }, [find, keySlot].filter(Boolean)),
         ringSlot,
       ]),
     ]),
