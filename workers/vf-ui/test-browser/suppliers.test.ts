@@ -26,6 +26,12 @@ const STRINGS = {
     "suppliers.portal.end": "End access",
     "suppliers.portal.choose": "Choose at least one company.",
     "suppliers.portal.sent": "Invitation sent to {email}.",
+    "suppliers.portal.more": "+ {n} more",
+    "suppliers.portal.chosen": "{n} of {total} chosen",
+    "suppliers.portal.change": "Change companies",
+    "suppliers.portal.save": "Save",
+    "suppliers.portal.selectall": "Select all shown",
+    "suppliers.portal.changed": "Companies changed for {email}.",
     "suppliers.heading": "Suppliers",
     // Decisions 0702, 0704, 0705.
     "suppliers.layouts.title": "Invoice layouts learned",
@@ -1164,12 +1170,13 @@ describe("the supplier portal on a supplier's page — decision 0715", () => {
     const { section, posted } = await openWithPortal(PORTAL, { "/portal/invitations": { status: 201, body: { invitation: { email: "new@lager-nord.example" } } } });
     (section.querySelector(".portalemail") as HTMLInputElement).value = "new@lager-nord.example";
     const boxes = [...section.querySelectorAll(".portalcompany input")] as HTMLInputElement[];
-    const invite = [...section.querySelectorAll("button")].find((b) => b.textContent === "Invite to portal") as HTMLButtonElement;
+    const invite = [...section.querySelectorAll("button")].find((b) => b.textContent?.includes("Invite to portal")) as HTMLButtonElement;
     invite.click();
     await new Promise((r) => setTimeout(r, 0));
     // Nothing chosen: said, and nothing sent.
     expect(posted).toEqual([]);
     boxes[1].checked = true;
+    boxes[1].dispatchEvent(new Event("change"));
     invite.click();
     for (let i = 0; i < 10; i++) await Promise.resolve();
     await new Promise((r) => setTimeout(r, 0));
@@ -1184,8 +1191,53 @@ describe("the supplier portal on a supplier's page — decision 0715", () => {
 
   it("ends a person's access", async () => {
     const { section, posted } = await openWithPortal(PORTAL);
-    (section.querySelector(".portalperson button") as HTMLButtonElement).click();
+    ([...section.querySelectorAll(".portalperson button")].find((b) => b.textContent === "End access") as HTMLButtonElement).click();
     await new Promise((r) => setTimeout(r, 0));
     expect(posted[0].path).toBe("/api/suppliers/s1/portal/links/pl-1/end");
+  });
+});
+
+describe("many companies, and changing them in place — decision 0718", () => {
+  const MANY = Array.from({ length: 12 }, (_, i) => ({ id: `c${i + 1}`, name: `Acme ${String(i + 1).padStart(2, "0")} Ltd` }));
+
+  it("a person with many companies is one line: two named, how many more, all on hover", async () => {
+    const { section } = await openWithPortal({ ...PORTAL, companies: MANY, links: [{ id: "pl-1", email: "jo@lager-nord.example", orgUnits: MANY.slice(0, 5), status: "active" }] });
+    const line = section.querySelector(".portalperson .muted") as HTMLElement;
+    expect(line.textContent).toBe("For: Acme 01 Ltd, Acme 02 Ltd + 3 more");
+    expect(line.title.split("\n")).toHaveLength(5);
+  });
+
+  it("past six companies the picker has a search, Select all shown, and a count", async () => {
+    const { section, posted } = await openWithPortal({ ...PORTAL, companies: MANY }, { "/portal/invitations": { status: 201, body: { invitation: { email: "x@y.example" } } } });
+    const invite = section.querySelector(".portalinvite") as HTMLElement;
+    const find = invite.querySelector(".portalfind") as HTMLInputElement;
+    find.value = "1";
+    find.dispatchEvent(new Event("input"));
+    // Acme 01, 10, 11, 12 match "1".
+    const visible = [...invite.querySelectorAll(".portalcompany")].filter((l) => !(l as HTMLElement).hidden);
+    expect(visible).toHaveLength(4);
+    ([...invite.querySelectorAll("button")].find((b) => b.textContent === "Select all shown") as HTMLButtonElement).click();
+    expect(invite.querySelector(".portalcount")!.textContent).toBe("4 of 12 chosen");
+    (invite.querySelector(".portalemail") as HTMLInputElement).value = "x@y.example";
+    ([...invite.querySelectorAll("button")].find((b) => b.textContent?.includes("Invite to portal")) as HTMLButtonElement).click();
+    for (let i = 0; i < 10; i++) await Promise.resolve();
+    await new Promise((r) => setTimeout(r, 0));
+    expect((posted[0].body as { orgUnitIds: string[] }).orgUnitIds.sort()).toEqual(["c1", "c10", "c11", "c12"]);
+  });
+
+  it("Change companies opens the picker with the person's companies ticked, and saves the new set", async () => {
+    const { section, posted } = await openWithPortal(PORTAL, { "/companies": { status: 200, body: {} } });
+    ([...section.querySelectorAll(".portalperson button")].find((b) => b.textContent === "Change companies") as HTMLButtonElement).click();
+    const editor = section.querySelector(".portaledit") as HTMLElement;
+    expect(editor.hidden).toBe(false);
+    const boxes = [...editor.querySelectorAll(".portalcompany input")] as HTMLInputElement[];
+    // IE then UK; the link has UK.
+    expect(boxes.map((b) => b.checked)).toEqual([false, true]);
+    boxes[0].checked = true;
+    boxes[0].dispatchEvent(new Event("change"));
+    ([...editor.querySelectorAll("button")].find((b) => b.textContent?.includes("Save")) as HTMLButtonElement).click();
+    for (let i = 0; i < 10; i++) await Promise.resolve();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(posted[0]).toEqual({ path: "/api/suppliers/s1/portal/links/pl-1/companies", body: { orgUnitIds: ["uk", "ie"] } });
   });
 });

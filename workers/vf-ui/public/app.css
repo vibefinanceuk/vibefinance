@@ -4282,6 +4282,15 @@
   .portalcompany { display: flex; align-items: center; gap: 6px; font-size: var(--text-sm); }
   .portalcompany input { width: auto; }
   .portalinvite .actionlink { justify-self: start; }
+  /* Decision 0718 — changing a person's companies in place, and choosing among many. */
+  .portalpersonwrap { border-bottom: 0.5px solid var(--border); }
+  .portalpersonwrap .portalperson { border-bottom: 0; }
+  .portaledit { display: grid; gap: 8px; padding: 6px 0 12px; max-width: 460px; }
+  .portaleditbuttons { display: flex; gap: 14px; align-items: center; }
+  .portalpicker { display: grid; gap: 6px; }
+  .portalpicktools { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; }
+  .portalfind { flex: 1 1 180px; font-size: var(--text-sm); }
+  .portalcompanies-many { display: grid; gap: 2px; max-height: 190px; overflow-y: auto; padding: 6px 8px; border: 0.5px solid var(--border); border-radius: var(--radius); }
   .portalnote { font-size: var(--text-sm); color: var(--text-success); margin-bottom: 6px; }
   .vsuggest { background: none; border: 0; padding: 0; font: inherit; color: var(--text-accent); text-decoration: underline; cursor: pointer; }
   /* Where this supplier usually puts a field — decision 0702. Amber: a suggestion, not a find. */

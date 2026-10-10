@@ -3639,6 +3639,19 @@ const KEYS_THE_INTERFACE_USES = [
   "suppliers.learning.helped",
   // A supplier's line columns (decision 0705).
   "suppliers.layouts.columns",
+  // Companies changed in place and chosen among many (decision 0718).
+  "suppliers.portal.more",
+  "suppliers.portal.chosen",
+  "suppliers.portal.findcompany",
+  "suppliers.portal.selectall",
+  "suppliers.portal.clear",
+  "suppliers.portal.change",
+  "suppliers.portal.save",
+  "suppliers.portal.cancelchange",
+  "suppliers.portal.changed",
+  "network.nomatch",
+  "network.noneyet",
+  "network.companies.count",
   // The supplier network's pages, vf-portal (decision 0717).
   "network.title",
   "network.subtitle",

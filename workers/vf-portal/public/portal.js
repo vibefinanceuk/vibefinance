@@ -55,6 +55,16 @@ export async function loadInvoices() {
   );
   $("rows").replaceChildren(...rows);
   $("empty").hidden = rows.length > 0;
+  /**
+   * **What "nothing" means — decision 0718.** With a search or a status
+   * chosen, nothing matches it. Without, there is nothing yet for the
+   * companies this person can see, named, since an invoice for any other
+   * company is not shared with them.
+   */
+  $("empty").textContent =
+    params.toString() || !customers.length
+      ? t(params.toString() ? "network.nomatch" : "network.none")
+      : t("network.noneyet", { list: customers.map((c) => `${c.customer}: ${c.companies.join(", ")}`).join(" · ") });
   const gone = body.unavailable ?? [];
   $("unavailable").hidden = gone.length === 0;
   $("unavailable").textContent = t("network.unavailable", { list: gone.map((g) => g.customer).join(", ") });
@@ -102,6 +112,13 @@ export async function openInvoice(inv) {
   pop.querySelector(".linkbutton").focus();
 }
 
+let customers = [];
+
+/** A customer and its companies, in a line: past three companies, how many, with every name on hover (0718). */
+export function customerLabel(c) {
+  return c.companies.length <= 3 ? `${c.customer} (${c.companies.join(", ")})` : `${c.customer} (${t("network.companies.count", { n: c.companies.length })})`;
+}
+
 async function showList() {
   const { res, body } = await api("/me");
   if (!res.ok) return;
@@ -110,10 +127,9 @@ async function showList() {
   $("who").hidden = false;
   $("signout").hidden = false;
   $("who").textContent = body.email ?? "";
-  const customers = body.customers ?? [];
-  $("customers").textContent = customers.length
-    ? t("network.customers", { list: customers.map((c) => `${c.customer} (${c.companies.join(", ")})`).join(" · ") })
-    : t("network.nocustomers");
+  customers = body.customers ?? [];
+  $("customers").textContent = customers.length ? t("network.customers", { list: customers.map(customerLabel).join(" · ") }) : t("network.nocustomers");
+  $("customers").title = customers.map((c) => `${c.customer}: ${c.companies.join(", ")}`).join("\n");
   await loadInvoices();
 }
 

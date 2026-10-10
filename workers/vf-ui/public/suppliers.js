@@ -592,21 +592,87 @@ function layoutsSection(s) {
 }
 
 /**
- * **The supplier portal, on the supplier's page — decision 0715.** Who
- * from this supplier may see its invoices, for which companies, and an
- * invitation for someone new. Hidden entirely when the customer's licence
- * does not include the portal, or the person may not see suppliers.
+ * **Companies, said briefly — decision 0718.** Up to three by name; past
+ * that, the first two and how many more, with every name on hover, so a
+ * person linked to twelve companies is still one line.
+ */
+export function companySummary(units) {
+  const all = units.map((u) => u.name);
+  if (all.length <= 3) return { text: all.join(", "), title: null };
+  return { text: `${all.slice(0, 2).join(", ")} ${t("suppliers.portal.more").replace("{n}", String(all.length - 2))}`, title: all.join("\n") };
+}
+
+/**
+ * **Choosing companies — decision 0718.** A few: a box for each, as
+ * before. More than six: a search, *Select all shown* and *Clear*, a list
+ * that scrolls, and how many are chosen; so twelve or fifty companies stay
+ * manageable. `value()` is the ids chosen.
+ */
+export function companyPicker(companies, chosen = []) {
+  const picked = new Set(chosen);
+  if (companies.length === 1 && picked.size === 0) picked.add(companies[0].id);
+  const many = companies.length > 6;
+  const count = el("span", { class: "muted sm portalcount" });
+  const rows = companies.map((c) => {
+    const box = el("input", { type: "checkbox", value: c.id, ...(picked.has(c.id) ? { checked: "checked" } : {}) });
+    box.onchange = () => {
+      if (box.checked) picked.add(c.id);
+      else picked.delete(c.id);
+      counted();
+    };
+    return { c, box, label: el("label", { class: "portalcompany" }, [box, el("span", { text: c.name })]) };
+  });
+  function counted() {
+    count.textContent = t("suppliers.portal.chosen").replace("{n}", String(picked.size)).replace("{total}", String(companies.length));
+  }
+  counted();
+  const list = el("div", { class: many ? "portalcompanies portalcompanies-many" : "portalcompanies" }, rows.map((r) => r.label));
+  if (!many) return { node: list, value: () => [...picked] };
+
+  const shown = () => rows.filter((r) => !r.label.hidden);
+  const find = el("input", { type: "search", class: "portalfind", placeholder: t("suppliers.portal.findcompany"), "aria-label": t("suppliers.portal.findcompany") });
+  find.oninput = () => {
+    const q = find.value.trim().toLocaleLowerCase();
+    for (const r of rows) r.label.hidden = q !== "" && !r.c.name.toLocaleLowerCase().includes(q);
+  };
+  const setShown = (on) => () => {
+    for (const r of shown()) {
+      r.box.checked = on;
+      if (on) picked.add(r.c.id);
+      else picked.delete(r.c.id);
+    }
+    counted();
+  };
+  const tools = el("div", { class: "portalpicktools" }, [
+    find,
+    el("button", { class: "vsuggest", type: "button", text: t("suppliers.portal.selectall"), onclick: setShown(true) }),
+    el("button", { class: "vsuggest", type: "button", text: t("suppliers.portal.clear"), onclick: setShown(false) }),
+    count,
+  ]);
+  return { node: el("div", { class: "portalpicker" }, [tools, list]), value: () => [...picked] };
+}
+
+/**
+ * **The supplier portal, on the supplier's page — decisions 0715, 0718.**
+ * Who from this supplier may see its invoices, for which companies, and an
+ * invitation for someone new. A linked person's companies can be changed in
+ * place. Hidden entirely when the customer's licence does not include the
+ * portal, or the person may not see suppliers.
  */
 export function portalSection(s) {
   const body = el("div", { class: "portalpeople" });
   const section = el("div", { class: "supplierportal", hidden: "" }, [el("h4", { text: t("suppliers.portal.title") }), body]);
   const base = `/api/suppliers/${encodeURIComponent(s.id)}/portal`;
-  const names = (units) => units.map((u) => u.name).join(", ");
 
   async function post(path, payload) {
     const res = await fetch(`${base}${path}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload ?? {}) }).catch(() => null);
     return { res, json: res ? await res.json().catch(() => ({})) : {} };
   }
+
+  const companiesLine = (units, prefix = "") => {
+    const { text, title } = companySummary(units);
+    return el("span", { class: "muted sm", text: `${prefix}${t("suppliers.portal.companies").replace("{companies}", text)}`, ...(title ? { title } : {}) });
+  };
 
   async function show(message, warn = false) {
     let data;
@@ -627,23 +693,60 @@ export function portalSection(s) {
     }
     section.hidden = false;
 
+    const linkRow = (l) => {
+      const row = el("div", { class: "portalperson" });
+      const editor = el("div", { class: "portaledit", hidden: "" });
+      const buttons = data.canManage
+        ? [
+            data.companies.length
+              ? el("button", {
+                  class: "vsuggest",
+                  text: t("suppliers.portal.change"),
+                  onclick: () => {
+                    if (!editor.hidden) {
+                      editor.hidden = true;
+                      return;
+                    }
+                    const picker = companyPicker(data.companies, l.orgUnits.map((u) => u.id));
+                    const problem = el("div", { class: "warn" });
+                    editor.replaceChildren(
+                      picker.node,
+                      el("div", { class: "portaleditbuttons" }, [
+                        actionLink("save", {
+                          primary: true,
+                          label: t("suppliers.portal.save"),
+                          onclick: async () => {
+                            const orgUnitIds = picker.value();
+                            if (!orgUnitIds.length) {
+                              problem.textContent = t("suppliers.portal.choose");
+                              return;
+                            }
+                            const { res, json } = await post(`/links/${encodeURIComponent(l.id)}/companies`, { orgUnitIds });
+                            if (res?.ok) return show(t("suppliers.portal.changed").replace("{email}", l.email));
+                            problem.textContent = json.error ?? t("suppliers.changefailed");
+                          },
+                        }),
+                        el("button", { class: "vsuggest", text: t("suppliers.portal.cancelchange"), onclick: () => (editor.hidden = true) }),
+                      ]),
+                      problem
+                    );
+                    editor.hidden = false;
+                  },
+                })
+              : null,
+            el("button", { class: "vsuggest", text: t("suppliers.portal.end"), onclick: async () => show(...((await post(`/links/${encodeURIComponent(l.id)}/end`)).res?.ok ? [""] : [t("suppliers.changefailed"), true])) }),
+          ].filter(Boolean)
+        : [];
+      row.append(el("span", { text: l.email }), companiesLine(l.orgUnits), ...buttons);
+      return el("div", { class: "portalpersonwrap" }, [row, editor]);
+    };
+
     const rows = [
-      ...data.links.map((l) =>
-        el("div", { class: "portalperson" }, [
-          el("span", { text: l.email }),
-          el("span", { class: "muted sm", text: t("suppliers.portal.companies").replace("{companies}", names(l.orgUnits)) }),
-          data.canManage
-            ? el("button", { class: "vsuggest", text: t("suppliers.portal.end"), onclick: async () => show(...((await post(`/links/${encodeURIComponent(l.id)}/end`)).res?.ok ? [""] : [t("suppliers.changefailed"), true])) })
-            : null,
-        ].filter(Boolean))
-      ),
+      ...data.links.map(linkRow),
       ...data.invitations.map((i) =>
         el("div", { class: "portalperson" }, [
           el("span", { text: i.email }),
-          el("span", {
-            class: "muted sm",
-            text: `${i.status === "pending" ? t("suppliers.portal.invited").replace("{date}", (i.expiresAt ?? "").slice(0, 10)) : t(`suppliers.portal.${i.status}`)} · ${t("suppliers.portal.companies").replace("{companies}", names(i.orgUnits))}`,
-          }),
+          companiesLine(i.orgUnits, `${i.status === "pending" ? t("suppliers.portal.invited").replace("{date}", (i.expiresAt ?? "").slice(0, 10)) : t(`suppliers.portal.${i.status}`)} · `),
           data.canManage && i.status === "pending"
             ? el("button", { class: "vsuggest", text: t("suppliers.portal.cancel"), onclick: async () => show(...((await post(`/invitations/${encodeURIComponent(i.id)}/cancel`)).res?.ok ? [""] : [t("suppliers.changefailed"), true])) })
             : null,
@@ -654,17 +757,14 @@ export function portalSection(s) {
 
     if (data.canManage && data.companies.length) {
       const email = el("input", { type: "email", class: "portalemail", placeholder: t("suppliers.portal.email"), "aria-label": t("suppliers.portal.email") });
-      const boxes = data.companies.map((c) => {
-        const box = el("input", { type: "checkbox", value: c.id, ...(data.companies.length === 1 ? { checked: "checked" } : {}) });
-        return { box, label: el("label", { class: "portalcompany" }, [box, el("span", { text: c.name })]) };
-      });
+      const picker = companyPicker(data.companies);
       const problem = el("div", { class: "warn" });
-      const invite = el("button", {
-        class: "actionlink primary",
-        text: t("suppliers.portal.invite"),
+      const invite = actionLink("create", {
+        primary: true,
+        label: t("suppliers.portal.invite"),
         onclick: async () => {
           problem.textContent = "";
-          const orgUnitIds = boxes.filter((b) => b.box.checked).map((b) => b.box.value);
+          const orgUnitIds = picker.value();
           if (!orgUnitIds.length) {
             problem.textContent = t("suppliers.portal.choose");
             return;
@@ -675,15 +775,7 @@ export function portalSection(s) {
           problem.textContent = json.error ?? t("suppliers.changefailed");
         },
       });
-      children.push(
-        el("div", { class: "portalinvite" }, [
-          email,
-          el("div", { class: "portalcompanies" }, boxes.map((b) => b.label)),
-          invite,
-          el("div", { class: "muted sm", text: t("suppliers.portal.help") }),
-          problem,
-        ])
-      );
+      children.push(el("div", { class: "portalinvite" }, [email, picker.node, invite, el("div", { class: "muted sm", text: t("suppliers.portal.help") }), problem]));
     }
     if (message) children.unshift(el("div", { class: warn ? "warn" : "portalnote", text: message }));
     body.replaceChildren(...children);
