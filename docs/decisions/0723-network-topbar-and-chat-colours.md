@@ -1,6 +1,6 @@
 # 0723: The supplier network's top bar and message colours, as the application's
 
-**Status: built**, 10 October 2026, awaiting push and deploy. vf-portal (`topbar.js`,
+**Status: live** at `3156252`, pushed and deployed 10 October 2026. vf-portal (`topbar.js`,
 `icons.js`, `mood.js`, `strings.js`, `portal.js`, `welcome.js`, the two pages, `portal.css`),
 vf-licence (strings migration 0327).
 

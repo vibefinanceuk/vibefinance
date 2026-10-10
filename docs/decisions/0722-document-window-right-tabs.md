@@ -1,6 +1,6 @@
 # 0722: The expanded document window's right-hand column has its own tabs
 
-**Status: built**, 10 October 2026, awaiting push and deploy. vf-ui (`viewer.js`
+**Status: live** at `4300d78`, pushed and deployed 10 October 2026. vf-ui (`viewer.js`
 `initDocumentWindow`, `app.css`). No migration.
 
 ## What was asked
