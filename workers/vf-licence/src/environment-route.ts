@@ -184,16 +184,22 @@ export async function handleDeleteEnvironment(
   // would refuse too, but with a constraint error that says nothing
   // about WHICH reference blocked it — and an operator deciding whether
   // a deletion is safe needs to know that.
-  const [licences, usage, signups] = await Promise.all([
+  const [licences, usage, signups, portal] = await Promise.all([
     db.prepare("SELECT count(*) AS n FROM licences WHERE environment_id = ?").bind(environmentId).first<{ n: number }>(),
     db.prepare("SELECT count(*) AS n FROM usage_periods WHERE environment_id = ?").bind(environmentId).first<{ n: number }>(),
     db.prepare("SELECT count(*) AS n FROM signup_requests WHERE environment_id = ?").bind(environmentId).first<{ n: number }>(),
+    // Decision 0713 — a supplier ever linked or invited is history too.
+    db
+      .prepare("SELECT (SELECT count(*) FROM portal_links WHERE environment_id = ?1) + (SELECT count(*) FROM portal_invitations WHERE environment_id = ?1) AS n")
+      .bind(environmentId)
+      .first<{ n: number }>(),
   ]);
 
   const blocking = [
     licences?.n ? `${licences.n} licence(s)` : null,
     usage?.n ? `${usage.n} usage period(s)` : null,
     signups?.n ? `${signups.n} signup request(s)` : null,
+    portal?.n ? `${portal.n} supplier portal link(s) or invitation(s)` : null,
   ].filter(Boolean);
 
   if (blocking.length > 0) {

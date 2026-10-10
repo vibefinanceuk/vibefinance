@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 10 October 2026 (decision 0712). A living document: what
+Last updated 10 October 2026 (decision 0713). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,16 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Supplier portal: directory, sign-in and access tokens (0713)
+
+Phase 1 step 1 of the supplier portal design. vf-licence holds supplier organisations,
+their people and passwords, and each person's link to one customer's supplier record and
+companies. A customer's instance invites (with its environment key); the person accepts with
+a code and a password; signed in, they get a five-minute token per link that only that
+instance accepts. Staff session verification now refuses any portal token.
+
+Full reasoning is in decision 0713.
 
 ### Open tasks by user: the picker in the heading (0712)
 

@@ -12,7 +12,10 @@
     // Invitations — decision 0593. Where they come from, and the page their
     // link opens. The Resend key is a secret: wrangler secret put RESEND_API_KEY.
     "INVITE_FROM_ADDRESS": "VibeFinance <noreply@vibefinance-ai.com>",
-    "INVITE_LINK_BASE": "https://app.vibefinance-ai.com/welcome.html"
+    "INVITE_LINK_BASE": "https://app.vibefinance-ai.com/welcome.html",
+    // The supplier portal's welcome page (decision 0713). vf-portal is built in step 4;
+    // until then an invitation can be made and listed but not accepted from a page.
+    "PORTAL_LINK_BASE": "https://portal.vibefinance-ai.com/welcome.html"
   },
   "compatibility_date": "2026-08-01",
   "compatibility_flags": ["nodejs_compat"],

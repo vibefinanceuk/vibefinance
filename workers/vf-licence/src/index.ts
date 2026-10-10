@@ -54,6 +54,20 @@ import {
   type InvitationMailer,
 } from "./invitations.js";
 import {
+  acceptPortalInvitation,
+  cancelPortalInvitation,
+  changeLinkCompanies,
+  endLinkForEnvironment,
+  endMyLink,
+  invitePortalUser,
+  issuePortalAccess,
+  listPortalPeople,
+  myPortalLinks,
+  portalLogin,
+  portalSessionOf,
+  viewPortalInvitation,
+} from "./portal.js";
+import {
   handleCreatePartner,
   handleListCustomers,
   handleListPartners,
@@ -107,6 +121,8 @@ export interface Env {
   RESEND_API_KEY?: string;
   INVITE_FROM_ADDRESS?: string;
   INVITE_LINK_BASE?: string;
+  /** The supplier portal's welcome page, for portal invitations — decision 0713. */
+  PORTAL_LINK_BASE?: string;
 }
 
 function mailerOf(env: Env): InvitationMailer {
@@ -333,6 +349,31 @@ export default {
               request.headers.get("CF-Connecting-IP")
             )
           : await handleListMyEnvironments(env.CONTROL_DB, (body ?? {}) as Record<string, unknown>);
+      return json(result.body, result.status);
+    }
+
+    /**
+     * **The supplier portal — decision 0713.** Accepting an invitation and
+     * signing in are public, like the staff sign-in; the rest needs a portal
+     * session token, which no customer's instance accepts.
+     */
+    if (url.pathname.startsWith("/portal/")) {
+      if (!env.LICENCE_SIGNING_PRIVATE_KEY) return json({ error: "LICENCE_SIGNING_PRIVATE_KEY not configured" }, 500);
+      const key = JSON.parse(env.LICENCE_SIGNING_PRIVATE_KEY) as JsonWebKey;
+      const body = request.method === "POST" ? (((await request.json().catch(() => ({}))) ?? {}) as Record<string, unknown>) : {};
+      let result;
+      if (url.pathname === "/portal/invitations/view" && request.method === "POST") result = await viewPortalInvitation(env.CONTROL_DB, body);
+      else if (url.pathname === "/portal/invitations/accept" && request.method === "POST") result = await acceptPortalInvitation(env.CONTROL_DB, body);
+      else if (url.pathname === "/portal/login" && request.method === "POST") result = await portalLogin(env.CONTROL_DB, body, key, request.headers.get("CF-Connecting-IP"));
+      else {
+        const session = await portalSessionOf(extractBearerToken(request), key);
+        if (!session) return json({ error: "unauthorized" }, 401);
+        const endMatch = url.pathname.match(/^\/portal\/links\/([^/]+)\/end$/);
+        if (url.pathname === "/portal/links" && request.method === "GET") result = await myPortalLinks(env.CONTROL_DB, session);
+        else if (url.pathname === "/portal/access" && request.method === "POST") result = await issuePortalAccess(env.CONTROL_DB, session, key);
+        else if (endMatch && request.method === "POST") result = await endMyLink(env.CONTROL_DB, session, decodeURIComponent(endMatch[1]));
+        else return json({ error: "not found" }, 404);
+      }
       return json(result.body, result.status);
     }
 
@@ -743,6 +784,37 @@ export default {
         createdBy: typeof body.invitedBy === "string" ? body.invitedBy.slice(0, 200) : null,
         createdVia: `environment:${environmentId}`,
       });
+      return json(result.body, result.status);
+    }
+
+    /**
+     * **A customer's instance and its suppliers' portal people — decision
+     * 0713.** With that environment's own key, for that environment only:
+     * invite, list, cancel an invitation, change a link's companies, end it.
+     */
+    const portalEnvMatch = url.pathname.match(/^\/environments\/([^/]+)\/(portal-invitations|portal-people|portal-links)(?:\/([^/]+)\/(cancel|end|companies))?$/);
+    if (portalEnvMatch) {
+      const environmentId = decodeURIComponent(portalEnvMatch[1]);
+      if (!(await isValidEnvironmentKey(env.CONTROL_DB, environmentId, extractBearerToken(request)))) {
+        return json({ error: "unauthorized" }, 401);
+      }
+      const [, , collection, rawId, action] = portalEnvMatch;
+      const id = rawId ? decodeURIComponent(rawId) : null;
+      const body = request.method === "POST" ? (((await request.json().catch(() => ({}))) ?? {}) as Record<string, unknown>) : {};
+      let result;
+      if (collection === "portal-invitations" && !id && request.method === "POST") {
+        result = await invitePortalUser(env.CONTROL_DB, { ...mailerOf(env), linkBase: env.PORTAL_LINK_BASE }, environmentId, body);
+      } else if (collection === "portal-people" && !id && request.method === "GET") {
+        result = await listPortalPeople(env.CONTROL_DB, environmentId, url.searchParams.get("supplierId"));
+      } else if (collection === "portal-invitations" && id && action === "cancel" && request.method === "POST") {
+        result = await cancelPortalInvitation(env.CONTROL_DB, environmentId, id);
+      } else if (collection === "portal-links" && id && action === "end" && request.method === "POST") {
+        result = await endLinkForEnvironment(env.CONTROL_DB, environmentId, id, body);
+      } else if (collection === "portal-links" && id && action === "companies" && request.method === "POST") {
+        result = await changeLinkCompanies(env.CONTROL_DB, environmentId, id, body);
+      } else {
+        return json({ error: "not found" }, 404);
+      }
       return json(result.body, result.status);
     }
 

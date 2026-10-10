@@ -57,13 +57,16 @@ function isValidClaimsShape(value: unknown): value is SessionClaims {
   );
 }
 
-export async function signSessionToken(
-  claims: SessionClaims,
-  privateKeyJwk: JsonWebKey
-): Promise<string> {
-  const header = { alg: ALG, typ: "JWT" };
+/**
+ * **Signs any payload with the fleet key, under a named `typ`** — decision
+ * 0713. Staff sessions are `JWT` (as they always were); a supplier
+ * portal's tokens carry their own `typ`, so neither can be read as the
+ * other. Exported for `portal-token.ts`; nothing else should need it.
+ */
+export async function signJws(payload: object, typ: string, privateKeyJwk: JsonWebKey): Promise<string> {
+  const header = { alg: ALG, typ };
   const encHeader = base64UrlEncode(new TextEncoder().encode(JSON.stringify(header)));
-  const encPayload = base64UrlEncode(new TextEncoder().encode(JSON.stringify(claims)));
+  const encPayload = base64UrlEncode(new TextEncoder().encode(JSON.stringify(payload)));
   const signingInput = `${encHeader}.${encPayload}`;
 
   const key = await crypto.subtle.importKey("jwk", privateKeyJwk, KEY_ALGORITHM, false, ["sign"]);
@@ -76,23 +79,15 @@ export async function signSessionToken(
 }
 
 /**
- * Verify a session token **for a named environment**.
- *
- * `expectedEnvironmentId` is required rather than optional, so a caller
- * cannot accidentally verify a token without checking who it was for.
- * An optional audience check is one that eventually goes unpassed.
- *
- * Every failure returns a result rather than throwing: an expired or
- * forged token is an ordinary outcome a caller must handle, not an
- * exceptional one — the same position `verifyLicenceToken` takes.
+ * **Opens a token: shape, algorithm, then signature** — and only then its
+ * header's `typ` and payload, for the caller to judge. The signature is
+ * checked before anything the token asserts is reported (decision 0073).
  */
-export async function verifySessionToken(
+export async function openJws(
   token: string,
-  publicKeyJwk: JsonWebKey,
-  expectedEnvironmentId: string,
-  now: Date = new Date()
-): Promise<SessionVerifyResult> {
-  const parts = token.split(".");
+  publicKeyJwk: JsonWebKey
+): Promise<{ ok: true; typ: unknown; claims: unknown } | { ok: false; reason: string }> {
+  const parts = typeof token === "string" ? token.split(".") : [];
   if (parts.length !== 3) {
     return { ok: false, reason: "malformed token: expected 3 dot-separated parts" };
   }
@@ -119,10 +114,6 @@ export async function verifySessionToken(
     return { ok: false, reason: "malformed token: signature is not valid base64url" };
   }
 
-  // Signature before anything else it asserts. Reporting "wrong
-  // environment" or "expired" for a token that was never validly signed
-  // would tell an attacker their forgery was structurally right and
-  // only mis-addressed — the same ordering decision 0073 makes.
   const key = await crypto.subtle.importKey("jwk", publicKeyJwk, KEY_ALGORITHM, false, ["verify"]);
   const valid = await crypto.subtle.verify(
     SIGN_ALGORITHM,
@@ -131,6 +122,39 @@ export async function verifySessionToken(
     new TextEncoder().encode(`${encHeader}.${encPayload}`)
   );
   if (!valid) return { ok: false, reason: "signature does not verify" };
+  return { ok: true, typ: (header as Record<string, unknown>).typ, claims };
+}
+
+export async function signSessionToken(
+  claims: SessionClaims,
+  privateKeyJwk: JsonWebKey
+): Promise<string> {
+  return signJws(claims, "JWT", privateKeyJwk);
+}
+
+export async function verifySessionToken(
+  token: string,
+  publicKeyJwk: JsonWebKey,
+  expectedEnvironmentId: string,
+  now: Date = new Date()
+): Promise<SessionVerifyResult> {
+  // Signature before anything else it asserts. Reporting "wrong
+  // environment" or "expired" for a token that was never validly signed
+  // would tell an attacker their forgery was structurally right and
+  // only mis-addressed — the same ordering decision 0073 makes.
+  const opened = await openJws(token, publicKeyJwk);
+  if (!opened.ok) return opened;
+  const claims = opened.claims;
+
+  /**
+   * **A staff session, and nothing else signed with the same key** —
+   * decision 0713. A supplier portal token is signed by the same fleet
+   * key; it has its own `typ` and a `kind`, and is refused here, so a
+   * supplier can never be taken for somebody who works at the customer.
+   */
+  if (opened.typ !== "JWT" || (typeof claims === "object" && claims !== null && "kind" in claims)) {
+    return { ok: false, reason: "not a staff session token" };
+  }
 
   if (!isValidClaimsShape(claims)) {
     return { ok: false, reason: "token payload is not a valid session claims object" };

@@ -308,6 +308,7 @@ import lineNetStringsSql from "../migrations/0317_line_net_suggestion_strings.sq
 import lineTasksStringsSql from "../migrations/0318_line_tasks_strings.sql?raw";
 import passedCheckStringsSql from "../migrations/0319_passed_check_strings.sql?raw";
 import duplicateCheckStringsSql from "../migrations/0320_duplicate_check_strings.sql?raw";
+import portalDirectorySql from "../migrations/0321_supplier_portal_directory.sql?raw";
 
 function stripSqlComments(sql: string): string {
   return sql
@@ -331,7 +332,7 @@ function toOneStatementPerLine(sql: string): string {
 // functions above), and storage does not appear to reset between it()
 // blocks in this pool-workers version, so every table is dropped and
 // recreated before each test rather than relying on framework isolation.
-const TABLES_IN_DROP_ORDER = ["partner_connector_versions", "partner_connectors", "invitations", "partner_customers", "partner_people", "partners", "admin_actions", "ui_strings", "customer_branding", "user_environment_access", "user_credentials", "login_attempts", "signup_requests", "usage_periods", "licences", "environments", "customers"];
+const TABLES_IN_DROP_ORDER = ["portal_invitations", "portal_links", "portal_users", "supplier_orgs", "partner_connector_versions", "partner_connectors", "invitations", "partner_customers", "partner_people", "partners", "admin_actions", "ui_strings", "customer_branding", "user_environment_access", "user_credentials", "login_attempts", "signup_requests", "usage_periods", "licences", "environments", "customers"];
 
 export async function applyTestSchema(): Promise<void> {
   for (const table of TABLES_IN_DROP_ORDER) {
@@ -649,5 +650,6 @@ export async function applyTestSchema(): Promise<void> {
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(lineTasksStringsSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(passedCheckStringsSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(duplicateCheckStringsSql)));
+  await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(portalDirectorySql)));
 
 }
