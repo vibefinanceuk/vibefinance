@@ -1,6 +1,6 @@
 # 0711: The invoice number shows its duplicate check
 
-**Status: built**, not yet deployed. vf-app (`validation.ts`, `invoice-facts-route.ts`,
+**Status: live** at `9ea94c9`, pushed and deployed 10 October 2026, migrations applied. vf-app (`validation.ts`, `invoice-facts-route.ts`,
 `key-fields-route.ts`); vf-licence migration `0320_duplicate_check_strings.sql`. No vf-app
 migration.
 

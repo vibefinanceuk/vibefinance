@@ -1,6 +1,6 @@
 # 0710: A passed check says what passed on hover
 
-**Status: built**, not yet deployed. vf-ui (`viewer.js`); vf-licence migration
+**Status: live** at `6e414d2`, pushed and deployed 10 October 2026, migrations applied. vf-ui (`viewer.js`); vf-licence migration
 `0319_passed_check_strings.sql`.
 
 ## What was asked
