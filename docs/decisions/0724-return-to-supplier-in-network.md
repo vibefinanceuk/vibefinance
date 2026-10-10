@@ -1,6 +1,6 @@
 # 0724: Return to supplier shows in the supplier network
 
-**Status: built**, 10 October 2026, awaiting push and deploy. vf-app (migration 0159,
+**Status: live** at `0d3a0e5`, pushed and deployed 10 October 2026. vf-app (migration 0159,
 `return-route.ts`, `supplier-messages.ts`, `portal-route.ts`, `activity-route.ts`), vf-portal,
 vf-ui (`supplier-chat.js`), vf-licence (strings migration 0328).
 
