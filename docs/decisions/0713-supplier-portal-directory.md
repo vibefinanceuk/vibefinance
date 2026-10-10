@@ -1,6 +1,6 @@
 # 0713: The supplier portal's directory, sign-in and access tokens
 
-**Status: built**, not yet deployed. Phase 1 step 1 of `docs/design/supplier-portal.md`.
+**Status: live** at `df210d6`, pushed and deployed 10 October 2026, migration applied. Phase 1 step 1 of `docs/design/supplier-portal.md`.
 shared (`session/token.ts`, `session/portal-token.ts`); vf-licence (`portal.ts`, `index.ts`,
 `environment-route.ts`, `wrangler.jsonc`), migration `0321_supplier_portal_directory.sql`.
 
