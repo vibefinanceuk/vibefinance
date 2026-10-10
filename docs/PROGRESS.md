@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 10 October 2026 (decision 0715). A living document: what
+Last updated 10 October 2026 (decision 0716). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,13 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Supplier portal: turned on in the operator console (0716)
+
+The console's Licence editor has a Supplier portal tick, which adds or removes the
+`supplier_portal` licence feature; the environment reads it at once.
+
+Full reasoning is in decision 0716.
 
 ### Supplier portal: invite from the supplier's page (0715)
 

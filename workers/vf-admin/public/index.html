@@ -1294,7 +1294,7 @@ function detailRow(tr, className) {
   return td;
 }
 
-/** Change a licence: the plan, volume, agents (0622), dates and state. Its features are kept. */
+/** Change a licence: the plan, volume, agents (0622), the supplier portal (0716), dates and state. Its other features are kept. */
 function toggleLicence(tr, e) {
   const td = detailRow(tr, "licencerow");
   if (!td) return;
@@ -1322,6 +1322,8 @@ function toggleLicence(tr, e) {
   queries.placeholder = "default";
   // Decision 0631: prepared actions in this tier; ticked unless the licence leaves them out.
   const actions = Object.assign(document.createElement("input"), { type: "checkbox", checked: l.agentActions !== false });
+  // Decision 0716: the supplier portal (design §7.6), a feature in the licence claims.
+  const portal = Object.assign(document.createElement("input"), { type: "checkbox", checked: (l.features ?? []).includes("supplier_portal") });
   const from = input(String(l.validFrom ?? "").slice(0, 10), 11, "date");
   const to = input(l.validTo ? String(l.validTo).slice(0, 10) : "", 11, "date");
   const status = document.createElement("select");
@@ -1337,6 +1339,7 @@ function toggleLicence(tr, e) {
     field("AI summaries a day (blank: default)", summaries),
     Object.assign(field("Prepared actions", actions), { className: "tick" }),
     field("Own questions a day (blank: default, 0: none)", queries),
+    Object.assign(field("Supplier portal", portal), { className: "tick" }),
     field("From", from),
     field("To (blank: open)", to),
     field("State", status),
@@ -1354,7 +1357,7 @@ function toggleLicence(tr, e) {
         ...(to.value ? { validTo: to.value } : {}),
         status: status.value,
         ...(reason.value.trim() ? { statusReason: reason.value.trim() } : {}),
-        features: l.features ?? [],
+        features: [...(l.features ?? []).filter((f) => f !== "supplier_portal"), ...(portal.checked ? ["supplier_portal"] : [])],
       }),
       "approve"
     )
