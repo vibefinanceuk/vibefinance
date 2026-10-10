@@ -155,6 +155,7 @@ import {
   handleDiscardDraft,
   handleReorderDraftStages,
 } from "./process-route.js";
+import { getPortalInvoice, listPortalInvoices, portalAuth } from "./portal-route.js";
 import { handleCreateIntakeChannel } from "./intake-channel-route.js";
 import { handleCaptureIntake, handleCaptureUblXml, handleCapturePdf, handleCaptureImage, handleFinalisePendingDocument, handleIntakeStats } from "./intake-capture-route.js";
 import {
@@ -1076,6 +1077,27 @@ export default {
 
     if (pathname === "/health") {
       return json({ status: "ok" });
+    }
+
+    /**
+     * **The supplier portal — decision 0714.** A supplier's person, with a
+     * portal access token from vf-licence: only that supplier's invoices,
+     * only the companies the customer named. Before every other check on
+     * purpose: no staff session or API key is accepted here, and a portal
+     * token is accepted nowhere else.
+     */
+    if (pathname === "/portal/invoices" || pathname.startsWith("/portal/invoices/")) {
+      if (request.method !== "GET") return json({ error: "not found" }, 404);
+      const { db } = resolveTenant(request, env);
+      const auth = await portalAuth(db, request, isPublicKeyJwk(env.LICENCE_SIGNING_PUBLIC_KEY) ? env.LICENCE_SIGNING_PUBLIC_KEY : undefined, env.ENVIRONMENT_ID);
+      if (!auth.ok) return json(auth.body, auth.status);
+      const one = pathname.match(/^\/portal\/invoices\/([^/]+)$/);
+      const result = one
+        ? await getPortalInvoice(db, auth.claims, one[1])
+        : pathname === "/portal/invoices"
+          ? await listPortalInvoices(db, auth.claims, url.searchParams)
+          : { status: 404, body: { error: "not found" } };
+      return json(result.body, result.status);
     }
 
     // Licence enforcement, Blueprint: "Blocking for non-payment is a

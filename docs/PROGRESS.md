@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 10 October 2026 (decision 0713). A living document: what
+Last updated 10 October 2026 (decision 0714). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,15 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Supplier portal: an instance answers for its invoices (0714)
+
+Phase 1 step 2. `GET /portal/invoices` and `/portal/invoices/:id` on vf-app, for a portal
+access token: only that supplier's invoices for the linked companies, with a status in the
+supplier's words (received, in review, approved, sent for payment, rejected) and nothing of
+the customer's workings. Needs the `supplier_portal` licence feature.
+
+Full reasoning is in decision 0714.
 
 ### Supplier portal: directory, sign-in and access tokens (0713)
 
