@@ -1,6 +1,6 @@
 # 0714: An instance answers the supplier portal: its invoices, in the supplier's words
 
-**Status: built**, not yet deployed. Phase 1 step 2 of `docs/design/supplier-portal.md`.
+**Status: live** at `d214728`, pushed and deployed 10 October 2026. Phase 1 step 2 of `docs/design/supplier-portal.md`.
 vf-app (`portal-route.ts`, `index.ts`). No migration.
 
 ## What was asked
