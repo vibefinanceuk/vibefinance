@@ -93,6 +93,11 @@ export const VALIDATION_CHECKS = [
   // po.status, merged in by mergePoMatchFacts like po.matched. Shown at
   // every stage, so a PO put on hold after Matching is seen at AP Review.
   "po_status",
+  // Decision 0711 — whether the invoice number is a possible duplicate of
+  // an earlier invoice from the same supplier. Not run by
+  // validateInvoiceFacts: the score needs the database (decision 0028),
+  // so the invoice screen's routes add it with `duplicateVerdict` below.
+  "duplicate",
 ] as const;
 export type ValidationCheck = (typeof VALIDATION_CHECKS)[number];
 
@@ -579,4 +584,24 @@ export function accountCodingFailures(lines: readonly LineForValidation[]): {
     });
   }
   return { checked, failures };
+}
+
+/**
+ * **The invoice number's duplicate check, for the screen — decision 0711.**
+ * Reads the score decision 0028 stores on every save
+ * (`invoice_headers.duplicate_confidence`), so the screen says what the
+ * Possible duplicates card, the Documents filter and any rule on
+ * `invoice.duplicate_confidence` see. Below `threshold`: the number is
+ * confirmed (green). At or above: a warning on it (amber). Never scored
+ * (null): nothing, since nothing was checked.
+ */
+export function duplicateVerdict(
+  confidence: number | null | undefined,
+  threshold: number
+): { confirms: ValidationConfirmation[]; involves: ValidationFailure[] } {
+  if (typeof confidence !== "number") return { confirms: [], involves: [] };
+  if (confidence >= threshold) {
+    return { confirms: [], involves: [{ check: "duplicate", fields: ["BT-1"], severity: "warning", value: `${Math.round(confidence * 100)}%` }] };
+  }
+  return { confirms: [{ check: "duplicate", fields: ["BT-1"] }], involves: [] };
 }

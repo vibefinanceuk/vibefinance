@@ -3639,6 +3639,9 @@ const KEYS_THE_INTERFACE_USES = [
   "suppliers.learning.helped",
   // A supplier's line columns (decision 0705).
   "suppliers.layouts.columns",
+  // The invoice number's duplicate check (decision 0711).
+  "check.duplicate",
+  "check.duplicate.ok",
   // What a passed check says on hover (decision 0710).
   "check.ok",
   "check.vat_arithmetic.ok",

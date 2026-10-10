@@ -96,6 +96,7 @@ const STRINGS = {
     "check.po_mismatch": "Does not match the purchase order",
     "check.vat_arithmetic.ok": "Net plus VAT equals the total",
     "check.ok": "Checked",
+    "check.duplicate.ok": "Not a duplicate of an earlier invoice from this supplier",
     "viewer.exceptions": "Exceptions",
     "viewer.seller": "Seller",
     "viewer.buyer": "Buyer",
@@ -562,6 +563,25 @@ describe("three-tier severity on key fields (decision 0400)", () => {
     expect(box.querySelector(".kf-dot")).not.toBeNull();
     // Decision 0710 — a passed check says what passed, not the failure's wording.
     expect(box.title).toBe("Net plus VAT equals the total");
+  });
+
+  it("the invoice number turns green when it is not a duplicate — decision 0711", async () => {
+    stubFetch({
+      ...RESPONSE({
+        passed: true,
+        checked: ["duplicate"],
+        failures: [],
+        confirms: [{ check: "duplicate", fields: ["BT-1"] }],
+      }),
+      "/api/field-visibility": { fields: [{ field: "BT-1", visibility: "edit", type: "text", line: false, description: "invoice number" }, ...FIELDS.fields] },
+    });
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { openViewer } = await import("/viewer.js");
+    await openViewer(TASK, () => {});
+    const box = document.getElementById("f-BT-1")?.closest(".kf") as HTMLElement;
+    expect(box.classList.contains("ok")).toBe(true);
+    expect(box.title).toBe("Not a duplicate of an earlier invoice from this supplier");
   });
 
   it("a passed check with no wording of its own says Checked, never the failure — decision 0710", async () => {

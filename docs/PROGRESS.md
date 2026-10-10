@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 10 October 2026 (decision 0710). A living document: what
+Last updated 10 October 2026 (decision 0711). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,15 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### The invoice number shows its duplicate check (0711)
+
+The invoice number is green when it is not a possible duplicate of an earlier invoice from
+the same supplier, amber when it is (the same 0.4 bar as the Possible duplicates card), and
+plain when never scored. Lines stay unhighlighted unless a check fails; their Match column
+already shows each pass. Advisory only: stage visits and rules are unchanged.
+
+Full reasoning is in decision 0711.
 
 ### A passed check says what passed on hover (0710)
 

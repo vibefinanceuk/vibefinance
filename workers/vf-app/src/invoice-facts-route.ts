@@ -4,11 +4,11 @@ import { supplierProjectOnly } from "./supplier-project-only.js";
 import type { InvoiceFacts } from "@vibefinance/shared";
 import { getCostObjectRule } from "./coding-config-route.js";
 import { lineMatchSummary } from "./po-line-summary.js";
-import { validateInvoiceFacts } from "./validation.js";
+import { validateInvoiceFacts, duplicateVerdict } from "./validation.js";
 import type { RouteResult } from "./org-route.js";
 import { CODE_LISTS } from "./peppol-render-data.js";
 import { unitLineage } from "./unit-config.js";
-import { findSimilarInvoices } from "./invoice-history.js";
+import { findSimilarInvoices, POSSIBLE_DUPLICATE_THRESHOLD } from "./invoice-history.js";
 import { preferredDocumentType, documentTypeInfo } from "./document-storage.js";
 import { mergePoMatchFacts } from "./po-matching.js";
 import { applySavedPairings, isPoInvoice } from "./po-pairings.js";
@@ -716,6 +716,15 @@ export async function handleGetInvoice(
     splits,
   });
   const verdict = validateInvoiceFacts(poMerged.headerFacts, codingLines);
+
+  // Decision 0711 — the invoice number's duplicate check, from the score stored on save.
+  {
+    const scored = await db.prepare("SELECT duplicate_confidence FROM invoice_headers WHERE id = ?").bind(invoice.id).first<{ duplicate_confidence: number | null }>();
+    const duplicate = duplicateVerdict(scored?.duplicate_confidence, POSSIBLE_DUPLICATE_THRESHOLD);
+    if (scored?.duplicate_confidence != null) verdict.checked.push("duplicate");
+    if (duplicate.confirms.length > 0) verdict.confirms = [...(verdict.confirms ?? []), ...duplicate.confirms];
+    if (duplicate.involves.length > 0) verdict.involves = [...(verdict.involves ?? []), ...duplicate.involves];
+  }
 
   return {
     status: 200,

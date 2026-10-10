@@ -3,7 +3,8 @@ import { getCostObjectRule } from "./coding-config-route.js";
 import { isPoInvoice, nonPoLines } from "./po-pairings.js";
 import { isKnownField, type InvoiceFacts } from "@vibefinance/shared";
 import { handleUpsertInvoice } from "./invoice-facts-route.js";
-import { validateInvoiceFacts, accountCodingFailures } from "./validation.js";
+import { validateInvoiceFacts, accountCodingFailures, duplicateVerdict } from "./validation.js";
+import { POSSIBLE_DUPLICATE_THRESHOLD } from "./invoice-history.js";
 import { resolveFieldVisibility } from "./field-visibility-route.js";
 import { mergePoMatchFacts } from "./po-matching.js";
 import {
@@ -867,6 +868,15 @@ export async function handleKeyInvoiceFields(
     verdict.failures.push("account_coding");
     verdict.passed = false;
     verdict.involves = [...(verdict.involves ?? []), ...coding.failures];
+  }
+
+  // Decision 0711 — the invoice number's duplicate check, from the score stored on save.
+  {
+    const scored = await db.prepare("SELECT duplicate_confidence FROM invoice_headers WHERE id = ?").bind(invoiceId).first<{ duplicate_confidence: number | null }>();
+    const duplicate = duplicateVerdict(scored?.duplicate_confidence, POSSIBLE_DUPLICATE_THRESHOLD);
+    if (scored?.duplicate_confidence != null) verdict.checked.push("duplicate");
+    if (duplicate.confirms.length > 0) verdict.confirms = [...(verdict.confirms ?? []), ...duplicate.confirms];
+    if (duplicate.involves.length > 0) verdict.involves = [...(verdict.involves ?? []), ...duplicate.involves];
   }
 
   return {
