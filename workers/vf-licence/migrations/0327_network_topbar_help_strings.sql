@@ -1,0 +1,41 @@
+-- 0327_network_topbar_help_strings.sql
+-- Decision 0723 — the supplier network's top bar (Night / Day, Language, Help,
+-- Sign out, as in the application) and its Help panel.
+
+INSERT INTO ui_strings (key, locale, value) VALUES
+ ('network.mood.day', 'en', 'Day'),
+ ('network.mood.day', 'de', 'Tag'),
+ ('network.mood.night', 'en', 'Night'),
+ ('network.mood.night', 'de', 'Nacht'),
+ ('network.help', 'en', 'Help'),
+ ('network.help', 'de', 'Hilfe'),
+ ('network.help.intro', 'en', 'The supplier network shows the invoices you have sent to customers who use VibeFinance, and where each one stands. It is asked of each customer live: nothing is copied here.'),
+ ('network.help.intro', 'de', 'Das Lieferantennetzwerk zeigt die Rechnungen, die Sie an Kunden mit VibeFinance gesendet haben, und wo jede steht. Jeder Kunde wird live gefragt: hier wird nichts gespeichert.'),
+ ('network.help.statuses', 'en', 'What each status means'),
+ ('network.help.statuses', 'de', 'Was die Status bedeuten'),
+ ('network.help.status.received', 'en', 'The customer has your invoice. Nobody has picked it up yet.'),
+ ('network.help.status.received', 'de', 'Der Kunde hat Ihre Rechnung. Sie wurde noch nicht bearbeitet.'),
+ ('network.help.status.in_review', 'en', 'The customer is checking it.'),
+ ('network.help.status.in_review', 'de', 'Der Kunde prüft sie.'),
+ ('network.help.status.query_raised', 'en', 'The customer has a question for you. Open the invoice to read it and reply.'),
+ ('network.help.status.query_raised', 'de', 'Der Kunde hat eine Frage an Sie. Öffnen Sie die Rechnung, um sie zu lesen und zu antworten.'),
+ ('network.help.status.approved', 'en', 'Approved for payment, not yet sent to be paid.'),
+ ('network.help.status.approved', 'de', 'Zur Zahlung freigegeben, noch nicht zur Zahlung übergeben.'),
+ ('network.help.status.sent_for_payment', 'en', 'Passed to the customer''s payment system.'),
+ ('network.help.status.sent_for_payment', 'de', 'An das Zahlungssystem des Kunden übergeben.'),
+ ('network.help.status.paid', 'en', 'Paid, on the date shown once the customer''s system reports it.'),
+ ('network.help.status.paid', 'de', 'Bezahlt, mit Datum, sobald das System des Kunden es meldet.'),
+ ('network.help.status.rejected', 'en', 'The customer will not pay this invoice, with the reason they chose to show.'),
+ ('network.help.status.rejected', 'de', 'Der Kunde zahlt diese Rechnung nicht, mit dem Grund, den er angibt.'),
+ ('network.help.questions.title', 'en', 'Answering a question'),
+ ('network.help.questions.title', 'de', 'Eine Frage beantworten'),
+ ('network.help.questions', 'en', 'You are emailed when a customer asks about an invoice. Open it here, read the question below the invoice details and write your reply. The customer is emailed when you send, and the invoice leaves Query raised.'),
+ ('network.help.questions', 'de', 'Sie erhalten eine E-Mail, wenn ein Kunde zu einer Rechnung fragt. Öffnen Sie sie hier, lesen Sie die Frage unter den Rechnungsdaten und schreiben Sie Ihre Antwort. Der Kunde erhält beim Senden eine E-Mail, und die Rechnung ist nicht mehr als Rückfrage markiert.'),
+ ('network.help.access.title', 'en', 'Who sees what'),
+ ('network.help.access.title', 'de', 'Wer was sieht'),
+ ('network.help.access', 'en', 'You see a customer''s invoices only for the companies they invited you for. To see another of their companies, or to add a colleague, ask your contact there to send an invitation.'),
+ ('network.help.access', 'de', 'Sie sehen die Rechnungen eines Kunden nur für die Firmen, für die er Sie eingeladen hat. Für eine weitere Firma oder einen Kollegen bitten Sie Ihren Ansprechpartner dort um eine Einladung.'),
+ ('network.help.free', 'en', 'The supplier network is free for suppliers.'),
+ ('network.help.free', 'de', 'Das Lieferantennetzwerk ist für Lieferanten kostenlos.');
+
+-- ASSERT: SELECT count(*) FROM ui_strings WHERE key IN ('network.mood.day', 'network.mood.night', 'network.help') OR key LIKE 'network.help.%' == 34

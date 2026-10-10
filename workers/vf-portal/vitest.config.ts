@@ -2,7 +2,8 @@ import { cloudflareTest } from "@cloudflare/vitest-pool-workers";
 import { defineConfig } from "vitest/config";
 
 export default defineConfig({
-  test: { include: ["test/**/*.test.ts"] },
+  // Decision 0723: the stylesheet is read as text by its tests (`?raw`), so CSS is not emptied.
+  test: { include: ["test/**/*.test.ts"], css: true },
   plugins: [
     cloudflareTest({
       wrangler: { configPath: "./wrangler.jsonc" },

@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 10 October 2026 (decision 0722). A living document: what
+Last updated 10 October 2026 (decision 0723). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,14 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### The supplier network's top bar and message colours (0723)
+
+The network's top bar has the application's Night / Day, Language (EN, DE), Help and Sign out;
+Help explains the statuses and answering a question. Messages keep the application's light
+Timeline / Chat colours in Night too.
+
+Full reasoning is in decision 0723.
 
 ### The expanded document window's right-hand tabs (0722)
 

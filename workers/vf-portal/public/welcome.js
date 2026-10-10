@@ -1,4 +1,5 @@
 import { loadStrings, t, fill } from "/strings.js";
+import { mountTopbar } from "/topbar.js";
 
 /**
  * **Accepting an invitation — decision 0717.** The code from the email and
@@ -26,6 +27,8 @@ export function refusal(status, body) {
 export async function start() {
   await loadStrings();
   fill();
+  // Decision 0723: Night / Day, Language and Help here too (no Sign out before signing in).
+  mountTopbar({ onLanguage: () => location.reload() });
   $("welcome").hidden = false;
   const token = tokenFromHash(location.hash);
   if (!token) {

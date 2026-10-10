@@ -1,4 +1,5 @@
 import { loadStrings, t, fill, el } from "/strings.js";
+import { mountTopbar, setSignedIn } from "/topbar.js";
 
 /**
  * **The supplier network's main page — decision 0717.** Sign in; then one
@@ -31,7 +32,7 @@ async function api(path, init) {
 function showSignIn() {
   $("list").hidden = true;
   $("who").hidden = true;
-  $("signout").hidden = true;
+  setSignedIn(false);
   $("signin").hidden = false;
 }
 
@@ -174,7 +175,7 @@ async function showList() {
   $("signin").hidden = true;
   $("list").hidden = false;
   $("who").hidden = false;
-  $("signout").hidden = false;
+  setSignedIn(true);
   $("who").textContent = body.email ?? "";
   customers = body.customers ?? [];
   $("customers").textContent = customers.length ? t("network.customers", { list: customers.map(customerLabel).join(" · ") }) : t("network.nocustomers");
@@ -182,18 +183,35 @@ async function showList() {
   await loadInvoices();
 }
 
+function statusOptions() {
+  const chosen = $("status").value;
+  $("status").replaceChildren(el("option", { value: "", text: t("network.status.all") }), ...STATUSES.map((s) => el("option", { value: s, text: t(`network.status.${s}`) })));
+  $("status").value = chosen;
+}
+
 export async function start() {
   await loadStrings();
   fill();
-  $("status").replaceChildren(el("option", { value: "", text: t("network.status.all") }), ...STATUSES.map((s) => el("option", { value: s, text: t(`network.status.${s}`) })));
+  statusOptions();
+  /**
+   * Decision 0723: the top bar's controls. A new language redraws the
+   * words the page built itself (the filter, the list), not only `data-t`.
+   */
+  mountTopbar({
+    onSignOut: async () => {
+      await fetch("/api/sign-out", { method: "POST" });
+      document.querySelector(".backdrop")?.remove();
+      showSignIn();
+    },
+    onLanguage: async () => {
+      statusOptions();
+      if (!$("list").hidden) await showList();
+    },
+  });
   $("status").addEventListener("change", loadInvoices);
   $("search").addEventListener("input", () => {
     clearTimeout(timer);
     timer = setTimeout(loadInvoices, 300);
-  });
-  $("signout").addEventListener("click", async () => {
-    await fetch("/api/sign-out", { method: "POST" });
-    showSignIn();
   });
   $("signin-form").addEventListener("submit", async (e) => {
     e.preventDefault();

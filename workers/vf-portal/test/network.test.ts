@@ -185,3 +185,22 @@ describe("readable in Night too", () => {
     expect(unpaired).toEqual([]);
   });
 });
+
+describe("the top bar and messages, as the application's (decision 0723)", () => {
+  it("keeps the messages in Day's light colours in Night too, as the application's Timeline / Chat", async () => {
+    const css = (await import("../public/portal.css?raw")).default as string;
+    const msg = /\.msg \{\s*--surface-2[^}]*\}/.exec(css)?.[0] ?? "";
+    expect(msg).toContain("--surface-2: #ffffff;");
+    expect(msg).toContain("--text-primary: #121a26;");
+  });
+
+  it("leaves the top bar's controls to topbar.js, on both pages, with Night / Day, Language, Help and Sign out", async () => {
+    const index = (await import("../public/index.html?raw")).default as string;
+    const welcome = (await import("../public/welcome.html?raw")).default as string;
+    for (const page of [index, welcome]) expect(page).toContain('<div class="right"></div>');
+    expect(index).not.toContain('id="signout"');
+    const topbar = (await import("../public/topbar.js?raw")).default as string;
+    for (const key of ["network.mood.", "network.help", "network.signout"]) expect(topbar).toContain(key);
+    expect(topbar).toContain("LANGUAGES");
+  });
+});

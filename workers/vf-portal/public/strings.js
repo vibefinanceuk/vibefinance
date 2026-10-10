@@ -4,9 +4,34 @@
  */
 let strings = {};
 
+/** Decision 0723: English or Deutsch, chosen in the top bar and remembered in this browser. */
+export const LANGUAGES = [
+  { code: "en", name: "English" },
+  { code: "de", name: "Deutsch" },
+];
+const LOCALE_KEY = "vfn-locale";
+
+export function chosenLocale() {
+  try {
+    const stored = localStorage.getItem(LOCALE_KEY);
+    if (LANGUAGES.some((l) => l.code === stored)) return stored;
+  } catch {
+    // The browser's own language, then.
+  }
+  return null;
+}
+
+export function chooseLocale(code) {
+  try {
+    localStorage.setItem(LOCALE_KEY, code);
+  } catch {
+    // Right for this page either way: the caller reloads the words.
+  }
+}
+
 export async function loadStrings() {
   try {
-    const res = await fetch(`/api/ui-strings?locale=${encodeURIComponent(navigator.language || "en")}`);
+    const res = await fetch(`/api/ui-strings?locale=${encodeURIComponent(chosenLocale() ?? (navigator.language || "en"))}`);
     if (!res.ok) return;
     const body = await res.json();
     strings = body.strings ?? {};
