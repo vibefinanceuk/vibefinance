@@ -1,6 +1,6 @@
 # 0719: The supplier pop-out in two columns, the supplier portal on the right
 
-**Status: built**, not yet deployed. vf-ui (`suppliers.js`, `app.css`); vf-licence migration
+**Status: live** at `a8127c8`, pushed and deployed 10 October 2026, migration applied. vf-ui (`suppliers.js`, `app.css`); vf-licence migration
 `0325_portal_invite_heading_strings.sql`.
 
 ## What was asked
