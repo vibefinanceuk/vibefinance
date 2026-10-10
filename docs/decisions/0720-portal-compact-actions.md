@@ -1,6 +1,6 @@
 # 0720: The supplier portal's actions as small icons with their word
 
-**Status: built**, not yet deployed. vf-ui (`suppliers.js`, `app.css`). No migration.
+**Status: live** at `62325ff`, pushed and deployed 10 October 2026. vf-ui (`suppliers.js`, `app.css`). No migration.
 
 ## What was asked
 
