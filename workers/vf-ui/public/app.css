@@ -5635,7 +5635,8 @@
 .supplieremailed { margin-top: 4px; font-size: var(--text-sm); color: var(--text-secondary); }
 .supplieremailed.warn { color: var(--text-warning); }
 .popout.asksupplier { width: min(560px, 100%); }
-.asksupplier textarea.askquestion { width: 100%; min-height: 96px; }
+/* The question box as wide as the pop-out. Not `.askquestion`, which is Help's question bubble (0519, max 85%). */
+.asksupplier textarea.asksupplierquestion { width: 100%; min-height: 96px; }
 .asklines { display: flex; flex-wrap: wrap; gap: 6px 12px; }
 .asklines .askline { display: inline-flex; align-items: center; gap: 4px; }
 .supplierquery .reasonline-row { color: var(--text-primary); }

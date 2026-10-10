@@ -148,7 +148,7 @@ export function buildSupplierTab(invoiceId, initial) {
 export function openAskSupplier(invoiceId, chat, lines, { onAsked } = {}) {
   const close = () => backdrop.remove();
   const supplier = chat.supplierName ?? "";
-  const question = el("textarea", { class: "askquestion", placeholder: t("asksupplier.placeholder") });
+  const question = el("textarea", { class: "asksupplierquestion", placeholder: t("asksupplier.placeholder") });
   const ticks = lines.map((n) => {
     const box = el("input", { type: "checkbox", value: String(n) });
     return { n, box, node: el("label", { class: "askline" }, [box, el("span", { text: String(n) })]) };

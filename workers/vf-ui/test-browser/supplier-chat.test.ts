@@ -136,6 +136,19 @@ describe("Ask supplier", () => {
     await vi.waitFor(() => expect(box.querySelector(".warn")?.textContent).toContain("Nobody at Lager Nord GmbH is linked"));
   });
 
+  it("gives the question box the pop-out's full width (Dan, 10 October)", async () => {
+    stub(() => ({ status: 201, body: {} }));
+    const css = (await import("virtual:stylesheets")).default as Record<string, string>;
+    const style = document.createElement("style");
+    style.textContent = `${css["tokens.css"] ?? ""}\n${css["app.css"]}`;
+    document.head.append(style);
+    const { openAskSupplier } = await load();
+    openAskSupplier("inv-1", CHAT, [1], {});
+    const box = document.querySelector(".popout.asksupplier textarea")!;
+    expect(box.getBoundingClientRect().width).toBe(box.parentElement!.getBoundingClientRect().width);
+    style.remove();
+  });
+
   it("the banner names who asked and when", async () => {
     stub(() => ({ status: 201, body: {} }));
     const { supplierQueryText } = await load();

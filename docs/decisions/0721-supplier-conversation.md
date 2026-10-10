@@ -1,6 +1,6 @@
 # 0721: The conversation with the supplier (supplier portal, Phase 2a)
 
-**Status: built**, 10 October 2026, awaiting push and deploy. vf-app (migration 0158,
+**Status: live** at `c375606`, pushed and deployed 10 October 2026. vf-app (migration 0158,
 `supplier-messages.ts`), vf-portal, vf-ui, vf-licence (strings migration 0326).
 
 ## What was asked
@@ -53,6 +53,13 @@ the lines it is about, and who was emailed (or why not).
 - `supplier-chat.js` (new); the proxy allows `/invoices/:id/supplier-messages`.
 
 **vf-licence.** Strings, en and de (migration 0326).
+
+## Afterwards: the question box at full width
+
+Dan, against a screenshot: *"Could you change the text box, so that it align with the width of
+the pop-out"*. The box was named `askquestion`, which is already Help's question bubble
+(0519) with `max-width: 85%`. Renamed `asksupplierquestion`; a browser test checks the box is
+as wide as its field.
 
 ## Not in this
 
