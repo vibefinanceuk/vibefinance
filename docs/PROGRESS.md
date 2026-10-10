@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 10 October 2026 (decision 0718). A living document: what
+Last updated 10 October 2026 (decision 0719). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,14 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### The supplier pop-out in two columns (0719)
+
+With the supplier portal on, the supplier pop-out widens: the record on the left, the portal
+(people, Change companies, Invite someone) on the right. One column without the portal, and
+on narrow windows.
+
+Full reasoning is in decision 0719.
 
 ### Supplier portal: companies changed in place, and many kept manageable (0718)
 

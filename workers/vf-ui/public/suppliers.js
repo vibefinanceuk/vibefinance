@@ -659,7 +659,7 @@ export function companyPicker(companies, chosen = []) {
  * place. Hidden entirely when the customer's licence does not include the
  * portal, or the person may not see suppliers.
  */
-export function portalSection(s) {
+export function portalSection(s, onVisible = () => {}) {
   const body = el("div", { class: "portalpeople" });
   const section = el("div", { class: "supplierportal", hidden: "" }, [el("h4", { text: t("suppliers.portal.title") }), body]);
   const base = `/api/suppliers/${encodeURIComponent(s.id)}/portal`;
@@ -680,18 +680,22 @@ export function portalSection(s) {
       const res = await fetch(base);
       if (!res.ok) {
         section.hidden = true;
+        onVisible(false);
         return;
       }
       data = await res.json();
     } catch {
       section.hidden = true;
+      onVisible(false);
       return;
     }
     if (!data.licensed) {
       section.hidden = true;
+      onVisible(false);
       return;
     }
     section.hidden = false;
+    onVisible(true);
 
     const linkRow = (l) => {
       const row = el("div", { class: "portalperson" });
@@ -775,7 +779,10 @@ export function portalSection(s) {
           problem.textContent = json.error ?? t("suppliers.changefailed");
         },
       });
-      children.push(el("div", { class: "portalinvite" }, [email, picker.node, invite, el("div", { class: "muted sm", text: t("suppliers.portal.help") }), problem]));
+      children.push(
+        el("div", { class: "portalinvitehead", text: t("suppliers.portal.invitesomeone").replace("{supplier}", s.name ?? "") }),
+        el("div", { class: "portalinvite" }, [email, picker.node, invite, el("div", { class: "muted sm", text: t("suppliers.portal.help") }), problem])
+      );
     }
     if (message) children.unshift(el("div", { class: warn ? "warn" : "portalnote", text: message }));
     body.replaceChildren(...children);
@@ -970,9 +977,10 @@ function openSupplier(s) {
     actionLink("close", { onclick: () => close() }),
   ]);
 
+  const portal = portalSection(s, (visible) => box.classList.toggle("supplierpop-wide", visible));
   const box = el(
     "div",
-    { class: "popout" },
+    { class: "popout supplierpop" },
     [
       /**
        * **Release Hold/Hold, Activate/Deactivate, Save, and Close —
@@ -1002,11 +1010,16 @@ function openSupplier(s) {
        * work waiting for a team.
        */
       s.erpIdentifier ? null : el("div", { class: "warn", text: t("suppliers.awaitingerp") }),
-      form,
-      projectOnlyRow,
-      layoutsSection(s),
-      portalSection(s),
-      problem,
+      /**
+       * **The record on the left, the supplier portal on the right —
+       * decision 0719.** The pop-out widens only once the portal section
+       * has something to show; a customer without the portal keeps the
+       * single column it had. Stacked again on a narrow window.
+       */
+      el("div", { class: "suppliercols" }, [
+        el("div", { class: "suppliermain" }, [form, projectOnlyRow, layoutsSection(s), problem].filter(Boolean)),
+        el("div", { class: "supplierside" }, [portal]),
+      ]),
     ].filter(Boolean)
   );
 

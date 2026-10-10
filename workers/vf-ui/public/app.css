@@ -4282,6 +4282,27 @@
   .portalcompany { display: flex; align-items: center; gap: 6px; font-size: var(--text-sm); }
   .portalcompany input { width: auto; }
   .portalinvite .actionlink { justify-self: start; }
+  /*
+    Decision 0719 — the supplier pop-out: the record on the left, the
+    supplier portal on the right, once the portal has something to show.
+  */
+  .popout.supplierpop.supplierpop-wide { width: min(1180px, 96vw); max-width: none; }
+  .supplierpop-wide .suppliercols { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0 32px; align-items: start; }
+  .supplierpop-wide .supplierside { border-left: 0.5px solid var(--border); padding-left: 28px; }
+  .supplierpop-wide .supplierside .supplierportal { margin-top: 0; }
+  .supplierpop-wide .supplierside .supplierportal h4 { margin-top: 0; }
+  .supplierpop-wide .portalinvite, .supplierpop-wide .portaledit { max-width: none; }
+  .supplierpop-wide .portalcompanies-many { max-height: 236px; }
+  @media (max-width: 900px) {
+    .supplierpop-wide .suppliercols { grid-template-columns: minmax(0, 1fr); }
+    .supplierpop-wide .supplierside { border-left: 0; padding-left: 0; border-top: 0.5px solid var(--border); padding-top: 14px; margin-top: 14px; }
+  }
+  /* Each linked or invited person as a row: who and for what on the left, actions on the right. */
+  .supplierportal .portalperson { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; column-gap: 16px; row-gap: 0; align-items: center; padding: 8px 0; }
+  .supplierportal .portalperson > span:first-child { grid-column: 1; grid-row: 1; font-weight: 700; overflow-wrap: anywhere; }
+  .supplierportal .portalperson > span.muted { grid-column: 1; grid-row: 2; }
+  .supplierportal .portalperson > button { grid-row: 1 / span 2; white-space: nowrap; }
+  .portalinvitehead { margin: 18px 0 6px; font-size: var(--text-sm); color: var(--text-secondary); font-weight: 700; }
   /* Decision 0718 — changing a person's companies in place, and choosing among many. */
   .portalpersonwrap { border-bottom: 0.5px solid var(--border); }
   .portalpersonwrap .portalperson { border-bottom: 0; }

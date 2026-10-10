@@ -27,6 +27,7 @@ const STRINGS = {
     "suppliers.portal.choose": "Choose at least one company.",
     "suppliers.portal.sent": "Invitation sent to {email}.",
     "suppliers.portal.more": "+ {n} more",
+    "suppliers.portal.invitesomeone": "Invite someone from {supplier}",
     "suppliers.portal.chosen": "{n} of {total} chosen",
     "suppliers.portal.change": "Change companies",
     "suppliers.portal.save": "Save",
@@ -1239,5 +1240,21 @@ describe("many companies, and changing them in place — decision 0718", () => {
     for (let i = 0; i < 10; i++) await Promise.resolve();
     await new Promise((r) => setTimeout(r, 0));
     expect(posted[0]).toEqual({ path: "/api/suppliers/s1/portal/links/pl-1/companies", body: { orgUnitIds: ["uk", "ie"] } });
+  });
+});
+
+describe("the supplier pop-out in two columns — decision 0719", () => {
+  it("widens, with the portal to the right of the record, once the portal has something to show", async () => {
+    const { section } = await openWithPortal(PORTAL);
+    const box = section.closest(".popout") as HTMLElement;
+    expect(box.classList.contains("supplierpop-wide")).toBe(true);
+    expect(section.closest(".supplierside")).not.toBeNull();
+    expect(box.querySelector(".suppliermain .supplierlayouts")).not.toBeNull();
+    expect(section.querySelector(".portalinvitehead")?.textContent).toBe("Invite someone from Acme");
+  });
+
+  it("keeps one column when the customer's licence has no portal", async () => {
+    const { section } = await openWithPortal({ licensed: false });
+    expect((section.closest(".popout") as HTMLElement).classList.contains("supplierpop-wide")).toBe(false);
   });
 });

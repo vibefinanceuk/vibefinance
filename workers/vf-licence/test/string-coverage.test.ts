@@ -3639,6 +3639,8 @@ const KEYS_THE_INTERFACE_USES = [
   "suppliers.learning.helped",
   // A supplier's line columns (decision 0705).
   "suppliers.layouts.columns",
+  // The supplier pop-out's portal column (decision 0719).
+  "suppliers.portal.invitesomeone",
   // Companies changed in place and chosen among many (decision 0718).
   "suppliers.portal.more",
   "suppliers.portal.chosen",
