@@ -74,14 +74,26 @@ export function totals(model) {
   return { lines, breakdown, net, vat, total: round2(net + vat) };
 }
 
+/**
+ * A party's VAT number with its country code: as kept, or, where a record
+ * keeps only the digits (`111350965`), with its country's code in front
+ * (`GB111350965`), as EN 16931 wants it (BR-CO-09).
+ */
+export function vatOf(party) {
+  const vat = String(party?.vatId ?? "").replace(/[\s.-]/g, "").toUpperCase();
+  if (!vat) return "";
+  if (/^[A-Z]{2}/.test(vat)) return vat;
+  const country = String(party?.country ?? "").trim().toUpperCase();
+  return /^[A-Z]{2}$/.test(country) ? `${country === "GR" ? "EL" : country}${vat}` : vat;
+}
+
 /** `scheme:id`, as the record keeps it, or the VAT number under its country's scheme. */
 export function endpointOf(party) {
   const given = String(party?.endpoint ?? "").trim();
   const m = /^(\d{4}):(.+)$/.exec(given);
   if (m) return { scheme: m[1], id: m[2].trim() };
-  const vat = String(party?.vatId ?? "").replace(/\s/g, "");
-  const country = (vat.slice(0, 2) || String(party?.country ?? "")).toUpperCase();
-  const scheme = VAT_SCHEMES[country];
+  const vat = vatOf(party);
+  const scheme = VAT_SCHEMES[vat.slice(0, 2)];
   return vat && scheme ? { scheme, id: vat } : null;
 }
 
@@ -108,7 +120,7 @@ export function validate(model) {
   if (blank(seller.name)) fail("BR-06", "network.bis3.sellername", "seller");
   if (blank(seller.country)) fail("BR-09", "network.bis3.sellercountry", "seller");
   if (!endpointOf(seller)) fail("PEPPOL-EN16931-R020", "network.bis3.sellerendpoint", "seller");
-  if (!blank(seller.vatId) && !/^[A-Z]{2}/.test(String(seller.vatId).trim())) fail("BR-CO-09", "network.bis3.sellervat", "seller");
+  if (!blank(seller.vatId) && !/^[A-Z]{2}/.test(vatOf(seller))) fail("BR-CO-09", "network.bis3.sellervat", "seller");
   if (blank(buyer.name)) fail("BR-07", "network.bis3.buyername", "buyer");
   if (blank(buyer.country)) fail("BR-11", "network.bis3.buyercountry", "buyer");
   if (!endpointOf(buyer)) fail("PEPPOL-EN16931-R010", "network.bis3.buyerendpoint", "buyer");
@@ -153,7 +165,7 @@ function party(p) {
     "<cac:Party>",
     ep ? `<cbc:EndpointID schemeID="${esc(ep.scheme)}">${esc(ep.id)}</cbc:EndpointID>` : "",
     `<cac:PostalAddress>${address}</cac:PostalAddress>`,
-    blank(p.vatId) ? "" : `<cac:PartyTaxScheme>${el("cbc:CompanyID", String(p.vatId).replace(/\s/g, ""))}<cac:TaxScheme><cbc:ID>VAT</cbc:ID></cac:TaxScheme></cac:PartyTaxScheme>`,
+    blank(p.vatId) ? "" : `<cac:PartyTaxScheme>${el("cbc:CompanyID", vatOf(p))}<cac:TaxScheme><cbc:ID>VAT</cbc:ID></cac:TaxScheme></cac:PartyTaxScheme>`,
     `<cac:PartyLegalEntity>${el("cbc:RegistrationName", p.name)}</cac:PartyLegalEntity>`,
     "</cac:Party>",
   ].join("");

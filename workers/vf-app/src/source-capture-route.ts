@@ -118,7 +118,8 @@ async function supplierFor(
   const row = await db.prepare("SELECT id, erp_identifier, vat_id FROM suppliers WHERE id = ?").bind(placement.supplierId).first<{ id: string; erp_identifier: string | null; vat_id: string | null }>();
   const listLoadedAt = (await db.prepare("SELECT loaded_at FROM supplier_loads ORDER BY loaded_at DESC LIMIT 1").first<{ loaded_at: string }>())?.loaded_at ?? null;
   if (!row) return { supplierId: null, erpIdentifier: null, matchedOn: null, reason: "no_match", listLoadedAt };
-  const norm = (v: unknown) => String(v ?? "").replace(/[\s.-]/g, "").toUpperCase();
+  // The same number with or without its country code (GB111350965 and a record's 111350965): decision 0727.
+  const norm = (v: unknown) => String(v ?? "").replace(/[\s.-]/g, "").toUpperCase().replace(/^[A-Z]{2}(?=\d)/, "");
   const vat = typeof facts["BT-31"] === "string" ? facts["BT-31"] : null;
   return {
     supplierId: row.id,

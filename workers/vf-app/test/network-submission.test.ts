@@ -121,6 +121,14 @@ describe("sending an invoice", () => {
     expect(JSON.parse(h!.facts_json)["supplier.networkVatDiffers"]).toBe(true);
   });
 
+  it("does not flag a VAT number that differs from the record only by its country code", async () => {
+    await env.DB.prepare("UPDATE suppliers SET vat_id = '123456789' WHERE id = 'sup-ln'").run();
+    await addSource();
+    const r = await submit({ orgUnitId: "uk", xml: BIS3("DE123456789") });
+    const h = await env.DB.prepare("SELECT facts_json FROM invoice_headers WHERE id = ?").bind((r.body as { invoiceId: string }).invoiceId).first<{ facts_json: string }>();
+    expect(JSON.parse(h!.facts_json)["supplier.networkVatDiffers"]).toBe(false);
+  });
+
   it("refuses a company the invitation does not cover, and anything but a Peppol BIS Billing 3.0 invoice", async () => {
     await addSource();
     expect((await submit({ orgUnitId: "ie", xml: BIS3() })).body).toMatchObject({ reason: "not_covered" });

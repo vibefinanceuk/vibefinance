@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 // @ts-expect-error a browser module, plain JavaScript
-import { endpointOf, lineNet, toXml, totals, validate } from "../public/bis3.js";
+import { endpointOf, lineNet, toXml, totals, validate, vatOf } from "../public/bis3.js";
 
 /** The Create form's Peppol BIS Billing 3.0 invoice — decision 0727. */
 
@@ -67,6 +67,17 @@ describe("the rules", () => {
     m.lines[2].vatCategory = "AE";
     m.buyer.vatId = "";
     expect(validate(m).map((f: { rule: string }) => f.rule)).toEqual(["BR-E-10", "BR-AE-03"]);
+  });
+
+  it("puts the country code in front of a VAT number kept as digits only (Dan: The Thornbury Deli, 111350965)", () => {
+    expect(vatOf({ vatId: "111350965", country: "GB" })).toBe("GB111350965");
+    expect(vatOf({ vatId: "gb 111 350 965", country: "GB" })).toBe("GB111350965");
+    expect(vatOf({ vatId: "123456789", country: "GR" })).toBe("EL123456789");
+    expect(endpointOf({ vatId: "111350965", country: "GB" })).toEqual({ scheme: "9932", id: "GB111350965" });
+    const m = MODEL();
+    m.seller = { name: "The Thornbury Deli Limited", vatId: "111350965", country: "GB", city: "Thornbury" };
+    expect(validate(m)).toEqual([]);
+    expect(toXml(m)).toContain("<cbc:CompanyID>GB111350965</cbc:CompanyID>");
   });
 
   it("needs an electronic address for each party: the record's, or its VAT number under the country's scheme", () => {

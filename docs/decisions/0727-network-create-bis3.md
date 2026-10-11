@@ -53,6 +53,14 @@ in Day's lighter colours, not deep red. The three cards now stretch to the talle
 field to put right, the check and the sent notice use the fixed severity colours the app's own
 fields use (`--severity-danger-bg` and its text), in both themes.
 
+## Afterwards: a VAT number kept without its country code
+
+Dan's screenshot showed The Thornbury Deli's record keeping its VAT number as `111350965`, which
+the form read as no VAT number at all. A VAT number kept as digits now takes the record's
+country code in front (`GB111350965`, Greece's `EL`) for the electronic address and the invoice,
+and the customer's instance compares the two with or without the code, so such an invoice is not
+flagged as a different supplier.
+
 ## Not in this
 
 Sending through a Peppol access point (this is the format, through our own network); credit
