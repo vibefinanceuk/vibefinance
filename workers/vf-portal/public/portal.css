@@ -23,18 +23,14 @@ main#welcome .field + .field { margin-top: var(--gap-loose); }
 .status.rejected { background: var(--severity-danger-bg); color: var(--severity-danger-text); }
 
 /* An invoice, opened (0717). */
-.popout.netinvoice { width: min(760px, 100%); max-height: 88vh; }
 .popout .head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 4px; }
 .popout .head h2 { margin: 0; font-size: var(--text-lg); }
 .popout .head > button { margin-left: auto; }
-.facts { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 10px 18px; margin: 14px 0; }
-.facts div span { display: block; color: var(--text-muted); font-size: var(--text-sm); }
 /* Dan: the comment on a returned or rejected invoice in Day's light red, in Night too (0728). */
 .comment { border-left: 3px solid var(--border-danger); padding: 8px 12px; background: var(--severity-danger-bg); color: var(--severity-danger-text); margin: 12px 0; }
-.netinvoice table { width: 100%; }
 
 /* The conversation with a customer — decision 0721. */
-.conversation h3 { font-size: var(--text-base); margin: 18px 0 6px; }
+.conversation h3 { font-size: var(--text-base); margin: 0 0 6px; }
 .msg { border: 0.5px solid var(--border); border-radius: 10px; padding: 9px 12px; margin: 8px 0; font-size: var(--text-sm); }
 /*
   Decision 0723: as the application's Timeline / Chat (0675), the messages keep Day's light
@@ -117,3 +113,25 @@ main#welcome .field + .field { margin-top: var(--gap-loose); }
 .netcreate .headersummary .kf .readonly { height: 42px; min-height: 42px; box-sizing: border-box; }
 .netcreate .headersummary .kf .readonly { display: flex; align-items: center; padding-top: 0; padding-bottom: 0; }
 .netcreate .headersummary .kf label { min-height: 18px; }
+
+/*
+ * An invoice, opened full screen — decision 0729. Create's cards and
+ * header on the left; the messages on the right, ending with the header
+ * (contain: size leaves the row's height to the cards, and the feed
+ * scrolls); the lines below, across the page.
+ */
+.netview { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 16px; align-items: stretch; margin-bottom: 16px; }
+.netview .netviewmain > .comment:first-child { margin-top: 0; }
+.netview .netviewheader { margin-bottom: 0; }
+.netview .netviewchat { display: flex; flex-direction: column; margin: 0; min-height: 0; contain: size; }
+.netviewchat .chatfeed { flex: 1 1 auto; overflow-y: auto; min-height: 0; }
+.netviewchat .msg.them { margin-right: 24px; }
+.netviewchat .msg.us { margin-left: 24px; }
+.netviewchat .reply { margin-top: 8px; }
+.netinvoiceview .topbar h2 .status { margin-left: 10px; vertical-align: middle; font-size: var(--text-sm); }
+.netviewlines table { width: 100%; }
+@media (max-width: 1000px) {
+  .netview { grid-template-columns: 1fr; }
+  .netview .netviewchat { contain: none; }
+  .netviewchat .chatfeed { max-height: 420px; }
+}

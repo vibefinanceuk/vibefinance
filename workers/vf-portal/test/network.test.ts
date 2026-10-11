@@ -98,7 +98,7 @@ describe("the Worker", () => {
   const call = (e: Env, path: string, init: RequestInit = {}) => worker.fetch(new Request(`https://network.example${path}`, init), e);
 
   it("serves the pages", async () => {
-    for (const page of ["/", "/welcome.html", "/portal.js", "/welcome.js", "/shell.js", "/icons.js", "/create.js", "/bis3.js", "/portal.css", "/tokens.css", "/app.css", "/img/logo.png", "/img/logo-light.png", "/img/logo-mark.png"]) {
+    for (const page of ["/", "/welcome.html", "/portal.js", "/welcome.js", "/shell.js", "/icons.js", "/create.js", "/view.js", "/bis3.js", "/portal.css", "/tokens.css", "/app.css", "/img/logo.png", "/img/logo-light.png", "/img/logo-mark.png"]) {
       expect((await SELF.fetch(`https://network.example${page}`)).status, page).toBe(200);
     }
   });
@@ -279,6 +279,7 @@ describe("the network's words", () => {
       (await import("../public/portal.js?raw")).default,
       (await import("../public/shell.js?raw")).default,
       (await import("../public/create.js?raw")).default,
+      (await import("../public/view.js?raw")).default,
       (await import("../public/welcome.js?raw")).default,
     ] as string[];
     const used = new Set<string>();

@@ -228,35 +228,44 @@ async function companyDetails(db: D1Database, orgUnitId: string) {
  */
 export async function handleInvoiceParties(db: D1Database, claims: PortalAccessClaims, orgUnitId: string): Promise<RouteResult> {
   if (!orgUnitId || !(await covered(db, claims, orgUnitId))) return { status: 403, body: { error: "your invitation does not cover that company", reason: "not_covered" } };
+  const parties = await partiesFor(db, claims.supplierId, orgUnitId);
+  if (!parties) return { status: 404, body: { error: "not found" } };
+  return { status: 200, body: parties };
+}
+
+/**
+ * The seller (the customer's record of the supplier, its account included)
+ * and the buyer (the company's legal details). Shared by Create (0727) and
+ * an invoice opened in the network (0729), as the app's own viewer takes
+ * them from the record and the company rather than off the document.
+ */
+export async function partiesFor(db: D1Database, supplierId: string, orgUnitId: string) {
   const s = await db
     .prepare(
       `SELECT name, vat_id, erp_identifier, electronic_address, address_line, city, postal_code, country, email, phone, payment_terms,
               agreed_payment_means, agreed_account_identifier, agreed_account_name
        FROM suppliers WHERE id = ?`
     )
-    .bind(claims.supplierId)
+    .bind(supplierId)
     .first<Record<string, string | null>>();
   const buyer = await companyDetails(db, orgUnitId);
-  if (!s || !buyer) return { status: 404, body: { error: "not found" } };
+  if (!s || !buyer) return null;
   return {
-    status: 200,
-    body: {
-      seller: {
-        name: s.name,
-        vatId: s.vat_id,
-        reference: s.erp_identifier,
-        endpoint: s.electronic_address,
-        addressLine: s.address_line,
-        city: s.city,
-        postalCode: s.postal_code,
-        country: s.country,
-        email: s.email,
-        phone: s.phone,
-        paymentTerms: s.payment_terms,
-        account: s.agreed_account_identifier ? { means: s.agreed_payment_means, identifier: s.agreed_account_identifier, name: s.agreed_account_name } : null,
-      },
-      buyer,
+    seller: {
+      name: s.name,
+      vatId: s.vat_id,
+      reference: s.erp_identifier,
+      endpoint: s.electronic_address,
+      addressLine: s.address_line,
+      city: s.city,
+      postalCode: s.postal_code,
+      country: s.country,
+      email: s.email,
+      phone: s.phone,
+      paymentTerms: s.payment_terms,
+      account: s.agreed_account_identifier ? { means: s.agreed_payment_means, identifier: s.agreed_account_identifier, name: s.agreed_account_name } : null,
     },
+    buyer,
   };
 }
 

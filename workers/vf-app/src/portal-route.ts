@@ -2,6 +2,7 @@ import { verifyPortalAccess, type PortalAccessClaims } from "@vibefinance/shared
 import { readLicenceState } from "./licence-cache.js";
 import type { RouteResult } from "./org-route.js";
 import { handlePortalReply, portalMessages, type MessageEmail } from "./supplier-messages.js";
+import { partiesFor } from "./network-submission.js";
 
 /**
  * **The supplier portal's view of this instance — decision 0714.** Step 2
@@ -225,7 +226,29 @@ export async function getPortalInvoice(db: D1Database, claims: PortalAccessClaim
   // Decision 0724: a return in the conversation already says the reason and the comment.
   const summarised = summary(row);
   if (messages.some((m) => m.kind === "return")) summarised.comment = null;
-  return { status: 200, body: { invoice: { ...summarised, lines, messages } } };
+  /**
+   * **The invoice, opened full screen — decision 0729.** What its cards
+   * show beyond the list's summary: its dates, references and amounts as
+   * read, and the seller and buyer as the customer keeps them.
+   */
+  let facts: Record<string, unknown> = {};
+  try {
+    facts = JSON.parse(row.facts_json || "{}") as Record<string, unknown>;
+  } catch {
+    // As above.
+  }
+  const text = (k: string) => (typeof facts[k] === "string" && (facts[k] as string).trim() ? (facts[k] as string) : null);
+  const amount = (k: string) => (typeof facts[k] === "number" ? (facts[k] as number) : typeof facts[k] === "string" && facts[k] !== "" && !Number.isNaN(Number(facts[k])) ? Number(facts[k]) : null);
+  const details = {
+    dueDate: text("BT-9"),
+    buyerReference: text("BT-10"),
+    paymentTerms: text("BT-20"),
+    net: amount("BT-109") ?? amount("BT-106"),
+    vat: amount("BT-110"),
+    amountDue: amount("BT-115"),
+  };
+  const parties = row.org_unit_id ? await partiesFor(db, claims.supplierId, row.org_unit_id) : null;
+  return { status: 200, body: { invoice: { ...summarised, ...details, parties, lines, messages } } };
 }
 
 /** Decision 0728: this person has seen the invoice's messages now. */

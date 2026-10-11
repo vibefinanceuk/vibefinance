@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 11 October 2026 (decision 0728). A living document: what
+Last updated 11 October 2026 (decision 0729). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,14 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### An invoice in the network opens full screen (0729)
+
+In place of the pop-out: laid out as Create, read only (Seller, Buyer, Payment, Invoice header),
+the messages with the customer on the right ending level with the header, the lines across the
+page below. Documents and Download (CSV) in the top bar.
+
+Full reasoning is in decision 0729.
 
 ### Unread messages in the network (0728)
 

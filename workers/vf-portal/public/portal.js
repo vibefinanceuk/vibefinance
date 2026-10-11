@@ -2,12 +2,14 @@ import { loadStrings, t, fill, el } from "/strings.js";
 import { frame, setBadge, topbar } from "/shell.js";
 import { icon } from "/icons.js";
 import { createPage } from "/create.js";
+import { viewPage } from "/view.js";
 
 /**
  * **The supplier network's pages — decisions 0717 and 0725.** Sign in;
  * then, in the application's own frame (side menu, top bar), the
  * supplier's invoices across every customer they are linked to, asked of
- * each customer live; an invoice opens with its lines and its messages.
+ * each customer live; an invoice opens full screen, with its lines and
+ * its messages (0729).
  */
 
 export const STATUSES = ["received", "in_review", "query_raised", "returned", "approved", "sent_for_payment", "paid", "rejected"];
@@ -36,6 +38,8 @@ async function api(path, init) {
 let me = { email: "", customers: [] };
 let current = "documents";
 let invoices = [];
+/** Decision 0729: the invoice open full screen — its row in the list, and what its customer answered. */
+let opened = null;
 
 /** Decision 0728: invoices with messages from the customer this person has not read yet (opened the invoice since). */
 const waiting = (inv) => (inv.messages?.unread ?? 0) > 0;
@@ -82,13 +86,19 @@ export async function render() {
           sentNotice = sent;
           go("documents");
         })
-      : el("div", {}, documentsPage());
-  $("shell").replaceChildren(frame({ current, go, who: { email: me.email, supplier: supplierNames() }, page, badges: { documents: waitingCount() } }));
+      : current === "invoice" && opened
+        ? viewPage(opened.body, { money, statusChip, conversation: (body) => conversation(body, opened.inv), back: () => go("documents") }, handlers)
+        : el("div", {}, documentsPage());
+  // The open invoice is one of the documents, so Documents stays chosen in the menu.
+  $("shell").replaceChildren(frame({ current: current === "invoice" ? "documents" : current, go, who: { email: me.email, supplier: supplierNames() }, page, badges: { documents: waitingCount() } }));
   $("shell").hidden = false;
   $("signin-view").hidden = true;
   // As the app (tasks.js): the page fills the window once someone is signed in.
   document.body.classList.add("working");
   drawRows();
+  // The latest message in view.
+  const feed = document.querySelector(".netviewchat .chatfeed");
+  if (feed) feed.scrollTop = feed.scrollHeight;
 }
 
 // ---------------------------------------------------------------------------
@@ -223,55 +233,18 @@ function drawRows() {
   $("count").textContent = t("network.count", { n: shown.length });
 }
 
+/** Decision 0729: an invoice opens full screen, in place of the list. */
 export async function openInvoice(inv) {
   const { res, body } = await api(`/invoices/${encodeURIComponent(inv.linkId)}/${encodeURIComponent(inv.id)}`);
   if (!res.ok) return;
   // Decision 0728: opening it reads its messages, so its pill and the menu's count go down at once.
-  if ((inv.messages?.unread ?? 0) > 0) {
-    inv.messages = { ...inv.messages, unread: 0 };
-    drawRows();
-    if (!filters.q.trim() && !filters.status) setBadge("documents", waitingCount());
-  }
-  const close = () => backdrop.remove();
-  const fact = (label, value) => el("div", {}, [el("span", { text: t(label) }), value ?? "—"]);
-  const lines = body.lines ?? [];
-  const pop = el("div", { class: "popout netinvoice", role: "dialog", "aria-modal": "true" }, [
-    el("div", { class: "head" }, [el("h2", { text: body.invoiceNumber ?? "—" }), statusChip(body.status), el("button", { class: "actionlink compactlink", type: "button", title: t("network.close"), onclick: close }, [icon("close"), el("span", { text: t("network.close") })])]),
-    el("div", { class: "muted sm", text: `${body.customer} · ${body.company ?? ""}` }),
-    body.comment ? el("div", { class: "comment" }, [el("div", { class: "sm", text: t("network.comment", { customer: body.customer }) }), el("div", { text: body.comment })]) : null,
-    el("div", { class: "facts" }, [
-      fact("network.col.date", body.issueDate),
-      fact("network.col.amount", money(body.total, body.currency)),
-      fact("network.col.po", body.purchaseOrder),
-      fact("network.receivedat", (body.receivedAt ?? "").slice(0, 10)),
-    ]),
-    conversation(body, inv),
-    lines.length
-      ? el("div", { class: "tablewrap" }, [
-          el("table", {}, [
-            el("thead", {}, [el("tr", {}, [
-              el("th", { text: "#" }),
-              el("th", { text: t("network.line.description") }),
-              el("th", { class: "num", text: t("network.line.quantity") }),
-              el("th", { class: "num", text: t("network.line.unitprice") }),
-              el("th", { class: "num", text: t("network.line.net") }),
-            ])]),
-            el("tbody", {}, lines.map((l) => el("tr", {}, [
-              el("td", { text: String(l.lineNumber) }),
-              el("td", { text: l.description ?? "—" }),
-              el("td", { class: "num", text: l.quantity ?? "—" }),
-              el("td", { class: "num", text: typeof l.unitPrice === "number" ? money(l.unitPrice, body.currency) : "—" }),
-              el("td", { class: "num", text: money(l.netAmount, body.currency) }),
-            ]))),
-          ]),
-        ])
-      : null,
-  ]);
-  const backdrop = el("div", { class: "backdrop", onclick: (e) => e.target === backdrop && close(), onkeydown: (e) => e.key === "Escape" && close() }, [pop]);
-  document.body.append(backdrop);
-  pop.querySelector(".head button")?.focus();
+  if ((inv.messages?.unread ?? 0) > 0) inv.messages = { ...inv.messages, unread: 0 };
+  opened = { inv, body };
+  current = "invoice";
+  window.scrollTo?.(0, 0);
+  await render();
+  if (!filters.q.trim() && !filters.status) setBadge("documents", waitingCount());
 }
-
 
 /** A customer and its companies, in a line: past three companies, how many, with every name on hover (0718). */
 export function customerLabel(c) {
@@ -321,14 +294,12 @@ export function conversation(body, inv) {
         problem.textContent = t("network.msg.failed");
         return;
       }
-      document.querySelector(".backdrop")?.remove();
       await openInvoice(inv);
-      loadInvoices();
     },
   }, [icon("post"), el("span", { text: t("network.msg.send") })]);
   return el("section", { class: "conversation" }, [
-    el("h3", { text: t(messages.length ? "network.msg.title" : "network.msg.start", { customer: body.customer }) }),
-    ...list,
+    el("div", { class: "cardhead" }, [el("h3", { text: t(messages.length ? "network.msg.title" : "network.msg.start", { customer: body.customer }) })]),
+    el("div", { class: "chatfeed" }, list),
     el("div", { class: "reply" }, [box, el("div", { class: "replybar" }, [el("span", { class: "muted sm", text: t("network.msg.note", { customer: body.customer }) }), send]), problem]),
   ]);
 }

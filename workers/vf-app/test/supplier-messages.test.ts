@@ -254,3 +254,20 @@ describe("message counts in the network's list", () => {
     expect(await counts(jo)).toEqual({ total: 3, unread: 1 });
   });
 });
+
+/** **An invoice opened full screen in the network — decision 0729.** */
+describe("an invoice opened in the network", () => {
+  it("carries its dates, references and amounts, and the seller and buyer as the customer keeps them", async () => {
+    await env.DB.prepare(`UPDATE invoice_headers SET facts_json = ? WHERE id = 'inv-1'`)
+      .bind(JSON.stringify({ "BT-1": "LN-412", "BT-9": "2026-11-10", "BT-10": "AP-UK", "BT-20": "30 days net", "BT-109": 399.2, "BT-110": 79.84, "BT-112": 479.04 }))
+      .run();
+    await env.DB.prepare("UPDATE org_units SET vat_id = 'GB999888777', city = 'London', country = 'GB' WHERE id = 'uk'").run();
+    const token = await signPortalToken(
+      { kind: "portal_access", email: "jo@lager-nord.example", supplierOrgId: "so", linkId: "pl-1", environmentId: "test-environment", supplierId: "sup-ln", orgUnitIds: ["uk"], issuedAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 300e3).toISOString() },
+      PRIVATE_KEY
+    );
+    const r = (await (await SELF.fetch("https://app.example.com/portal/invoices/inv-1", { headers: { Authorization: `Bearer ${token}` } })).json()) as { invoice: Record<string, unknown> };
+    expect(r.invoice).toMatchObject({ dueDate: "2026-11-10", buyerReference: "AP-UK", paymentTerms: "30 days net", net: 399.2, vat: 79.84 });
+    expect(r.invoice.parties).toMatchObject({ seller: { name: "Lager Nord GmbH" }, buyer: { name: "Acme UK North", vatId: "GB999888777", city: "London" } });
+  });
+});
