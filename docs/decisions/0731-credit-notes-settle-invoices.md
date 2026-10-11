@@ -1,6 +1,6 @@
 # 0731: What a credit note does to the invoice it credits, configured in AP Setup
 
-**Status: built**, awaiting deploy. vf-app (`credit-notes.ts`, `intake-capture-route.ts`,
+**Status: live** at `d2edc40`, pushed and deployed 11 October 2026, migrations 0163 and 0334 applied. vf-app (`credit-notes.ts`, `intake-capture-route.ts`,
 `erp-export-route.ts`, `activity-route.ts`, `documents-route.ts`, `portal-route.ts`, the
 not-payable lists, `index.ts`), shared (`vocabulary.ts`), vf-ui (`credit-notes.js`,
 `ap-setup.js`, `tasks.js`, `viewer.js`, `activity.js`, `timeline-entry.js`, `app.css`),
