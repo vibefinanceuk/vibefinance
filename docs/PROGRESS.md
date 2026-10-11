@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 10 October 2026 (decision 0724). A living document: what
+Last updated 11 October 2026 (decision 0725). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,14 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### The supplier network in the application's frame (0725)
+
+The network signs in on the app's sign-in page and, once in, uses the app's own side menu and
+top bar, with Documents (the invoice list, now filterable by customer). Step 1 of invoice
+submission through the network; the Supplier network source and Create follow.
+
+Full reasoning is in decision 0725.
 
 ### Return to supplier in the supplier network (0724)
 

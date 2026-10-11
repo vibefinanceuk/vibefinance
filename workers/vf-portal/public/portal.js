@@ -1,10 +1,12 @@
 import { loadStrings, t, fill, el } from "/strings.js";
-import { mountTopbar, setSignedIn } from "/topbar.js";
+import { frame, topbar } from "/shell.js";
+import { icon } from "/icons.js";
 
 /**
- * **The supplier network's main page — decision 0717.** Sign in; then one
- * list of the supplier's invoices across every customer they are linked
- * to, asked of each customer live; an invoice opens with its lines.
+ * **The supplier network's pages — decisions 0717 and 0725.** Sign in;
+ * then, in the application's own frame (side menu, top bar), the
+ * supplier's invoices across every customer they are linked to, asked of
+ * each customer live; an invoice opens with its lines and its messages.
  */
 
 export const STATUSES = ["received", "in_review", "query_raised", "returned", "approved", "sent_for_payment", "paid", "rejected"];
@@ -29,46 +31,154 @@ async function api(path, init) {
   return { res, body };
 }
 
+/** Who is signed in and the customers they see (`/api/me`). */
+let me = { email: "", customers: [] };
+let current = "documents";
+let invoices = [];
+
 function showSignIn() {
-  $("list").hidden = true;
-  $("who").hidden = true;
-  setSignedIn(false);
-  $("signin").hidden = false;
+  document.querySelector(".backdrop")?.remove();
+  document.getElementById("helppanel")?.remove();
+  $("shell").hidden = true;
+  $("shell").replaceChildren();
+  document.body.classList.remove("working");
+  $("signin-view").hidden = false;
 }
 
+const handlers = {
+  onSignOut: async () => {
+    await fetch("/api/sign-out", { method: "POST" });
+    showSignIn();
+  },
+  onLanguage: () => render(),
+  onMood: () => render(),
+};
+
+/** The supplier's own name, as their customers have it (one per link; usually the same). */
+function supplierNames() {
+  return [...new Set(me.customers.map((c) => c.supplier).filter(Boolean))].join(" · ");
+}
+
+function go(screen) {
+  current = screen;
+  render();
+}
+
+/** Draw the frame and the screen showing. */
+export function render() {
+  const page = el("div", {}, documentsPage());
+  $("shell").replaceChildren(frame({ current, go, who: { email: me.email, supplier: supplierNames() }, page }));
+  $("shell").hidden = false;
+  $("signin-view").hidden = true;
+  // As the app (tasks.js): the page fills the window once someone is signed in.
+  document.body.classList.add("working");
+  drawRows();
+}
+
+// ---------------------------------------------------------------------------
+// Documents — every invoice, across the customers (0717, 0725).
+// ---------------------------------------------------------------------------
+
+const filters = { q: "", customer: "", status: "" };
 let timer = null;
+
+function documentsPage() {
+  const search = el("input", { type: "search", id: "search", placeholder: t("network.search"), "aria-label": t("network.search"), value: filters.q });
+  search.addEventListener("input", () => {
+    filters.q = search.value;
+    clearTimeout(timer);
+    timer = setTimeout(loadInvoices, 300);
+  });
+  const customer = el("select", { id: "customer", "aria-label": t("network.col.customer") }, [
+    el("option", { value: "", text: t("network.customers.all") }),
+    ...me.customers.map((c) => el("option", { value: c.linkId, text: c.customer })),
+  ]);
+  customer.value = filters.customer;
+  customer.addEventListener("change", () => {
+    filters.customer = customer.value;
+    drawRows();
+  });
+  const status = el("select", { id: "status", "aria-label": t("network.col.status") }, [
+    el("option", { value: "", text: t("network.status.all") }),
+    ...STATUSES.map((s) => el("option", { value: s, text: t(`network.status.${s}`) })),
+  ]);
+  status.value = filters.status;
+  status.addEventListener("change", () => {
+    filters.status = status.value;
+    loadInvoices();
+  });
+  return [
+    topbar(t("network.nav.documents"), me.customers.length ? `${supplierNames()} · ${me.customers.map(customerLabel).join(" · ")}` : t("network.nocustomers"), [], handlers),
+    el("div", { class: "notice", id: "unavailable", role: "status", hidden: true }),
+    el("div", { class: "panel" }, [
+      el("div", { class: "searchrow" }, [search, el("div", { class: "filters" }, [customer, status]), el("span", { class: "sm muted", id: "count" })]),
+    ]),
+    el("div", { class: "panel" }, [
+      el("table", { class: "netlist" }, [
+        el("thead", {}, [
+          el("tr", {}, [
+            el("th", { text: t("network.col.customer") }),
+            el("th", { text: t("network.col.invoice") }),
+            el("th", { class: "hide-narrow", text: t("network.col.date") }),
+            el("th", { class: "num", text: t("network.col.amount") }),
+            el("th", { class: "hide-narrow", text: t("network.col.po") }),
+            el("th", { class: "hide-narrow", text: t("network.col.company") }),
+            el("th", { text: t("network.col.status") }),
+          ]),
+        ]),
+        el("tbody", { id: "rows" }),
+      ]),
+      el("div", { class: "empty", id: "empty", hidden: true }),
+    ]),
+  ];
+}
+
 export async function loadInvoices() {
   const params = new URLSearchParams();
-  if ($("search").value.trim()) params.set("q", $("search").value.trim());
-  if ($("status").value) params.set("status", $("status").value);
+  if (filters.q.trim()) params.set("q", filters.q.trim());
+  if (filters.status) params.set("status", filters.status);
   const { res, body } = await api(`/invoices${params.toString() ? `?${params}` : ""}`);
   if (!res.ok) return;
-  const rows = (body.invoices ?? []).map((inv) =>
-    el("tr", { tabindex: "0", onclick: () => openInvoice(inv), onkeydown: (e) => e.key === "Enter" && openInvoice(inv) }, [
-      el("td", { text: inv.customer }),
-      el("td", { class: "nowrap", text: inv.invoiceNumber ?? "—" }),
-      el("td", { class: "hide-narrow", text: inv.issueDate ?? "—" }),
-      el("td", { class: "num", text: money(inv.total, inv.currency) }),
-      el("td", { class: "hide-narrow", text: inv.purchaseOrder ?? "—" }),
-      el("td", { class: "hide-narrow", text: inv.company ?? "" }),
-      el("td", {}, [statusChip(inv.status)]),
-    ])
-  );
-  $("rows").replaceChildren(...rows);
-  $("empty").hidden = rows.length > 0;
-  /**
-   * **What "nothing" means — decision 0718.** With a search or a status
-   * chosen, nothing matches it. Without, there is nothing yet for the
-   * companies this person can see, named, since an invoice for any other
-   * company is not shared with them.
-   */
-  $("empty").textContent =
-    params.toString() || !customers.length
-      ? t(params.toString() ? "network.nomatch" : "network.none")
-      : t("network.noneyet", { list: customers.map((c) => `${c.customer}: ${c.companies.join(", ")}`).join(" · ") });
+  invoices = body.invoices ?? [];
   const gone = body.unavailable ?? [];
-  $("unavailable").hidden = gone.length === 0;
-  $("unavailable").textContent = t("network.unavailable", { list: gone.map((g) => g.customer).join(", ") });
+  const notice = $("unavailable");
+  if (notice) {
+    notice.hidden = gone.length === 0;
+    notice.textContent = t("network.unavailable", { list: gone.map((g) => g.customer).join(", ") });
+  }
+  drawRows();
+}
+
+function drawRows() {
+  const tbody = $("rows");
+  if (!tbody) return;
+  const shown = invoices.filter((inv) => !filters.customer || inv.linkId === filters.customer);
+  tbody.replaceChildren(
+    ...shown.map((inv) =>
+      el("tr", { tabindex: "0", class: "netrow", onclick: () => openInvoice(inv), onkeydown: (e) => e.key === "Enter" && openInvoice(inv) }, [
+        el("td", { text: inv.customer }),
+        el("td", { class: "nowrap", text: inv.invoiceNumber ?? "—" }),
+        el("td", { class: "hide-narrow", text: inv.issueDate ?? "—" }),
+        el("td", { class: "num", text: money(inv.total, inv.currency) }),
+        el("td", { class: "hide-narrow", text: inv.purchaseOrder ?? "—" }),
+        el("td", { class: "hide-narrow", text: inv.company ?? "" }),
+        el("td", {}, [statusChip(inv.status)]),
+      ])
+    )
+  );
+  const empty = $("empty");
+  empty.hidden = shown.length > 0;
+  /**
+   * **What "nothing" means — decision 0718.** With a search or a filter
+   * chosen, nothing matches it. Without, there is nothing yet for the
+   * companies this person can see, named.
+   */
+  const filtered = filters.q.trim() || filters.status || filters.customer;
+  empty.textContent =
+    filtered || !me.customers.length
+      ? t(filtered ? "network.nomatch" : "network.none")
+      : t("network.noneyet", { list: me.customers.map((c) => `${c.customer}: ${c.companies.join(", ")}`).join(" · ") });
+  $("count").textContent = t("network.count", { n: shown.length });
 }
 
 export async function openInvoice(inv) {
@@ -77,8 +187,8 @@ export async function openInvoice(inv) {
   const close = () => backdrop.remove();
   const fact = (label, value) => el("div", {}, [el("span", { text: t(label) }), value ?? "—"]);
   const lines = body.lines ?? [];
-  const pop = el("div", { class: "popout", role: "dialog", "aria-modal": "true" }, [
-    el("div", { class: "head" }, [el("h2", { text: body.invoiceNumber ?? "—" }), statusChip(body.status), el("button", { class: "linkbutton", text: t("network.close"), onclick: close })]),
+  const pop = el("div", { class: "popout netinvoice", role: "dialog", "aria-modal": "true" }, [
+    el("div", { class: "head" }, [el("h2", { text: body.invoiceNumber ?? "—" }), statusChip(body.status), el("button", { class: "actionlink compactlink", type: "button", title: t("network.close"), onclick: close }, [icon("close"), el("span", { text: t("network.close") })])]),
     el("div", { class: "muted sm", text: `${body.customer} · ${body.company ?? ""}` }),
     body.comment ? el("div", { class: "comment" }, [el("div", { class: "sm", text: t("network.comment", { customer: body.customer }) }), el("div", { text: body.comment })]) : null,
     el("div", { class: "facts" }, [
@@ -111,10 +221,9 @@ export async function openInvoice(inv) {
   ]);
   const backdrop = el("div", { class: "backdrop", onclick: (e) => e.target === backdrop && close(), onkeydown: (e) => e.key === "Escape" && close() }, [pop]);
   document.body.append(backdrop);
-  pop.querySelector(".linkbutton").focus();
+  pop.querySelector(".head button")?.focus();
 }
 
-let customers = [];
 
 /** A customer and its companies, in a line: past three companies, how many, with every name on hover (0718). */
 export function customerLabel(c) {
@@ -147,8 +256,9 @@ export function conversation(body, inv) {
   const box = el("textarea", { "aria-label": t("network.msg.write"), placeholder: t("network.msg.write") });
   const problem = el("div", { class: "problem", role: "alert" });
   const send = el("button", {
-    class: "primary",
-    text: t("network.msg.send"),
+    class: "actionlink compactlink primary",
+    type: "button",
+    title: t("network.msg.send"),
     onclick: async () => {
       problem.textContent = "";
       if (!box.value.trim()) return;
@@ -167,7 +277,7 @@ export function conversation(body, inv) {
       await openInvoice(inv);
       loadInvoices();
     },
-  });
+  }, [icon("post"), el("span", { text: t("network.msg.send") })]);
   return el("section", { class: "conversation" }, [
     el("h3", { text: t(messages.length ? "network.msg.title" : "network.msg.start", { customer: body.customer }) }),
     ...list,
@@ -178,47 +288,14 @@ export function conversation(body, inv) {
 async function showList() {
   const { res, body } = await api("/me");
   if (!res.ok) return;
-  $("signin").hidden = true;
-  $("list").hidden = false;
-  $("who").hidden = false;
-  setSignedIn(true);
-  $("who").textContent = body.email ?? "";
-  customers = body.customers ?? [];
-  $("customers").textContent = customers.length ? t("network.customers", { list: customers.map(customerLabel).join(" · ") }) : t("network.nocustomers");
-  $("customers").title = customers.map((c) => `${c.customer}: ${c.companies.join(", ")}`).join("\n");
+  me = { email: body.email ?? "", customers: body.customers ?? [] };
+  render();
   await loadInvoices();
-}
-
-function statusOptions() {
-  const chosen = $("status").value;
-  $("status").replaceChildren(el("option", { value: "", text: t("network.status.all") }), ...STATUSES.map((s) => el("option", { value: s, text: t(`network.status.${s}`) })));
-  $("status").value = chosen;
 }
 
 export async function start() {
   await loadStrings();
   fill();
-  statusOptions();
-  /**
-   * Decision 0723: the top bar's controls. A new language redraws the
-   * words the page built itself (the filter, the list), not only `data-t`.
-   */
-  mountTopbar({
-    onSignOut: async () => {
-      await fetch("/api/sign-out", { method: "POST" });
-      document.querySelector(".backdrop")?.remove();
-      showSignIn();
-    },
-    onLanguage: async () => {
-      statusOptions();
-      if (!$("list").hidden) await showList();
-    },
-  });
-  $("status").addEventListener("change", loadInvoices);
-  $("search").addEventListener("input", () => {
-    clearTimeout(timer);
-    timer = setTimeout(loadInvoices, 300);
-  });
   $("signin-form").addEventListener("submit", async (e) => {
     e.preventDefault();
     $("signin-problem").textContent = "";

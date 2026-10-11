@@ -98,7 +98,7 @@ describe("the Worker", () => {
   const call = (e: Env, path: string, init: RequestInit = {}) => worker.fetch(new Request(`https://network.example${path}`, init), e);
 
   it("serves the pages", async () => {
-    for (const page of ["/", "/welcome.html", "/portal.js", "/welcome.js", "/portal.css", "/tokens.css"]) {
+    for (const page of ["/", "/welcome.html", "/portal.js", "/welcome.js", "/shell.js", "/icons.js", "/portal.css", "/tokens.css", "/app.css", "/img/logo.png", "/img/logo-light.png", "/img/logo-mark.png"]) {
       expect((await SELF.fetch(`https://network.example${page}`)).status, page).toBe(200);
     }
   });
@@ -194,13 +194,43 @@ describe("the top bar and messages, as the application's (decision 0723)", () =>
     expect(msg).toContain("--text-primary: #121a26;");
   });
 
-  it("leaves the top bar's controls to topbar.js, on both pages, with Night / Day, Language, Help and Sign out", async () => {
+  it("draws the top bar's controls in shell.js: Night / Day, Language, Help and Sign out", async () => {
+    const shell = (await import("../public/shell.js?raw")).default as string;
+    for (const key of ["network.mood.", "network.help", "network.signout"]) expect(shell).toContain(key);
+    expect(shell).toContain("LANGUAGES");
+  });
+});
+
+/**
+ * **The application's look, kept the application's — decision 0725.** The
+ * network uses the app's own stylesheet, tokens and icons, copied into its
+ * public folder (a Worker serves only its own). A copy that drifts from the
+ * app's is a network that no longer looks like it: these fail until the copy
+ * is refreshed (`cp workers/vf-ui/public/{app.css,tokens.css,icons.js} workers/vf-portal/public/`).
+ */
+describe("the application's look", () => {
+  it("app.css, tokens.css and icons.js are the same as the app's", async () => {
+    const pairs: [string, string, string][] = [
+      ["app.css", (await import("../public/app.css?raw")).default, (await import("../../vf-ui/public/app.css?raw")).default],
+      ["tokens.css", (await import("../public/tokens.css?raw")).default, (await import("../../vf-ui/public/tokens.css?raw")).default],
+      ["icons.js", (await import("../public/icons.js?raw")).default, (await import("../../vf-ui/public/icons.js?raw")).default],
+    ];
+    for (const [file, ours, app] of pairs) {
+      expect(ours.length, file).toBeGreaterThan(100);
+      expect(ours === app, `${file} differs from the app's: copy it again`).toBe(true);
+    }
+  });
+
+  it("signs in, and accepts an invitation, on the app's sign-in page, and fills the window once signed in", async () => {
     const index = (await import("../public/index.html?raw")).default as string;
     const welcome = (await import("../public/welcome.html?raw")).default as string;
-    for (const page of [index, welcome]) expect(page).toContain('<div class="right"></div>');
-    expect(index).not.toContain('id="signout"');
-    const topbar = (await import("../public/topbar.js?raw")).default as string;
-    for (const key of ["network.mood.", "network.help", "network.signout"]) expect(topbar).toContain(key);
-    expect(topbar).toContain("LANGUAGES");
+    for (const page of [index, welcome]) {
+      expect(page).toContain('href="/app.css"');
+      expect(page).toContain('<div class="mark"></div>');
+    }
+    expect(index).toContain('<main id="signin-view" hidden>');
+    expect(index).toContain('<main id="shell" hidden></main>');
+    const portal = (await import("../public/portal.js?raw")).default as string;
+    expect(portal).toContain('document.body.classList.add("working")');
   });
 });

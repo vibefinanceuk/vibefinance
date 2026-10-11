@@ -12,16 +12,12 @@
 -->
 <script src="/mood.js"></script>
 <link rel="stylesheet" href="/tokens.css">
+<link rel="stylesheet" href="/app.css">
 <link rel="stylesheet" href="/portal.css">
 </head>
 <body>
-<header class="topbar">
-  <span class="brand">VibeFinance</span>
-  <span class="what" data-t="network.title"></span>
-  <div class="right"></div>
-</header>
-<main>
-  <section class="card welcome" id="welcome" hidden>
+<main id="welcome" hidden>
+  <div class="mark"></div>
     <h1 data-t="network.welcome.title"></h1>
     <p class="sub" id="welcome-sub"></p>
     <form id="welcome-form" hidden>
@@ -38,10 +34,9 @@
         <label for="welcome-again" data-t="network.welcome.again"></label>
         <input id="welcome-again" type="password" autocomplete="new-password">
       </div>
-      <button class="primary" type="submit" id="welcome-submit" data-t="network.welcome.submit"></button>
+      <button type="submit" id="welcome-submit" data-t="network.welcome.submit"></button>
     </form>
     <div class="problem" id="welcome-problem" role="alert"></div>
-  </section>
 </main>
 <script type="module" src="/welcome.js"></script>
 </body>

@@ -3641,6 +3641,12 @@ const KEYS_THE_INTERFACE_USES = [
   "suppliers.layouts.columns",
   // The supplier pop-out's portal column (decision 0719).
   "suppliers.portal.invitesomeone",
+  // The network in the application's frame (decision 0725).
+  "network.nav.group",
+  "network.nav.groupshort",
+  "network.nav.documents",
+  "network.customers.all",
+  "network.count",
   // Return to supplier in the network (decision 0724).
   "network.status.returned",
   "network.help.status.returned",

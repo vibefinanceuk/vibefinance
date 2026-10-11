@@ -316,6 +316,7 @@ import portalInviteHeadingSql from "../migrations/0325_portal_invite_heading_str
 import supplierConversationSql from "../migrations/0326_supplier_conversation_strings.sql?raw";
 import networkTopbarHelpSql from "../migrations/0327_network_topbar_help_strings.sql?raw";
 import returnInNetworkSql from "../migrations/0328_return_in_network_strings.sql?raw";
+import networkFrameSql from "../migrations/0329_network_frame_strings.sql?raw";
 
 function stripSqlComments(sql: string): string {
   return sql
@@ -665,5 +666,6 @@ export async function applyTestSchema(): Promise<void> {
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(supplierConversationSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(networkTopbarHelpSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(returnInNetworkSql)));
+  await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(networkFrameSql)));
 
 }

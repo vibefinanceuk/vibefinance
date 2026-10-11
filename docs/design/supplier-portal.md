@@ -194,5 +194,13 @@ portal query; a corrected document against a query.
   revision might need to be used."* To reconsider later, alongside a credit note or a formal
   invoice revision as the way an invoice is corrected.
 
+**Invoice submission (agreed 11 October 2026).** The supplier creates the invoice in the
+network as **Peppol BIS Billing 3.0** (EN 16931), validated before sending, and it arrives through
+a new source route, *Supplier network in*, that the customer adds to a process and ticks companies
+on. The supplier picks the company from those they are invited for; the supplier record is the
+invitation's (a VAT number that disagrees is flagged); a PO typed in is used only when the
+document has none. Built in three steps: the network in the app's frame (0725), the source
+(0726), the Create form (0727).
+
 **Later phases**, in an order to choose: invoice submission through the portal; remittance
 detail; bank detail changes as approved requests.
