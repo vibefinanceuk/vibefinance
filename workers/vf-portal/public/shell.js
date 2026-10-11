@@ -18,8 +18,11 @@ import { icon } from "/icons.js";
 const MOOD_KEY = "vfn-mood";
 const NAV_KEY = "vfn-nav";
 
-/** The menu, in order (0725), with the app's colour for each: Documents 4, Create 5. Create follows with decision 0727. */
-export const SCREENS = [["documents", "documents", 4]];
+/** The menu, in order (0725, 0727), with the app's colour for each: Documents 4, Create 5. */
+export const SCREENS = [
+  ["documents", "documents", 4],
+  ["create", "create", 5],
+];
 
 function currentMood() {
   return document.documentElement.getAttribute("data-mood") === "night" ? "night" : "day";

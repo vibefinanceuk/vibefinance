@@ -164,7 +164,7 @@ import {
   handleInviteSupplierPerson,
 } from "./portal-people-route.js";
 import { getPortalInvoice, listPortalInvoices, portalAuth, replyOnPortalInvoice } from "./portal-route.js";
-import { handlePortalSubmission, handleSubmissionCompanies } from "./network-submission.js";
+import { handleInvoiceParties, handlePortalPurchaseOrders, handlePortalSubmission, handleSubmissionCompanies } from "./network-submission.js";
 import { DEFAULT_NETWORK_URL, handleGetSupplierMessages, handlePostSupplierMessage, type MessageEmail } from "./supplier-messages.js";
 import { handleCreateIntakeChannel } from "./intake-channel-route.js";
 import { handleCaptureIntake, handleCaptureUblXml, handleCapturePdf, handleCaptureImage, handleFinalisePendingDocument, handleIntakeStats } from "./intake-capture-route.js";
@@ -1114,12 +1114,21 @@ export default {
      * companies this person may send to, and sending one (Peppol BIS
      * Billing 3.0, created in the network).
      */
-    if (pathname === "/portal/submission-companies" || pathname === "/portal/submissions") {
+    if (pathname === "/portal/submission-companies" || pathname === "/portal/submissions" || pathname === "/portal/invoice-parties" || pathname === "/portal/purchase-orders") {
       const { db, documents } = resolveTenant(request, env);
       const auth = await portalAuth(db, request, isPublicKeyJwk(env.LICENCE_SIGNING_PUBLIC_KEY) ? env.LICENCE_SIGNING_PUBLIC_KEY : undefined, env.ENVIRONMENT_ID);
       if (!auth.ok) return json(auth.body, auth.status);
       if (pathname === "/portal/submission-companies" && request.method === "GET") {
         const result = await handleSubmissionCompanies(db, auth.claims);
+        return json(result.body, result.status);
+      }
+      // Decision 0727: what the Create form fills in, and From a PO.
+      if (pathname === "/portal/invoice-parties" && request.method === "GET") {
+        const result = await handleInvoiceParties(db, auth.claims, url.searchParams.get("orgUnitId") ?? "");
+        return json(result.body, result.status);
+      }
+      if (pathname === "/portal/purchase-orders" && request.method === "GET") {
+        const result = await handlePortalPurchaseOrders(db, auth.claims, url.searchParams.get("orgUnitId") ?? "");
         return json(result.body, result.status);
       }
       if (pathname === "/portal/submissions" && request.method === "POST") {

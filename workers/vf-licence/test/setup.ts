@@ -318,6 +318,7 @@ import networkTopbarHelpSql from "../migrations/0327_network_topbar_help_strings
 import returnInNetworkSql from "../migrations/0328_return_in_network_strings.sql?raw";
 import networkFrameSql from "../migrations/0329_network_frame_strings.sql?raw";
 import networkSourceSql from "../migrations/0330_network_source_strings.sql?raw";
+import networkCreateSql from "../migrations/0331_network_create_strings.sql?raw";
 
 function stripSqlComments(sql: string): string {
   return sql
@@ -669,5 +670,6 @@ export async function applyTestSchema(): Promise<void> {
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(returnInNetworkSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(networkFrameSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(networkSourceSql)));
+  await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(networkCreateSql)));
 
 }

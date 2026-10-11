@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 11 October 2026 (decision 0726). A living document: what
+Last updated 11 October 2026 (decision 0727). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,15 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Create an invoice in the network, as Peppol BIS Billing 3.0 (0727)
+
+Suppliers create invoices in the network, laid out as the app's invoice viewer: seller and bank
+account from the customer's record, the buyer company, header, lines (From a PO fills them),
+checked against EN 16931 and Peppol rules as they type, and sent as BIS 3.0 UBL through the
+customer's Supplier network source. Invoice submission through the network is complete.
+
+Full reasoning is in decision 0727.
 
 ### Supplier network in, a source route (0726)
 

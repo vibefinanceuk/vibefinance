@@ -139,3 +139,82 @@ describe("sending an invoice", () => {
     expect(((await companies.json()) as { companies: { id: string }[] }).companies.map((c) => c.id)).toEqual(["uk"]);
   });
 });
+
+describe("what the Create form fills in — decision 0727", () => {
+  beforeEach(async () => {
+    await env.DB.prepare(
+      `UPDATE suppliers SET address_line = 'Hafenstrasse 4', city = 'Hamburg', postal_code = '20457', country = 'DE', electronic_address = '9930:DE123456789',
+              payment_terms = '30 days net', agreed_payment_means = '58', agreed_account_identifier = 'DE89370400440532013000', agreed_account_name = 'Lager Nord GmbH'
+       WHERE id = 'sup-ln'`
+    ).run();
+    await env.DB.prepare("UPDATE org_units SET vat_id = 'GB999888777', buyer_endpoint = '0088:5012345000004', address_line = '1 Handover Street', city = 'London', postal_code = 'EC1A 1AA', country = 'GB' WHERE id = 'uk'").run();
+    await env.DB.prepare(
+      `INSERT INTO purchase_orders (id, order_number, issue_date, currency, seller_party_id, org_unit_id, tax_exclusive_amount, status)
+       VALUES ('po1', '690000321', '2026-10-01', 'GBP', 'DE123456789', 'uk-north', 265, 'active'),
+              ('po2', '690000999', '2026-10-01', 'GBP', 'DE123456789', 'ie', 10, 'active'),
+              ('po3', '690000300', '2026-09-01', 'GBP', 'DE123456789', 'uk', 10, 'closed'),
+              ('po4', '690000400', '2026-09-01', 'GBP', 'GB111', 'uk', 10, 'active')`
+    ).run();
+    await env.DB.prepare(
+      `INSERT INTO purchase_order_lines (id, purchase_order_id, line_number, quantity, unit_code, price_amount, base_quantity, line_extension_amount, item_name)
+       VALUES ('l1', 'po1', '10', 2, 'C62', 60.9, 1, 121.8, 'Breakfast rolls'), ('l2', 'po1', '20', 1, 'C62', 143.2, 1, 143.2, 'Buffet lunch')`
+    ).run();
+  });
+
+  it("names the seller from the customer's record, with the account it pays into, and the buyer from the company or a company above it", async () => {
+    const { handleInvoiceParties } = await import("../src/network-submission.js");
+    const r = (await handleInvoiceParties(env.DB, claims(), "uk-north")).body as { seller: Record<string, unknown>; buyer: Record<string, unknown> };
+    expect(r.seller).toMatchObject({ name: "Lager Nord GmbH", vatId: "DE123456789", endpoint: "9930:DE123456789", country: "DE", paymentTerms: "30 days net", account: { means: "58", identifier: "DE89370400440532013000" } });
+    // Acme UK North has no legal details of its own: Acme UK Ltd's.
+    expect(r.buyer).toMatchObject({ id: "uk-north", name: "Acme UK North", vatId: "GB999888777", endpoint: "0088:5012345000004", city: "London", country: "GB" });
+    expect((await handleInvoiceParties(env.DB, claims(), "ie")).status).toBe(403);
+  });
+
+  it("lists this supplier's active purchase orders for the company and the units beneath it, with their lines", async () => {
+    const { handlePortalPurchaseOrders } = await import("../src/network-submission.js");
+    const r = (await handlePortalPurchaseOrders(env.DB, claims(), "uk")).body as { purchaseOrders: { orderNumber: string; lines: Record<string, unknown>[] }[] };
+    expect(r.purchaseOrders.map((p) => p.orderNumber)).toEqual(["690000321"]);
+    expect(r.purchaseOrders[0].lines).toEqual([
+      expect.objectContaining({ lineNumber: 10, description: "Breakfast rolls", quantity: 2, unitCode: "C62", unitPrice: 60.9 }),
+      expect.objectContaining({ lineNumber: 20, description: "Buffet lunch", quantity: 1, unitPrice: 143.2 }),
+    ]);
+    expect((await handlePortalPurchaseOrders(env.DB, claims(), "ie")).status).toBe(403);
+  });
+});
+
+/**
+ * **What the network writes, this instance reads — decision 0727.** The
+ * Create form's own builder (`vf-portal/public/bis3.js`) makes the
+ * invoice; capture reads it exactly, with no AI.
+ */
+describe("an invoice created in the network", () => {
+  it("is read exactly: number, dates, PO, lines and totals", async () => {
+    // @ts-expect-error a browser module, plain JavaScript
+    const bis3 = (await import("../../vf-portal/public/bis3.js")) as { toXml: (m: unknown) => string; validate: (m: unknown) => unknown[] };
+    await addSource();
+    const model = {
+      number: "LN-777",
+      issueDate: "2026-10-11",
+      dueDate: "2026-11-10",
+      currency: "GBP",
+      purchaseOrder: "690000321",
+      buyerReference: "AP-UK",
+      paymentTerms: "30 days net",
+      seller: { name: "Lager Nord GmbH", vatId: "DE123456789", addressLine: "Hafenstrasse 4", city: "Hamburg", postalCode: "20457", country: "DE" },
+      buyer: { name: "Acme UK Ltd", vatId: "GB999888777", endpoint: "0088:5012345000004", addressLine: "1 Handover Street", city: "London", postalCode: "EC1A 1AA", country: "GB" },
+      account: { means: "58", identifier: "DE89370400440532013000", name: "Lager Nord GmbH" },
+      lines: [
+        { description: "Breakfast rolls", poLine: "10", quantity: 2, unitCode: "C62", unitPrice: 60.9, vatCategory: "S", vatRate: 20 },
+        { description: "Delivery", quantity: 1, unitCode: "C62", unitPrice: 65.4, vatCategory: "S", vatRate: 20 },
+      ],
+    };
+    expect(bis3.validate(model)).toEqual([]);
+    const r = await submit({ orgUnitId: "uk", filename: "LN-777.xml", xml: bis3.toXml(model) });
+    expect(r.status).toBe(202);
+    const h = await env.DB.prepare("SELECT facts_json FROM invoice_headers WHERE id = ?").bind((r.body as { invoiceId: string }).invoiceId).first<{ facts_json: string }>();
+    const facts = JSON.parse(h!.facts_json) as Record<string, unknown>;
+    expect(facts).toMatchObject({ "BT-1": "LN-777", "BT-2": "2026-10-11", "BT-9": "2026-11-10", "BT-5": "GBP", "BT-13": "690000321", "BT-10": "AP-UK", "BT-31": "DE123456789", "BT-48": "GB999888777", "BT-106": 187.2, "BT-110": 37.44, "BT-112": 224.64 });
+    const lines = await env.DB.prepare("SELECT count(*) AS n FROM invoice_lines WHERE invoice_id = ?").bind((r.body as { invoiceId: string }).invoiceId).first<{ n: number }>();
+    expect(lines?.n).toBe(2);
+  });
+});

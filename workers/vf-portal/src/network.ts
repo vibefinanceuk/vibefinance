@@ -195,3 +195,19 @@ export async function submit(deps: Deps, session: string, linkId: string, body: 
     return { status: 502, body: { error: "unreachable", customer: pair.link.customerName } };
   }
 }
+
+/**
+ * `GET /api/customers/:linkId/invoice-parties|purchase-orders?orgUnitId=` —
+ * decision 0727: what the Create form fills in (the seller and buyer as
+ * that customer has them) and its purchase orders for From a PO, asked of
+ * the customer that link is for.
+ */
+export async function fromCustomer(deps: Deps, session: string, linkId: string, what: "invoice-parties" | "purchase-orders", orgUnitId: string): Promise<Result> {
+  const pairs = await linksWithAccess(deps, session);
+  if (!pairs) return { status: 401, body: { error: "signed_out" } };
+  const pair = pairs.find((p) => p.link.id === linkId);
+  if (!pair?.access) return { status: 404, body: { error: "not_found" } };
+  const answer = await ask(deps, pair.access, `/portal/${what}?orgUnitId=${encodeURIComponent(orgUnitId)}`);
+  if (!answer.ok) return { status: answer.status === 403 ? 403 : 502, body: { error: answer.reason, customer: pair.link.customerName } };
+  return { status: 200, body: answer.body };
+}

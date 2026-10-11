@@ -1,6 +1,7 @@
 import { loadStrings, t, fill, el } from "/strings.js";
 import { frame, topbar } from "/shell.js";
 import { icon } from "/icons.js";
+import { createPage } from "/create.js";
 
 /**
  * **The supplier network's pages — decisions 0717 and 0725.** Sign in;
@@ -61,12 +62,23 @@ function supplierNames() {
 
 function go(screen) {
   current = screen;
+  window.scrollTo?.(0, 0);
   render();
+  if (screen === "documents") loadInvoices();
 }
 
+/** What was just sent from Create, said once on Documents (0727). */
+let sentNotice = null;
+
 /** Draw the frame and the screen showing. */
-export function render() {
-  const page = el("div", {}, documentsPage());
+export async function render() {
+  const page =
+    current === "create"
+      ? await createPage({ api }, handlers, (sent) => {
+          sentNotice = sent;
+          go("documents");
+        })
+      : el("div", {}, documentsPage());
   $("shell").replaceChildren(frame({ current, go, who: { email: me.email, supplier: supplierNames() }, page }));
   $("shell").hidden = false;
   $("signin-view").hidden = true;
@@ -107,8 +119,17 @@ function documentsPage() {
     filters.status = status.value;
     loadInvoices();
   });
+  const notice = sentNotice;
+  sentNotice = null;
   return [
     topbar(t("network.nav.documents"), me.customers.length ? `${supplierNames()} · ${me.customers.map(customerLabel).join(" · ")}` : t("network.nocustomers"), [], handlers),
+    notice
+      ? el("div", { class: "sentnotice", role: "status" }, [
+          el("b", { text: t("network.create.sent", { customer: notice.customer, company: notice.company }) }),
+          " ",
+          el("span", { text: t("network.create.sentref", { message: notice.message ?? "", customer: notice.customer }) }),
+        ])
+      : null,
     el("div", { class: "notice", id: "unavailable", role: "status", hidden: true }),
     el("div", { class: "panel" }, [
       el("div", { class: "searchrow" }, [search, el("div", { class: "filters" }, [customer, status]), el("span", { class: "sm muted", id: "count" })]),
@@ -289,7 +310,7 @@ async function showList() {
   const { res, body } = await api("/me");
   if (!res.ok) return;
   me = { email: body.email ?? "", customers: body.customers ?? [] };
-  render();
+  await render();
   await loadInvoices();
 }
 

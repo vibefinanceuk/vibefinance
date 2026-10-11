@@ -1,4 +1,4 @@
-import { invoice, invoices, me, reply, submissionCompanies, submit, type Deps } from "./network.js";
+import { fromCustomer, invoice, invoices, me, reply, submissionCompanies, submit, type Deps } from "./network.js";
 
 /**
  * **vf-portal: the supplier network — decision 0717.**
@@ -109,6 +109,11 @@ export default {
     }
     // Decision 0726: sending an invoice created in the network.
     if (url.pathname === "/api/submission-companies" && request.method === "GET") return signedOutClears(await submissionCompanies(deps, session));
+    // Decision 0727: the Create form's seller, buyer and purchase orders.
+    const customerAsk = url.pathname.match(/^\/api\/customers\/([^/]+)\/(invoice-parties|purchase-orders)$/);
+    if (customerAsk && request.method === "GET") {
+      return signedOutClears(await fromCustomer(deps, session, decodeURIComponent(customerAsk[1]), customerAsk[2] as "invoice-parties" | "purchase-orders", url.searchParams.get("orgUnitId") ?? ""));
+    }
     const submission = url.pathname.match(/^\/api\/submissions\/([^/]+)$/);
     if (submission && request.method === "POST") {
       const body = await request.json().catch(() => ({}));

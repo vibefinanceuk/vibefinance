@@ -98,7 +98,7 @@ describe("the Worker", () => {
   const call = (e: Env, path: string, init: RequestInit = {}) => worker.fetch(new Request(`https://network.example${path}`, init), e);
 
   it("serves the pages", async () => {
-    for (const page of ["/", "/welcome.html", "/portal.js", "/welcome.js", "/shell.js", "/icons.js", "/portal.css", "/tokens.css", "/app.css", "/img/logo.png", "/img/logo-light.png", "/img/logo-mark.png"]) {
+    for (const page of ["/", "/welcome.html", "/portal.js", "/welcome.js", "/shell.js", "/icons.js", "/create.js", "/bis3.js", "/portal.css", "/tokens.css", "/app.css", "/img/logo.png", "/img/logo-light.png", "/img/logo-mark.png"]) {
       expect((await SELF.fetch(`https://network.example${page}`)).status, page).toBe(200);
     }
   });
@@ -259,5 +259,43 @@ describe("the application's look", () => {
     expect(index).toContain('<main id="shell" hidden></main>');
     const portal = (await import("../public/portal.js?raw")).default as string;
     expect(portal).toContain('document.body.classList.add("working")');
+  });
+});
+
+/**
+ * **Every word the network's pages ask for exists — decision 0727**, as
+ * vf-licence's string coverage does for the app: a key nothing defines is
+ * a label nobody can read. Literal `t("network.…")` keys in the pages,
+ * and the rule keys the invoice builder names.
+ */
+describe("the network's words", () => {
+  it("are all defined, in English and German", async () => {
+    const migrations = import.meta.glob("../../vf-licence/migrations/*.sql", { query: "?raw", import: "default", eager: true }) as Record<string, string>;
+    const defined = { en: new Set<string>(), de: new Set<string>() };
+    for (const sql of Object.values(migrations)) {
+      for (const m of sql.matchAll(/\('(network\.[^']+)',\s*'(en|de)',/g)) defined[m[2] as "en" | "de"].add(m[1]);
+    }
+    const pages = [
+      (await import("../public/portal.js?raw")).default,
+      (await import("../public/shell.js?raw")).default,
+      (await import("../public/create.js?raw")).default,
+      (await import("../public/welcome.js?raw")).default,
+    ] as string[];
+    const used = new Set<string>();
+    for (const src of pages) for (const m of src.matchAll(/t\("(network\.[a-z0-9._]+)"/g)) used.add(m[1]);
+    const bis3 = (await import("../public/bis3.js?raw")).default as string;
+    for (const m of bis3.matchAll(/"(network\.bis3\.[a-z]+)"/g)) used.add(m[1]);
+    // Built from a value: each unit, VAT category and send failure the form can name.
+    for (const u of ["C62", "H87", "HUR", "DAY", "KGM", "MTR", "LTR", "SET"]) used.add(`network.unit.${u}`);
+    for (const c of ["S", "Z", "E", "AE"]) {
+      used.add(`network.vat.${c}`);
+      used.add(`network.vatline.${c}`);
+    }
+    for (const r of ["not_covered", "not_accepting", "not_bis3", "unreadable", "too_large", "other"]) used.add(`network.create.failed.${r}`);
+    used.add("network.create.accountnote");
+    used.add("network.create.noaccount");
+    expect(used.size).toBeGreaterThan(80);
+    expect([...used].filter((k) => !defined.en.has(k))).toEqual([]);
+    expect([...used].filter((k) => !defined.de.has(k))).toEqual([]);
   });
 });

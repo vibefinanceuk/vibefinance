@@ -200,7 +200,7 @@ a new source route, *Supplier network in*, that the customer adds to a process a
 on. The supplier picks the company from those they are invited for; the supplier record is the
 invitation's (a VAT number that disagrees is flagged); a PO typed in is used only when the
 document has none. Built in three steps: the network in the app's frame (0725), the source
-(0726), the Create form (0727).
+(0726), the Create form (0727), all built 11 October 2026.
 
 **Later phases**, in an order to choose: invoice submission through the portal; remittance
 detail; bank detail changes as approved requests.

@@ -73,7 +73,7 @@ export async function sourceForCompany(db: D1Database, orgUnitId: string): Promi
 }
 
 /** Whether the company is one the invitation covers: named in it, or beneath one that is. */
-async function covered(db: D1Database, claims: PortalAccessClaims, orgUnitId: string): Promise<boolean> {
+export async function covered(db: D1Database, claims: PortalAccessClaims, orgUnitId: string): Promise<boolean> {
   const lineage = await unitAndAbove(db, orgUnitId);
   return lineage.some((u) => claims.orgUnitIds.includes(u));
 }
@@ -169,4 +169,144 @@ export async function handlePortalSubmission(
   }
   await finishRouteMessage(db, messageId, { status: outcome.why ? "partial" : "delivered" });
   return { status: 202, body: { message: messageId, invoiceId: outcome.invoiceId ?? null } };
+}
+
+// ---------------------------------------------------------------------------
+// What the Create form fills in for the supplier — decision 0727.
+// ---------------------------------------------------------------------------
+
+interface UnitRow {
+  id: string;
+  name: string;
+  parent_unit_id: string | null;
+  vat_id: string | null;
+  buyer_endpoint: string | null;
+  buyer_reference: string | null;
+  address_line: string | null;
+  city: string | null;
+  postal_code: string | null;
+  country: string | null;
+  email: string | null;
+  phone: string | null;
+}
+
+/** A company's legal details: its own, else the nearest company above it that has them. */
+async function companyDetails(db: D1Database, orgUnitId: string) {
+  const rows: UnitRow[] = [];
+  let id: string | null = orgUnitId;
+  for (let i = 0; id && i < 12; i++) {
+    const row: UnitRow | null = await db
+      .prepare("SELECT id, name, parent_unit_id, vat_id, buyer_endpoint, buyer_reference, address_line, city, postal_code, country, email, phone FROM org_units WHERE id = ?")
+      .bind(id)
+      .first<UnitRow>();
+    if (!row) break;
+    rows.push(row);
+    id = row.parent_unit_id;
+  }
+  const first = <K extends keyof UnitRow>(k: K) => rows.find((r) => r[k])?.[k] ?? null;
+  const own = rows[0];
+  if (!own) return null;
+  return {
+    id: own.id,
+    name: own.name,
+    vatId: first("vat_id"),
+    endpoint: first("buyer_endpoint"),
+    buyerReference: first("buyer_reference"),
+    addressLine: first("address_line"),
+    city: first("city"),
+    postalCode: first("postal_code"),
+    country: first("country"),
+  };
+}
+
+/**
+ * `GET /portal/invoice-parties?orgUnitId=` — the seller (this customer's
+ * record of the supplier: name, VAT number, address, the account it pays
+ * into, its terms) and the buyer (the company's legal details). The
+ * supplier cannot change either here: a change to the record, above all
+ * its bank account, is the customer's.
+ */
+export async function handleInvoiceParties(db: D1Database, claims: PortalAccessClaims, orgUnitId: string): Promise<RouteResult> {
+  if (!orgUnitId || !(await covered(db, claims, orgUnitId))) return { status: 403, body: { error: "your invitation does not cover that company", reason: "not_covered" } };
+  const s = await db
+    .prepare(
+      `SELECT name, vat_id, erp_identifier, electronic_address, address_line, city, postal_code, country, email, phone, payment_terms,
+              agreed_payment_means, agreed_account_identifier, agreed_account_name
+       FROM suppliers WHERE id = ?`
+    )
+    .bind(claims.supplierId)
+    .first<Record<string, string | null>>();
+  const buyer = await companyDetails(db, orgUnitId);
+  if (!s || !buyer) return { status: 404, body: { error: "not found" } };
+  return {
+    status: 200,
+    body: {
+      seller: {
+        name: s.name,
+        vatId: s.vat_id,
+        reference: s.erp_identifier,
+        endpoint: s.electronic_address,
+        addressLine: s.address_line,
+        city: s.city,
+        postalCode: s.postal_code,
+        country: s.country,
+        email: s.email,
+        phone: s.phone,
+        paymentTerms: s.payment_terms,
+        account: s.agreed_account_identifier ? { means: s.agreed_payment_means, identifier: s.agreed_account_identifier, name: s.agreed_account_name } : null,
+      },
+      buyer,
+    },
+  };
+}
+
+/**
+ * `GET /portal/purchase-orders?orgUnitId=` — this supplier's active
+ * purchase orders for the company (and the units beneath it), with their
+ * lines, newest first: what *From a PO* fills an invoice from.
+ */
+export async function handlePortalPurchaseOrders(db: D1Database, claims: PortalAccessClaims, orgUnitId: string): Promise<RouteResult> {
+  if (!orgUnitId || !(await covered(db, claims, orgUnitId))) return { status: 403, body: { error: "your invitation does not cover that company", reason: "not_covered" } };
+  const supplier = await db.prepare("SELECT vat_id, erp_identifier FROM suppliers WHERE id = ?").bind(claims.supplierId).first<{ vat_id: string | null; erp_identifier: string | null }>();
+  const ids = [supplier?.vat_id, supplier?.erp_identifier].filter((x): x is string => Boolean(x));
+  if (ids.length === 0) return { status: 200, body: { purchaseOrders: [] } };
+  const orders = (
+    await db
+      .prepare(
+        `SELECT po.id, po.order_number, po.issue_date, po.currency, po.tax_exclusive_amount
+         FROM purchase_orders po
+         WHERE po.status = 'active' AND po.seller_party_id IN (${ids.map(() => "?").join(", ")})
+           AND po.org_unit_id IN (
+             WITH RECURSIVE below(id) AS (SELECT ? UNION SELECT u.id FROM org_units u JOIN below b ON u.parent_unit_id = b.id)
+             SELECT id FROM below)
+         ORDER BY po.issue_date DESC, po.created_at DESC LIMIT 50`
+      )
+      .bind(...ids, orgUnitId)
+      .all<{ id: string; order_number: string; issue_date: string | null; currency: string | null; tax_exclusive_amount: number | null }>()
+  ).results;
+  const purchaseOrders = [];
+  for (const o of orders) {
+    const lines = (
+      await db
+        .prepare("SELECT line_number, quantity, unit_code, price_amount, base_quantity, line_extension_amount, item_name, item_description, sellers_item_id FROM purchase_order_lines WHERE purchase_order_id = ? ORDER BY line_number")
+        .bind(o.id)
+        .all<Record<string, string | number | null>>()
+    ).results;
+    purchaseOrders.push({
+      orderNumber: o.order_number,
+      issueDate: o.issue_date,
+      currency: o.currency,
+      net: o.tax_exclusive_amount,
+      lines: lines.map((l) => ({
+        lineNumber: l.line_number,
+        description: l.item_name ?? l.item_description ?? "",
+        quantity: l.quantity,
+        unitCode: l.unit_code ?? "C62",
+        unitPrice: l.price_amount !== null && l.price_amount !== undefined ? Number(l.price_amount) / (Number(l.base_quantity) || 1) : null,
+        net: l.line_extension_amount,
+        sellersItemId: l.sellers_item_id,
+      })),
+    });
+  }
+  return { status: 200, body: { purchaseOrders } };
 }

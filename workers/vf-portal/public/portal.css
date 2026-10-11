@@ -67,3 +67,37 @@ main#welcome .field + .field { margin-top: var(--gap-loose); }
 .helpstatuses dd { margin: 0; color: var(--text-secondary); }
 
 @media (max-width: 640px) { .hide-narrow { display: none; } }
+
+/* Create an invoice — decision 0727, laid out as the app's invoice viewer. */
+.netcreate .row3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; align-items: start; }
+.netcreate .panel { margin-bottom: 16px; }
+.netcreate .row3 .panel { margin-bottom: 0; }
+.netcreate .row3 { margin-bottom: 16px; }
+.netcreate .cardhead select { width: auto; min-height: 30px; padding: 3px 8px; font-size: var(--text-sm); }
+.netcreate .note { font-size: var(--text-sm); color: var(--text-muted); margin: 10px 0 0; }
+.netcreate .kf input, .netcreate .kf select { width: 100%; box-sizing: border-box; }
+.bisbadge { display: inline-block; margin-left: 10px; vertical-align: middle; font-size: var(--text-sm); font-weight: 500; padding: 2px 9px; border-radius: 10px; background: var(--bg-accent); color: var(--text-accent); border: 0.5px solid var(--border-accent); }
+.netlines { table-layout: fixed; width: 100%; }
+.netlines input, .netlines select { width: 100%; box-sizing: border-box; min-height: 32px; padding: 4px 8px; font-size: var(--text-sm); }
+.netlines input.num { text-align: right; }
+.netlines td.danger input, .netlines td.danger select { border-color: var(--border-danger); background: var(--bg-danger); }
+.netvat { display: flex; gap: 4px; align-items: center; }
+.netvat select { flex: 1 1 auto; }
+.netvat .netrate { width: 52px; flex: 0 0 52px; }
+.netfoot { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; margin-top: 10px; }
+.nettotals { width: 320px; font-size: var(--text-sm); }
+.nettotals div { display: flex; justify-content: space-between; padding: 3px 0; }
+.nettotals .grand { font-weight: 700; border-top: 0.5px solid var(--border); margin-top: 4px; padding-top: 6px; font-size: var(--text-base); }
+.netcheck { border-radius: var(--radius); padding: 10px 14px; font-size: var(--text-sm); }
+.netcheck.good { background: var(--bg-success); border: 0.5px solid var(--border-success); color: var(--text-success); }
+.netcheck.bad { background: var(--bg-danger); border: 0.5px solid var(--border-danger); color: var(--text-danger); }
+.netcheck ul { margin: 6px 0 0; padding-left: 18px; }
+.netbuttons { display: flex; justify-content: flex-end; gap: 6px; margin-top: 12px; }
+.netbuttons .primary { border: 0.5px solid var(--border-accent); color: var(--text-accent); }
+.netbuttons button:disabled { opacity: 0.45; cursor: default; }
+.sentnotice { background: var(--bg-success); border: 0.5px solid var(--border-success); color: var(--text-success); border-radius: var(--radius); padding: 10px 14px; font-size: var(--text-sm); margin-bottom: 14px; }
+.popout.netpos { width: min(640px, 100%); }
+.popout.netpos table { width: 100%; }
+.popout.netpos tbody tr { cursor: pointer; }
+.popout.netpos tbody tr:hover td { background: var(--surface-2); }
+@media (max-width: 1000px) { .netcreate .row3 { grid-template-columns: 1fr; } .netfoot { flex-direction: column; align-items: stretch; } .nettotals { width: auto; } }
