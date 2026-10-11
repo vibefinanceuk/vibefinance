@@ -1,6 +1,6 @@
 # 0727: Create an invoice in the network, as Peppol BIS Billing 3.0
 
-**Status: built**, 11 October 2026, awaiting push and deploy. vf-portal (`create.js`, `bis3.js`,
+**Status: live**, pushed and deployed 11 October 2026 (`b215396`). vf-portal (`create.js`, `bis3.js`,
 `shell.js`, `portal.js`, `portal.css`), vf-app (`network-submission.ts`: the seller, buyer and
 purchase orders), vf-licence (strings migration 0331).
 
@@ -44,6 +44,14 @@ including the customer's instance's, which reads what it writes.
 
 **vf-app**: `GET /portal/invoice-parties` and `GET /portal/purchase-orders` (portal token, a
 company the invitation covers), and vf-portal's `GET /api/customers/:linkId/…` to reach them.
+
+## Afterwards: the cards level, and Day's colours for what to put right
+
+Dan, from the deployed network in Night: *"align the Payment card so that it is the same height
+as the buyer and seller cards"*, and the fields to put right and the *Not ready to send* panel
+in Day's lighter colours, not deep red. The three cards now stretch to the tallest; a line's
+field to put right, the check and the sent notice use the fixed severity colours the app's own
+fields use (`--severity-danger-bg` and its text), in both themes.
 
 ## Not in this
 

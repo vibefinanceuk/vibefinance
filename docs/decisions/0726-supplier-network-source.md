@@ -1,6 +1,6 @@
 # 0726: Supplier network in, a source route
 
-**Status: built**, 11 October 2026, awaiting push and deploy. vf-app (migration 0160,
+**Status: live**, pushed and deployed 11 October 2026 (`b215396`). vf-app (migration 0160,
 `network-submission.ts`, `source-route.ts`, `source-capture-route.ts`, `routes-route.ts`),
 shared (connector library), vf-ui (`network-source.js`, Process routes), vf-portal (sending),
 vf-licence (strings migration 0330).

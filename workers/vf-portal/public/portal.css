@@ -69,7 +69,8 @@ main#welcome .field + .field { margin-top: var(--gap-loose); }
 @media (max-width: 640px) { .hide-narrow { display: none; } }
 
 /* Create an invoice — decision 0727, laid out as the app's invoice viewer. */
-.netcreate .row3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; align-items: start; }
+/* Dan: the three cards the same height (0727). */
+.netcreate .row3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; align-items: stretch; }
 .netcreate .panel { margin-bottom: 16px; }
 .netcreate .row3 .panel { margin-bottom: 0; }
 .netcreate .row3 { margin-bottom: 16px; }
@@ -80,7 +81,8 @@ main#welcome .field + .field { margin-top: var(--gap-loose); }
 .netlines { table-layout: fixed; width: 100%; }
 .netlines input, .netlines select { width: 100%; box-sizing: border-box; min-height: 32px; padding: 4px 8px; font-size: var(--text-sm); }
 .netlines input.num { text-align: right; }
-.netlines td.danger input, .netlines td.danger select { border-color: var(--border-danger); background: var(--bg-danger); }
+/* Dan: a field to put right in Day's light colours in Night too, as the app's own (.kf.danger), not deep red. */
+.netlines td.danger input, .netlines td.danger select { border-color: var(--border-danger); background: var(--severity-danger-bg); color: var(--severity-value-text); }
 .netvat { display: flex; gap: 4px; align-items: center; }
 .netvat select { flex: 1 1 auto; }
 .netvat .netrate { width: 52px; flex: 0 0 52px; }
@@ -89,13 +91,13 @@ main#welcome .field + .field { margin-top: var(--gap-loose); }
 .nettotals div { display: flex; justify-content: space-between; padding: 3px 0; }
 .nettotals .grand { font-weight: 700; border-top: 0.5px solid var(--border); margin-top: 4px; padding-top: 6px; font-size: var(--text-base); }
 .netcheck { border-radius: var(--radius); padding: 10px 14px; font-size: var(--text-sm); }
-.netcheck.good { background: var(--bg-success); border: 0.5px solid var(--border-success); color: var(--text-success); }
-.netcheck.bad { background: var(--bg-danger); border: 0.5px solid var(--border-danger); color: var(--text-danger); }
+.netcheck.good { background: var(--severity-ok-bg); border: 0.5px solid var(--border-success); color: var(--severity-ok-text); }
+.netcheck.bad { background: var(--severity-danger-bg); border: 0.5px solid var(--border-danger); color: var(--severity-danger-text); }
 .netcheck ul { margin: 6px 0 0; padding-left: 18px; }
 .netbuttons { display: flex; justify-content: flex-end; gap: 6px; margin-top: 12px; }
 .netbuttons .primary { border: 0.5px solid var(--border-accent); color: var(--text-accent); }
 .netbuttons button:disabled { opacity: 0.45; cursor: default; }
-.sentnotice { background: var(--bg-success); border: 0.5px solid var(--border-success); color: var(--text-success); border-radius: var(--radius); padding: 10px 14px; font-size: var(--text-sm); margin-bottom: 14px; }
+.sentnotice { background: var(--severity-ok-bg); border: 0.5px solid var(--border-success); color: var(--severity-ok-text); border-radius: var(--radius); padding: 10px 14px; font-size: var(--text-sm); margin-bottom: 14px; }
 .popout.netpos { width: min(640px, 100%); }
 .popout.netpos table { width: 100%; }
 .popout.netpos tbody tr { cursor: pointer; }

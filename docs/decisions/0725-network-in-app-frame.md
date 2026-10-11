@@ -1,6 +1,6 @@
 # 0725: The supplier network in the application's own frame
 
-**Status: built**, 11 October 2026, awaiting push and deploy. vf-portal (pages, `shell.js`,
+**Status: live**, pushed and deployed 11 October 2026 (`b215396`). vf-portal (pages, `shell.js`,
 `portal.js`, `portal.css`; `app.css`, `icons.js` and the logos copied from vf-ui), vf-licence
 (strings migration 0329).
 
