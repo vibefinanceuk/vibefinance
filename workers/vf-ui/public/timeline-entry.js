@@ -39,6 +39,17 @@ export const EVENTS = {
   chase: { tone: "warn", icon: "post" },
   remind: { tone: "warn", icon: "post" },
   erp_export_undone: { tone: "warn", icon: "return" },
+  // Decision 0731 — a credit note: waiting on AP, or settled.
+  credit_to_confirm: { tone: "warn", icon: "systemalert" },
+  credit_held: { tone: "warn", icon: "systemalert" },
+  credit_credited: { tone: "ok", icon: "tick" },
+  credit_netted: { tone: "info", icon: "tick" },
+  credit_unmatched: { tone: "info", icon: "tick" },
+  credit_decided_credited: { tone: "ok", icon: "tick" },
+  credit_decided_netted: { tone: "info", icon: "tick" },
+  credit_decided_unmatched: { tone: "info", icon: "tick" },
+  credited_by: { tone: "ok", icon: "tick" },
+  netted_by: { tone: "info", icon: "tick" },
 
   stage_completed: { tone: "ok", icon: "tick" },
   registered: { tone: "ok", icon: "tick" },

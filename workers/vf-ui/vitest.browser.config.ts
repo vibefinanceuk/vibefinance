@@ -85,6 +85,7 @@ export default defineConfig({
       "/tasks.js": resolve(__dirname, "public/tasks.js"),
       "/boot.js": resolve(__dirname, "public/boot.js"),
       "/viewer.js": resolve(__dirname, "public/viewer.js"),
+      "/credit-notes.js": resolve(__dirname, "public/credit-notes.js"),
       "/signin.js": resolve(__dirname, "public/signin.js"),
       "/sources.js": resolve(__dirname, "public/sources.js"),
       "/processes.js": resolve(__dirname, "public/processes.js"),

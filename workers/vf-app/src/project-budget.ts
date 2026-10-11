@@ -17,7 +17,7 @@ import type { RouteResult } from "./org-route.js";
  */
 
 /** The instance states whose invoice will never be paid (as `po-matching.ts`). */
-const UNPAID = ["archived", "returned_manually"];
+const UNPAID = ["archived", "returned_manually", "credited"];
 
 export interface ProjectBudget {
   id: string;

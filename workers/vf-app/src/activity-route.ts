@@ -1,3 +1,4 @@
+import { creditEvents } from "./credit-notes.js";
 import { chronological } from "./timeline-time.js";
 import { regionTimeline } from "./field-regions.js";
 import type { RouteResult } from "./examples-route.js";
@@ -464,7 +465,7 @@ export async function handleGetActivity(db: D1Database, invoiceId: string, viewe
     return { status: 404, body: { error: `document ${invoiceId} does not exist` } };
   }
 
-  const [received, stageCompletions, ruleFirings, comments, taskActions, taskEnded, erpExports, reminders, receiptClosed, fromDocument, supplierMessages] = await Promise.all([
+  const [received, stageCompletions, ruleFirings, comments, taskActions, taskEnded, erpExports, reminders, receiptClosed, fromDocument, supplierMessages, credits] = await Promise.all([
     receivedEvent(db, invoiceId),
     stageCompletedEvents(db, invoiceId),
     ruleFiredEvents(db, invoiceId),
@@ -488,10 +489,12 @@ export async function handleGetActivity(db: D1Database, invoiceId: string, viewe
     regionTimeline(db, invoiceId) as Promise<ActivityItem[]>,
     // Decision 0721: the conversation with the supplier, one line each; the words are on the Supplier tab.
     supplierMessageEvents(db, invoiceId),
+    // Decision 0731: what a credit note credits, and what credited an invoice.
+    creditEvents(db, invoiceId) as Promise<ActivityItem[]>,
   ]);
 
   // Decision 0674: every moment in one form, ordered as time, not text.
-  const items = chronological([...received, ...stageCompletions, ...ruleFirings, ...comments, ...taskActions, ...taskEnded, ...erpExports, ...reminders, ...receiptClosed, ...fromDocument, ...supplierMessages]);
+  const items = chronological([...received, ...stageCompletions, ...ruleFirings, ...comments, ...taskActions, ...taskEnded, ...erpExports, ...reminders, ...receiptClosed, ...fromDocument, ...supplierMessages, ...credits]);
 
   return { status: 200, body: { items } };
 }

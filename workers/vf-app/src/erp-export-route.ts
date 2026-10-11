@@ -1,5 +1,6 @@
 import { isCreditNote, type InvoiceFacts } from "@vibefinance/shared";
 import { exitStageIds } from "./process-ends.js";
+import { NOT_WAITING_ON_CREDIT } from "./credit-notes.js";
 import { coveredUnits, covers, unitIdsOf } from "./destination-units.js";
 import {
   addRouteEvent,
@@ -74,7 +75,7 @@ export const ERP_EXPORT_COLUMNS = [
 export type ErpExportRow = Record<(typeof ERP_EXPORT_COLUMNS)[number], string>;
 
 /** Discarded or returned: never paid, so never exported. */
-const NOT_PAYABLE = ["archived", "returned_manually"];
+const NOT_PAYABLE = ["archived", "returned_manually", "credited"];
 
 function text(v: unknown): string {
   if (v === undefined || v === null) return "";
@@ -141,6 +142,7 @@ export async function eligibleInvoiceIds(
              AND other.status IN (${NOT_PAYABLE.map(() => "?").join(", ")})
          )
          AND NOT EXISTS (SELECT 1 FROM erp_export_invoices e WHERE e.invoice_id = h.id)
+         AND ${NOT_WAITING_ON_CREDIT}
          ${clause.sql}
        ORDER BY h.issue_date, h.id`
     )
@@ -199,6 +201,7 @@ export async function payableInvoiceIds(db: D1Database, processId: string): Prom
            WHERE other.subject_type = 'invoice' AND other.subject_id = h.id
              AND other.status IN (${NOT_PAYABLE.map(() => "?").join(", ")})
          )
+         AND ${NOT_WAITING_ON_CREDIT}
        ORDER BY h.issue_date, h.id`
     )
     .bind(...exits, processId, ...NOT_PAYABLE)

@@ -12,7 +12,7 @@ import { viewPage } from "/view.js";
  * its messages (0729).
  */
 
-export const STATUSES = ["received", "in_review", "query_raised", "returned", "approved", "sent_for_payment", "paid", "rejected"];
+export const STATUSES = ["received", "in_review", "query_raised", "returned", "approved", "sent_for_payment", "paid", "rejected", "credited"];
 
 const $ = (id) => document.getElementById(id);
 

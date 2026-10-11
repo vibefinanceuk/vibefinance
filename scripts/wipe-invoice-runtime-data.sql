@@ -47,6 +47,7 @@
 -- This session has no Cloudflare credentials and cannot run this. You run it.
 
 -- 0. Newer tables pointing at tasks, instances and invoices.
+DELETE FROM credit_notes;                -- -> invoice_headers (credit notes and their invoices, 0731)
 DELETE FROM portal_reads;
 DELETE FROM supplier_messages;           -- -> invoice_headers (supplier conversation, 0721)
 DELETE FROM task_action_events;          -- -> tasks (Timeline actions, 0083-0094)

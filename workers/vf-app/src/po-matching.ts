@@ -68,7 +68,7 @@ export interface PoConsumption {
 }
 
 /** The instance states whose invoice will never be paid, so never counts as having used a PO. */
-const UNPAID_INSTANCE_STATUSES = ["archived", "returned_manually"];
+const UNPAID_INSTANCE_STATUSES = ["archived", "returned_manually", "credited"];
 
 /**
  * **What an invoice takes from its PO — decision 0544.** Its total

@@ -19,6 +19,7 @@ import { buildActivityTab } from "/activity.js";
 import { buildCollaboratorsControl } from "/collaborators.js";
 import { buildAttachmentsTab } from "/attachments.js";
 import { buildSupplierTab, fetchSupplierChat, openAskSupplier, supplierQueryText } from "/supplier-chat.js";
+import { creditPanel } from "/credit-notes.js";
 import { pageViewer } from "/page-renderer.js";
 import { connectFields, fieldKind, markField } from "/field-link.js";
 import { lineNetSuggestion } from "/line-calc.js";
@@ -408,6 +409,8 @@ export async function loadInvoice(invoiceId) {
       // names an engine failure, this one names an ordinary, working
       // rule outcome.
       openTaskReason: body.openTaskReason ?? null,
+      // Decision 0731: the credit note side of this document.
+      credits: body.credits ?? null,
       /**
        * **Which unit this document belongs to** — decision 0198, and
        * kept because it decides which fields may be edited (decision
@@ -5004,7 +5007,7 @@ export async function openViewer(task, onClose) {
   // beneath both rather than confined to this column. (Decision
   // 0392 above changes what those areas are once popped out.)
   columnsEl.append(
-    el("div", { class: "c-process" }, [workflowErrorPanel(), reasonLinePanel(), supplierQueryPanel(), splitSharePanel(), progressRow()].filter(Boolean)),
+    el("div", { class: "c-process" }, [workflowErrorPanel(), reasonLinePanel(), supplierQueryPanel(), creditPanel(stored.credits, async () => reopenViewer?.()), splitSharePanel(), progressRow()].filter(Boolean)),
     el("div", { class: "c-document" }, [
       documentPanel(task, setDocPoppedOut),
       exceptionPanel(),

@@ -851,6 +851,8 @@
   */
   .status.returned { color: var(--text-accent); font-weight: 600; font-size: var(--text-sm); }
   .status.archived { color: var(--text-muted); font-size: var(--text-sm); }
+  /* Decision 0731: a credit note credited it. */
+  .status.credited { color: var(--text-secondary); font-size: var(--text-sm); }
   /*
     **Status as a pill — decision 0520.** The Documents list's own
     status, shaped as a pill in the colour each status already had
@@ -874,6 +876,7 @@
   .statuspill.moving,
   .statuspill.outside { background: var(--surface-1); border-color: var(--border-strong); }
   .statuspill.archived { background: transparent; border-color: var(--border); }
+  .statuspill.credited { background: transparent; border-color: var(--border-strong); }
   /*
     **The Tasks list's stage pill — decision 0522.** The same pill shape
     as the status pill, coloured by the stage's place in its process from
@@ -5644,3 +5647,15 @@
 .asklines .askline { display: inline-flex; align-items: center; gap: 4px; }
 .supplierquery .reasonline-row { color: var(--text-primary); }
 .suppliertab .activitybody { white-space: pre-line; }
+
+/* Credit notes — decision 0731: AP Setup's tab, Credits to confirm on Tasks, and the viewer. */
+.creditsetup .creditq { padding: 14px 0; border-top: 0.5px solid var(--border); }
+.creditsetup .creditq:first-of-type { border-top: none; }
+.creditsetup .creditqtitle { display: block; margin-bottom: 6px; }
+.creditsetup .creditfixed { background: var(--surface-1); border-radius: var(--radius); padding: 10px 12px; margin: 0; }
+.creditsetup .creditteam { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.creditsetup .creditteam select { width: auto; min-width: 220px; }
+.creditconfirm .dobuttons { justify-content: flex-end; flex-wrap: wrap; }
+.dobuttons input.creditnumber { width: 170px; flex: none; min-height: 32px; padding: 4px 10px; }
+.creditpanel .dobuttons { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 8px; }
+.creditpanel.waiting { border-left: 3px solid var(--border-warning, var(--border-strong)); }

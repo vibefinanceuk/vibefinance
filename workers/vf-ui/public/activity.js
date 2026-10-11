@@ -176,6 +176,20 @@ function actionTakenLine(item) {
       return t("activity.supplierwritten").replace("{who}", who).replace("{supplier}", item.supplierName ?? "");
     case "supplier_replied":
       return t("activity.supplierreplied").replace("{who}", who).replace("{supplier}", item.supplierName ?? "");
+    // Decision 0731 — a credit note and the invoice it credits.
+    case "credit_credited":
+    case "credit_netted":
+    case "credit_to_confirm":
+    case "credit_unmatched":
+    case "credit_decided_credited":
+    case "credit_decided_netted":
+    case "credit_decided_unmatched":
+    case "credited_by":
+    case "credit_held":
+    case "netted_by":
+      return t(`activity.${item.action}${["credit_credited", "credit_netted", "credit_to_confirm"].includes(item.action) ? (item.covers === "full" ? ".full" : item.covers === "partial" ? ".partial" : ".none") : ""}`)
+        .replaceAll("{who}", who || t("activity.credit.system"))
+        .replaceAll("{number}", item.invoiceNumber ?? "");
     case "receipt_closed":
       return t("activity.receiptclosed").replace("{rule}", item.ruleName ?? "").replace("{receipt}", item.receiptNumber ?? "").replace("{who}", who);
     default:

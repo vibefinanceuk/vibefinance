@@ -680,7 +680,7 @@ const INVOICED_AMOUNTS_JOIN = `
       -- so it has not used the order (the same rule matching follows).
       AND NOT EXISTS (
         SELECT 1 FROM process_instances pi
-        WHERE pi.subject_type = 'invoice' AND pi.subject_id = h.id AND pi.status IN ('archived', 'returned_manually')
+        WHERE pi.subject_type = 'invoice' AND pi.subject_id = h.id AND pi.status IN ('archived', 'returned_manually', 'credited')
       )
     GROUP BY json_extract(facts_json, '$."BT-13"')
   ) inv ON inv.order_number = po.order_number

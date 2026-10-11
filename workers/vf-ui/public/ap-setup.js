@@ -3,6 +3,7 @@ import { el, frame, topbar, setCurrentScreen, hasMyPermission } from "/tasks.js"
 import { actionLink, compactLink } from "/viewer.js";
 import { currencyPicker } from "/access.js";
 import { accountCodingTab, loadCodingListCsvFormats, loadAccountCodingTables } from "/coding-lists.js";
+import { creditNotesTab, loadCreditNoteSetup } from "/credit-notes.js";
 
 /**
  * AP Setup — decision 0440.
@@ -72,6 +73,8 @@ const TABS = [
   { key: "approvalhierarchy", labelKey: "apsetup.approvalhierarchy" },
   { key: "stagerestrictions", labelKey: "apsetup.stagerestrictions" },
   { key: "returnreasons", labelKey: "apsetup.returnreasons" },
+  // Decision 0731: what a credit note does to the invoice it credits.
+  { key: "creditnotes", labelKey: "apsetup.creditnotes" },
 ];
 
 let units = [];
@@ -174,6 +177,7 @@ async function load() {
       loadStageRestrictions(),
       loadReturnReasonsTab(),
       loadCodingConfig(),
+      loadCreditNoteSetup(),
     ]);
     if (!overviewResponse.ok || !configResponse.ok || !matchingConfigResponse.ok || !standardRulesResponse.ok) {
       console.error(
@@ -1663,6 +1667,7 @@ function render() {
     approvalhierarchy: () => approvalHierarchyTab(),
     stagerestrictions: () => stageRestrictionsTab(el("div", { class: "warn" })),
     returnreasons: () => returnReasonsTab(el("div", { class: "warn" })),
+    creditnotes: () => creditNotesTab(render),
   }[activeTab]();
 
   shell.replaceChildren(

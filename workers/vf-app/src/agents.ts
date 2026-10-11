@@ -403,7 +403,7 @@ async function gatherOutstanding(
          WHERE (pi.status = 'completed' OR (pi.status = 'in_progress' AND ${exitSql}))
            AND NOT EXISTS (
              SELECT 1 FROM process_instances other
-             WHERE other.subject_type = 'invoice' AND other.subject_id = h.id AND other.status IN ('archived', 'returned_manually')
+             WHERE other.subject_type = 'invoice' AND other.subject_id = h.id AND other.status IN ('archived', 'returned_manually', 'credited')
            )
            AND NOT EXISTS (SELECT 1 FROM destination_deliveries d WHERE d.invoice_id = h.id AND d.status = 'delivered')
            AND h.currency IS NOT NULL AND h.total_with_vat IS NOT NULL ${clause.sql}`,

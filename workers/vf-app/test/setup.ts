@@ -166,6 +166,7 @@ import supplierMessagesReturnSql from "../../../migrations/0159_supplier_message
 import networkInSql from "../../../migrations/0160_network_in.sql?raw";
 import portalReadsSql from "../../../migrations/0161_portal_reads.sql?raw";
 import documentKindSql from "../../../migrations/0162_document_kind.sql?raw";
+import creditNotesSql from "../../../migrations/0163_credit_notes.sql?raw";
 
 // Another known divergence from production, on top of the one below:
 // D1's exec() splits its input by newline and executes each non-empty
@@ -211,6 +212,8 @@ function toOneStatementPerLine(sql: string): string {
 // gets a genuinely clean schema regardless of what the pool does or
 // does not reset.
 const TABLES_IN_DROP_ORDER = [
+  // Decision 0731: credit notes reference invoices, people and teams.
+  "credit_notes", "credit_note_config",
   // Decision 0721: the supplier conversation references invoices and people.
   "portal_reads",
   "supplier_messages",
@@ -533,6 +536,7 @@ export async function applyTestSchema(): Promise<void> {
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(networkInSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(portalReadsSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(documentKindSql)));
+  await env.DB.exec(toOneStatementPerLine(stripSqlComments(creditNotesSql)));
 }
 
 /**

@@ -20,7 +20,7 @@ import { partiesFor } from "./network-submission.js";
 export const PORTAL_FEATURE = "supplier_portal";
 
 /** What a supplier is told, in a vocabulary fixed for every customer (design §5). */
-export const PORTAL_STATUSES = ["received", "in_review", "query_raised", "returned", "approved", "sent_for_payment", "paid", "rejected"] as const;
+export const PORTAL_STATUSES = ["received", "in_review", "query_raised", "returned", "approved", "sent_for_payment", "paid", "rejected", "credited"] as const;
 export type PortalStatus = (typeof PORTAL_STATUSES)[number];
 
 export type PortalAuth = { ok: true; claims: PortalAccessClaims } | { ok: false; status: number; body: Record<string, unknown> };
@@ -91,9 +91,12 @@ interface PortalRow {
  * - the customer has asked (Ask supplier) and the supplier has not
  *   answered since: `query_raised` (decision 0721).
  *
+ * - a credit note credited it (decision 0731): `credited`, first of all.
+ *
  * `paid` comes with a payment date from the ERP; it is not produced yet.
  */
 export function portalStatusOf(row: Pick<PortalRow, "instance_status" | "cur_seq" | "approval_seq" | "task_count" | "exported" | "delivered"> & { query_open?: number | null }): PortalStatus {
+  if (row.instance_status === "credited") return "credited";
   // Decision 0724: returned is "correct it and send it again", apart from discarded (rejected).
   if (row.instance_status === "returned_manually") return "returned";
   if (row.instance_status === "archived") return "rejected";

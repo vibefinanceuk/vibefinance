@@ -60,6 +60,8 @@ function statusOf(row: DocumentRow, facts: Record<string, unknown>): string {
   if (row.instance_status === "completed") return "done";
   if (row.instance_status === "returned_manually") return "returned";
   if (row.instance_status === "archived") return "archived";
+  // Decision 0731: a credit note took it out of payment.
+  if (row.instance_status === "credited") return "credited";
   if (row.current_stage_id === null) return "outside";
   return row.hands > 0 ? "waiting" : "moving";
 }

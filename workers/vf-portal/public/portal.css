@@ -21,6 +21,8 @@ main#welcome .field + .field { margin-top: var(--gap-loose); }
 .status.approved, .status.sent_for_payment, .status.paid { background: var(--severity-ok-bg); color: var(--severity-ok-text); }
 .status.query_raised, .status.returned { background: var(--severity-warning-bg); color: var(--severity-warning-text); }
 .status.rejected { background: var(--severity-danger-bg); color: var(--severity-danger-text); }
+/* Decision 0731: a credit note credited it. */
+.status.credited { background: transparent; color: var(--text-secondary); border: 0.5px solid var(--border-strong); }
 
 /* An invoice, opened (0717). */
 .popout .head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 4px; }

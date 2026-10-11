@@ -1389,6 +1389,8 @@ function render() {
         // From agents — decision 0622: filled after rendering, hidden when empty.
         // Conversations — decision 0660: receipts this person was added to, or with new messages.
         el("div", { id: "receiptconversations", hidden: "hidden" }),
+        // Credits to confirm — decision 0731: for the team AP Setup names.
+        el("div", { id: "creditconfirms", hidden: "hidden" }),
         el("div", { id: "agentnotes", hidden: "hidden" }),
 
         el("div", { class: "panel" }, [
@@ -1459,6 +1461,9 @@ function render() {
     .catch(() => {});
   import("/receipt-conversations.js")
     .then((m) => m.fill(document.getElementById("receiptconversations")))
+    .catch(() => {});
+  import("/credit-notes.js")
+    .then((m) => m.fill(document.getElementById("creditconfirms")))
     .catch(() => {});
 }
 

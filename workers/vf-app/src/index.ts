@@ -138,6 +138,7 @@ import {
   handleRemoveTeamMember,
   handleUpdateTeam,
 } from "./team-route.js";
+import { creditsFor, handleDecideCredit, handleGetCreditNoteConfig, handleListCreditsToConfirm, handlePutCreditNoteConfig } from "./credit-notes.js";
 import { handleUpsertInvoice, mergeStructuredInvoiceFacts , handleGetInvoice, loadStoredInvoiceLines, loadLiveInvoiceFacts } from "./invoice-facts-route.js";
 import { mergePoMatchFacts } from "./po-matching.js";
 import { applySavedPairings } from "./po-pairings.js";
@@ -4105,6 +4106,36 @@ export default {
       // added already resolves against, just reused here for a field
       // vf-app itself renders instead of one vf-licence serves.
       const result = await handleGetInvoice(db, getInvoiceMatch[1], resolveLocale(url.searchParams.get("locale")));
+      // Decision 0731: a credit note's invoice, or the credit notes against an invoice, and whether this person may confirm.
+      if (result.status === 200) (result.body as Record<string, unknown>).credits = await creditsFor(db, getInvoiceMatch[1], auth.user.id);
+      return json(result.body, result.status);
+    }
+
+    // Decision 0731: AP Setup › Credit Notes, and confirming a credit note.
+    if (pathname === "/credit-note-config" && (request.method === "GET" || request.method === "PUT")) {
+      const { db } = resolveTenant(request, env);
+      const auth = await authenticatePerson(db, request, env);
+      if (!auth.user) return json({ error: auth.reason }, 401);
+      if (!(await hasPermission(db, auth.user.id, "Admin.Configure"))) return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
+      const result =
+        request.method === "GET"
+          ? await handleGetCreditNoteConfig(db)
+          : await handlePutCreditNoteConfig(db, auth.user.id, ((await request.json().catch(() => ({}))) ?? {}) as Record<string, never>);
+      return json(result.body, result.status);
+    }
+    if (pathname === "/credit-notes/to-confirm" && request.method === "GET") {
+      const { db } = resolveTenant(request, env);
+      const auth = await authenticatePerson(db, request, env);
+      if (!auth.user) return json({ error: auth.reason }, 401);
+      const result = await handleListCreditsToConfirm(db, auth.user.id);
+      return json(result.body, result.status);
+    }
+    const decideCreditMatch = pathname.match(/^\/credit-notes\/([^/]+)\/decide$/);
+    if (decideCreditMatch && request.method === "POST") {
+      const { db } = resolveTenant(request, env);
+      const auth = await authenticatePerson(db, request, env);
+      if (!auth.user) return json({ error: auth.reason }, 401);
+      const result = await handleDecideCredit(db, auth.user.id, decodeURIComponent(decideCreditMatch[1]), ((await request.json().catch(() => ({}))) ?? {}) as { decision?: string });
       return json(result.body, result.status);
     }
 

@@ -1,7 +1,8 @@
 import { shrinkPages, sizeText, type PageShrinker, type WorkingPage } from "./page-shrink.js";
 import { readPdf } from "./pdf-read.js";
 import type { InvoiceFacts } from "@vibefinance/shared";
-import { formatFacts, readInvoiceXml, UblParseError, type ReadInvoiceXml } from "@vibefinance/shared";
+import { formatFacts, isCreditNote, readInvoiceXml, UblParseError, type ReadInvoiceXml } from "@vibefinance/shared";
+import { creditFacts, findCreditedInvoice, settleCreditNote } from "./credit-notes.js";
 import type { RouteResult } from "./org-route.js";
 import { handleUpsertInvoice, mergeStructuredInvoiceFacts } from "./invoice-facts-route.js";
 import { mergePoMatchFacts, mergeReceiptFactsForInvoice } from "./po-matching.js";
@@ -254,6 +255,22 @@ export async function handleCaptureIntake(db: D1Database, channelId: string, bod
   // decision 0057. Every capture path (XML, hybrid PDF, image,
   // multi-page finalise) converges on this function, so loading it
   // once covers all of them.
+  /**
+   * **A credit note's invoice — decision 0731.** Found before the first
+   * stage, so a rule can route on `creditNote.originalFound` and
+   * `creditNote.covers`; kept, as `intake.source` is; and what it does to
+   * that invoice decided once the credit note is in its process (below).
+   */
+  let creditMatch: Awaited<ReturnType<typeof findCreditedInvoice>> | null = null;
+  if (isCreditNote(mergedFacts)) {
+    creditMatch = await findCreditedInvoice(db, id, mergedFacts);
+    const extra = creditFacts(creditMatch);
+    mergedFacts = { ...mergedFacts, ...extra };
+    await db
+      .prepare(`UPDATE invoice_headers SET facts_json = json_set(COALESCE(facts_json, '{}'), '$."creditNote.originalFound"', json(?), '$."creditNote.covers"', ?) WHERE id = ?`)
+      .bind(extra["creditNote.originalFound"] ? "true" : "false", extra["creditNote.covers"], id)
+      .run();
+  }
   const captureSettings = await loadExtractionSettings(db, channelId);
   const visitResult = await visitCurrentStage(
     db,
@@ -334,6 +351,8 @@ export async function handleCaptureIntake(db: D1Database, channelId: string, bod
       totalWithVat: corrected["BT-112"],
     } as Parameters<typeof handleUpsertInvoice>[1]);
   }
+
+  if (creditMatch) await settleCreditNote(db, id, mergedFacts, creditMatch);
 
   // id is always echoed back — for the JSON path the caller already
   // supplied it themselves, but for handleCaptureUblXml's own

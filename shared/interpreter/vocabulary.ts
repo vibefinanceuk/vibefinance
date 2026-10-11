@@ -97,6 +97,9 @@ export const INVOICE_FIELDS = [
 export const DERIVED_FIELDS = [
   "direction",
   "party.first_document",
+  // Decision 0731: a credit note and the invoice it credits.
+  "creditNote.originalFound",
+  "creditNote.covers",
   "po.matched",
   "po.variance_pct",
   // Line-level matching, decision 0370. Header-level po.* answers "does
@@ -308,6 +311,8 @@ export const INVOICE_FIELD_TYPES: Record<string, FieldType> = {
   "coding.gl_code": "text",
   direction: "text",
   "party.first_document": "boolean",
+  "creditNote.originalFound": "boolean",
+  "creditNote.covers": "text",
   "po.matched": "boolean",
   "po.variance_pct": "number",
   "po.line_matched": "boolean",
@@ -511,6 +516,10 @@ export const FIELD_DESCRIPTIONS: Record<InvoiceField, string> = {
 export const DERIVED_FIELD_DESCRIPTIONS: Record<DerivedField, string> = {
   direction: "'payable' or 'receivable'",
   "party.first_document": "true if this is the first document from this party",
+  "creditNote.originalFound":
+    "on a credit note: true if the invoice it credits (BT-25) was found, from the same supplier. Absent on an invoice. Decision 0731.",
+  "creditNote.covers":
+    "on a credit note: 'full' if it credits the whole of the invoice it names (its total at least that invoice's), 'partial' if part, 'none' if that invoice was not found. Absent on an invoice. Decision 0731.",
   "po.matched":
     "true if the invoice names a purchase order held here and its total (BT-112) does not exceed what is left on that order, beyond tolerance. What is left is the order's total less what other invoices naming it have already taken (never counting discarded or returned invoices). An invoice for part of an order matches; only going over does not. Decision 0533.",
   "po.variance_pct":

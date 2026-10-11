@@ -161,7 +161,7 @@ async function invoicedByOthers(db: D1Database, orderNumber: string, invoiceId: 
        WHERE json_extract(h.facts_json, '$."BT-13"') = ? AND h.id != ?
          AND NOT EXISTS (
            SELECT 1 FROM process_instances pi
-           WHERE pi.subject_type = 'invoice' AND pi.subject_id = h.id AND pi.status IN ('archived', 'returned_manually')
+           WHERE pi.subject_type = 'invoice' AND pi.subject_id = h.id AND pi.status IN ('archived', 'returned_manually', 'credited')
          )
        ORDER BY h.created_at`
     )

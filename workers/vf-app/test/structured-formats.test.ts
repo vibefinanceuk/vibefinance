@@ -227,6 +227,25 @@ describe("an e-invoice by email is read as data, whatever its syntax", () => {
     expect(await invoiceFacts(m.id)).toMatchObject({ "BT-1": "G-1", "BT-3": "381", "BT-25": "R-88240" });
     const kind = await env.DB.prepare("SELECT document_kind FROM invoice_headers WHERE json_extract(facts_json, '$.\"BT-1\"') = 'G-1'").first<{ document_kind: string }>();
     expect(kind?.document_kind).toBe("credit_note");
+    // Decision 0731: no R-88240 here, so it waits for AP to say which invoice.
+    expect(await invoiceFacts(m.id)).toMatchObject({ "creditNote.originalFound": false, "creditNote.covers": "none" });
+    expect((await env.DB.prepare("SELECT state, reference FROM credit_notes").first())).toEqual({ state: "to_confirm", reference: "R-88240" });
+  });
+
+  it("finds the invoice a credit note credits, and holds it until AP confirms (decision 0731)", async () => {
+    await seedSource();
+    await receive([{ filename: "Rechnung_88240.xml", contentType: "application/xml", bytes: bytesOf(cii()) }]);
+    const creditNote = cii({ number: "G-2" }).replace("<ram:TypeCode>380</ram:TypeCode>", "<ram:TypeCode>381</ram:TypeCode>").replace(
+      "</ram:SpecifiedTradeSettlementHeaderMonetarySummation>",
+      "</ram:SpecifiedTradeSettlementHeaderMonetarySummation><ram:InvoiceReferencedDocument><ram:IssuerAssignedID>R-88240</ram:IssuerAssignedID></ram:InvoiceReferencedDocument>"
+    );
+    const m = await receive([{ filename: "Gutschrift.xml", contentType: "application/xml", bytes: bytesOf(creditNote) }]);
+    expect(await invoiceFacts(m.id)).toMatchObject({ "creditNote.originalFound": true, "creditNote.covers": "full" });
+    expect(await env.DB.prepare("SELECT c.state, c.covers, h.invoice_number FROM credit_notes c JOIN invoice_headers h ON h.id = c.invoice_id").first()).toEqual({
+      state: "to_confirm",
+      covers: "full",
+      invoice_number: "R-88240",
+    });
   });
 });
 
