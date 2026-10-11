@@ -192,3 +192,34 @@ describe("undoing an export, and the Timeline — decision 0553", () => {
     expect((await handleUndoErpExport(env.DB, "fran", id, { reason: "x" })).status).toBe(404);
   });
 });
+
+/** **A credit note, exported as a credit — decision 0730.** */
+describe("a credit note in the ERP export", () => {
+  it("goes out with its amounts negative, says it is a credit note, and names the invoice it credits", async () => {
+    await invoice("cn-1", {
+      stage: "eligible",
+      status: "completed",
+      facts: { "BT-3": "381", "BT-25": "INV-A", "BT-31": "GB111", "BT-109": 100, "BT-110": 20, "BT-112": 120 },
+      lines: [{ "BT-153": "Returned chair", "BT-129": 2, "BT-130": "EA", "BT-131": 100, "BT-151": "S", "BT-152": 20 }],
+    });
+    const kind = await env.DB.prepare("SELECT id, document_kind FROM invoice_headers WHERE id IN ('inv-a', 'cn-1') ORDER BY id").all();
+    expect(kind.results).toEqual([
+      { id: "cn-1", document_kind: "credit_note" },
+      { id: "inv-a", document_kind: "invoice" },
+    ]);
+    const made = await handleCreateErpExport(env.DB, "fran");
+    const csv = (await erpExportCsv(env.DB, "fran", (made.body as { id: string }).id)).csv!;
+    const [, ...rows] = csv.replace(/^﻿/, "").trim().split("\r\n");
+    const cells = rows.map((r) => Object.fromEntries(ERP_EXPORT_COLUMNS.map((c, i) => [c, r.split(",")[i]])));
+    expect(cells.find((c) => c.invoice_id === "cn-1")).toMatchObject({
+      document_type: "credit_note",
+      credited_invoice: "INV-A",
+      invoice_net: "-100.00",
+      invoice_vat: "-20.00",
+      invoice_total: "-120.00",
+      net_amount: "-100.00",
+      quantity: "2",
+    });
+    expect(cells.find((c) => c.invoice_id === "inv-b")).toMatchObject({ document_type: "invoice", credited_invoice: "", invoice_total: "120.00" });
+  });
+});

@@ -214,16 +214,19 @@ describe("an e-invoice by email is read as data, whatever its syntax", () => {
     expect(events.results).toContainEqual({ event: "en16931_failed", detail: "BR-CO-16" });
   });
 
-  it("refuses a credit note in words, and keeps it", async () => {
+  it("reads a credit note, as a credit note, with the invoice it credits (decision 0730)", async () => {
     await seedSource();
-    const creditNote = `<?xml version="1.0"?><CreditNote xmlns="urn:oasis:names:specification:ubl:schema:xsd:CreditNote-2"><ID>CN-1</ID></CreditNote>`;
+    const creditNote = cii({ number: "G-1" }).replace("<ram:TypeCode>380</ram:TypeCode>", "<ram:TypeCode>381</ram:TypeCode>").replace(
+      "</ram:SpecifiedTradeSettlementHeaderMonetarySummation>",
+      "</ram:SpecifiedTradeSettlementHeaderMonetarySummation><ram:InvoiceReferencedDocument><ram:IssuerAssignedID>R-88240</ram:IssuerAssignedID></ram:InvoiceReferencedDocument>"
+    );
     const m = await receive([{ filename: "Gutschrift.xml", contentType: "application/xml", bytes: bytesOf(creditNote) }]);
 
-    expect(m.status).toBe("failed");
-    const part = await attachmentPart(m.id);
-    expect(part.outcome).toBe("failed");
-    expect(part.reason).toMatch(/credit note, and credit notes are not read yet/);
-    expect(part.format).toBeNull();
+    expect(m.status).toBe("delivered");
+    expect(await attachmentPart(m.id)).toMatchObject({ outcome: "captured", syntax: "cii", en16931_failed: "[]" });
+    expect(await invoiceFacts(m.id)).toMatchObject({ "BT-1": "G-1", "BT-3": "381", "BT-25": "R-88240" });
+    const kind = await env.DB.prepare("SELECT document_kind FROM invoice_headers WHERE json_extract(facts_json, '$.\"BT-1\"') = 'G-1'").first<{ document_kind: string }>();
+    expect(kind?.document_kind).toBe("credit_note");
   });
 });
 

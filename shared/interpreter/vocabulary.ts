@@ -41,6 +41,8 @@ export const INVOICE_FIELDS = [
   // and both electronic addresses.
   "BT-23", // New — business process type (cbc:ProfileID)
   "BT-24", // New — specification identifier (cbc:CustomizationID), BR-01
+  "BT-25", // Decision 0730 — preceding invoice reference: what a credit note credits
+  "BT-26", // Decision 0730 — preceding invoice issue date
   "BT-27", // New — seller name (PartyLegalEntity/RegistrationName)
   "BT-34", // New — seller electronic address (EndpointID), BR-62
   "BT-44", // New — buyer name (PartyLegalEntity/RegistrationName)
@@ -276,6 +278,8 @@ export const INVOICE_FIELD_TYPES: Record<string, FieldType> = {
   "BT-40": "text", // country code
   "BT-23": "text",
   "BT-24": "text",
+  "BT-25": "text",
+  "BT-26": "text",
   "BT-27": "text",
   "BT-34": "text",
   "BT-44": "text",
@@ -472,6 +476,8 @@ export const FIELD_DESCRIPTIONS: Record<InvoiceField, string> = {
   "BT-40": "seller country",
   "BT-23": "business process type — the procurement process this invoice belongs to, as a URN",
   "BT-24": "specification identifier — which specification this document claims to conform to",
+  "BT-25": "preceding invoice reference — on a credit note, the number of the invoice it credits",
+  "BT-26": "preceding invoice issue date — on a credit note, the date of the invoice it credits",
   "BT-27": "seller name — the full formal name the seller is registered under",
   "BT-34": "seller electronic address — where an application-level response may be delivered",
   "BT-44": "buyer name — the full name of the buyer",

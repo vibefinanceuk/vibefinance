@@ -1,4 +1,4 @@
-import type { PortalAccessClaims } from "@vibefinance/shared";
+import { CREDIT_NOTE_TYPE_CODES, type PortalAccessClaims } from "@vibefinance/shared";
 import type { RouteResult } from "./org-route.js";
 import type { ExtractionModel } from "./extraction.js";
 import { captureAttachmentPart } from "./inbound-email.js";
@@ -92,10 +92,20 @@ export async function handleSubmissionCompanies(db: D1Database, claims: PortalAc
   return { status: 200, body: { companies } };
 }
 
-/** Whether the XML is a Peppol BIS Billing 3.0 invoice: a UBL Invoice declaring the BIS 3.0 customization. */
+/**
+ * Whether the XML is a Peppol BIS Billing 3.0 invoice: a UBL Invoice
+ * declaring the BIS 3.0 customization. Not a credit note, whichever
+ * root it is under (decision 0730), until the network sends those.
+ */
 export function isBis3Invoice(xml: string): boolean {
   const head = xml.slice(0, 4000);
-  return /<(?:\w+:)?Invoice[\s>]/.test(head) && head.includes("urn:oasis:names:specification:ubl:schema:xsd:Invoice-2") && xml.includes(BIS3_CUSTOMIZATION);
+  const typeCode = /<(?:\w+:)?InvoiceTypeCode[^>]*>\s*([^<\s]+)\s*</.exec(xml)?.[1];
+  return (
+    /<(?:\w+:)?Invoice[\s>]/.test(head) &&
+    head.includes("urn:oasis:names:specification:ubl:schema:xsd:Invoice-2") &&
+    xml.includes(BIS3_CUSTOMIZATION) &&
+    !(typeCode !== undefined && CREDIT_NOTE_TYPE_CODES.has(typeCode))
+  );
 }
 
 /**

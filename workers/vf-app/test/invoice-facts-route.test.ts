@@ -331,3 +331,13 @@ describe("handleUpsertInvoice — duplicate confidence scoring (decision 0028)",
     expect((result.body as { duplicateConfidence: number }).duplicateConfidence).toBeCloseTo(0.6);
   });
 });
+
+describe("duplicates, invoice or credit note — decision 0730", () => {
+  it("a credit note matching an invoice's number, amount and date is not its duplicate; a second such credit note is", async () => {
+    const doc = (id: string, typeCode?: string) =>
+      handleUpsertInvoice(env.DB, { id, supplierVatId: "DE777", invoiceNumber: "N-1", totalWithVat: 300, issueDate: "2026-03-01", facts: typeCode ? { "BT-3": typeCode } : {} });
+    await doc("k-inv");
+    expect(((await doc("k-cn", "381")).body as { duplicateConfidence: number }).duplicateConfidence).toBe(0);
+    expect(((await doc("k-cn2", "381")).body as { duplicateConfidence: number }).duplicateConfidence).toBe(1);
+  });
+});

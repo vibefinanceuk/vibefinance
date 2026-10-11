@@ -1,5 +1,5 @@
 import type { InvoiceFacts } from "../interpreter/types.js";
-import { parseCiiInvoice } from "./cii-parser.js";
+import { CREDIT_NOTE_TYPE_CODES, parseCiiInvoice } from "./cii-parser.js";
 import { checkEn16931, type En16931Result } from "./en16931-rules.js";
 import { BELOW_EN16931, identifyFormat, type InvoiceFormat, type InvoiceSyntax } from "./invoice-format.js";
 import { UblParseError, parseUblInvoice } from "./ubl-parser.js";
@@ -16,10 +16,9 @@ import { UblParseError, parseUblInvoice } from "./ubl-parser.js";
  * definition — came to be refused for not being UBL.
  *
  * The syntax is read from the root element, the only reliable place:
- * `<Invoice>` is UBL, `<CrossIndustryInvoice>` is CII. A `<CreditNote>`
- * is refused in words rather than as "no root <Invoice>", because
- * "this is a credit note and we do not read those yet" is something a
- * person can act on.
+ * `<Invoice>` is UBL, `<CrossIndustryInvoice>` is CII. A UBL
+ * `<CreditNote>` is UBL too, read since decision 0730 (refused in words
+ * before then).
  */
 
 export class InvoiceXmlError extends UblParseError {}
@@ -44,6 +43,16 @@ export function rootElementOf(xml: string): string | null {
   return match ? match[1] : null;
 }
 
+/**
+ * **Invoice or credit note — decision 0730.** By its type code, BT-3,
+ * whatever the syntax or root: the codes EN 16931 treats as credit
+ * notes. Everything else, and no code at all, is an invoice.
+ */
+export function isCreditNote(facts: { [key: string]: unknown }): boolean {
+  const code = facts["BT-3"];
+  return (typeof code === "string" || typeof code === "number") && CREDIT_NOTE_TYPE_CODES.has(String(code).trim());
+}
+
 export function readInvoiceXml(xml: string): ReadInvoiceXml {
   const root = rootElementOf(xml);
   let syntax: InvoiceSyntax;
@@ -52,8 +61,6 @@ export function readInvoiceXml(xml: string): ReadInvoiceXml {
     if (root === "CrossIndustryInvoice") {
       syntax = "cii";
       parsed = parseCiiInvoice(xml);
-    } else if (root === "CreditNote") {
-      throw new UblParseError("this is a credit note, and credit notes are not read yet");
     } else if (root === "CrossIndustryDocument") {
       // ZUGFeRD 1.0: an older CII, before EN 16931 existed.
       throw new UblParseError("this is a ZUGFeRD 1.0 invoice, which predates EN 16931 and is not read");

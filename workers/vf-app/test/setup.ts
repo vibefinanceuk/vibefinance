@@ -165,6 +165,7 @@ import supplierMessagesSql from "../../../migrations/0158_supplier_messages.sql?
 import supplierMessagesReturnSql from "../../../migrations/0159_supplier_messages_return.sql?raw";
 import networkInSql from "../../../migrations/0160_network_in.sql?raw";
 import portalReadsSql from "../../../migrations/0161_portal_reads.sql?raw";
+import documentKindSql from "../../../migrations/0162_document_kind.sql?raw";
 
 // Another known divergence from production, on top of the one below:
 // D1's exec() splits its input by newline and executes each non-empty
@@ -531,6 +532,7 @@ export async function applyTestSchema(): Promise<void> {
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(supplierMessagesReturnSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(networkInSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(portalReadsSql)));
+  await env.DB.exec(toOneStatementPerLine(stripSqlComments(documentKindSql)));
 }
 
 /**

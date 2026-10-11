@@ -1,4 +1,4 @@
-import type { InvoiceFacts } from "@vibefinance/shared";
+import { isCreditNote, type InvoiceFacts } from "@vibefinance/shared";
 import { exitStageIds } from "./process-ends.js";
 import { coveredUnits, covers, unitIdsOf } from "./destination-units.js";
 import {
@@ -66,6 +66,9 @@ export const ERP_EXPORT_COLUMNS = [
   "project",
   "commodity_code",
   "gl_code",
+  // Decision 0730, last so no column an import already reads moves.
+  "document_type",
+  "credited_invoice",
 ] as const;
 
 export type ErpExportRow = Record<(typeof ERP_EXPORT_COLUMNS)[number], string>;
@@ -204,7 +207,25 @@ export async function payableInvoiceIds(db: D1Database, processId: string): Prom
 }
 
 /** One invoice's distributions: each line, or each row of a split line. */
+/**
+ * **A credit note, exported as a credit — decision 0730.** Its amounts
+ * as the document gives them are positive; an ERP import nets a credit
+ * off what is owed only when it is negative, so the invoice and line
+ * amounts go out negative, with `document_type` saying which it is and
+ * `credited_invoice` the invoice it credits (BT-25). Quantities stay as
+ * given.
+ */
+const SIGNED = ["invoice_net", "invoice_vat", "invoice_total", "net_amount"] as const;
 export async function invoiceExportRows(db: D1Database, invoiceId: string, exportId: string): Promise<ErpExportRow[]> {
+  const rows = await unsignedExportRows(db, invoiceId, exportId);
+  return rows.map((r) =>
+    r.document_type !== "credit_note"
+      ? r
+      : { ...r, ...Object.fromEntries(SIGNED.map((c) => [c, r[c] === "" || Number(r[c]) === 0 ? r[c] : money(-Number(r[c]))])) }
+  );
+}
+
+async function unsignedExportRows(db: D1Database, invoiceId: string, exportId: string): Promise<ErpExportRow[]> {
   const header = await db
     .prepare(
       `SELECT h.facts_json, h.org_unit_id, s.erp_identifier, s.erp_site_identifier, s.name AS supplier_name
@@ -260,6 +281,8 @@ export async function invoiceExportRows(db: D1Database, invoiceId: string, expor
     invoice_vat: money(vat),
     invoice_total: money(facts["BT-112"]),
     po_number: text(facts["BT-13"]),
+    document_type: isCreditNote(facts) ? "credit_note" : "invoice",
+    credited_invoice: isCreditNote(facts) ? text(facts["BT-25"]) : "",
   };
   // A line's coding, or the invoice's where the line holds none (per-line evaluation merges header beneath line, 0027).
   const coded = (line: Record<string, unknown>, field: string) => text(line[field]) || text(facts[field]);

@@ -1,7 +1,7 @@
 import { linesOf } from "./task-list-route.js";
 import { loadSplits } from "./coding-splits.js";
 import { supplierProjectOnly } from "./supplier-project-only.js";
-import type { InvoiceFacts } from "@vibefinance/shared";
+import { isCreditNote, type InvoiceFacts } from "@vibefinance/shared";
 import { getCostObjectRule } from "./coding-config-route.js";
 import { lineMatchSummary } from "./po-line-summary.js";
 import { validateInvoiceFacts, duplicateVerdict } from "./validation.js";
@@ -117,11 +117,12 @@ async function computeDuplicateConfidence(
   supplierVatId: string | null,
   invoiceNumber: string | null,
   totalWithVat: number | null,
-  issueDate: string | null
+  issueDate: string | null,
+  documentKind: "invoice" | "credit_note" = "invoice"
 ): Promise<number> {
   if (!supplierVatId) return 0;
 
-  const candidates = await findSimilarInvoices(db, { excludeId, supplierVatId });
+  const candidates = await findSimilarInvoices(db, { excludeId, supplierVatId, documentKind });
 
   let maxScore = 0;
   for (const candidate of candidates) {
@@ -301,7 +302,8 @@ export async function handleUpsertInvoice(db: D1Database, body: UpsertInvoiceBod
     textFact("BT-31"),
     textFact("BT-1"),
     numberFact("BT-112"),
-    textFact("BT-2")
+    textFact("BT-2"),
+    isCreditNote(headerFacts) ? "credit_note" : "invoice"
   );
 
   /**

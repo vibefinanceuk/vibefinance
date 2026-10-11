@@ -236,6 +236,9 @@ export function invoiceJson(rows: ErpExportRow[]) {
     schema: "vibefinance.invoice.v1",
     id: first.invoice_id,
     invoiceNumber: t(first.invoice_number),
+    // Decision 0730: a credit note's amounts are negative, and it names the invoice it credits.
+    documentType: first.document_type || "invoice",
+    creditedInvoice: t(first.credited_invoice ?? ""),
     issueDate: t(first.issue_date),
     dueDate: t(first.due_date),
     currency: t(first.currency),

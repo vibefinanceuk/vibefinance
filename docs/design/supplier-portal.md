@@ -202,5 +202,23 @@ invitation's (a VAT number that disagrees is flagged); a PO typed in is used onl
 document has none. Built in three steps: the network in the app's frame (0725), the source
 (0726), the Create form (0727), all built 11 October 2026.
 
-**Later phases**, in an order to choose: invoice submission through the portal; remittance
-detail; bank detail changes as approved requests.
+**Credit notes (agreed 11 October 2026)**, the formal way an invoice is corrected that 2b
+waited for. Three steps:
+
+1. **Read in every route** (0730): UBL and CII credit notes, with the invoice they credit
+   (BT-25); invoice or credit note by type code; exported to the ERP as a credit (negative).
+2. **The credited invoice, configured in AP Setup › Credit Notes** (Dan: *"this becomes a
+   configuration option, in AP Setup"*): a credit note that credits an unpaid invoice in
+   full either takes it out of payment (Credited) or asks AP to confirm first (a task, for a
+   team); one for part of an invoice either lets the invoice be paid and the ERP net it, or
+   holds it until AP confirms; one whose invoice is not found either goes to AP to find it
+   or is processed as it is; one for an invoice already paid is always kept as a credit
+   (nothing to choose); and whether suppliers may raise credit notes in the network.
+3. **In the network:** *Credit note* on an invoice's page opens Create as a credit note
+   against it (the invoice it credits, a reason and a note, a tick per line to credit, Total
+   credit, BIS 3.0 type 381); Documents gains a **Type** column (Invoice / Credit note), an
+   All types filter, and **Document No.** in place of Invoice; a credit note's amount shows
+   negative, and the credited invoice shows **Credited**.
+
+**Later phases**, in an order to choose: remittance detail; bank detail changes as approved
+requests. (Invoice submission through the portal is built: 0725 to 0729.)

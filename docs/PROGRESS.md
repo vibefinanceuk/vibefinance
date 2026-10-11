@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 11 October 2026 (decision 0729). A living document: what
+Last updated 11 October 2026 (decision 0730). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2987,6 +2987,16 @@ section for the full reasoning and tests.
   untouched here.
 - Full reasoning and verification counts in decision 0469.
 
+### Credit notes read, and exported as credits (0730)
+
+UBL `<CreditNote>` and CII credit notes are read in every route (refused before), with the
+invoice they credit (BT-25/26). Invoice or credit note is BT-3, stored as
+`invoice_headers.document_kind`. The ERP export sends a credit note's amounts negative, with
+`document_type` and `credited_invoice` columns at the end. Duplicates are compared by kind.
+Step 1 of 3: the credited invoice's handling (AP Setup) and the network follow.
+
+Full reasoning is in decision 0730.
+
 ### An invoice in the network opens full screen (0729)
 
 In place of the pop-out: laid out as Create, read only (Seller, Buyer, Payment, Invoice header),
@@ -4359,7 +4369,7 @@ the short divider, as Dashboard's Arrange. `vf-ui` only.
 ### Routes phase 2, slice 1: structured formats in (0560)
 - UBL and CII read as data through one entry point; the CII inside a real
   Factur-X / ZUGFeRD PDF is read for the first time (every one was refused
-  before); credit notes and ZUGFeRD 1.0 refused in words.
+  before); ZUGFeRD 1.0 refused in words (credit notes read since 0730).
 - The format recognised from BT-24; EN 16931 rules (presence, arithmetic,
   BR-CO-9, BR-CO-25, BR-DE-15 for XRechnung) checked in our own code,
   agreeing with CEN's official unit tests and KoSIT's XRechnung suite.

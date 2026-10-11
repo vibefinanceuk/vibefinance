@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { checkEn16931 } from "./en16931-rules.js";
 import { identifyFormat } from "./invoice-format.js";
-import { InvoiceXmlError, formatFacts, readInvoiceXml, rootElementOf } from "./invoice-xml.js";
+import { InvoiceXmlError, formatFacts, isCreditNote, readInvoiceXml, rootElementOf } from "./invoice-xml.js";
 
 /**
  * Decision 0560 — reading CII, recognising the format, and the EN 16931
@@ -9,7 +9,7 @@ import { InvoiceXmlError, formatFacts, readInvoiceXml, rootElementOf } from "./i
  * `en16931-conformance.test.ts`; these are ours, and always run.
  */
 
-const cii = (opts: { spec?: string; typeCode?: string; buyerReference?: boolean; dueTotal?: string } = {}) => `<?xml version="1.0" encoding="UTF-8"?>
+const cii = (opts: { spec?: string; typeCode?: string; buyerReference?: boolean; dueTotal?: string; preceding?: boolean } = {}) => `<?xml version="1.0" encoding="UTF-8"?>
 <!-- an XRechnung written in CII -->
 <rsm:CrossIndustryInvoice xmlns:rsm="urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100"
   xmlns:ram="urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100"
@@ -70,6 +70,7 @@ const cii = (opts: { spec?: string; typeCode?: string; buyerReference?: boolean;
         <ram:GrandTotalAmount>649.74</ram:GrandTotalAmount>
         <ram:DuePayableAmount>${opts.dueTotal ?? "649.74"}</ram:DuePayableAmount>
       </ram:SpecifiedTradeSettlementHeaderMonetarySummation>
+      ${opts.preceding ? '<ram:InvoiceReferencedDocument><ram:IssuerAssignedID>R-88100</ram:IssuerAssignedID><ram:FormattedIssueDateTime><qdt:DateTimeString xmlns:qdt="urn:un:unece:uncefact:data:standard:QualifiedDataType:100" format="102">20260901</qdt:DateTimeString></ram:FormattedIssueDateTime></ram:InvoiceReferencedDocument>' : ""}
     </ram:ApplicableHeaderTradeSettlement>
   </rsm:SupplyChainTradeTransaction>
 </rsm:CrossIndustryInvoice>`;
@@ -160,18 +161,16 @@ describe("readInvoiceXml — CII", () => {
     });
   });
 
-  it("refuses a CII credit note in words", () => {
-    expect(() => readInvoiceXml(cii({ typeCode: "381" }))).toThrow(InvoiceXmlError);
-    expect(() => readInvoiceXml(cii({ typeCode: "381" }))).toThrow(/credit note \(type code 381\)/);
+  it("reads a CII credit note, with the invoice it credits (decision 0730)", () => {
+    const read = readInvoiceXml(cii({ typeCode: "381", preceding: true }));
+    expect(read.facts).toMatchObject({ "BT-3": "381", "BT-25": "R-88100", "BT-26": "2026-09-01", "BT-112": 649.74 });
+    expect(isCreditNote(read.facts)).toBe(true);
+    expect(read.en16931?.failed.map((f) => f.rule)).toEqual([]);
+    expect(isCreditNote(readInvoiceXml(cii()).facts)).toBe(false);
   });
 });
 
 describe("readInvoiceXml — what is not read", () => {
-  it("refuses a UBL credit note in words rather than as 'no root <Invoice>'", () => {
-    const xml = `<?xml version="1.0"?><CreditNote xmlns="urn:oasis:names:specification:ubl:schema:xsd:CreditNote-2"><ID>1</ID></CreditNote>`;
-    expect(() => readInvoiceXml(xml)).toThrow(/credit note, and credit notes are not read yet/);
-  });
-
   it("refuses ZUGFeRD 1.0, which predates EN 16931", () => {
     const xml = `<rsm:CrossIndustryDocument xmlns:rsm="urn:ferd:CrossIndustryDocument:invoice:1p0"/>`;
     expect(() => readInvoiceXml(xml)).toThrow(/ZUGFeRD 1\.0/);
@@ -241,5 +240,51 @@ describe("checkEn16931 — the rules with no official unit test", () => {
   it("names the lines that miss a required term", () => {
     const failed = checkEn16931(complete as never, [line, { lineNumber: 2, "BT-131": 0 }], addresses, { xrechnung: false }).failed;
     expect(failed).toContainEqual({ rule: "BR-25", detail: "line 2" });
+  });
+});
+
+describe("readInvoiceXml — a UBL credit note (decision 0730)", () => {
+  const CREDIT_NOTE = `<?xml version="1.0" encoding="UTF-8"?>
+<CreditNote xmlns="urn:oasis:names:specification:ubl:schema:xsd:CreditNote-2"
+  xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"
+  xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">
+  <cbc:CustomizationID>urn:cen.eu:en16931:2017#compliant#urn:fdc:peppol.eu:2017:poacc:billing:3.0</cbc:CustomizationID>
+  <cbc:ProfileID>urn:fdc:peppol.eu:2017:poacc:billing:01:1.0</cbc:ProfileID>
+  <cbc:ID>CN-0012</cbc:ID>
+  <cbc:IssueDate>2026-10-11</cbc:IssueDate>
+  <cbc:CreditNoteTypeCode>381</cbc:CreditNoteTypeCode>
+  <cbc:DocumentCurrencyCode>GBP</cbc:DocumentCurrencyCode>
+  <cbc:BuyerReference>AP-UK</cbc:BuyerReference>
+  <cac:BillingReference><cac:InvoiceDocumentReference><cbc:ID>INV-16356</cbc:ID><cbc:IssueDate>2024-03-22</cbc:IssueDate></cac:InvoiceDocumentReference></cac:BillingReference>
+  <cac:AccountingSupplierParty><cac:Party><cac:PostalAddress><cac:Country><cbc:IdentificationCode>GB</cbc:IdentificationCode></cac:Country></cac:PostalAddress>
+    <cac:PartyTaxScheme><cbc:CompanyID>GB111350965</cbc:CompanyID><cac:TaxScheme><cbc:ID>VAT</cbc:ID></cac:TaxScheme></cac:PartyTaxScheme>
+    <cac:PartyLegalEntity><cbc:RegistrationName>The Thornbury Deli Limited</cbc:RegistrationName></cac:PartyLegalEntity></cac:Party></cac:AccountingSupplierParty>
+  <cac:AccountingCustomerParty><cac:Party><cac:PostalAddress><cac:Country><cbc:IdentificationCode>GB</cbc:IdentificationCode></cac:Country></cac:PostalAddress>
+    <cac:PartyLegalEntity><cbc:RegistrationName>Acme Group</cbc:RegistrationName></cac:PartyLegalEntity></cac:Party></cac:AccountingCustomerParty>
+  <cac:PaymentTerms><cbc:Note>Set against INV-16356</cbc:Note></cac:PaymentTerms>
+  <cac:TaxTotal><cbc:TaxAmount currencyID="GBP">12.18</cbc:TaxAmount>
+    <cac:TaxSubtotal><cbc:TaxableAmount currencyID="GBP">60.90</cbc:TaxableAmount><cbc:TaxAmount currencyID="GBP">12.18</cbc:TaxAmount><cac:TaxCategory><cbc:ID>S</cbc:ID><cbc:Percent>20</cbc:Percent><cac:TaxScheme><cbc:ID>VAT</cbc:ID></cac:TaxScheme></cac:TaxCategory></cac:TaxSubtotal></cac:TaxTotal>
+  <cac:LegalMonetaryTotal><cbc:LineExtensionAmount currencyID="GBP">60.90</cbc:LineExtensionAmount><cbc:TaxExclusiveAmount currencyID="GBP">60.90</cbc:TaxExclusiveAmount><cbc:TaxInclusiveAmount currencyID="GBP">73.08</cbc:TaxInclusiveAmount><cbc:PayableAmount currencyID="GBP">73.08</cbc:PayableAmount></cac:LegalMonetaryTotal>
+  <cac:CreditNoteLine><cbc:ID>1</cbc:ID><cbc:CreditedQuantity unitCode="C62">1</cbc:CreditedQuantity><cbc:LineExtensionAmount currencyID="GBP">60.90</cbc:LineExtensionAmount>
+    <cac:Item><cbc:Name>Platter of breakfast rolls, 18 March</cbc:Name><cac:ClassifiedTaxCategory><cbc:ID>S</cbc:ID><cbc:Percent>20</cbc:Percent><cac:TaxScheme><cbc:ID>VAT</cbc:ID></cac:TaxScheme></cac:ClassifiedTaxCategory></cac:Item>
+    <cac:Price><cbc:PriceAmount currencyID="GBP">60.90</cbc:PriceAmount></cac:Price></cac:CreditNoteLine>
+</CreditNote>`;
+
+  it("reads its type, the invoice it credits, and its lines with their credited quantities", () => {
+    const read = readInvoiceXml(CREDIT_NOTE);
+    expect(read.syntax).toBe("ubl");
+    expect(read.facts).toMatchObject({ "BT-1": "CN-0012", "BT-3": "381", "BT-25": "INV-16356", "BT-26": "2024-03-22", "BT-112": 73.08 });
+    expect(isCreditNote(read.facts)).toBe(true);
+    expect(read.lines).toHaveLength(1);
+    expect(read.lines[0]).toMatchObject({ "BT-129": 1, "BT-130": "C62", "BT-131": 60.9 });
+    expect(read.en16931?.failed.map((f) => f.rule)).toEqual([]);
+  });
+
+  it("an invoice under an <Invoice> root with a credit note's type code is a credit note too", () => {
+    expect(isCreditNote({ "BT-3": "381" })).toBe(true);
+    expect(isCreditNote({ "BT-3": " 396 " })).toBe(true);
+    expect(isCreditNote({ "BT-3": "380" })).toBe(false);
+    expect(isCreditNote({ "BT-3": "389" })).toBe(false);
+    expect(isCreditNote({})).toBe(false);
   });
 });

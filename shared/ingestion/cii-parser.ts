@@ -35,9 +35,10 @@ import {
  *   ID carries `schemeID="VA"`**; `FC` is a tax registration (BT-32),
  *   which is not a VAT number and must not be read as one.
  *
- * Credit notes are refused here exactly as the UBL parser refuses a
- * `<CreditNote>`: in CII they share the root and differ only by type
- * code, so the refusal is by code.
+ * **Credit notes are read — decision 0730.** In CII they share the
+ * root and differ only by type code (BT-3, one of the codes below); the
+ * invoice one credits is BT-25, `InvoiceReferencedDocument` in the
+ * settlement.
  */
 
 /** UNTDID 1001 codes EN 16931 treats as credit notes. */
@@ -118,10 +119,7 @@ export function parseCiiInvoice(xml: string): ParsedUblInvoice {
   const settlement = node(transaction?.ApplicableHeaderTradeSettlement);
   const summation = node(settlement?.SpecifiedTradeSettlementHeaderMonetarySummation);
 
-  const typeCode = getText(document?.TypeCode);
-  if (typeCode !== undefined && CREDIT_NOTE_TYPE_CODES.has(typeCode.trim())) {
-    throw new UblParseError(`this is a credit note (type code ${typeCode.trim()}), and credit notes are not read yet`);
-  }
+  const typeCode = getText(document?.TypeCode)?.trim();
 
   const facts: InvoiceFacts = {};
   const set = (key: string, value: string | number | undefined) => {
@@ -140,6 +138,10 @@ export function parseCiiInvoice(xml: string): ParsedUblInvoice {
   set("BT-10", getText(agreement?.BuyerReference));
   set("BT-11", getText(node(agreement?.SpecifiedProcuringProject)?.ID));
   set("BT-13", getText(node(agreement?.BuyerOrderReferencedDocument)?.IssuerAssignedID));
+  // BT-25 and BT-26, the preceding invoice (0730).
+  const preceding = node(settlement?.InvoiceReferencedDocument);
+  set("BT-25", getText(preceding?.IssuerAssignedID)?.trim() || undefined);
+  set("BT-26", ciiDate(preceding?.FormattedIssueDateTime));
 
   const seller = node(agreement?.SellerTradeParty);
   set("BT-27", getText(seller?.Name));

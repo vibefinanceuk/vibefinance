@@ -1,5 +1,6 @@
 import type { InvoiceFacts } from "../interpreter/types.js";
 import type { InvoiceCheckInputs } from "./ubl-parser.js";
+import { CREDIT_NOTE_TYPE_CODES } from "./cii-parser.js";
 
 /**
  * EN 16931 business rules, checked in our own code — decision 0560.
@@ -20,7 +21,9 @@ import type { InvoiceCheckInputs } from "./ubl-parser.js";
  *   line), and BR-27, a line price may not be negative;
  * - arithmetic: BR-CO-10, BR-CO-13, BR-CO-15, BR-CO-16;
  * - BR-CO-9, a VAT identifier starts with a country prefix;
- * - BR-CO-25, an amount due needs a due date or payment terms;
+ * - BR-CO-25, an amount due needs a due date or payment terms — on an
+ *   invoice: a credit note's amount is owed the other way, and CEN's own
+ *   example credit note gives neither (decision 0730);
  * - BR-DE-15, for an XRechnung only: the buyer reference is given.
  *
  * **Not checked**: the VAT breakdown rules (BR-S-*, BR-Z-*, BR-E-*
@@ -165,7 +168,8 @@ export function checkEn16931(
     const expected = bt112 - (inputs.prepaid ?? 0) + (inputs.rounding ?? 0);
     if (!same(expected, bt115)) fail("BR-CO-16", `BT-115 ${money(bt115)}, expected ${money(expected)}`);
   }
-  if (bt115 !== undefined && bt115 > 0 && !present(facts["BT-9"]) && !present(facts["BT-20"])) fail("BR-CO-25");
+  const creditNote = present(facts["BT-3"]) && CREDIT_NOTE_TYPE_CODES.has(String(facts["BT-3"]).trim());
+  if (!creditNote && bt115 !== undefined && bt115 > 0 && !present(facts["BT-9"]) && !present(facts["BT-20"])) fail("BR-CO-25");
 
   if (options.xrechnung && !present(facts["BT-10"])) fail("BR-DE-15");
 

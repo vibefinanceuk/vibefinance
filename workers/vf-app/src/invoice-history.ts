@@ -90,11 +90,14 @@ export const POSSIBLE_DUPLICATE_THRESHOLD = 0.4;
  */
 export async function findSimilarInvoices(
   db: D1Database,
-  params: { excludeId: string; supplierVatId: string }
+  params: { excludeId: string; supplierVatId: string; documentKind?: "invoice" | "credit_note" }
 ): Promise<SimilarInvoiceCandidate[]> {
+  // Decision 0730: an invoice is compared with invoices, a credit note with credit notes.
   const rows = await db
-    .prepare("SELECT id, invoice_number, total_with_vat, issue_date FROM invoice_headers WHERE supplier_vat_id = ? AND id != ?")
-    .bind(params.supplierVatId, params.excludeId)
+    .prepare(
+      `SELECT id, invoice_number, total_with_vat, issue_date FROM invoice_headers WHERE supplier_vat_id = ? AND id != ?${params.documentKind ? " AND document_kind = ?" : ""}`
+    )
+    .bind(params.supplierVatId, params.excludeId, ...(params.documentKind ? [params.documentKind] : []))
     .all<{ id: string; invoice_number: string | null; total_with_vat: number | null; issue_date: string | null }>();
 
   return rows.results.map((r) => ({

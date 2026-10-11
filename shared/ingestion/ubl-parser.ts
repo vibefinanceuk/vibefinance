@@ -42,12 +42,13 @@ import type { InvoiceFacts } from "../interpreter/types.js";
  * Verified against the real spec before adding it, the same
  * discipline as every other field here.
  *
- * Credit notes are a deliberate, explicit scope boundary, not an
- * oversight: they use an entirely different root element
- * (<CreditNote>, with CreditNoteLine/CreditedQuantity rather than
- * InvoiceLine/InvoicedQuantity), confirmed directly against the spec.
- * This parser only handles <Invoice> and correctly refuses a
- * CreditNote document rather than silently misreading it as one.
+ * **Credit notes are read too — decision 0730.** A UBL credit note has
+ * its own root element (<CreditNote>, with CreditNoteTypeCode and
+ * CreditNoteLine/CreditedQuantity in place of InvoiceTypeCode and
+ * InvoiceLine/InvoicedQuantity); everything else is the invoice's, so
+ * the one parser reads both into the same business terms. What makes a
+ * document a credit note is its type code (BT-3), whichever root it
+ * came under: the invoice it credits is BT-25 (BillingReference).
  */
 
 export class UblParseError extends Error {}
@@ -242,9 +243,9 @@ export function parseUblInvoice(xml: string): ParsedUblInvoice {
   }
 
   const root = parsed as Record<string, unknown>;
-  const invoice = root?.Invoice as Record<string, unknown> | undefined;
+  const invoice = (root?.Invoice ?? root?.CreditNote) as Record<string, unknown> | undefined;
   if (!invoice || typeof invoice !== "object") {
-    throw new UblParseError("no root <Invoice> element found — not a UBL invoice document");
+    throw new UblParseError("no root <Invoice> or <CreditNote> element found — not a UBL invoice or credit note");
   }
 
   const facts: InvoiceFacts = {};
@@ -307,8 +308,18 @@ export function parseUblInvoice(xml: string): ParsedUblInvoice {
   );
   if (buyerCountry !== undefined) facts["BT-55"] = buyerCountry;
 
-  const typeCode = getText(invoice.InvoiceTypeCode);
+  const typeCode = getText(invoice.InvoiceTypeCode ?? invoice.CreditNoteTypeCode);
   if (typeCode !== undefined) facts["BT-3"] = typeCode;
+
+  // BT-25 and BT-26, the preceding invoice — decision 0730: what a credit
+  // note credits (the first, where a document names more than one).
+  const billing = invoice.BillingReference;
+  const firstBilling = (Array.isArray(billing) ? billing[0] : billing) as Record<string, unknown> | undefined;
+  const preceding = firstBilling?.InvoiceDocumentReference as Record<string, unknown> | undefined;
+  const precedingId = getText(preceding?.ID);
+  if (precedingId !== undefined && precedingId.trim() !== "") facts["BT-25"] = precedingId.trim();
+  const precedingDate = getText(preceding?.IssueDate);
+  if (precedingDate !== undefined && precedingDate.trim() !== "") facts["BT-26"] = precedingDate.trim();
 
   // **The document-type discriminator** `PROGRESS.md` has recorded as
   // read by nothing since decision 0082. Reading it into the facts does
@@ -375,7 +386,7 @@ export function parseUblInvoice(xml: string): ParsedUblInvoice {
   // InvoiceLine may be a single object (one line) or an array (many) —
   // UBL/fast-xml-parser only produces an array once there's more than
   // one, so both shapes need handling.
-  const rawLines = invoice.InvoiceLine;
+  const rawLines = invoice.InvoiceLine ?? invoice.CreditNoteLine;
   const lineArray: unknown[] = rawLines === undefined ? [] : Array.isArray(rawLines) ? rawLines : [rawLines];
 
   const lines: Array<InvoiceFacts & { lineNumber: number }> = lineArray.map((rawLine, idx) => {
@@ -385,7 +396,8 @@ export function parseUblInvoice(xml: string): ParsedUblInvoice {
     const lineNumber = Number.isNaN(parsedLineNumber) ? idx + 1 : parsedLineNumber;
 
     const lineFacts: InvoiceFacts & { lineNumber: number } = { lineNumber };
-    const quantity = getNumber(line?.InvoicedQuantity);
+    const quantityNode = line?.InvoicedQuantity ?? line?.CreditedQuantity;
+    const quantity = getNumber(quantityNode);
     if (quantity !== undefined) lineFacts["BT-129"] = quantity;
     const lineNet = getNumber(line?.LineExtensionAmount);
     if (lineNet !== undefined) lineFacts["BT-131"] = lineNet;
@@ -413,7 +425,7 @@ export function parseUblInvoice(xml: string): ParsedUblInvoice {
     // element — `cbc:InvoicedQuantity/@unitCode`, mandatory. Without it
     // a quantity of 100 says nothing: 100 hours and 100 pallets are
     // both `100`.
-    const unitCode = getAttribute(line?.InvoicedQuantity, "unitCode");
+    const unitCode = getAttribute(quantityNode, "unitCode");
     if (unitCode !== undefined) lineFacts["BT-130"] = unitCode;
 
     // Which line of the buyer's own order this answers — what

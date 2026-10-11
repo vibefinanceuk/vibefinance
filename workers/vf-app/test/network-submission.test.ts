@@ -226,3 +226,13 @@ describe("an invoice created in the network", () => {
     expect(lines?.n).toBe(2);
   });
 });
+
+describe("a credit note through the network — decision 0730", () => {
+  it("is not taken as an invoice, whichever root it comes under, until the network sends credit notes", async () => {
+    const { isBis3Invoice } = await import("../src/network-submission.js");
+    const bis = (code: string) =>
+      `<?xml version="1.0"?><Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2" xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2"><cbc:CustomizationID>urn:cen.eu:en16931:2017#compliant#urn:fdc:peppol.eu:2017:poacc:billing:3.0</cbc:CustomizationID><cbc:ID>X</cbc:ID><cbc:InvoiceTypeCode>${code}</cbc:InvoiceTypeCode></Invoice>`;
+    expect(isBis3Invoice(bis("380"))).toBe(true);
+    expect(isBis3Invoice(bis("381"))).toBe(false);
+  });
+});

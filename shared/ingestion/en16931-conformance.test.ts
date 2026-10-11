@@ -129,15 +129,8 @@ describe.skipIf(!available)("EN 16931 official example invoices", () => {
     : [];
 
   it.each(examples.map((f) => [f.slice((ROOT ?? "").length + 1), f] as const))("%s", (_name, file) => {
-    const xml = readFileSync(file, "utf8");
-    let read;
-    try {
-      read = readInvoiceXml(xml);
-    } catch (err) {
-      // A credit note is refused by design, not by accident.
-      expect(String((err as Error).message)).toMatch(/credit note/);
-      return;
-    }
+    // Credit notes too, since decision 0730: read, and passing every rule.
+    const read = readInvoiceXml(readFileSync(file, "utf8"));
     expect(read.en16931?.failed ?? []).toEqual([]);
   });
 });
