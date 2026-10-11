@@ -3641,6 +3641,12 @@ const KEYS_THE_INTERFACE_USES = [
   "suppliers.layouts.columns",
   // The supplier pop-out's portal column (decision 0719).
   "suppliers.portal.invitesomeone",
+  // The network's message counts (decision 0728).
+  "network.col.messages",
+  "network.msg.new",
+  "network.msg.unreadtitle",
+  "network.msg.readtitle",
+  "network.nav.unread",
   // Create an invoice in the network (decision 0727).
   "network.nav.create",
   "network.create.title",

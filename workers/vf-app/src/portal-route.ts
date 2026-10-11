@@ -71,6 +71,8 @@ interface PortalRow {
   delivered: number;
   /** The supplier conversation's last word and whether a question waits since (0721). */
   query_open: number | null;
+  msg_total?: number | null;
+  msg_unread?: number | null;
 }
 
 /**
@@ -116,7 +118,11 @@ const SELECT = `
          EXISTS (SELECT 1 FROM erp_export_invoices e WHERE e.invoice_id = h.id) AS exported,
          EXISTS (SELECT 1 FROM destination_deliveries d WHERE d.invoice_id = h.id AND d.status = 'delivered') AS delivered,
          EXISTS (SELECT 1 FROM supplier_messages q WHERE q.invoice_id = h.id AND q.direction = 'to_supplier' AND q.kind = 'question'
-                 AND NOT EXISTS (SELECT 1 FROM supplier_messages r WHERE r.invoice_id = h.id AND r.direction = 'from_supplier' AND r.created_at >= q.created_at)) AS query_open
+                 AND NOT EXISTS (SELECT 1 FROM supplier_messages r WHERE r.invoice_id = h.id AND r.direction = 'from_supplier' AND r.created_at >= q.created_at)) AS query_open,
+         -- Decision 0728: the conversation, and what the customer has written since this person last opened the invoice.
+         (SELECT count(*) FROM supplier_messages m WHERE m.invoice_id = h.id) AS msg_total,
+         (SELECT count(*) FROM supplier_messages m WHERE m.invoice_id = h.id AND m.direction = 'to_supplier'
+            AND m.created_at > COALESCE((SELECT pr.read_at FROM portal_reads pr WHERE pr.link_id = ?1 AND pr.invoice_id = h.id), '')) AS msg_unread
   FROM invoice_headers h
   LEFT JOIN org_units ou ON ou.id = h.org_unit_id
   LEFT JOIN process_instances pi ON pi.id = (
@@ -161,6 +167,8 @@ function summary(row: PortalRow) {
     status,
     // What the customer wrote for the supplier when it returned the invoice (0498). Nothing else.
     comment: status === "rejected" || status === "returned" ? row.supplier_comment : null,
+    // Decision 0728: how many messages, and how many from the customer still unanswered.
+    messages: { total: row.msg_total ?? 0, unread: row.msg_unread ?? 0 },
   };
 }
 
@@ -176,7 +184,7 @@ export async function listPortalInvoices(db: D1Database, claims: PortalAccessCla
   const rows = (
     await db
       .prepare(`${SELECT} WHERE ${sql}${search} ORDER BY h.created_at DESC, h.id DESC LIMIT 200`)
-      .bind(...binds, ...(q ? [`%${q}%`, `%${q}%`] : []))
+      .bind(claims.linkId, ...binds, ...(q ? [`%${q}%`, `%${q}%`] : []))
       .all<PortalRow>()
   ).results;
   const wanted = params.get("status");
@@ -191,8 +199,10 @@ export async function listPortalInvoices(db: D1Database, claims: PortalAccessCla
  */
 export async function getPortalInvoice(db: D1Database, claims: PortalAccessClaims, invoiceId: string): Promise<RouteResult> {
   const { sql, binds } = scope(claims);
-  const row = await db.prepare(`${SELECT} WHERE h.id = ? AND ${sql}`).bind(invoiceId, ...binds).first<PortalRow>();
+  const row = await db.prepare(`${SELECT} WHERE h.id = ? AND ${sql}`).bind(claims.linkId, invoiceId, ...binds).first<PortalRow>();
   if (!row) return { status: 404, body: { error: "not found" } };
+  // Decision 0728: opened, so its messages are read, for this person.
+  await markRead(db, claims, invoiceId);
   const lines = (
     await db.prepare("SELECT line_number, facts_json FROM invoice_lines WHERE invoice_id = ? ORDER BY line_number").bind(invoiceId).all<{ line_number: number; facts_json: string }>()
   ).results.map((l) => {
@@ -216,6 +226,14 @@ export async function getPortalInvoice(db: D1Database, claims: PortalAccessClaim
   const summarised = summary(row);
   if (messages.some((m) => m.kind === "return")) summarised.comment = null;
   return { status: 200, body: { invoice: { ...summarised, lines, messages } } };
+}
+
+/** Decision 0728: this person has seen the invoice's messages now. */
+async function markRead(db: D1Database, claims: PortalAccessClaims, invoiceId: string): Promise<void> {
+  await db
+    .prepare("INSERT INTO portal_reads (link_id, invoice_id, read_at) VALUES (?, ?, ?) ON CONFLICT (link_id, invoice_id) DO UPDATE SET read_at = excluded.read_at")
+    .bind(claims.linkId, invoiceId, new Date().toISOString())
+    .run();
 }
 
 /** `POST /portal/invoices/:id/messages` — the supplier writes about one of their invoices (0721). */

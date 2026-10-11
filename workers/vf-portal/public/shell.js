@@ -52,12 +52,14 @@ function control(iconNode, label, onclick, extraClass = "") {
  * The frame: the side menu and the page. `who` is the signed-in person
  * and their supplier; `current` the screen showing; `go` opens one.
  */
-export function frame({ current, go, who, page }) {
+export function frame({ current, go, who, page, badges = {} }) {
   const collapsed = stored(NAV_KEY) === "collapsed";
   const items = SCREENS.map(([screen, iconName, hue]) =>
     el("a", { class: `navitem navhue${hue}${current === screen ? " on" : ""}`, title: t(`network.nav.${screen}`), "data-screen": screen, onclick: () => go(screen) }, [
       el("span", { class: "navicon" }, [icon(iconName)]),
       el("span", { class: "navlabel", text: t(`network.nav.${screen}`) }),
+      // Decision 0728: how many invoices have unread messages, as the app's own menu counts.
+      badges[screen] > 0 ? el("span", { class: "navbadge", title: t("network.nav.unread", { n: badges[screen] }), text: String(badges[screen]) }) : null,
     ])
   );
   const nav = el("nav", { class: collapsed ? "nav collapsed" : "nav" }, [
@@ -83,6 +85,14 @@ export function frame({ current, go, who, page }) {
     store(NAV_KEY, now ? "collapsed" : "open");
   });
   return root;
+}
+
+/** Decision 0728: change a menu item's count in place, once the list has been asked for. */
+export function setBadge(screen, n) {
+  const item = document.querySelector(`.navitem[data-screen="${screen}"]`);
+  if (!item) return;
+  item.querySelector(".navbadge")?.remove();
+  if (n > 0) item.append(el("span", { class: "navbadge", title: t("network.nav.unread", { n }), text: String(n) }));
 }
 
 /**

@@ -1,5 +1,5 @@
 import { loadStrings, t, fill, el } from "/strings.js";
-import { frame, topbar } from "/shell.js";
+import { frame, setBadge, topbar } from "/shell.js";
 import { icon } from "/icons.js";
 import { createPage } from "/create.js";
 
@@ -36,6 +36,10 @@ async function api(path, init) {
 let me = { email: "", customers: [] };
 let current = "documents";
 let invoices = [];
+
+/** Decision 0728: invoices with messages from the customer this person has not read yet (opened the invoice since). */
+const waiting = (inv) => (inv.messages?.unread ?? 0) > 0;
+const waitingCount = () => invoices.filter(waiting).length;
 
 function showSignIn() {
   document.querySelector(".backdrop")?.remove();
@@ -79,7 +83,7 @@ export async function render() {
           go("documents");
         })
       : el("div", {}, documentsPage());
-  $("shell").replaceChildren(frame({ current, go, who: { email: me.email, supplier: supplierNames() }, page }));
+  $("shell").replaceChildren(frame({ current, go, who: { email: me.email, supplier: supplierNames() }, page, badges: { documents: waitingCount() } }));
   $("shell").hidden = false;
   $("signin-view").hidden = true;
   // As the app (tasks.js): the page fills the window once someone is signed in.
@@ -144,6 +148,7 @@ function documentsPage() {
             el("th", { class: "num", text: t("network.col.amount") }),
             el("th", { class: "hide-narrow", text: t("network.col.po") }),
             el("th", { class: "hide-narrow", text: t("network.col.company") }),
+            el("th", { class: "num", text: t("network.col.messages") }),
             el("th", { text: t("network.col.status") }),
           ]),
         ]),
@@ -161,6 +166,8 @@ export async function loadInvoices() {
   const { res, body } = await api(`/invoices${params.toString() ? `?${params}` : ""}`);
   if (!res.ok) return;
   invoices = body.invoices ?? [];
+  // Unfiltered, the list is every invoice: the menu's count is worked out from it (0728).
+  if (!filters.q.trim() && !filters.status) setBadge("documents", waitingCount());
   const gone = body.unavailable ?? [];
   const notice = $("unavailable");
   if (notice) {
@@ -170,19 +177,33 @@ export async function loadInvoices() {
   drawRows();
 }
 
+/**
+ * **Messages on an invoice — decision 0728.** Amber, "2 new", where the
+ * customer has written since this person last opened the invoice (Dan:
+ * unread, not unanswered, since a supplier need not reply to everything);
+ * a plain count where every message is read; a dash where there are none.
+ */
+function messagesPill(inv) {
+  const m = inv.messages ?? { total: 0, unread: 0 };
+  if (m.unread > 0) return el("span", { class: "msgpill new", title: t("network.msg.unreadtitle", { customer: inv.customer }), text: t("network.msg.new", { n: m.unread }) });
+  if (m.total > 0) return el("span", { class: "msgpill", title: t("network.msg.readtitle"), text: String(m.total) });
+  return el("span", { class: "muted", text: "—" });
+}
+
 function drawRows() {
   const tbody = $("rows");
   if (!tbody) return;
   const shown = invoices.filter((inv) => !filters.customer || inv.linkId === filters.customer);
   tbody.replaceChildren(
     ...shown.map((inv) =>
-      el("tr", { tabindex: "0", class: "netrow", onclick: () => openInvoice(inv), onkeydown: (e) => e.key === "Enter" && openInvoice(inv) }, [
+      el("tr", { tabindex: "0", class: waiting(inv) ? "netrow hasnew" : "netrow", onclick: () => openInvoice(inv), onkeydown: (e) => e.key === "Enter" && openInvoice(inv) }, [
         el("td", { text: inv.customer }),
         el("td", { class: "nowrap", text: inv.invoiceNumber ?? "—" }),
         el("td", { class: "hide-narrow", text: inv.issueDate ?? "—" }),
         el("td", { class: "num", text: money(inv.total, inv.currency) }),
         el("td", { class: "hide-narrow", text: inv.purchaseOrder ?? "—" }),
         el("td", { class: "hide-narrow", text: inv.company ?? "" }),
+        el("td", { class: "num" }, [messagesPill(inv)]),
         el("td", {}, [statusChip(inv.status)]),
       ])
     )
@@ -205,6 +226,12 @@ function drawRows() {
 export async function openInvoice(inv) {
   const { res, body } = await api(`/invoices/${encodeURIComponent(inv.linkId)}/${encodeURIComponent(inv.id)}`);
   if (!res.ok) return;
+  // Decision 0728: opening it reads its messages, so its pill and the menu's count go down at once.
+  if ((inv.messages?.unread ?? 0) > 0) {
+    inv.messages = { ...inv.messages, unread: 0 };
+    drawRows();
+    if (!filters.q.trim() && !filters.status) setBadge("documents", waitingCount());
+  }
   const close = () => backdrop.remove();
   const fact = (label, value) => el("div", {}, [el("span", { text: t(label) }), value ?? "—"]);
   const lines = body.lines ?? [];

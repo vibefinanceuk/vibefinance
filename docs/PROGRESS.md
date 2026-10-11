@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 11 October 2026 (decision 0727). A living document: what
+Last updated 11 October 2026 (decision 0728). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,14 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Unread messages in the network (0728)
+
+Documents has a Messages column ("2 new" in amber until the person opens the invoice) and the
+Documents menu item counts invoices with unread messages. Per person, kept in the customer's
+instance.
+
+Full reasoning is in decision 0728.
 
 ### Create an invoice in the network, as Peppol BIS Billing 3.0 (0727)
 

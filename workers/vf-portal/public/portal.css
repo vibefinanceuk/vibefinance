@@ -103,3 +103,16 @@ main#welcome .field + .field { margin-top: var(--gap-loose); }
 .popout.netpos tbody tr { cursor: pointer; }
 .popout.netpos tbody tr:hover td { background: var(--surface-2); }
 @media (max-width: 1000px) { .netcreate .row3 { grid-template-columns: 1fr; } .netfoot { flex-direction: column; align-items: stretch; } .nettotals { width: auto; } }
+
+/* Messages on an invoice, and the rows waiting on a reply — decision 0728. */
+.msgpill { display: inline-block; min-width: 22px; padding: 2px 9px; border-radius: 999px; font-size: var(--text-sm); text-align: center; background: var(--surface-2); color: var(--text-secondary); white-space: nowrap; }
+.msgpill.new { background: var(--severity-warning-bg); color: var(--severity-warning-text); font-weight: 700; border: 0.5px solid var(--border-warning); }
+.netlist tr.hasnew td { font-weight: 600; }
+.netlist tr.hasnew td:first-child { box-shadow: inset 3px 0 0 var(--border-warning); }
+
+/* Dan: every Invoice header field the same height on Create (0727). */
+.netcreate .headersummary .kf input,
+.netcreate .headersummary .kf select,
+.netcreate .headersummary .kf .readonly { height: 42px; min-height: 42px; box-sizing: border-box; }
+.netcreate .headersummary .kf .readonly { display: flex; align-items: center; padding-top: 0; padding-bottom: 0; }
+.netcreate .headersummary .kf label { min-height: 18px; }

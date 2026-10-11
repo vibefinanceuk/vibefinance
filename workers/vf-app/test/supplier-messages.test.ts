@@ -226,3 +226,31 @@ describe("Return to supplier in the network", () => {
     expect((await env.DB.prepare("SELECT body FROM supplier_return_emails").first<{ body: string }>())?.body).not.toContain("supplier network");
   });
 });
+
+/** **The network's message counts — decision 0728.** Unread, per person, until they open the invoice. */
+describe("message counts in the network's list", () => {
+  const tokenFor = (linkId: string, email: string) =>
+    signPortalToken(
+      { kind: "portal_access", email, supplierOrgId: "so", linkId, environmentId: "test-environment", supplierId: "sup-ln", orgUnitIds: ["uk"], issuedAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 300e3).toISOString() },
+      PRIVATE_KEY
+    );
+  const counts = async (token: string) =>
+    ((await (await SELF.fetch("https://app.example.com/portal/invoices", { headers: { Authorization: `Bearer ${token}` } })).json()) as { invoices: { messages: unknown }[] }).invoices[0].messages;
+  const open = (token: string) => SELF.fetch("https://app.example.com/portal/invoices/inv-1", { headers: { Authorization: `Bearer ${token}` } });
+
+  it("counts the customer's messages as unread until this person opens the invoice, whether or not they reply", async () => {
+    const jo = await tokenFor("pl-1", "jo@lager-nord.example");
+    const kim = await tokenFor("pl-9", "kim@lager-nord.example");
+    expect(await counts(jo)).toEqual({ total: 0, unread: 0 });
+    await ask({ body: "Line 4?", ask: true });
+    await ask({ body: "And line 5?" });
+    expect(await counts(jo)).toEqual({ total: 2, unread: 2 });
+    await open(jo);
+    expect(await counts(jo)).toEqual({ total: 2, unread: 0 });
+    // Each person their own: Kim has not opened it.
+    expect(await counts(kim)).toEqual({ total: 2, unread: 2 });
+    await new Promise((r) => setTimeout(r, 5));
+    await ask({ body: "One more thing." });
+    expect(await counts(jo)).toEqual({ total: 3, unread: 1 });
+  });
+});
