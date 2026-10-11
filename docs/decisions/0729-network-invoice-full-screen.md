@@ -1,6 +1,6 @@
 # 0729: An invoice in the network opens full screen, laid out as Create
 
-**Status: built**, awaiting deploy. vf-app (`portal-route.ts`, `network-submission.ts`),
+**Status: live** at `b17099d`, pushed and deployed 11 October 2026. vf-app (`portal-route.ts`, `network-submission.ts`),
 vf-portal (`view.js`, `portal.js`, `portal.css`), vf-licence (strings migration 0333).
 
 ## What was asked
