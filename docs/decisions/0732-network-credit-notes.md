@@ -1,6 +1,6 @@
 # 0732: Credit notes in the supplier network
 
-**Status: built**, awaiting deploy. vf-app (`network-submission.ts`, `portal-route.ts`),
+**Status: live** at `d930f84`, pushed and deployed 11 October 2026, migration 0335 applied. vf-app (`network-submission.ts`, `portal-route.ts`),
 vf-portal (`bis3.js`, `create.js`, `view.js`, `portal.js`, `portal.css`), vf-licence
 (strings migration 0335).
 

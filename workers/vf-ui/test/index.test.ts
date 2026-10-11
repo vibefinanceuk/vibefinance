@@ -758,6 +758,11 @@ describe("the proxy carries every path a screen calls (decision 0131)", () => {
     ["POST", "/api/receipt-conversations/gr-1/done"],
     ["GET", "/api/admin/ap-team-email"],
     ["PUT", "/api/admin/ap-team-email"],
+    // Decision 0731: credit notes (missed then: AP Setup could not load them, Dan, 11 October).
+    ["GET", "/api/credit-note-config"],
+    ["PUT", "/api/credit-note-config"],
+    ["GET", "/api/credit-notes/to-confirm"],
+    ["POST", "/api/credit-notes/cn-1/decide"],
   ];
 
   it("carries all of them", async () => {

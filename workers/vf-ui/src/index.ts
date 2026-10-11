@@ -228,6 +228,10 @@ const PROXIED_TO_INSTANCE: RegExp[] = [
   // Decision 0660: the Conversations section of Tasks.
   /^\/receipt-conversations$/,
   /^\/receipt-conversations\/[^/]+\/done$/,
+  // Decision 0731: AP Setup › Credit Notes, Credits to confirm, and deciding one.
+  /^\/credit-note-config$/,
+  /^\/credit-notes\/to-confirm$/,
+  /^\/credit-notes\/[^/]+\/decide$/,
   /^\/admin\/ap-team-email$/,
   // What the Validation viewer needs (decision 0106): the keyed values,
   // and a short-lived signed URL for the retained original.

@@ -68,3 +68,11 @@ replay held.
 Migrations: vf-app `0163_credit_notes.sql`, vf-licence `0334_credit_notes_strings.sql`.
 Deploy vf-app, vf-licence, vf-ui and vf-portal. Choose the confirming team in AP Setup ›
 Credit Notes (until then, administrators confirm).
+
+## Afterwards: the routes through vf-ui
+
+Dan, once deployed: AP Setup › Credit Notes said *"The credit note settings could not be
+loaded."* vf-ui forwards only the instance paths it lists (`PROXIED_INSTANCE_PATHS`), and
+`/credit-note-config`, `/credit-notes/to-confirm` and `/credit-notes/:id/decide` were not
+listed: the settings, Credits to confirm on Tasks, and the confirm buttons all failed the same
+way. Listed now, and in the test that every path a screen calls is carried. Deploy vf-ui.
