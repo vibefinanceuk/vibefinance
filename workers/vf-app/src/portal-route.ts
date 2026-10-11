@@ -3,6 +3,7 @@ import { readLicenceState } from "./licence-cache.js";
 import type { RouteResult } from "./org-route.js";
 import { handlePortalReply, portalMessages, type MessageEmail } from "./supplier-messages.js";
 import { partiesFor } from "./network-submission.js";
+import { loadCreditNoteConfig } from "./credit-notes.js";
 
 /**
  * **The supplier portal's view of this instance — decision 0714.** Step 2
@@ -74,6 +75,8 @@ interface PortalRow {
   query_open: number | null;
   msg_total?: number | null;
   msg_unread?: number | null;
+  /** Decision 0732: invoice or credit note. */
+  document_kind?: string | null;
 }
 
 /**
@@ -111,7 +114,7 @@ export function portalStatusOf(row: Pick<PortalRow, "instance_status" | "cur_seq
 
 const SELECT = `
   SELECT h.id, h.invoice_number, h.issue_date, h.total_with_vat, h.currency, h.facts_json, h.created_at,
-         h.org_unit_id, ou.name AS org_unit_name,
+         h.org_unit_id, ou.name AS org_unit_name, h.document_kind,
          pi.status AS instance_status, pi.supplier_comment,
          (SELECT v.sequence FROM process_stage_versions v
            WHERE v.process_id = pi.process_id AND v.version = pi.process_version AND v.stage_id = pi.current_stage_id) AS cur_seq,
@@ -167,12 +170,16 @@ function summary(row: PortalRow) {
     currency: row.currency,
     purchaseOrder: typeof facts["BT-13"] === "string" ? facts["BT-13"] : null,
     company: row.org_unit_name ?? row.org_unit_id,
+    orgUnitId: row.org_unit_id,
     receivedAt: row.created_at,
     status,
     // What the customer wrote for the supplier when it returned the invoice (0498). Nothing else.
     comment: status === "rejected" || status === "returned" ? row.supplier_comment : null,
     // Decision 0728: how many messages, and how many from the customer still unanswered.
     messages: { total: row.msg_total ?? 0, unread: row.msg_unread ?? 0 },
+    // Decision 0732: invoice or credit note, and the invoice a credit note credits.
+    documentType: row.document_kind === "credit_note" ? "credit_note" : "invoice",
+    creditedInvoice: row.document_kind === "credit_note" && typeof facts["BT-25"] === "string" ? facts["BT-25"] : null,
   };
 }
 
@@ -223,6 +230,11 @@ export async function getPortalInvoice(db: D1Database, claims: PortalAccessClaim
       quantity: num(f["BT-129"]),
       unitPrice: num(f["BT-146"]),
       netAmount: num(f["BT-131"]),
+      // Decision 0732: what a credit note against it carries over.
+      unitCode: typeof f["BT-130"] === "string" ? f["BT-130"] : null,
+      poLine: typeof f["BT-132"] === "string" || typeof f["BT-132"] === "number" ? String(f["BT-132"]) : null,
+      vatCategory: typeof f["BT-151"] === "string" ? f["BT-151"] : null,
+      vatRate: num(f["BT-152"]),
     };
   });
   const messages = await portalMessages(db, invoiceId);
@@ -251,7 +263,17 @@ export async function getPortalInvoice(db: D1Database, claims: PortalAccessClaim
     amountDue: amount("BT-115"),
   };
   const parties = row.org_unit_id ? await partiesFor(db, claims.supplierId, row.org_unit_id) : null;
-  return { status: 200, body: { invoice: { ...summarised, ...details, parties, lines, messages } } };
+  /**
+   * **Credit note, from the network — decision 0732.** Offered on an
+   * invoice the customer returned or rejected, where it allows credit
+   * notes from the network and no credit note has settled it yet.
+   */
+  const mayCredit =
+    summarised.documentType === "invoice" &&
+    (summarised.status === "returned" || summarised.status === "rejected") &&
+    (await loadCreditNoteConfig(db)).networkAllowed &&
+    !(await db.prepare("SELECT 1 FROM credit_notes WHERE invoice_id = ?").bind(invoiceId).first());
+  return { status: 200, body: { invoice: { ...summarised, ...details, parties, lines, messages, mayCredit } } };
 }
 
 /** Decision 0728: this person has seen the invoice's messages now. */

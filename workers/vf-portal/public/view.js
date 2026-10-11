@@ -63,20 +63,27 @@ function download(inv) {
  * The page. `deps` carries what portal.js owns: money, the status chip and
  * the conversation (with what to do once a message is sent), and back.
  */
-export function viewPage(inv, { money, statusChip, conversation, back }, handlers) {
+export function viewPage(inv, { money, statusChip, conversation, back, credit }, handlers) {
+  // Decision 0732: a credit note reads as one, and an invoice may be credited.
+  const cn = inv.documentType === "credit_note";
+  const L = (invoiceKey, creditKey) => t(cn ? creditKey : invoiceKey);
   const m = (v) => (typeof v === "number" ? money(v, inv.currency) : "—");
   const seller = inv.parties?.seller ?? {};
   const buyer = inv.parties?.buyer ?? {};
   const own = [
     el("button", { class: "actionlink", type: "button", title: t("network.view.backtitle"), onclick: back }, [icon("back"), el("span", { text: t("network.view.back") })]),
     el("button", { class: "actionlink", type: "button", title: t("network.view.downloadtitle"), onclick: () => download(inv) }, [icon("download"), el("span", { text: t("network.view.download") })]),
-  ];
+    inv.mayCredit && credit
+      ? el("button", { class: "actionlink", type: "button", title: t("network.credit.raisetitle"), onclick: credit }, [icon("documents"), el("span", { text: t("network.credit.raise") })])
+      : null,
+  ].filter(Boolean);
   const title = topbar(
     inv.invoiceNumber ?? "—",
     t("network.view.subtitle", { customer: inv.customer ?? "", company: inv.company ?? "", date: (inv.receivedAt ?? "").slice(0, 10) }),
     own,
     handlers
   );
+  if (cn) title.querySelector("h2")?.append(el("span", { class: "bisbadge", text: t("network.types.credit_note") }));
   title.querySelector("h2")?.append(statusChip(inv.status));
 
   const chat = conversation(inv);
@@ -89,6 +96,7 @@ export function viewPage(inv, { money, statusChip, conversation, back }, handler
     title,
     el("div", { class: "netview netcreate" }, [
       el("div", { class: "netviewmain" }, [
+        cn && inv.creditedInvoice ? el("div", { class: "sentnotice", text: t("network.credit.credits.line", { invoice: inv.creditedInvoice }) }) : null,
         inv.comment ? el("div", { class: "comment" }, [el("div", { class: "sm", text: t("network.comment", { customer: inv.customer }) }), el("div", { text: inv.comment })]) : null,
         el("div", { class: "row3" }, [
           el("div", { class: "panel" }, [
@@ -120,20 +128,20 @@ export function viewPage(inv, { money, statusChip, conversation, back }, handler
           ]),
         ]),
         el("div", { class: "panel netviewheader" }, [
-          el("div", { class: "cardhead" }, [el("h3", { text: t("network.create.header") })]),
+          el("div", { class: "cardhead" }, [el("h3", { text: L("network.create.header", "network.credit.header") })]),
           el("div", { class: "headersummary" }, [
-            el("div", { class: "hscolumn" }, [field(t("network.create.number"), inv.invoiceNumber), field(t("network.create.currency"), inv.currency)]),
+            el("div", { class: "hscolumn" }, [field(L("network.create.number", "network.credit.number"), inv.invoiceNumber), field(t("network.create.currency"), inv.currency)]),
             el("div", { class: "hscolumn" }, [field(t("network.create.issuedate"), inv.issueDate), field(t("network.create.duedate"), inv.dueDate)]),
             el("div", { class: "hscolumn" }, [field(t("network.create.po"), inv.purchaseOrder), field(t("network.create.buyerref"), inv.buyerReference)]),
             el("div", { class: "hscolumn" }, [field(t("network.create.net"), m(net), "money"), field(t("network.create.vatamount"), m(inv.vat), "money")]),
-            el("div", { class: "hscolumn" }, [field(t("network.create.total"), m(inv.total), "money"), field(t("network.receivedat"), (inv.receivedAt ?? "").slice(0, 10))]),
+            el("div", { class: "hscolumn" }, [field(L("network.create.total", "network.credit.total"), m(inv.total), "money"), field(t("network.receivedat"), (inv.receivedAt ?? "").slice(0, 10))]),
           ]),
         ]),
       ]),
       chat,
     ]),
     el("div", { class: "panel netviewlines" }, [
-      el("div", { class: "cardhead" }, [el("h3", { text: t("network.create.lines") })]),
+      el("div", { class: "cardhead" }, [el("h3", { text: L("network.create.lines", "network.credit.lines") })]),
       lines.length
         ? el("table", { class: "linetable" }, [
             el("colgroup", {}, [40, null, 110, 130, 130].map((w) => el("col", w ? { style: `width:${w}px` } : {}))),
@@ -166,7 +174,7 @@ export function viewPage(inv, { money, statusChip, conversation, back }, handler
         el("div", { class: "nettotals" }, [
           el("div", {}, [el("span", { text: t("network.create.linesnet") }), el("span", { text: m(net) })]),
           el("div", {}, [el("span", { text: t("network.create.vatamount") }), el("span", { text: m(inv.vat) })]),
-          el("div", { class: "grand" }, [el("span", { text: t("network.create.total") }), el("span", { text: m(inv.total) })]),
+          el("div", { class: "grand" }, [el("span", { text: L("network.create.total", "network.credit.total") }), el("span", { text: m(inv.total) })]),
         ]),
       ]),
     ]),

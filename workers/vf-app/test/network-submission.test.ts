@@ -227,6 +227,57 @@ describe("an invoice created in the network", () => {
   });
 });
 
+describe("a credit note raised in the network — decision 0732", () => {
+  const MODEL = (over: Record<string, unknown> = {}) => ({
+    number: "LN-777",
+    issueDate: "2026-10-11",
+    dueDate: "2026-11-10",
+    currency: "GBP",
+    purchaseOrder: "690000321",
+    buyerReference: "AP-UK",
+    paymentTerms: "30 days net",
+    seller: { name: "Lager Nord GmbH", vatId: "DE123456789", country: "DE" },
+    buyer: { name: "Acme UK Ltd", vatId: "GB999888777", endpoint: "0088:5012345000004", country: "GB" },
+    lines: [{ description: "Breakfast rolls", quantity: 2, unitCode: "C62", unitPrice: 60.9, vatCategory: "S", vatRate: 20 }],
+    ...over,
+  });
+  const CREDIT = (over: Record<string, unknown> = {}) => MODEL({ number: "CN-1", typeCode: "381", dueDate: "", precedingInvoice: { number: "LN-777", issueDate: "2026-10-11" }, note: "Duplicate invoice", ...over });
+
+  it("credits the invoice it names, which the customer returned: the invoice is Credited", async () => {
+    // @ts-expect-error a browser module, plain JavaScript
+    const bis3 = (await import("../../vf-portal/public/bis3.js")) as { toXml: (m: unknown) => string; validate: (m: unknown) => unknown[] };
+    await addSource();
+    const sent = await submit({ orgUnitId: "uk", filename: "LN-777.xml", xml: bis3.toXml(MODEL()) });
+    const invoiceId = (sent.body as { invoiceId: string }).invoiceId;
+    await env.DB.prepare("UPDATE process_instances SET status = 'returned_manually' WHERE subject_id = ?").bind(invoiceId).run();
+
+    expect(bis3.validate(CREDIT())).toEqual([]);
+    const r = await submit({ orgUnitId: "uk", filename: "CN-1.xml", xml: bis3.toXml(CREDIT()) });
+    expect(r.status).toBe(202);
+    const cn = (r.body as { invoiceId: string }).invoiceId;
+    const row = await env.DB.prepare("SELECT document_kind, facts_json FROM invoice_headers WHERE id = ?").bind(cn).first<{ document_kind: string; facts_json: string }>();
+    expect(row?.document_kind).toBe("credit_note");
+    expect(JSON.parse(row!.facts_json)).toMatchObject({ "BT-3": "381", "BT-25": "LN-777", "BT-112": 146.16 });
+    expect(await env.DB.prepare("SELECT state, invoice_id FROM credit_notes WHERE credit_note_id = ?").bind(cn).first()).toEqual({ state: "credited", invoice_id: invoiceId });
+    expect((await env.DB.prepare("SELECT status FROM process_instances WHERE subject_id = ?").bind(invoiceId).first<{ status: string }>())?.status).toBe("credited");
+
+    // Credited once: a second credit note for it is refused.
+    // @ts-expect-error a browser module, plain JavaScript
+    const again = await submit({ orgUnitId: "uk", filename: "CN-2.xml", xml: (await import("../../vf-portal/public/bis3.js")).toXml(CREDIT({ number: "CN-2" })) });
+    expect(again.body).toMatchObject({ reason: "already_credited" });
+  });
+
+  it("only against an invoice of this supplier's that this person can see, and only where the customer allows it", async () => {
+    // @ts-expect-error a browser module, plain JavaScript
+    const bis3 = (await import("../../vf-portal/public/bis3.js")) as { toXml: (m: unknown) => string };
+    await addSource();
+    expect((await submit({ orgUnitId: "uk", filename: "CN-1.xml", xml: bis3.toXml(CREDIT()) })).body).toMatchObject({ reason: "unknown_invoice" });
+    await submit({ orgUnitId: "uk", filename: "LN-777.xml", xml: bis3.toXml(MODEL()) });
+    await env.DB.prepare("UPDATE credit_note_config SET network_allowed = 0").run();
+    expect((await submit({ orgUnitId: "uk", filename: "CN-1.xml", xml: bis3.toXml(CREDIT()) })).body).toMatchObject({ reason: "credit_not_allowed" });
+  });
+});
+
 describe("a credit note through the network — decision 0730", () => {
   it("is not taken as an invoice, whichever root it comes under, until the network sends credit notes", async () => {
     const { isBis3Invoice } = await import("../src/network-submission.js");

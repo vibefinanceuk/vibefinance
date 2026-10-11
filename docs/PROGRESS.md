@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 11 October 2026 (decision 0731). A living document: what
+Last updated 11 October 2026 (decision 0732). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,15 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Credit notes in the supplier network (0732)
+
+On a returned or rejected invoice, *Credit note* opens Create as a credit note (the invoice
+it credits, why, a note, a tick per line), sent as a BIS 3.0 UBL CreditNote. vf-app takes it
+only against the supplier's own invoice and where AP Setup allows. Documents has Type,
+Document No. and an All types filter. Step 3 of 3: credit notes are done end to end.
+
+Full reasoning is in decision 0732.
 
 ### What a credit note does to its invoice, in AP Setup (0731)
 

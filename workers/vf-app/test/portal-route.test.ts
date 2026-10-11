@@ -92,7 +92,7 @@ describe("which invoices", () => {
   it("one invoice with its lines, and the same 404 for another supplier's as for none", async () => {
     const token = await access();
     const one = (await (await get("/portal/invoices/inv-uk", token)).json()) as { invoice: { lines: Record<string, unknown>[] } };
-    expect(one.invoice.lines).toEqual([{ lineNumber: 1, description: "Kopierpapier A4", quantity: 10, unitPrice: 10, netAmount: 100 }]);
+    expect(one.invoice.lines).toEqual([{ lineNumber: 1, description: "Kopierpapier A4", quantity: 10, unitPrice: 10, netAmount: 100, unitCode: null, poLine: null, vatCategory: null, vatRate: null }]);
     // Nothing of the customer's coding.
     expect(JSON.stringify(one)).not.toContain("CC-SECRET");
     const other = await get("/portal/invoices/inv-other", token);

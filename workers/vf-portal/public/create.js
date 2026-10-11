@@ -3,6 +3,8 @@ import { icon } from "/icons.js";
 import { topbar } from "/shell.js";
 import { UNITS, VAT_CATEGORIES, lineNet, toXml, totals, validate } from "/bis3.js";
 
+export const CREDIT_REASONS = ["duplicate", "price", "returned", "cancelled", "other"];
+
 /**
  * **Create an invoice — decision 0727.** The supplier makes the invoice
  * here, as Peppol BIS Billing 3.0, laid out as the application's invoice
@@ -18,6 +20,11 @@ import { UNITS, VAT_CATEGORIES, lineNet, toXml, totals, validate } from "/bis3.j
  *   orders for this supplier.
  * - **A draft is kept in this browser only** (the network keeps nothing),
  *   and cleared once sent.
+ *
+ * **A credit note — decision 0732.** `startCreditNote` opens the same form
+ * as a credit note against an invoice the customer returned or rejected:
+ * the invoice it credits (BT-25) with a reason and a note, its lines to
+ * tick, type 381, no due date or account, and *Send credit note*.
  */
 
 const DRAFT_KEY = "vfn-draft";
@@ -31,6 +38,7 @@ let choice = null; // { linkId, orgUnitId }
 let problem = "";
 let sending = false;
 let onSentHandler = null;
+let redraw = null;
 /** The page's own root: it is drawn before it joins the document, so its parts are found within it. */
 let scope = null;
 const byId = (id) => scope?.querySelector(`#${id}`) ?? null;
@@ -81,8 +89,49 @@ function clearDraft() {
 /** The model as bis3.js wants it: the form's fields, with the seller, buyer and account the customer keeps. */
 function fullModel() {
   const seller = parties?.seller ?? {};
-  return { ...model, seller, buyer: parties?.buyer ?? {}, account: seller.account ?? null };
+  const base = { ...model, seller, buyer: parties?.buyer ?? {}, account: seller.account ?? null };
+  if (!model.credit) return base;
+  const c = model.credit;
+  return {
+    ...base,
+    typeCode: "381",
+    dueDate: "",
+    account: null,
+    lines: model.lines.filter((l) => l.credit !== false),
+    precedingInvoice: { number: c.number, issueDate: c.issueDate },
+    note: [t(`network.credit.reason.${c.reason}`), c.note].filter((x) => x && String(x).trim()).join(": "),
+  };
 }
+
+/** Decision 0732: the form, as a credit note against this invoice (the network's own view of it). */
+export function startCreditNote(inv, linkId, customer) {
+  model = {
+    number: "",
+    issueDate: new Date().toISOString().slice(0, 10),
+    dueDate: "",
+    currency: inv.currency || "GBP",
+    typeCode: "381",
+    purchaseOrder: inv.purchaseOrder ?? "",
+    buyerReference: inv.buyerReference ?? "",
+    paymentTerms: "",
+    exemptionReason: "",
+    attachment: null,
+    lines: (inv.lines ?? []).map((l) => ({
+      description: l.description ?? "",
+      poLine: l.poLine ?? "",
+      quantity: l.quantity ?? 1,
+      unitCode: UNITS.includes(l.unitCode) ? l.unitCode : "C62",
+      unitPrice: l.unitPrice ?? "",
+      vatCategory: VAT_CATEGORIES.includes(l.vatCategory) ? l.vatCategory : "S",
+      vatRate: l.vatRate ?? 20,
+      credit: true,
+    })),
+    credit: { invoiceId: inv.id, number: inv.invoiceNumber, issueDate: inv.issueDate, total: inv.total, status: inv.status, customer, reason: "duplicate", note: "" },
+  };
+  if (!model.lines.length) model.lines = [{ ...blankLine(), credit: true }];
+  choice = { linkId, orgUnitId: inv.orgUnitId };
+}
+
 
 const money = (n) => {
   try {
@@ -100,6 +149,7 @@ const money = (n) => {
  */
 export async function createPage(deps, handlers, onSent) {
   api = deps.api;
+  redraw = deps.redraw ?? null;
   onSentHandler = onSent;
   const root = el("div", { class: "netcreate" });
   scope = root;
@@ -120,10 +170,17 @@ export async function createPage(deps, handlers, onSent) {
     icon("purchaseorders"),
     el("span", { text: t("network.create.frompo") }),
   ]);
-  const title = topbar(t("network.create.title"), t("network.create.subtitle"), [fromPo], handlers);
+  const credit = model?.credit;
+  const title = credit
+    ? topbar(t("network.credit.title"), t("network.credit.subtitle", { customer: credit.customer ?? "" }), [], handlers)
+    : topbar(t("network.create.title"), t("network.create.subtitle"), [fromPo], handlers);
   title.querySelector("h2")?.append(el("span", { class: "bisbadge", text: "Peppol BIS Billing 3.0" }));
 
-  if (!customers.length) {
+  if (!customers.length || (credit && !customers.some((c) => c.linkId === choice?.linkId && c.companies.some((u) => u.id === choice.orgUnitId)))) {
+    if (credit) {
+      root.append(title, el("div", { class: "panel" }, [el("p", { class: "muted", text: t("network.credit.notaccepting", { customer: credit.customer ?? "" }) })]));
+      return root;
+    }
     root.append(title, el("div", { class: "panel" }, [el("p", { class: "muted", text: t("network.create.none") })]));
     return root;
   }
@@ -165,6 +222,8 @@ function draw(body) {
     customers.map((c) => el("optgroup", { label: c.customer }, c.companies.map((u) => el("option", { value: `${c.linkId}|${u.id}`, text: u.name }))))
   );
   picker.value = `${choice.linkId}|${choice.orgUnitId}`;
+  // Decision 0732: a credit note goes to the company its invoice went to.
+  if (model.credit) picker.disabled = true;
   picker.addEventListener("change", async () => {
     const [linkId, orgUnitId] = picker.value.split("|");
     choice = { linkId, orgUnitId };
@@ -174,8 +233,11 @@ function draw(body) {
   });
 
   const terms = input("paymentTerms", { id: "nc-paymentTerms" });
+  const credit = model.credit;
+  const L = (invoiceKey, creditKey, values) => t(credit ? creditKey : invoiceKey, values);
 
   body.replaceChildren(
+    credit ? creditPanel(credit) : null,
     el("div", { class: "row3" }, [
       el("div", { class: "panel" }, [
         el("div", { class: "cardhead" }, [el("h3", { text: t("network.create.seller") })]),
@@ -198,38 +260,48 @@ function draw(body) {
           pair(t("network.create.peppolid"), buyer.endpoint),
         ]),
       ]),
-      el("div", { class: "panel" }, [
-        el("div", { class: "cardhead" }, [el("h3", { text: t("network.create.payment") })]),
-        el("div", { class: "sellergrid" }, [
-          pair(t("network.create.payinto"), account?.identifier ?? null),
-          pair(t("network.create.accountname"), account?.name ?? null),
-        ]),
-        kf("paymentTerms", t("network.create.terms"), terms),
-        el("p", { class: "note", text: t(account ? "network.create.accountnote" : "network.create.noaccount", { customer: customerOf()?.customer ?? "" }) }),
-      ]),
+      credit
+        ? el("div", { class: "panel" }, [
+            el("div", { class: "cardhead" }, [el("h3", { text: t("network.create.payment") })]),
+            el("div", { class: "sellergrid" }, [pair(t("network.credit.paid"), t("network.credit.notpaid")), pair(t("network.credit.settles"), t("network.credit.settleshow", { invoice: credit.number ?? "", customer: credit.customer ?? "" }))]),
+            el("p", { class: "note", text: t("network.credit.paymentnote", { customer: credit.customer ?? "" }) }),
+          ])
+        : el("div", { class: "panel" }, [
+            el("div", { class: "cardhead" }, [el("h3", { text: t("network.create.payment") })]),
+            el("div", { class: "sellergrid" }, [
+              pair(t("network.create.payinto"), account?.identifier ?? null),
+              pair(t("network.create.accountname"), account?.name ?? null),
+            ]),
+            kf("paymentTerms", t("network.create.terms"), terms),
+            el("p", { class: "note", text: t(account ? "network.create.accountnote" : "network.create.noaccount", { customer: customerOf()?.customer ?? "" }) }),
+          ]),
     ]),
     el("div", { class: "panel" }, [
-      el("div", { class: "cardhead" }, [el("h3", { text: t("network.create.header") })]),
+      el("div", { class: "cardhead" }, [el("h3", { text: L("network.create.header", "network.credit.header") })]),
       el("div", { class: "headersummary" }, [
-        el("div", { class: "hscolumn" }, [kf("number", t("network.create.number"), input("number")), kf("currency", t("network.create.currency"), currencySelect())]),
-        el("div", { class: "hscolumn" }, [kf("issueDate", t("network.create.issuedate"), input("issueDate", { type: "date" })), kf("dueDate", t("network.create.duedate"), input("dueDate", { type: "date" }))]),
+        el("div", { class: "hscolumn" }, [kf("number", L("network.create.number", "network.credit.number"), input("number")), kf("currency", t("network.create.currency"), currencySelect())]),
+        el("div", { class: "hscolumn" }, [
+          kf("issueDate", t("network.create.issuedate"), input("issueDate", { type: "date" })),
+          credit ? kf("dueDate", t("network.credit.noduedate"), el("div", { class: "readonly", text: "—" })) : kf("dueDate", t("network.create.duedate"), input("dueDate", { type: "date" })),
+        ]),
         el("div", { class: "hscolumn" }, [kf("purchaseOrder", t("network.create.po"), input("purchaseOrder")), kf("buyerReference", t("network.create.buyerref"), input("buyerReference"))]),
         el("div", { class: "hscolumn" }, [kf("net", t("network.create.net"), el("div", { class: "readonly money", id: "nc-net" })), kf("vat", t("network.create.vatamount"), el("div", { class: "readonly money", id: "nc-vat" }))]),
         el("div", { class: "hscolumn" }, [
-          kf("total", t("network.create.total"), el("div", { class: "readonly money", id: "nc-total" })),
-          kf("typeCode", t("network.create.type"), el("select", { id: "nc-typeCode", disabled: true }, [el("option", { value: "380", text: t("network.create.type380") })])),
+          kf("total", L("network.create.total", "network.credit.total"), el("div", { class: "readonly money", id: "nc-total" })),
+          kf("typeCode", t("network.create.type"), el("select", { id: "nc-typeCode", disabled: true }, [credit ? el("option", { value: "381", text: t("network.credit.type381") }) : el("option", { value: "380", text: t("network.create.type380") })])),
         ]),
       ]),
     ]),
     el("div", { class: "panel" }, [
       el("div", { class: "cardhead" }, [
-        el("h3", { text: t("network.create.lines") }),
-        el("button", { class: "actionlink compactlink", type: "button", title: t("network.create.addline"), onclick: () => { model.lines.push(blankLine()); drawLines(); changed(); } }, [icon("addline"), el("span", { text: t("network.create.addline") })]),
+        el("h3", { text: L("network.create.lines", "network.credit.lines") }),
+        el("button", { class: "actionlink compactlink", type: "button", title: t("network.create.addline"), onclick: () => { model.lines.push(credit ? { ...blankLine(), credit: true } : blankLine()); drawLines(); changed(); } }, [icon("addline"), el("span", { text: t("network.create.addline") })]),
       ]),
-      el("table", { class: "linetable netlines" }, [
-        el("colgroup", {}, [34, null, 84, 84, 140, 108, 190, 104, 40].map((w) => el("col", w ? { style: `width:${w}px` } : {}))),
+      el("table", { class: `linetable netlines${credit ? " cnlines" : ""}` }, [
+        el("colgroup", {}, [...(credit ? [56] : []), 34, null, 84, 84, 140, 108, 190, 104, 40].map((w) => el("col", w ? { style: `width:${w}px` } : {}))),
         el("thead", {}, [
           el("tr", {}, [
+            credit ? el("th", { class: "chk", text: t("network.credit.creditcol") }) : null,
             el("th", { text: "#" }),
             el("th", { text: t("network.create.description") }),
             el("th", { text: t("network.create.poline") }),
@@ -256,6 +328,36 @@ function draw(body) {
   );
   drawLines();
   changed();
+}
+
+/** Decision 0732: the invoice a credit note credits, why, and a note for the customer. */
+function creditPanel(credit) {
+  const ro = (label, value) => el("div", { class: "kf" }, [el("label", { text: label }), el("div", { class: "readonly", text: value ?? "—" })]);
+  const reason = el("select", { id: "nc-creditreason", "aria-label": t("network.credit.why") }, CREDIT_REASONS.map((r) => el("option", { value: r, text: t(`network.credit.reason.${r}`) })));
+  reason.value = credit.reason;
+  reason.addEventListener("change", () => {
+    credit.reason = reason.value;
+    changed();
+  });
+  const note = el("textarea", { id: "nc-creditnote", "aria-label": t("network.credit.note", { customer: credit.customer ?? "" }), placeholder: t("network.credit.notehint") });
+  note.value = credit.note ?? "";
+  note.addEventListener("input", () => {
+    credit.note = note.value;
+    changed();
+  });
+  return el("div", { class: "panel cnpanel" }, [
+    el("div", { class: "cardhead" }, [el("h3", { text: t("network.credit.credits") })]),
+    el("div", { class: "cnrow" }, [
+      ro(t("network.credit.invoicenumber"), credit.number),
+      ro(t("network.create.issuedate"), credit.issueDate),
+      ro(t("network.credit.invoicetotal"), typeof credit.total === "number" ? money(credit.total) : "—"),
+      el("div", { class: "kf" }, [el("label", { text: t("network.credit.statusat", { customer: credit.customer ?? "" }) }), el("div", { class: "readonly" }, [el("span", { class: `status ${credit.status}`, text: t(`network.status.${credit.status}`) })])]),
+    ]),
+    el("div", { class: "cnrow cnwhy" }, [
+      el("div", { class: "kf" }, [el("label", { text: t("network.credit.why") }), reason]),
+      el("div", { class: "kf" }, [el("label", { text: t("network.credit.note", { customer: credit.customer ?? "" }) }), note]),
+    ]),
+  ]);
 }
 
 function kf(field, label, control) {
@@ -319,7 +421,22 @@ function drawLines() {
         drawLines();
         changed();
       } }, [icon("close")]);
-      return el("tr", {}, [
+      const tick = model.credit
+        ? el("td", { class: "chk" }, [
+            el("input", {
+              type: "checkbox",
+              "aria-label": t("network.credit.creditline", { n: i + 1 }),
+              ...(line.credit !== false ? { checked: "checked" } : {}),
+              onchange: (e) => {
+                line.credit = e.target.checked;
+                e.target.closest("tr")?.classList.toggle("off", !line.credit);
+                changed();
+              },
+            }),
+          ])
+        : null;
+      return el("tr", { class: model.credit && line.credit === false ? "off" : null }, [
+        tick,
         el("td", { text: String(i + 1) }),
         cell("description", text("description")),
         cell("poLine", text("poLine")),
@@ -365,7 +482,13 @@ function changed() {
   saveDraft();
   const m = fullModel();
   const tot = totals(m);
-  const failures = validate(m);
+  // Decision 0732: a credit note's failures name its lines as the form numbers them, ticked or not.
+  const shown = model.credit ? model.lines.map((l, i) => (l.credit !== false ? i : null)).filter((i) => i !== null) : null;
+  const failures = validate(m).map((f) => {
+    if (!shown) return f;
+    const at = /^line:(\d+):(.*)$/.exec(f.field ?? "");
+    return at ? { ...f, field: `line:${shown[Number(at[1])]}:${at[2]}`, params: { ...f.params, line: shown[Number(at[1])] + 1 } } : f;
+  });
   const set = (id, text) => {
     const node = byId(id);
     if (node) node.textContent = text;
@@ -381,7 +504,7 @@ function changed() {
       ...tot.breakdown.map((g) =>
         el("div", {}, [el("span", { text: t(`network.vatline.${g.category}`, { rate: g.rate, amount: money(g.taxable) }) }), el("span", { text: money(g.tax) })])
       ),
-      el("div", { class: "grand" }, [el("span", { text: t("network.create.totalpay") }), el("span", { text: money(tot.total) })])
+      el("div", { class: "grand" }, [el("span", { text: t(model.credit ? "network.credit.total" : "network.create.totalpay") }), el("span", { text: money(tot.total) })])
     );
   }
   const exemption = byId("nc-exemption-field");
@@ -414,7 +537,7 @@ function changed() {
   }
   const sendButton = byId("nc-send");
   if (sendButton) sendButton.disabled = failures.length > 0 || sending;
-  set("nc-sendlabel", t("network.create.send", { customer: customerOf()?.customer ?? "" }));
+  set("nc-sendlabel", t(model.credit ? "network.credit.send" : "network.create.send", { customer: customerOf()?.customer ?? "" }));
 }
 
 function showProblem(text) {
@@ -425,7 +548,7 @@ function showProblem(text) {
 
 function download() {
   const xml = toXml(fullModel());
-  const a = el("a", { href: URL.createObjectURL(new Blob([xml], { type: "application/xml" })), download: `${model.number || "invoice"}.xml` });
+  const a = el("a", { href: URL.createObjectURL(new Blob([xml], { type: "application/xml" })), download: `${model.number || (model.credit ? "credit-note" : "invoice")}.xml` });
   document.body.append(a);
   a.click();
   a.remove();
@@ -433,7 +556,10 @@ function download() {
 
 function discard() {
   clearDraft();
+  const wasCredit = !!model?.credit;
   model = freshModel();
+  // Decision 0732: discarding a credit note leaves it; the page is Create an invoice again.
+  if (wasCredit && redraw) return redraw();
   const body = byId("createbody");
   if (body) draw(body);
 }
@@ -456,7 +582,7 @@ async function send() {
     return;
   }
   const company = customerOf()?.companies.find((u) => u.id === choice.orgUnitId)?.name ?? "";
-  const sent = { customer: body.customer ?? customerOf()?.customer ?? "", company, message: body.message, number: model.number };
+  const sent = { customer: body.customer ?? customerOf()?.customer ?? "", company, message: body.message, number: model.number, credit: !!model.credit };
   clearDraft();
   model = null;
   onSentHandler?.(sent);

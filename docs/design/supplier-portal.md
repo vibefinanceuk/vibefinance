@@ -203,7 +203,7 @@ document has none. Built in three steps: the network in the app's frame (0725), 
 (0726), the Create form (0727), all built 11 October 2026.
 
 **Credit notes (agreed 11 October 2026)**, the formal way an invoice is corrected that 2b
-waited for. Three steps:
+waited for. Three steps, all built 11 October 2026 (0730, 0731, 0732):
 
 1. **Read in every route** (0730): UBL and CII credit notes, with the invoice they credit
    (BT-25); invoice or credit note by type code; exported to the ERP as a credit (negative).

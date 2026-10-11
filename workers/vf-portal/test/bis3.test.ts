@@ -112,3 +112,30 @@ describe("the XML", () => {
     expect(xml).not.toMatch(/<(cbc:[A-Za-z]+)[^>]*><\/\1>/);
   });
 });
+
+/** **A credit note — decision 0732.** */
+describe("a credit note", () => {
+  const CREDIT = () => ({ ...MODEL(), number: "CN-1", typeCode: "381", dueDate: "", precedingInvoice: { number: "LN-1", issueDate: "2026-10-01" }, note: "Duplicate invoice" });
+
+  it("names the invoice it credits, and needs neither a due date nor terms", () => {
+    expect(validate(CREDIT())).toEqual([]);
+    expect(validate({ ...CREDIT(), precedingInvoice: null }).map((p: { rule: string }) => p.rule)).toEqual(["BR-55"]);
+  });
+
+  it("is a UBL CreditNote: its type, BillingReference, credited quantities, no due date or account to pay into", () => {
+    const m = { ...CREDIT(), dueDate: "2026-11-10", account: { means: "30", identifier: "GB33BUKB20201555555555" } };
+    const xml = toXml(m);
+    expect(xml).toContain('<CreditNote xmlns="urn:oasis:names:specification:ubl:schema:xsd:CreditNote-2"');
+    expect(xml).toContain("<cbc:CreditNoteTypeCode>381</cbc:CreditNoteTypeCode>");
+    expect(xml).toContain("<cac:BillingReference><cac:InvoiceDocumentReference><cbc:ID>LN-1</cbc:ID><cbc:IssueDate>2026-10-01</cbc:IssueDate></cac:InvoiceDocumentReference></cac:BillingReference>");
+    expect(xml).toContain('<cbc:CreditedQuantity unitCode="C62">3</cbc:CreditedQuantity>');
+    expect(xml).not.toContain("InvoiceLine");
+    expect(xml).not.toContain("cbc:DueDate");
+    expect(xml).not.toContain("PaymentMeans");
+    expect(xml.trim().endsWith("</CreditNote>")).toBe(true);
+    const order = ["cbc:CustomizationID", "cbc:ID", "cbc:IssueDate", "cbc:CreditNoteTypeCode", "cbc:Note", "cbc:DocumentCurrencyCode", "cac:OrderReference", "cac:BillingReference", "cac:AccountingSupplierParty", "cac:TaxTotal", "cac:LegalMonetaryTotal", "cac:CreditNoteLine"];
+    const at = order.map((tag) => xml.indexOf(`<${tag}`));
+    expect(at.every((p: number) => p > 0)).toBe(true);
+    expect([...at].sort((a, b) => a - b)).toEqual(at);
+  });
+});

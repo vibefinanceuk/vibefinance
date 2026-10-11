@@ -292,7 +292,14 @@ describe("the network's words", () => {
       used.add(`network.vat.${c}`);
       used.add(`network.vatline.${c}`);
     }
-    for (const r of ["not_covered", "not_accepting", "not_bis3", "unreadable", "too_large", "other"]) used.add(`network.create.failed.${r}`);
+    for (const r of ["not_covered", "not_accepting", "not_bis3", "unreadable", "too_large", "other", "credit_not_allowed", "unknown_invoice", "already_credited"]) used.add(`network.create.failed.${r}`);
+    // Decision 0732: each credit note reason, each document type, and Credited.
+    for (const r of ["duplicate", "price", "returned", "cancelled", "other"]) used.add(`network.credit.reason.${r}`);
+    for (const k of ["invoice", "credit_note"]) used.add(`network.types.${k}`);
+    for (const s of ["credited"]) {
+      used.add(`network.status.${s}`);
+      used.add(`network.help.status.${s}`);
+    }
     used.add("network.create.accountnote");
     used.add("network.create.noaccount");
     expect(used.size).toBeGreaterThan(80);

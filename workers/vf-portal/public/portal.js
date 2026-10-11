@@ -1,7 +1,7 @@
 import { loadStrings, t, fill, el } from "/strings.js";
 import { frame, setBadge, topbar } from "/shell.js";
 import { icon } from "/icons.js";
-import { createPage } from "/create.js";
+import { createPage, startCreditNote } from "/create.js";
 import { viewPage } from "/view.js";
 
 /**
@@ -82,12 +82,26 @@ let sentNotice = null;
 export async function render() {
   const page =
     current === "create"
-      ? await createPage({ api }, handlers, (sent) => {
+      ? await createPage({ api, redraw: () => render() }, handlers, (sent) => {
           sentNotice = sent;
           go("documents");
         })
       : current === "invoice" && opened
-        ? viewPage(opened.body, { money, statusChip, conversation: (body) => conversation(body, opened.inv), back: () => go("documents") }, handlers)
+        ? viewPage(
+            opened.body,
+            {
+              money,
+              statusChip,
+              conversation: (body) => conversation(body, opened.inv),
+              back: () => go("documents"),
+              // Decision 0732: a credit note against this invoice, in Create.
+              credit: () => {
+                startCreditNote({ ...opened.body, id: opened.inv.id }, opened.inv.linkId, opened.body.customer);
+                go("create");
+              },
+            },
+            handlers
+          )
         : el("div", {}, documentsPage());
   // The open invoice is one of the documents, so Documents stays chosen in the menu.
   $("shell").replaceChildren(frame({ current: current === "invoice" ? "documents" : current, go, who: { email: me.email, supplier: supplierNames() }, page, badges: { documents: waitingCount() } }));
@@ -105,11 +119,11 @@ export async function render() {
 // Documents — every invoice, across the customers (0717, 0725).
 // ---------------------------------------------------------------------------
 
-const filters = { q: "", customer: "", status: "" };
+const filters = { q: "", customer: "", status: "", type: "" };
 let timer = null;
 
 function documentsPage() {
-  const search = el("input", { type: "search", id: "search", placeholder: t("network.search"), "aria-label": t("network.search"), value: filters.q });
+  const search = el("input", { type: "search", id: "search", placeholder: t("network.searchdocs"), "aria-label": t("network.searchdocs"), value: filters.q });
   search.addEventListener("input", () => {
     filters.q = search.value;
     clearTimeout(timer);
@@ -122,6 +136,17 @@ function documentsPage() {
   customer.value = filters.customer;
   customer.addEventListener("change", () => {
     filters.customer = customer.value;
+    drawRows();
+  });
+  // Decision 0732: invoices, credit notes, or both.
+  const type = el("select", { id: "type", "aria-label": t("network.col.type") }, [
+    el("option", { value: "", text: t("network.types.all") }),
+    el("option", { value: "invoice", text: t("network.types.invoice") }),
+    el("option", { value: "credit_note", text: t("network.types.credit_note") }),
+  ]);
+  type.value = filters.type;
+  type.addEventListener("change", () => {
+    filters.type = type.value;
     drawRows();
   });
   const status = el("select", { id: "status", "aria-label": t("network.col.status") }, [
@@ -139,21 +164,22 @@ function documentsPage() {
     topbar(t("network.nav.documents"), me.customers.length ? `${supplierNames()} · ${me.customers.map(customerLabel).join(" · ")}` : t("network.nocustomers"), [], handlers),
     notice
       ? el("div", { class: "sentnotice", role: "status" }, [
-          el("b", { text: t("network.create.sent", { customer: notice.customer, company: notice.company }) }),
+          el("b", { text: t(notice.credit ? "network.credit.sent" : "network.create.sent", { customer: notice.customer, company: notice.company, number: notice.number ?? "" }) }),
           " ",
           el("span", { text: t("network.create.sentref", { message: notice.message ?? "", customer: notice.customer }) }),
         ])
       : null,
     el("div", { class: "notice", id: "unavailable", role: "status", hidden: true }),
     el("div", { class: "panel" }, [
-      el("div", { class: "searchrow" }, [search, el("div", { class: "filters" }, [customer, status]), el("span", { class: "sm muted", id: "count" })]),
+      el("div", { class: "searchrow" }, [search, el("div", { class: "filters" }, [customer, type, status]), el("span", { class: "sm muted", id: "count" })]),
     ]),
     el("div", { class: "panel" }, [
       el("table", { class: "netlist" }, [
         el("thead", {}, [
           el("tr", {}, [
             el("th", { text: t("network.col.customer") }),
-            el("th", { text: t("network.col.invoice") }),
+            el("th", { text: t("network.col.type") }),
+            el("th", { text: t("network.col.document") }),
             el("th", { class: "hide-narrow", text: t("network.col.date") }),
             el("th", { class: "num", text: t("network.col.amount") }),
             el("th", { class: "hide-narrow", text: t("network.col.po") }),
@@ -203,14 +229,16 @@ function messagesPill(inv) {
 function drawRows() {
   const tbody = $("rows");
   if (!tbody) return;
-  const shown = invoices.filter((inv) => !filters.customer || inv.linkId === filters.customer);
+  const shown = invoices.filter((inv) => (!filters.customer || inv.linkId === filters.customer) && (!filters.type || (inv.documentType ?? "invoice") === filters.type));
   tbody.replaceChildren(
     ...shown.map((inv) =>
       el("tr", { tabindex: "0", class: waiting(inv) ? "netrow hasnew" : "netrow", onclick: () => openInvoice(inv), onkeydown: (e) => e.key === "Enter" && openInvoice(inv) }, [
         el("td", { text: inv.customer }),
+        el("td", { class: `doctype${inv.documentType === "credit_note" ? " cn" : ""}`, text: t(`network.types.${inv.documentType === "credit_note" ? "credit_note" : "invoice"}`) }),
         el("td", { class: "nowrap", text: inv.invoiceNumber ?? "—" }),
         el("td", { class: "hide-narrow", text: inv.issueDate ?? "—" }),
-        el("td", { class: "num", text: money(inv.total, inv.currency) }),
+        // A credit note is money the other way.
+        el("td", { class: "num", text: money(inv.documentType === "credit_note" && typeof inv.total === "number" ? -inv.total : inv.total, inv.currency) }),
         el("td", { class: "hide-narrow", text: inv.purchaseOrder ?? "—" }),
         el("td", { class: "hide-narrow", text: inv.company ?? "" }),
         el("td", { class: "num" }, [messagesPill(inv)]),
@@ -225,7 +253,7 @@ function drawRows() {
    * chosen, nothing matches it. Without, there is nothing yet for the
    * companies this person can see, named.
    */
-  const filtered = filters.q.trim() || filters.status || filters.customer;
+  const filtered = filters.q.trim() || filters.status || filters.customer || filters.type;
   empty.textContent =
     filtered || !me.customers.length
       ? t(filtered ? "network.nomatch" : "network.none")

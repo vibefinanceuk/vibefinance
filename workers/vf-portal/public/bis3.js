@@ -109,7 +109,10 @@ export function validate(model) {
   const out = [];
   const fail = (rule, key, field, params) => out.push({ rule, key, field, ...(params ? { params } : {}) });
 
+  // Decision 0732: a credit note (381) names the invoice it credits, and is not paid.
+  const credit = isCreditNoteModel(model);
   if (blank(model.number)) fail("BR-02", "network.bis3.number", "number");
+  if (credit && blank(model.precedingInvoice?.number)) fail("BR-55", "network.bis3.preceding", "precedingInvoice");
   if (!DATE.test(String(model.issueDate ?? ""))) fail("BR-03", "network.bis3.issuedate", "issueDate");
   if (!blank(model.dueDate) && !DATE.test(String(model.dueDate))) fail("BR-CO-25", "network.bis3.duedate", "dueDate");
   if (!/^[A-Z]{3}$/.test(String(model.currency ?? ""))) fail("BR-05", "network.bis3.currency", "currency");
@@ -144,8 +147,8 @@ export function validate(model) {
   if (categories.has("AE") && (blank(seller.vatId) || blank(buyer.vatId))) fail("BR-AE-03", "network.bis3.reversecharge", "buyer");
 
   const t = totals(model);
-  if (t.total > 0 && blank(model.dueDate) && blank(model.paymentTerms)) fail("BR-CO-25", "network.bis3.dueorterms", "dueDate");
-  if (model.account && blank(model.account.identifier)) fail("BR-61", "network.bis3.account", "payment");
+  if (!credit && t.total > 0 && blank(model.dueDate) && blank(model.paymentTerms)) fail("BR-CO-25", "network.bis3.dueorterms", "dueDate");
+  if (!credit && model.account && blank(model.account.identifier)) fail("BR-61", "network.bis3.account", "payment");
   return out;
 }
 
@@ -182,17 +185,30 @@ function taxCategory(tag, category, rate, reason) {
   ].join("");
 }
 
-/** The invoice as Peppol BIS Billing 3.0 UBL. Call `validate` first: this writes what it is given. */
+/** Decision 0732: a credit note, by its type code. */
+export const isCreditNoteModel = (model) => String(model.typeCode ?? "") === "381";
+
+/**
+ * The invoice as Peppol BIS Billing 3.0 UBL — or, for type 381, the credit
+ * note (decision 0732): a `CreditNote` root, `CreditNoteTypeCode`,
+ * `CreditNoteLine`/`CreditedQuantity`, the invoice it credits as
+ * `BillingReference`, and no due date or account to pay into. Call
+ * `validate` first: this writes what it is given.
+ */
 export function toXml(model) {
+  const credit = isCreditNoteModel(model);
+  const root = credit ? "CreditNote" : "Invoice";
+  const lineTag = credit ? "CreditNoteLine" : "InvoiceLine";
+  const quantityTag = credit ? "CreditedQuantity" : "InvoicedQuantity";
   const t = totals(model);
   const cur = esc(model.currency);
   const amount = (name, n) => `<cbc:${name} currencyID="${cur}">${money(n)}</cbc:${name}>`;
-  const account = model.account;
+  const account = credit ? null : model.account;
   const lines = (model.lines ?? []).map((line, i) =>
     [
-      "<cac:InvoiceLine>",
+      `<cac:${lineTag}>`,
       el("cbc:ID", String(i + 1)),
-      `<cbc:InvoicedQuantity unitCode="${esc(line.unitCode || "C62")}">${qty(line.quantity)}</cbc:InvoicedQuantity>`,
+      `<cbc:${quantityTag} unitCode="${esc(line.unitCode || "C62")}">${qty(line.quantity)}</cbc:${quantityTag}>`,
       amount("LineExtensionAmount", t.lines[i]),
       blank(line.poLine) ? "" : `<cac:OrderLineReference>${el("cbc:LineID", line.poLine)}</cac:OrderLineReference>`,
       "<cac:Item>",
@@ -200,22 +216,25 @@ export function toXml(model) {
       taxCategory("ClassifiedTaxCategory", line.vatCategory || "S", rateOf(line) || 0),
       "</cac:Item>",
       `<cac:Price>${amount("PriceAmount", num(line.unitPrice))}</cac:Price>`,
-      "</cac:InvoiceLine>",
+      `</cac:${lineTag}>`,
     ].join("")
   );
   return [
     '<?xml version="1.0" encoding="UTF-8"?>',
-    '<Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2" xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2" xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">',
+    `<${root} xmlns="urn:oasis:names:specification:ubl:schema:xsd:${root}-2" xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2" xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">`,
     el("cbc:CustomizationID", CUSTOMIZATION_ID),
     el("cbc:ProfileID", PROFILE_ID),
     el("cbc:ID", model.number),
     el("cbc:IssueDate", model.issueDate),
-    el("cbc:DueDate", model.dueDate),
-    el("cbc:InvoiceTypeCode", model.typeCode || "380"),
+    credit ? "" : el("cbc:DueDate", model.dueDate),
+    credit ? el("cbc:CreditNoteTypeCode", "381") : el("cbc:InvoiceTypeCode", model.typeCode || "380"),
     el("cbc:Note", model.note),
     el("cbc:DocumentCurrencyCode", model.currency),
     el("cbc:BuyerReference", model.buyerReference),
     blank(model.purchaseOrder) ? "" : `<cac:OrderReference>${el("cbc:ID", model.purchaseOrder)}</cac:OrderReference>`,
+    credit && !blank(model.precedingInvoice?.number)
+      ? `<cac:BillingReference><cac:InvoiceDocumentReference>${el("cbc:ID", model.precedingInvoice.number)}${el("cbc:IssueDate", model.precedingInvoice.issueDate)}</cac:InvoiceDocumentReference></cac:BillingReference>`
+      : "",
     model.attachment
       ? `<cac:AdditionalDocumentReference>${el("cbc:ID", model.attachment.filename)}<cac:Attachment><cbc:EmbeddedDocumentBinaryObject mimeCode="${esc(model.attachment.mimeType)}" filename="${esc(model.attachment.filename)}">${model.attachment.base64}</cbc:EmbeddedDocumentBinaryObject></cac:Attachment></cac:AdditionalDocumentReference>`
       : "",
@@ -230,6 +249,6 @@ export function toXml(model) {
       .join("")}</cac:TaxTotal>`,
     `<cac:LegalMonetaryTotal>${amount("LineExtensionAmount", t.net)}${amount("TaxExclusiveAmount", t.net)}${amount("TaxInclusiveAmount", t.total)}${amount("PayableAmount", t.total)}</cac:LegalMonetaryTotal>`,
     ...lines,
-    "</Invoice>",
+    `</${root}>`,
   ].join("");
 }

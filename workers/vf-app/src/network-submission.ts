@@ -4,6 +4,7 @@ import type { ExtractionModel } from "./extraction.js";
 import { captureAttachmentPart } from "./inbound-email.js";
 import { addRouteEvent, finishRouteMessage, openRouteMessage, routePartKey, storeRoutePart, type StoredPart } from "./route-messages.js";
 import { MAX_UPLOAD_BYTES } from "./upload-route.js";
+import { loadCreditNoteConfig } from "./credit-notes.js";
 
 /**
  * **Invoice submission through the supplier network — decision 0726.**
@@ -93,19 +94,35 @@ export async function handleSubmissionCompanies(db: D1Database, claims: PortalAc
 }
 
 /**
- * Whether the XML is a Peppol BIS Billing 3.0 invoice: a UBL Invoice
- * declaring the BIS 3.0 customization. Not a credit note, whichever
- * root it is under (decision 0730), until the network sends those.
+ * **Which Peppol BIS Billing 3.0 document the XML is — decisions 0727,
+ * 0730, 0732.** A UBL Invoice with an invoice's type code, or a UBL
+ * CreditNote with a credit note's, either declaring the BIS 3.0
+ * customization; null for anything else (a credit note's type code under
+ * an Invoice root among them).
  */
-export function isBis3Invoice(xml: string): boolean {
+export function bis3Kind(xml: string): "invoice" | "credit_note" | null {
   const head = xml.slice(0, 4000);
-  const typeCode = /<(?:\w+:)?InvoiceTypeCode[^>]*>\s*([^<\s]+)\s*</.exec(xml)?.[1];
-  return (
-    /<(?:\w+:)?Invoice[\s>]/.test(head) &&
-    head.includes("urn:oasis:names:specification:ubl:schema:xsd:Invoice-2") &&
-    xml.includes(BIS3_CUSTOMIZATION) &&
-    !(typeCode !== undefined && CREDIT_NOTE_TYPE_CODES.has(typeCode))
-  );
+  if (!xml.includes(BIS3_CUSTOMIZATION)) return null;
+  if (/<(?:\w+:)?Invoice[\s>]/.test(head) && head.includes("urn:oasis:names:specification:ubl:schema:xsd:Invoice-2")) {
+    const code = /<(?:\w+:)?InvoiceTypeCode[^>]*>\s*([^<\s]+)\s*</.exec(xml)?.[1];
+    return code !== undefined && CREDIT_NOTE_TYPE_CODES.has(code) ? null : "invoice";
+  }
+  if (/<(?:\w+:)?CreditNote[\s>]/.test(head) && head.includes("urn:oasis:names:specification:ubl:schema:xsd:CreditNote-2")) {
+    const code = /<(?:\w+:)?CreditNoteTypeCode[^>]*>\s*([^<\s]+)\s*</.exec(xml)?.[1];
+    return code !== undefined && CREDIT_NOTE_TYPE_CODES.has(code) ? "credit_note" : null;
+  }
+  return null;
+}
+
+/** Whether the XML is a Peppol BIS Billing 3.0 invoice (not a credit note). */
+export function isBis3Invoice(xml: string): boolean {
+  return bis3Kind(xml) === "invoice";
+}
+
+/** The invoice a BIS credit note names (BillingReference), as written. */
+export function creditedInvoiceOf(xml: string): string | null {
+  const ref = /<(?:\w+:)?BillingReference[\s>][\s\S]*?<(?:\w+:)?InvoiceDocumentReference[\s>][\s\S]*?<(?:\w+:)?ID[^>]*>\s*([^<]+?)\s*</.exec(xml);
+  return ref ? ref[1].replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">") : null;
 }
 
 /**
@@ -130,7 +147,35 @@ export async function handlePortalSubmission(
   if (!xml.trim()) return { status: 400, body: { error: "the invoice is empty", reason: "empty" } };
   const bytes = new TextEncoder().encode(xml);
   if (bytes.length > MAX_UPLOAD_BYTES) return { status: 413, body: { error: "the invoice is too large", reason: "too_large" } };
-  if (!isBis3Invoice(xml)) return { status: 415, body: { error: "only a Peppol BIS Billing 3.0 invoice is accepted", reason: "not_bis3" } };
+  const kind = bis3Kind(xml);
+  if (!kind) return { status: 415, body: { error: "only a Peppol BIS Billing 3.0 invoice or credit note is accepted", reason: "not_bis3" } };
+  /**
+   * **A credit note from the network — decision 0732.** Only where this
+   * customer allows it (AP Setup › Credit Notes), and only against an
+   * invoice of this supplier's that this person can see, not yet
+   * credited: the network raises credit notes from an invoice, not from
+   * nowhere.
+   */
+  if (kind === "credit_note") {
+    if (!(await loadCreditNoteConfig(db)).networkAllowed) {
+      return { status: 403, body: { error: "this customer does not take credit notes through the network", reason: "credit_not_allowed" } };
+    }
+    const number = creditedInvoiceOf(xml);
+    const original = number
+      ? await db
+          .prepare(
+            `SELECT h.id, h.org_unit_id, pi.status FROM invoice_headers h
+             LEFT JOIN process_instances pi ON pi.subject_type = 'invoice' AND pi.subject_id = h.id
+             WHERE h.invoice_number = ? AND h.document_kind = 'invoice' AND h.supplier_id = ? ORDER BY h.created_at DESC LIMIT 1`
+          )
+          .bind(number, claims.supplierId)
+          .first<{ id: string; org_unit_id: string | null; status: string | null }>()
+      : null;
+    if (!original || !original.org_unit_id || !(await covered(db, claims, original.org_unit_id))) {
+      return { status: 422, body: { error: "the invoice it credits is not one of yours here", reason: "unknown_invoice" } };
+    }
+    if (original.status === "credited") return { status: 409, body: { error: "that invoice is already credited", reason: "already_credited" } };
+  }
 
   const receivedAt = new Date().toISOString();
   const messageId = await openRouteMessage(db, {

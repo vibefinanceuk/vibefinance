@@ -137,3 +137,16 @@ main#welcome .field + .field { margin-top: var(--gap-loose); }
   .netview .netviewchat { contain: none; }
   .netviewchat .chatfeed { max-height: 420px; }
 }
+
+/* A credit note in Create — decision 0732. */
+.netcreate .cnpanel .cnrow { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
+.netcreate .cnpanel .cnrow.cnwhy { grid-template-columns: minmax(0, 1fr) minmax(0, 3fr); margin-top: 12px; }
+.netcreate .cnpanel .kf .readonly { height: 42px; min-height: 42px; box-sizing: border-box; display: flex; align-items: center; }
+.netcreate .cnpanel select { width: 100%; height: 42px; }
+.netcreate .cnpanel textarea { width: 100%; box-sizing: border-box; height: 42px; min-height: 42px; resize: vertical; font: inherit; font-size: var(--text-sm); padding: 9px 10px; border-radius: var(--radius); border: 0.5px solid var(--border-strong); background: var(--surface-1); color: var(--text-primary); }
+.netlines.cnlines th.chk, .netlines.cnlines td.chk { width: 56px; text-align: center; }
+.netlines.cnlines td.chk input { width: 16px; height: 16px; }
+.netlines.cnlines tr.off td:not(.chk) { opacity: 0.45; }
+@media (max-width: 1000px) { .netcreate .cnpanel .cnrow, .netcreate .cnpanel .cnrow.cnwhy { grid-template-columns: 1fr; } }
+/* Documents: a credit note's type and amount (0732). */
+.netlist .doctype.cn { color: var(--text-accent); font-weight: 600; }
