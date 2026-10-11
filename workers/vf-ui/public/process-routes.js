@@ -4,6 +4,7 @@ import { actionLink, compactLink } from "/viewer.js";
 import { httpsSection } from "/https-keys.js";
 import { erpDeliveriesSection, httpsOutSection, sftpOutSection, unitsField, unitsSummary } from "/destinations.js";
 import { sftpInSection } from "/sftp-settings.js";
+import { networkSection } from "/network-source.js";
 import {
   setSourcesRefresh,
   loadUnits,
@@ -75,6 +76,8 @@ function sourceState(s, full = false) {
   if (s.mechanism === "https") {
     pills.push(s.liveKeys > 0 ? pill("ok", t("routing.active")) : pill("warn", t("processroutes.nokeys")));
   }
+  // Decision 0726: a Supplier network source receives as soon as it exists.
+  if (s.mechanism === "network") pills.push(pill("ok", t("routing.active")));
   if (s.failedOpen > 0) pills.push(pill("bad", t("processroutes.failedn").replace("{n}", String(s.failedOpen))));
   // The week's count where there is room for it: on the panel always, on
   // a card only when nothing more urgent is showing.
@@ -254,7 +257,8 @@ function sourcePanel(s) {
           : [t(`mechanism.${s.mechanism}`)]
       ),
       // Decision 0655: a receipt's unit is its purchase order's, so a receipts source places nothing.
-      ...(data.process?.subjectType === "goods_receipt"
+      // Decision 0726: a Supplier network invoice's company is the supplier's choice, set out below.
+      ...(data.process?.subjectType === "goods_receipt" || s.mechanism === "network"
         ? []
         : [el("div", { class: "l", text: t("sources.org") }), el("div", {}, [s.status === "retired" ? el("span", { class: "muted", text: "—" }) : orgPicker(s)])]),
       el("div", { class: "l", text: t("processroutes.field.status") }),
@@ -266,6 +270,8 @@ function sourcePanel(s) {
     s.mechanism === "https" ? httpsSection(s) : null,
     // Decision 0620: an SFTP source's server, folder, and Check now.
     s.mechanism === "sftp" && s.status !== "retired" ? sftpInSection(s) : null,
+    // Decision 0726: a Supplier network source's companies.
+    s.mechanism === "network" ? networkSection(s, unitList(), async () => { await load(); render(); }) : null,
   ].filter(Boolean));
 }
 
@@ -721,7 +727,9 @@ function openAddSource() {
   const mechanism = el("select", {});
   // Decision 0655: a process that moves goods receipts takes Receipts in, by HTTPS.
   const receipts = data.process?.subjectType === "goods_receipt";
-  for (const value of receipts ? ["https"] : ["email", "https", "sftp", "file_import", "edi"]) {
+  // Decision 0726: and Supplier network, one per process.
+  const hasNetwork = (data.sources ?? []).some((x) => x.mechanism === "network" && x.status !== "retired");
+  for (const value of receipts ? ["https"] : ["email", "https", "sftp", "file_import", "edi", ...(hasNetwork ? [] : ["network"])]) {
     mechanism.append(el("option", { value, text: t(`mechanism.${value}`) }));
   }
   const close = () => backdrop.remove();

@@ -609,7 +609,7 @@ export function unitsSummary(unitIds, units) {
 }
 
 /** The units in tree order, each with its depth, so the picker indents children under their parent. */
-function asTree(units) {
+export function asTree(units) {
   const children = new Map();
   for (const u of units) children.set(u.parentUnitId ?? null, [...(children.get(u.parentUnitId ?? null) ?? []), u]);
   for (const list of children.values()) list.sort((a, b) => a.name.localeCompare(b.name));

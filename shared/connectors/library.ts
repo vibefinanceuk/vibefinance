@@ -31,7 +31,7 @@ import { BC_LISTS, BC_TOKEN_SCOPE, dynamics365BcMapping } from "./dynamics-365-b
 export type ConnectorDirection = "source" | "destination";
 /** Decision 0601: "withdrawn", a partner connector no longer offered, kept for the Destinations made from it. */
 export type ConnectorStatus = "available" | "planned" | "withdrawn";
-export type ConnectorTransport = "email" | "https" | "upload" | "sftp" | "edi" | "file_download" | "peppol";
+export type ConnectorTransport = "email" | "https" | "upload" | "sftp" | "edi" | "file_download" | "peppol" | "network";
 export type ConnectorCategory = "generic" | "erp" | "automation" | "partner";
 export type ConnectorAuthType = "none" | "api_key_header" | "bearer" | "basic" | "oauth2_client_credentials";
 
@@ -81,7 +81,7 @@ export interface ConnectorDefinition {
   /** What it carries, as interface words: `connector.format.<f>`. */
   formats: string[];
   /** For a Source: the mechanism a source made from it receives by. */
-  mechanism?: "email" | "https" | "file_import" | "sftp" | "edi";
+  mechanism?: "email" | "https" | "file_import" | "sftp" | "edi" | "network";
   /** Whether a process may have more than one. */
   multiple: boolean;
   /** For an HTTPS out Destination. */
@@ -257,6 +257,8 @@ export const STANDARD_CONNECTORS: ConnectorDefinition[] = [
   { id: "file-import", version: 1, direction: "source", publisher: "standard", status: "available", categories: ["generic"], routeId: "file-import", transport: "upload", formats: ["detected"], mechanism: "file_import", multiple: false },
   { id: "sftp-in", version: 1, direction: "source", publisher: "standard", status: "planned", categories: ["generic"], routeId: "sftp-in", transport: "sftp", formats: ["detected"], mechanism: "sftp", multiple: true },
   { id: "edi-in", version: 1, direction: "source", publisher: "standard", status: "planned", categories: ["generic"], routeId: "edi-in", transport: "edi", formats: ["edifact"], mechanism: "edi", multiple: true },
+  // Decision 0726: invoices suppliers create in the VibeFinance supplier network, as Peppol BIS Billing 3.0. One per process.
+  { id: "network-in", version: 1, direction: "source", publisher: "standard", status: "available", categories: ["generic"], routeId: "network-in", transport: "network", formats: ["ubl"], mechanism: "network", multiple: false },
   { id: "peppol-in", version: 1, direction: "source", publisher: "standard", status: "planned", categories: ["generic"], routeId: null, transport: "peppol", formats: ["ubl"], multiple: false },
 ];
 

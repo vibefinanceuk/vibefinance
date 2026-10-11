@@ -157,3 +157,41 @@ export async function reply(deps: Deps, session: string, linkId: string, invoice
     return { status: 502, body: { error: "unreachable", customer: pair.link.customerName } };
   }
 }
+
+/**
+ * `GET /api/submission-companies` — decision 0726: for each customer, the
+ * companies this person may send an invoice to (those their invitation
+ * names that the customer's Supplier network source accepts). A customer
+ * that takes none, or does not answer, is left out.
+ */
+export async function submissionCompanies(deps: Deps, session: string): Promise<Result> {
+  const pairs = await linksWithAccess(deps, session);
+  if (!pairs) return { status: 401, body: { error: "signed_out" } };
+  const answers = await Promise.all(
+    pairs.map(async ({ link, access }) => ({ link, answer: access ? await ask(deps, access, "/portal/submission-companies") : ({ ok: false, reason: "no_access" } as const) }))
+  );
+  const customers = answers
+    .filter((a) => a.answer.ok && ((a.answer.body.companies ?? []) as unknown[]).length > 0)
+    .map(({ link, answer }) => ({ linkId: link.id, customer: link.customerName, supplier: link.supplierName, companies: (answer as { body: { companies: { id: string; name: string }[] } }).body.companies }));
+  return { status: 200, body: { customers } };
+}
+
+/** `POST /api/submissions/:linkId` `{ orgUnitId, filename, xml }` — decision 0726: one invoice, to the customer that link is for. */
+export async function submit(deps: Deps, session: string, linkId: string, body: unknown): Promise<Result> {
+  const pairs = await linksWithAccess(deps, session);
+  if (!pairs) return { status: 401, body: { error: "signed_out" } };
+  const pair = pairs.find((p) => p.link.id === linkId);
+  if (!pair?.access) return { status: 404, body: { error: "not_found" } };
+  const b = (body ?? {}) as Record<string, unknown>;
+  try {
+    const res = await deps.instance(`${pair.access.instanceUrl.replace(/\/+$/, "")}/portal/submissions`, {
+      method: "POST",
+      headers: { ...bearer(pair.access.token), "Content-Type": "application/json" },
+      body: JSON.stringify({ orgUnitId: b.orgUnitId, filename: b.filename, xml: b.xml }),
+      signal: AbortSignal.timeout(Math.max(deps.timeoutMs ?? 8000, 30000)),
+    });
+    return { status: res.status, body: { ...(await asJson(res)), customer: pair.link.customerName } };
+  } catch {
+    return { status: 502, body: { error: "unreachable", customer: pair.link.customerName } };
+  }
+}

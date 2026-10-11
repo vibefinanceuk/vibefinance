@@ -750,6 +750,8 @@ describe("the proxy carries every path a screen calls (decision 0131)", () => {
     // Decision 0721: the Supplier tab and Ask supplier.
     ["GET", "/api/invoices/inv-1/supplier-messages"],
     ["POST", "/api/invoices/inv-1/supplier-messages"],
+    // Decision 0726: a Supplier network source's companies.
+    ["PUT", "/api/sources/network/network-companies"],
     ["POST", "/api/goods-receipts/gr-1/attachments/MSG-AAAA-BBBB-CCCC/1/url"],
     // Decision 0660: Conversations.
     ["GET", "/api/receipt-conversations"],

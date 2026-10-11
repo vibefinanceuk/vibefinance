@@ -101,8 +101,23 @@ export async function handleCreateSource(
   if (receipts && body.mechanism !== "https") {
     return { status: 409, body: { error: `process ${processId} takes goods receipts by HTTPS only`, reason: "receipts_https_only" } };
   }
+  /**
+   * **Supplier network in — decision 0726.** Invoices suppliers create in
+   * the supplier network. Stored as an HTTPS source (the network posts
+   * over HTTPS, with a portal token, not a key) of the `network-in` route.
+   * One per process.
+   */
+  const network = body.mechanism === "network";
+  if (network) {
+    const taken = await db
+      .prepare("SELECT 1 FROM route_instances i JOIN sources s ON s.id = i.source_id WHERE i.route_id = 'network-in' AND s.process_id = ? AND s.status != 'retired'")
+      .bind(processId)
+      .first();
+    if (taken) return { status: 409, body: { error: `process ${processId} already has a Supplier network source`, reason: "one_per_process" } };
+  }
 
-  const { id, name, mechanism } = body;
+  const { id, name } = body;
+  const mechanism = network ? "https" : body.mechanism;
   if (typeof id !== "string" || id.trim() === "") {
     return { status: 400, body: { error: "id (non-empty string) is required" } };
   }
@@ -141,7 +156,7 @@ export async function handleCreateSource(
     db.prepare("INSERT INTO sources (id, process_id, name, mechanism) VALUES (?, ?, ?, ?)").bind(id, processId, name, mechanism),
     db
       .prepare("INSERT INTO route_instances (id, route_id, process_id, source_id) VALUES (?, ?, ?, ?)")
-      .bind(id, receipts ? "receipts-in" : SOURCE_ROUTE_FOR_MECHANISM[mechanism], processId, id),
+      .bind(id, receipts ? "receipts-in" : network ? "network-in" : SOURCE_ROUTE_FOR_MECHANISM[mechanism], processId, id),
     // A process's first source makes it one that receives invoices, and
     // so one with an ERP Destination, as 0107 gave every such process.
     // Not a goods receipt process: Complete registers the receipt (0651).
@@ -160,7 +175,7 @@ export async function handleCreateSource(
   ]);
 
   const row = await db.prepare("SELECT * FROM sources WHERE id = ?").bind(id).first<SourceRow>();
-  return { status: 201, body: toBody(row as SourceRow) };
+  return { status: 201, body: { ...toBody(row as SourceRow), ...(network ? { mechanism: "network" } : {}) } };
 }
 
 export async function handleListSources(db: D1Database, processId: string): Promise<RouteResult> {
@@ -885,4 +900,32 @@ export const BUILTIN_TOO_LARGE_MESSAGE =
 /** The message with {size} and {limit} filled in, on one line. */
 export function fillRejectMessage(template: string, sizeMb: number, limitMb: number): string {
   return template.replace(/\{size\}/g, sizeMb.toFixed(1)).replace(/\{limit\}/g, String(limitMb)).replace(/\s+/g, " ").trim();
+}
+
+/**
+ * `PUT /sources/:id/network-companies` `{ orgUnitIds: string[] | null }` —
+ * which companies a Supplier network source accepts invoices for
+ * (decision 0726). Null accepts every company; a company covers the units
+ * beneath it.
+ */
+export async function handleSetNetworkCompanies(db: D1Database, sourceId: string, body: Record<string, unknown>): Promise<RouteResult> {
+  const source = await db
+    .prepare("SELECT s.id FROM sources s JOIN route_instances i ON i.source_id = s.id WHERE s.id = ? AND i.route_id = 'network-in'")
+    .bind(sourceId)
+    .first();
+  if (!source) return { status: 404, body: { error: `there is no Supplier network source ${sourceId}` } };
+  const ids = body.orgUnitIds;
+  if (ids !== null && (!Array.isArray(ids) || ids.some((x) => typeof x !== "string"))) {
+    return { status: 400, body: { error: "orgUnitIds must be a list of company ids, or null for every company" } };
+  }
+  const list = ids === null ? null : [...new Set(ids as string[])];
+  if (list) {
+    for (const unit of list) {
+      if (!(await db.prepare("SELECT 1 FROM org_units WHERE id = ?").bind(unit).first())) {
+        return { status: 422, body: { error: `there is no company ${unit}` } };
+      }
+    }
+  }
+  await db.prepare("UPDATE sources SET network_org_units_json = ? WHERE id = ?").bind(list ? JSON.stringify(list) : null, sourceId).run();
+  return { status: 200, body: { id: sourceId, networkOrgUnitIds: list } };
 }

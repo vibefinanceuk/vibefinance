@@ -1,4 +1,4 @@
-import { invoice, invoices, me, reply, type Deps } from "./network.js";
+import { invoice, invoices, me, reply, submissionCompanies, submit, type Deps } from "./network.js";
 
 /**
  * **vf-portal: the supplier network — decision 0717.**
@@ -106,6 +106,13 @@ export default {
     if (message && request.method === "POST") {
       const body = await request.json().catch(() => ({}));
       return signedOutClears(await reply(deps, session, decodeURIComponent(message[1]), decodeURIComponent(message[2]), body));
+    }
+    // Decision 0726: sending an invoice created in the network.
+    if (url.pathname === "/api/submission-companies" && request.method === "GET") return signedOutClears(await submissionCompanies(deps, session));
+    const submission = url.pathname.match(/^\/api\/submissions\/([^/]+)$/);
+    if (submission && request.method === "POST") {
+      const body = await request.json().catch(() => ({}));
+      return signedOutClears(await submit(deps, session, decodeURIComponent(submission[1]), body));
     }
     const end = url.pathname.match(/^\/api\/links\/([^/]+)\/end$/);
     if (end && request.method === "POST") {

@@ -164,6 +164,7 @@ import {
   handleInviteSupplierPerson,
 } from "./portal-people-route.js";
 import { getPortalInvoice, listPortalInvoices, portalAuth, replyOnPortalInvoice } from "./portal-route.js";
+import { handlePortalSubmission, handleSubmissionCompanies } from "./network-submission.js";
 import { DEFAULT_NETWORK_URL, handleGetSupplierMessages, handlePostSupplierMessage, type MessageEmail } from "./supplier-messages.js";
 import { handleCreateIntakeChannel } from "./intake-channel-route.js";
 import { handleCaptureIntake, handleCaptureUblXml, handleCapturePdf, handleCaptureImage, handleFinalisePendingDocument, handleIntakeStats } from "./intake-capture-route.js";
@@ -205,7 +206,7 @@ import {
   handleSetRuleNameTranslation,
 } from "./rules-list-route.js";
 import { handleInvoiceProgress } from "./invoice-progress-route.js";
-import { handleSetSourceOrg, handleSetSourceEmailLimit } from "./source-route.js";
+import { handleSetSourceOrg, handleSetSourceEmailLimit, handleSetNetworkCompanies } from "./source-route.js";
 import {
   handleLoadSuppliers,
   handleListSuppliers,
@@ -1108,6 +1109,32 @@ export default {
      * purpose: no staff session or API key is accepted here, and a portal
      * token is accepted nowhere else.
      */
+    /**
+     * **Invoice submission through the network — decision 0726.** Which
+     * companies this person may send to, and sending one (Peppol BIS
+     * Billing 3.0, created in the network).
+     */
+    if (pathname === "/portal/submission-companies" || pathname === "/portal/submissions") {
+      const { db, documents } = resolveTenant(request, env);
+      const auth = await portalAuth(db, request, isPublicKeyJwk(env.LICENCE_SIGNING_PUBLIC_KEY) ? env.LICENCE_SIGNING_PUBLIC_KEY : undefined, env.ENVIRONMENT_ID);
+      if (!auth.ok) return json(auth.body, auth.status);
+      if (pathname === "/portal/submission-companies" && request.method === "GET") {
+        const result = await handleSubmissionCompanies(db, auth.claims);
+        return json(result.body, result.status);
+      }
+      if (pathname === "/portal/submissions" && request.method === "POST") {
+        if (!env.AI) return json({ error: "the AI binding is not configured" }, 500);
+        const body = ((await request.json().catch(() => ({}))) ?? {}) as Record<string, unknown>;
+        const result = await handlePortalSubmission(db, auth.claims, body, {
+          model: createWorkersAiExtractionModel(env.AI, env.EXTRACTION_MODEL_ID),
+          bucket: documents,
+          customerId: env.CUSTOMER_ID,
+        });
+        return json(result.body, result.status);
+      }
+      return json({ error: "not found" }, 404);
+    }
+
     if (pathname === "/portal/invoices" || pathname.startsWith("/portal/invoices/")) {
       const reply = pathname.match(/^\/portal\/invoices\/([^/]+)\/messages$/);
       if (request.method !== "GET" && !(reply && request.method === "POST")) return json({ error: "not found" }, 404);
@@ -1436,6 +1463,22 @@ export default {
       }
     }
 
+
+    // Decision 0726: which companies a Supplier network source accepts.
+    {
+      const networkCompanies = pathname.match(/^\/sources\/([^/]+)\/network-companies$/);
+      if (networkCompanies && request.method === "PUT") {
+        const { db } = resolveTenant(request, env);
+        const auth = await authenticatePerson(db, request, env);
+        if (!auth.user) return json({ error: auth.reason }, 401);
+        if (!(await hasPermission(db, auth.user.id, "Admin.Configure"))) {
+          return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
+        }
+        const body = ((await request.json().catch(() => ({}))) ?? {}) as Record<string, unknown>;
+        const result = await handleSetNetworkCompanies(db, decodeURIComponent(networkCompanies[1]), body);
+        return json(result.body, result.status);
+      }
+    }
 
     // The largest email an Email source accepts — decision 0691.
     {

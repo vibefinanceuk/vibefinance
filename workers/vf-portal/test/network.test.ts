@@ -1,7 +1,7 @@
 import { env, SELF } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 import worker, { readSession, type Env } from "../src/index.js";
-import { invoice, invoices, me, reply, type Deps } from "../src/network.js";
+import { invoice, invoices, me, reply, submissionCompanies, submit, type Deps } from "../src/network.js";
 
 /**
  * **The supplier network — decision 0717.** vf-licence and the customers'
@@ -167,6 +167,33 @@ describe("replying — decision 0721", () => {
   it("not for a link that is not theirs, and signed out for a stale session", async () => {
     expect((await reply(deps({}), "good", "pl-someone", "i1", { body: "x" })).status).toBe(404);
     expect((await reply(deps({}), "stale", "pl-acme", "i1", { body: "x" })).status).toBe(401);
+  });
+});
+
+describe("sending an invoice — decision 0726", () => {
+  it("lists, per customer, the companies that take invoices through the network, leaving out a customer that takes none", async () => {
+    const r = await submissionCompanies(
+      deps({
+        "acme.example": () => Response.json({ companies: [{ id: "uk", name: "Acme UK Ltd" }] }),
+        "globex.example": () => Response.json({ companies: [] }),
+      }),
+      "good"
+    );
+    expect(r.body).toEqual({ customers: [{ linkId: "pl-acme", customer: "Acme Ltd", supplier: "Lager Nord GmbH", companies: [{ id: "uk", name: "Acme UK Ltd" }] }] });
+  });
+
+  it("posts the invoice to the customer that link is for, with its own token, and only the invoice", async () => {
+    const posted: { url: string; auth: string | null; body: string }[] = [];
+    const d = deps({});
+    d.instance = async (url, init) => {
+      posted.push({ url, auth: new Headers(init.headers).get("Authorization"), body: String(init.body) });
+      return Response.json({ message: "MSG-AAAA-BBBB-CCCC", invoiceId: "inv-9" }, { status: 202 });
+    };
+    const r = await submit(d, "good", "pl-acme", { orgUnitId: "uk", filename: "LN-500.xml", xml: "<Invoice/>", supplierId: "someone-else" });
+    expect(r).toEqual({ status: 202, body: { message: "MSG-AAAA-BBBB-CCCC", invoiceId: "inv-9", customer: "Acme Ltd" } });
+    expect(posted).toEqual([{ url: "https://acme.example/portal/submissions", auth: "Bearer tok-acme", body: '{"orgUnitId":"uk","filename":"LN-500.xml","xml":"<Invoice/>"}' }]);
+    expect((await submit(deps({}), "good", "pl-someone", {})).status).toBe(404);
+    expect((await submit(deps({}), "stale", "pl-acme", {})).status).toBe(401);
   });
 });
 

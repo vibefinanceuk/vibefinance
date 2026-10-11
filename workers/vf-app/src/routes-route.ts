@@ -246,8 +246,11 @@ export async function handleProcessRoutes(
       sources: sources.results.map((s) => ({
         id: s.id,
         name: s.name,
-        mechanism: s.mechanism,
+        // Decision 0726: a Supplier network source is shown as what it is, though it receives by HTTPS.
+        mechanism: s.route_id === "network-in" ? "network" : s.mechanism,
         status: s.status ?? "active",
+        // Decision 0726: the companies a Supplier network source accepts; null is every company.
+        ...(s.route_id === "network-in" ? { networkOrgUnitIds: s.network_org_units_json ? (JSON.parse(String(s.network_org_units_json)) as string[]) : null } : {}),
         emailAddress: s.email_address ?? null,
         emailRouting: s.email_routing ?? "not_configured",
         // Decision 0691: the largest email accepted; null is the default.

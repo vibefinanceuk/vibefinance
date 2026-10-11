@@ -3,7 +3,7 @@ import type { RouteResult } from "./org-route.js";
 import { deriveOrgUnit } from "./derive-org.js";
 import { renderPeppolDocument } from "./peppol-render.js";
 import { renderCsvTable } from "./csv-render.js";
-import { matchSupplier } from "./match-supplier.js";
+import { matchSupplier, type MatchedSupplier } from "./match-supplier.js";
 import { hintBeforeReading } from "./layout-hints.js";
 import {
   channelStructure,
@@ -91,9 +91,49 @@ async function channelFor(
  * two are kept deliberately parallel — a change to one almost always
  * wants the other.
  */
+/**
+ * **Placed by the supplier network — decision 0726.** An invoice created in
+ * the network arrives already knowing its company (the supplier chose it,
+ * from those their invitation covers) and its supplier (the record their
+ * invitation is for). Neither is read off the document.
+ */
+export interface NetworkPlacement {
+  orgUnitId: string;
+  supplierId: string;
+}
+
+/**
+ * The supplier: the network's, where it placed the invoice, else matched
+ * off the document as always. The network's supplier is flagged
+ * (`supplier.networkVatDiffers`) when the document's seller VAT number
+ * (BT-31) is not the record's.
+ */
+async function supplierFor(
+  db: D1Database,
+  facts: Record<string, unknown>,
+  orgUnitId: string | null,
+  placement: NetworkPlacement | undefined
+): Promise<MatchedSupplier & { vatDiffers?: boolean }> {
+  if (!placement) return matchSupplier(db, facts, orgUnitId);
+  const row = await db.prepare("SELECT id, erp_identifier, vat_id FROM suppliers WHERE id = ?").bind(placement.supplierId).first<{ id: string; erp_identifier: string | null; vat_id: string | null }>();
+  const listLoadedAt = (await db.prepare("SELECT loaded_at FROM supplier_loads ORDER BY loaded_at DESC LIMIT 1").first<{ loaded_at: string }>())?.loaded_at ?? null;
+  if (!row) return { supplierId: null, erpIdentifier: null, matchedOn: null, reason: "no_match", listLoadedAt };
+  const norm = (v: unknown) => String(v ?? "").replace(/[\s.-]/g, "").toUpperCase();
+  const vat = typeof facts["BT-31"] === "string" ? facts["BT-31"] : null;
+  return {
+    supplierId: row.id,
+    erpIdentifier: row.erp_identifier,
+    matchedOn: "network",
+    reason: null,
+    listLoadedAt,
+    vatDiffers: Boolean(vat && row.vat_id && norm(vat) !== norm(row.vat_id)),
+  };
+}
+
 export function buildIntakeEnricher(
   db: D1Database,
-  source: SourceRow
+  source: SourceRow,
+  placement?: NetworkPlacement
 ): (facts: Record<string, unknown>) => Promise<Record<string, unknown>> {
   return async (facts) => {
     // Decision 0584: which source it arrived through, by id, for rules ("from the UK mailbox").
@@ -101,15 +141,19 @@ export function buildIntakeEnricher(
 
     // Org placement — decision 0111: the source's own default first,
     // and only where it has none does the document get read at all.
-    let orgUnitId = source.default_org_unit_id;
+    let orgUnitId = placement?.orgUnitId ?? source.default_org_unit_id;
     if (!orgUnitId) {
       const derived = await deriveOrgUnit(db, facts);
       orgUnitId = derived.unitId;
       if (derived.reason) extra["org.unplaced"] = derived.reason;
     }
 
-    // Supplier matching — decision 0209, org-aware since 0317.
-    const matched = await matchSupplier(db, facts, orgUnitId);
+    // Supplier matching — decision 0209, org-aware since 0317; the network's own since 0726.
+    const matched = await supplierFor(db, facts, orgUnitId, placement);
+    if (placement) {
+      extra["intake.network"] = true;
+      extra["supplier.networkVatDiffers"] = matched.vatDiffers === true;
+    }
     extra["supplier.matched"] = matched.supplierId !== null;
     extra["supplier.listLoadedAt"] = matched.listLoadedAt;
     if (matched.reason) extra["supplier.unmatchedReason"] = matched.reason;
@@ -380,7 +424,9 @@ export async function handleCaptureFromSource(
    */
   preRead?: PreRead,
   /** Decision 0690: makes a scan's pages smaller (Cloudflare Images), where bound. */
-  shrink?: PageShrinker
+  shrink?: PageShrinker,
+  /** Decision 0726: the company and supplier the supplier network placed it with. */
+  placement?: NetworkPlacement
 ): Promise<RouteResult> {
   const source = await db
     .prepare("SELECT id, process_id, name, default_org_unit_id FROM sources WHERE id = ?")
@@ -389,6 +435,8 @@ export async function handleCaptureFromSource(
   if (!source) {
     return { status: 404, body: { error: `source ${sourceId} does not exist` } };
   }
+  // Decision 0726: the network's company stands where a source's default would.
+  if (placement) source.default_org_unit_id = placement.orgUnitId;
   if (bytes.length === 0) {
     return { status: 400, body: { error: "a document body is required" } };
   }
@@ -463,7 +511,7 @@ export async function handleCaptureFromSource(
   // Decision 0434: org placement and supplier matching, computed from
   // this document's own facts in time for the first stage visit —
   // see buildIntakeEnricher's own comment for why this exists.
-  const enricher = buildIntakeEnricher(db, source);
+  const enricher = buildIntakeEnricher(db, source, placement);
 
   // Decision 0690: the scan's working pages, when every page was made smaller.
   let workingPages: WorkingPage[] | undefined;
@@ -669,7 +717,7 @@ export async function handleCaptureFromSource(
       // A document whose facts will not parse names no supplier.
     }
 
-    const matched = await matchSupplier(db, supplierFacts, invoiceForSupplier?.org_unit_id ?? null);
+    const matched = await supplierFor(db, supplierFacts, invoiceForSupplier?.org_unit_id ?? null, placement);
 
     if (matched.supplierId) {
       await db
@@ -766,6 +814,14 @@ export async function handleCaptureFromSource(
         invoiceId
       )
       .run();
+
+    // Decision 0726: sent through the supplier network, and whether its seller VAT number is the record's.
+    if (placement) {
+      await db
+        .prepare(`UPDATE invoice_headers SET facts_json = json_set(json_set(facts_json, '$."intake.network"', json('true')), '$."supplier.networkVatDiffers"', json(?)) WHERE id = ?`)
+        .bind(matched.vatDiffers ? "true" : "false", invoiceId)
+        .run();
+    }
 
     /**
      * **A fact a rule can test**, which is the whole point: the

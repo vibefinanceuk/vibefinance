@@ -41,6 +41,8 @@ describe("the standard routes", () => {
       ["receipts-file", "source", "standard", true],
       // Decision 0620: SFTP in is live, collecting.
       ["sftp-in", "source", "standard", true],
+      // Decision 0726: invoices created in the supplier network.
+      ["network-in", "source", "standard", true],
       ["erp-csv", "destination", "standard", true],
       // Decision 0585.
       ["https-out", "destination", "standard", true],

@@ -341,6 +341,8 @@ const PROXIED_TO_INSTANCE: RegExp[] = [
   /^\/invoices\/[^/]+\/attachments$/,
   // Decision 0721 — the conversation with the supplier (GET) and writing to them (POST).
   /^\/invoices\/[^/]+\/supplier-messages$/,
+  // Decision 0726: the companies a Supplier network source accepts.
+  /^\/sources\/[^/]+\/network-companies$/,
   /^\/invoices\/[^/]+\/attachments\/[^/]+\/\d+\/url$/,
   // A lassoed part of a page read by the vision model — decision 0699.
   /^\/invoices\/[^/]+\/read-region$/,

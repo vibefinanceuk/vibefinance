@@ -1,0 +1,47 @@
+-- 0330_network_source_strings.sql
+-- Decision 0726 — the Supplier network in source: its name in the Route
+-- library and on Process routes, and its section on a source's panel.
+
+INSERT INTO ui_strings (key, locale, value) VALUES
+ ('mechanism.network', 'en', 'Supplier network'),
+ ('mechanism.network', 'de', 'Lieferantennetzwerk'),
+ ('routes.gw.network', 'en', 'Supplier network'),
+ ('routes.gw.network', 'de', 'Lieferantennetzwerk'),
+ ('library.transport.network', 'en', 'Supplier network'),
+ ('library.transport.network', 'de', 'Lieferantennetzwerk'),
+ ('connector.network-in.name', 'en', 'Supplier network in'),
+ ('connector.network-in.name', 'de', 'Lieferantennetzwerk-Eingang'),
+ ('connector.network-in.description', 'en', 'Invoices your suppliers create in the VibeFinance supplier network, as Peppol BIS Billing 3.0: read exactly, no scanning.'),
+ ('connector.network-in.description', 'de', 'Rechnungen, die Ihre Lieferanten im VibeFinance-Lieferantennetzwerk als Peppol BIS Billing 3.0 erstellen: exakt gelesen, ohne Scannen.'),
+ ('outcome.one_per_process', 'en', 'This process already has a Supplier network source.'),
+ ('outcome.one_per_process', 'de', 'Dieser Prozess hat bereits eine Lieferantennetzwerk-Quelle.'),
+ ('networksource.about', 'en', 'Invoices your suppliers create in the VibeFinance supplier network. Who may send is who you have invited to the network, for the companies you invited them for. Nobody else can reach it.'),
+ ('networksource.about', 'de', 'Rechnungen, die Ihre Lieferanten im VibeFinance-Lieferantennetzwerk erstellen. Senden darf, wen Sie in das Netzwerk eingeladen haben, für die Firmen, für die Sie eingeladen haben. Niemand sonst erreicht sie.'),
+ ('networksource.accepts', 'en', 'Accepts invoices for'),
+ ('networksource.accepts', 'de', 'Nimmt Rechnungen an für'),
+ ('networksource.every', 'en', 'Every company'),
+ ('networksource.every', 'de', 'Alle Firmen'),
+ ('networksource.choose', 'en', 'Choose'),
+ ('networksource.choose', 'de', 'Auswählen'),
+ ('networksource.company', 'en', 'Company'),
+ ('networksource.company', 'de', 'Firma'),
+ ('networksource.companyhow', 'en', 'Chosen by the supplier when sending, from those they are invited for'),
+ ('networksource.companyhow', 'de', 'Vom Lieferanten beim Senden gewählt, aus denen, für die er eingeladen ist'),
+ ('networksource.supplier', 'en', 'Supplier'),
+ ('networksource.supplier', 'de', 'Lieferant'),
+ ('networksource.supplierhow', 'en', 'The supplier record their invitation is for. A VAT number on the invoice that disagrees is flagged.'),
+ ('networksource.supplierhow', 'de', 'Der Lieferantenstamm, für den die Einladung gilt. Eine abweichende USt-IdNr. auf der Rechnung wird markiert.'),
+ ('networksource.format', 'en', 'Format'),
+ ('networksource.format', 'de', 'Format'),
+ ('networksource.formatwhat', 'en', 'Peppol BIS Billing 3.0 (UBL), checked before it is sent'),
+ ('networksource.formatwhat', 'de', 'Peppol BIS Billing 3.0 (UBL), vor dem Senden geprüft'),
+ ('networksource.title', 'en', 'Accepts invoices for'),
+ ('networksource.title', 'de', 'Nimmt Rechnungen an für'),
+ ('networksource.titlesub', 'en', 'Every company, or some. A company covers the units beneath it.'),
+ ('networksource.titlesub', 'de', 'Alle Firmen oder einige. Eine Firma umfasst die Einheiten darunter.'),
+ ('networksource.chooseone', 'en', 'Choose at least one company, or Every company.'),
+ ('networksource.chooseone', 'de', 'Wählen Sie mindestens eine Firma oder Alle Firmen.'),
+ ('networksource.failed', 'en', 'That could not be saved. Try again.'),
+ ('networksource.failed', 'de', 'Das konnte nicht gespeichert werden. Bitte erneut versuchen.');
+
+-- ASSERT: SELECT count(*) FROM ui_strings WHERE key IN ('mechanism.network', 'routes.gw.network', 'library.transport.network', 'connector.network-in.name', 'connector.network-in.description', 'outcome.one_per_process') OR key LIKE 'networksource.%' == 40

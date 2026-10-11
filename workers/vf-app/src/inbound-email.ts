@@ -1,6 +1,6 @@
 import { BUILTIN_TOO_LARGE_MESSAGE, DEFAULT_MAX_EMAIL_MB, fillRejectMessage } from "./source-route.js";
 import type { PageShrinker } from "./page-shrink.js";
-import { handleCaptureFromSource } from "./source-capture-route.js";
+import { handleCaptureFromSource, type NetworkPlacement } from "./source-capture-route.js";
 import { detectStructure } from "./detect-structure.js";
 import { decodeText } from "@vibefinance/shared";
 import { csvInvoiceGroups } from "./supplier-mapping-route.js";
@@ -373,6 +373,8 @@ interface CapturePartArgs {
   sender?: string;
   /** Decision 0690: makes a scan's pages smaller before reading. */
   shrink?: PageShrinker;
+  /** Decision 0726: the company and supplier the supplier network placed it with. */
+  placement?: NetworkPlacement;
 }
 
 /** One file, one invoice: the path every attachment took before 0577. */
@@ -392,7 +394,8 @@ async function captureOnePart(
     stored,
     args.sender,
     undefined,
-    args.shrink
+    args.shrink,
+    args.placement
   );
   const read = result.body as
     | {

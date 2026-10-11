@@ -25,6 +25,7 @@ import sapStringsSql from "../../vf-licence/migrations/0250_sap_connector_string
 import intacctStringsSql from "../../vf-licence/migrations/0251_intacct_connector_strings.sql?raw";
 import neutralHintsSql from "../../vf-licence/migrations/0254_neutral_setting_hints.sql?raw";
 import sftpStringsSql from "../../vf-licence/migrations/0263_sftp_strings.sql?raw";
+import networkSourceSql from "../../vf-licence/migrations/0330_network_source_strings.sql?raw";
 
 /**
  * **Routes and Process routes — decision 0557.** The standard routes with
@@ -59,7 +60,7 @@ const strings: Record<string, string> = {
   "mechanism.file_import": "File import",
   "mechanism.edi": "EDI",
 };
-for (const sql of [stringsSql, destinationStringsSql, formatStringsSql, mappingStringsSql, csvStringsSql, httpsStringsSql, httpsStateStringsSql, replaceKeyStringsSql, mailboxStringsSql, renameStringsSql, httpsOutStringsSql, erpDeliveriesStringsSql, destUnitsStringsSql, libraryStringsSql, outboundStringsSql, submitStringsSql, submitFromCustomerSql, destRetireStringsSql, destDeleteStringsSql, reviewStringsSql, partnerLibraryStringsSql, oracleStringsSql, sapStringsSql, intacctStringsSql, sftpStringsSql]) {
+for (const sql of [stringsSql, destinationStringsSql, formatStringsSql, mappingStringsSql, csvStringsSql, httpsStringsSql, httpsStateStringsSql, replaceKeyStringsSql, mailboxStringsSql, renameStringsSql, httpsOutStringsSql, erpDeliveriesStringsSql, destUnitsStringsSql, libraryStringsSql, outboundStringsSql, submitStringsSql, submitFromCustomerSql, destRetireStringsSql, destDeleteStringsSql, reviewStringsSql, partnerLibraryStringsSql, oracleStringsSql, sapStringsSql, intacctStringsSql, sftpStringsSql, networkSourceSql]) {
   for (const m of sql.matchAll(/\('([^']+)', 'en', '((?:[^']|'')*)'\)/g)) strings[m[1]] = m[2].replace(/''/g, "'");
 }
 // Decision 0610: 0254 rewords two hints by UPDATE.
@@ -424,6 +425,49 @@ describe("Process routes — decision 0557", () => {
     await settle();
     const options = [...document.querySelectorAll(".popout select option")].map((o) => (o as HTMLOptionElement).value);
     expect(options).toEqual(["https"]);
+  });
+});
+
+describe("Supplier network in — decision 0726", () => {
+  const NETWORK = { ...FLOW.sources[0], id: "network", name: "Supplier network", mechanism: "network", emailAddress: null, emailRouting: "not_configured", routeId: "network-in", routeName: "Supplier network in", networkOrgUnitIds: null, receivedThisWeek: 2, failedOpen: 0 };
+  const UNITS = { units: [{ id: "uk", name: "Acme UK Ltd", parentUnitId: null }, { id: "ie", name: "Acme Ireland Ltd", parentUnitId: null }] };
+
+  it("is offered once per process when adding a source", async () => {
+    stub([]);
+    await openScreen("/process-routes.js");
+    (document.querySelector(".prpanel .statebuttons button") as HTMLElement).click();
+    await settle();
+    expect([...document.querySelectorAll(".popout select option")].map((o) => (o as HTMLOptionElement).value)).toContain("network");
+    document.querySelector(".backdrop")?.remove();
+    stub([], { "/api/process-routes": { ...FLOW, sources: [NETWORK, ...FLOW.sources] } });
+    await openScreen("/process-routes.js");
+    (document.querySelector(".prpanel .statebuttons button") as HTMLElement).click();
+    await settle();
+    expect([...document.querySelectorAll(".popout select option")].map((o) => (o as HTMLOptionElement).value)).not.toContain("network");
+  });
+
+  it("shows what it takes, with the companies it accepts and no business-unit default, and saves the companies chosen", async () => {
+    const calls: Call[] = [];
+    stub(calls, { "/api/process-routes": { ...FLOW, sources: [NETWORK, ...FLOW.sources] }, "/api/org/units": UNITS, "/api/sources/network/network-companies": { id: "network", networkOrgUnitIds: ["uk"] } });
+    await openScreen("/process-routes.js");
+    (document.querySelectorAll(".prcard")[0] as HTMLElement).click();
+    await settle();
+    const panel = document.querySelector(".networksource")!;
+    expect(panel.textContent).toContain("Accepts invoices for");
+    expect(panel.textContent).toContain("Every company");
+    expect(panel.textContent).toContain("Peppol BIS Billing 3.0");
+    expect(document.querySelector(".prdetail .orgpicker")).toBeNull();
+    (panel.querySelector(".duline button") as HTMLElement).click();
+    await settle();
+    const pop = document.querySelector(".popout.dounitspop")!;
+    (pop.querySelector("#ns-all") as HTMLInputElement).click();
+    const uk = pop.querySelector('input[value="uk"]') as HTMLInputElement;
+    uk.checked = true;
+    uk.dispatchEvent(new Event("change"));
+    (pop.querySelector(".statebuttons button") as HTMLElement).click();
+    await settle();
+    const put = calls.find((c) => c.path === "/api/sources/network/network-companies");
+    expect(JSON.parse(put!.body!)).toEqual({ orgUnitIds: ["uk"] });
   });
 });
 

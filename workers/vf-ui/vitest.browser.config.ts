@@ -151,6 +151,7 @@ export default defineConfig({
       "/create.js": resolve(__dirname, "public/create.js"),
       "/https-keys.js": resolve(__dirname, "public/https-keys.js"),
       "/destinations.js": resolve(__dirname, "public/destinations.js"),
+      "/network-source.js": resolve(__dirname, "public/network-source.js"),
       "/sftp-settings.js": resolve(__dirname, "public/sftp-settings.js"),
       "/agents.js": resolve(__dirname, "public/agents.js"),
       // Absence and cover — decision 0641.
