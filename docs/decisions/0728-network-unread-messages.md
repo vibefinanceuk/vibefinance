@@ -1,6 +1,6 @@
 # 0728: Unread messages in the network: a Messages column and a menu count
 
-**Status: built**, 11 October 2026, awaiting push and deploy. vf-app (migration 0161,
+**Status: live** at `f00b97c`, pushed and deployed 11 October 2026. vf-app (migration 0161,
 `portal-route.ts`), vf-portal (`portal.js`, `shell.js`, `portal.css`), vf-licence (strings
 migration 0332).
 
@@ -26,6 +26,12 @@ might not need to reply. so the count would continue to increase."*
 
 Also, on Create (0727): every Invoice header field the same height (Dan's screenshot), the read-
 only amounts with the inputs and selects.
+
+## Afterwards: the customer's comment in Day's light red
+
+Dan, against a screenshot of a returned invoice in Night: the *From Acme Corp* comment (*"Is this
+a duplicate"*) in Day's light red, not deep red. It, and the notice when a customer does not
+answer, now use the fixed severity colours, as the fields to put right do (0727).
 
 ## Tests
 
