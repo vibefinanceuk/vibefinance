@@ -1,6 +1,6 @@
 # 0730: Credit notes are read, in every route, and exported as credits
 
-**Status: built**, awaiting deploy. shared (`ubl-parser.ts`, `cii-parser.ts`, `invoice-xml.ts`,
+**Status: live** at `90a5dfb`, pushed and deployed 11 October 2026, migration 0162 applied. shared (`ubl-parser.ts`, `cii-parser.ts`, `invoice-xml.ts`,
 `en16931-rules.ts`, `vocabulary.ts`), vf-app (`erp-export-route.ts`, `destination-delivery.ts`,
 `invoice-history.ts`, `invoice-facts-route.ts`, `network-submission.ts`), migration 0162.
 
