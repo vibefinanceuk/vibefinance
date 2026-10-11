@@ -5659,3 +5659,6 @@
 .dobuttons input.creditnumber { width: 170px; flex: none; min-height: 32px; padding: 4px 10px; }
 .creditpanel .dobuttons { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 8px; }
 .creditpanel.waiting { border-left: 3px solid var(--border-warning, var(--border-strong)); }
+/* The panel keeps Day's colours in Night (reasonline); so does the box in it (Dan, 11 October: dark text on a dark box). */
+.creditpanel input.creditnumber { background: #ffffff; color: #121a26; border: 0.5px solid #b4bfcc; }
+.creditpanel input.creditnumber::placeholder { color: #6b7686; }

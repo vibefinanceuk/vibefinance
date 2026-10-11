@@ -107,14 +107,33 @@ export async function findCreditedInvoice(db: D1Database, creditNoteId: string, 
   if (!reference) return { reference: null, invoice: null, covers: null };
   const vat = text(facts["BT-31"]);
   const name = text(facts["BT-27"]);
-  const supplier = vat
-    ? { sql: "h.supplier_vat_id = ?", bind: vat }
-    : name
-      ? { sql: "lower(trim(json_extract(h.facts_json, '$.\"BT-27\"'))) = lower(?)", bind: name }
-      : null;
-  // The credit note's own supplier, once matched, is as good as its VAT number.
+  /**
+   * **The same supplier, however each document wrote it** (found live,
+   * 11 October: a credit note from the network says GB111350965 where the
+   * invoice read from email said 111350965). Any of: the VAT number
+   * without its country prefix and spaces; the seller's name; the
+   * supplier either is matched to (this one's own, or the one whose VAT
+   * number it carries).
+   */
+  const bareVat = (v: string) => v.toUpperCase().replace(/[^A-Z0-9]/g, "").replace(/^[A-Z]{2}(?=\d)/, "");
+  const BARE_SQL = (col: string) =>
+    `(CASE WHEN upper(replace(replace(${col}, ' ', ''), '.', '')) GLOB '[A-Z][A-Z][0-9]*' THEN substr(upper(replace(replace(${col}, ' ', ''), '.', '')), 3) ELSE upper(replace(replace(${col}, ' ', ''), '.', '')) END)`;
   const own = await db.prepare("SELECT supplier_id FROM invoice_headers WHERE id = ?").bind(creditNoteId).first<{ supplier_id: string | null }>();
-  const where = [supplier?.sql, own?.supplier_id ? "h.supplier_id = ?" : null].filter(Boolean).join(" OR ");
+  const clauses: string[] = [];
+  const binds: unknown[] = [];
+  if (vat) {
+    clauses.push(`${BARE_SQL("h.supplier_vat_id")} = ?`, `h.supplier_id IN (SELECT s.id FROM suppliers s WHERE s.vat_id IS NOT NULL AND ${BARE_SQL("s.vat_id")} = ?)`);
+    binds.push(bareVat(vat), bareVat(vat));
+  }
+  if (name) {
+    clauses.push(`lower(trim(json_extract(h.facts_json, '$."BT-27"'))) = lower(?)`);
+    binds.push(name);
+  }
+  if (own?.supplier_id) {
+    clauses.push("h.supplier_id = ?");
+    binds.push(own.supplier_id);
+  }
+  const where = clauses.join(" OR ");
   if (!where) return { reference, invoice: null, covers: null };
   const row = await db
     .prepare(
@@ -126,7 +145,7 @@ export async function findCreditedInvoice(db: D1Database, creditNoteId: string, 
        WHERE h.id != ? AND h.document_kind = 'invoice' AND h.invoice_number = ? AND (${where})
        ORDER BY h.created_at DESC LIMIT 1`
     )
-    .bind(creditNoteId, reference, ...[supplier?.bind, own?.supplier_id].filter((b) => b !== undefined && b !== null))
+    .bind(creditNoteId, reference, ...binds)
     .first<{ id: string; invoice_number: string; total_with_vat: number | null; instance_status: string | null; sent: number }>();
   if (!row) return { reference, invoice: null, covers: null };
   const credit = amount(facts["BT-112"]);

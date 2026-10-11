@@ -73,6 +73,17 @@ describe("finding the invoice a credit note credits", () => {
   });
 });
 
+describe("the same supplier, however each wrote its VAT number (Dan, 11 October)", () => {
+  it("finds an invoice read as 111350965 from a credit note saying GB111350965, and the other way round", async () => {
+    await doc("thornbury", { "BT-1": "INV-16356", "BT-31": "111350965", "BT-112": 479.04 });
+    await doc("cn-gb", { "BT-1": "CN-1", "BT-3": "381", "BT-25": "INV-16356", "BT-31": "GB111350965", "BT-112": 479.04 });
+    expect(await findCreditedInvoice(env.DB, "cn-gb", await facts("cn-gb"))).toMatchObject({ invoice: { id: "thornbury" }, covers: "full" });
+    await doc("inv-gb", { "BT-1": "INV-77", "BT-31": "GB 222 333 444", "BT-112": 10 });
+    await doc("cn-bare", { "BT-1": "CN-2", "BT-3": "381", "BT-25": "INV-77", "BT-31": "222333444", "BT-112": 10 });
+    expect(await findCreditedInvoice(env.DB, "cn-bare", await facts("cn-bare"))).toMatchObject({ invoice: { id: "inv-gb" } });
+  });
+});
+
 describe("what happens to it, as AP Setup says", () => {
   it("by default, one in full waits for the team to confirm: neither is exported meanwhile; Credit marks the invoice Credited", async () => {
     await doc("cn-1", { "BT-1": "CN-1", "BT-3": "381", "BT-25": "INV-1", "BT-112": 120 }, { status: "completed" });

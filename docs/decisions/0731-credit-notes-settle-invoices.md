@@ -76,3 +76,18 @@ loaded."* vf-ui forwards only the instance paths it lists (`PROXIED_INSTANCE_PAT
 `/credit-note-config`, `/credit-notes/to-confirm` and `/credit-notes/:id/decide` were not
 listed: the settings, Credits to confirm on Tasks, and the confirm buttons all failed the same
 way. Listed now, and in the test that every path a screen calls is carried. Deploy vf-ui.
+
+## Afterwards: a credit note from the network did not find its invoice, and the box was unreadable
+
+Dan, against a screenshot of a credit note in Night: the invoice number box had dark text on
+a dark box. The panel keeps Day's colours in Night (as every reasonline panel does); the box
+now does too.
+
+The same screenshot showed the credit note *"Credits INV-16356, which was not found from
+this supplier"*, though it was raised in the network from INV-16356 itself. The invoice had
+come by email with its VAT number as digits (`111350965`); the credit note, made by the
+network, says `GB111350965` (0727). The supplier is now the same if any of these agree: the
+VAT number without its country prefix, spaces or dots; the seller's name; or the supplier
+either document is matched to (its own, or the one whose VAT number it carries). Typing the
+number in the box, **It credits this invoice**, uses the same matching, so a credit note
+already waiting can be linked once this is deployed. Deploy vf-app and vf-ui.
