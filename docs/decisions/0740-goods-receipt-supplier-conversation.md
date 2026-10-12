@@ -1,6 +1,6 @@
 # 0740: The conversation with a supplier about a goods receipt
 
-**Status: built.** vf-app (`receipt-messages.ts`, `receipt-sharing.ts`, `supplier-messages.ts`,
+**Status: live** at `c0a7b8a`, pushed and deployed 12 October 2026, migrations 0165 and 0341 applied. vf-app (`receipt-messages.ts`, `receipt-sharing.ts`, `supplier-messages.ts`,
 `index.ts`, migration 0165), vf-ui (`goods-receipts.js`, `supplier-chat.js`, `src/index.ts`),
 vf-portal (`receipt-view.js`, `portal.js`, `src/network.ts`, `src/index.ts`), vf-licence
 (strings migration 0341).
