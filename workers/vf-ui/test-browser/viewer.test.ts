@@ -653,7 +653,9 @@ describe("three-tier severity on key fields (decision 0400)", () => {
     await openViewer(TASK, () => {});
 
     const heads = [...document.querySelectorAll(".linetable thead th")].map((th) => [...th.classList].find((c) => c.startsWith("lf-"))).filter(Boolean);
-    expect(heads).toEqual(["lf-bt-126", "lf-bt-153", "lf-bt-154", "lf-bt-130", "lf-bt-146", "lf-bt-129", "lf-bt-131", "lf-bt-151"]);
+    expect(heads).toEqual(["lf-bt-126", "lf-bt-153", "lf-bt-130", "lf-bt-146", "lf-bt-129", "lf-bt-131", "lf-bt-151"]);
+    // Decision 0735: Item description on the line's second row, labelled.
+    expect(document.querySelector("#lines tr.linesecond [data-subfield='BT-154'] label")).not.toBeNull();
     const css = (await import("virtual:stylesheets")).default["app.css"];
     expect(css).toContain(".linetable th.lf-bt-129 { width: 6em; }");
     expect(css).not.toContain(".linetable th:nth-child(4)");
@@ -8208,7 +8210,13 @@ describe("the line column picker (decision 0734)", () => {
     await open();
     // In reading order: Line ID, Item name, Item description (2), … VAT category, VAT rate (8), Line total with VAT (9).
     for (const n of [2, 8, 9]) ([...document.querySelectorAll("#linecolumnpicker label")][n].querySelector("input") as HTMLInputElement).click();
-    expect(heads()).toEqual(["lf-bt-126", "lf-bt-153", "lf-bt-154", "lf-bt-130", "lf-bt-146", "lf-bt-129", "lf-bt-131", "lf-bt-151", "lf-bt-152", "lf-linetotal"]);
+    expect(heads()).toEqual(["lf-bt-126", "lf-bt-153", "lf-bt-130", "lf-bt-146", "lf-bt-129", "lf-bt-131", "lf-bt-151", "lf-bt-152", "lf-linetotal"]);
+    // Decision 0735: Item description under Item name, and the table scrolls inside its card.
+    const second = document.querySelector("#lines tr.linesecond") as HTMLTableRowElement;
+    const sub = second.querySelector("[data-subfield='BT-154']")!;
+    expect((sub.querySelector("input") as HTMLInputElement | null)?.value ?? sub.textContent).toContain("Delivered 18 March");
+    expect((second.children[1] as HTMLTableCellElement).colSpan).toBe((document.querySelector("#lines tr.lineprimary") as HTMLTableRowElement).children.length - 1);
+    expect(document.querySelector(".linetablewrap > table.linetable")).not.toBeNull();
     expect(document.querySelector("[data-linetotal]")?.textContent).toBe("£73.08");
     expect(JSON.parse(localStorage.getItem("vf-line-columns") ?? "[]")).toEqual(expect.arrayContaining(["BT-154", "BT-152", "linetotal"]));
   });

@@ -1013,9 +1013,9 @@ function note(message, { success = false } = {}) {
  */
 function updateTotals() {
   // Decision 0734: each line's total with VAT follows what is keyed.
-  for (const row of document.querySelectorAll("#lines tr")) {
+  for (const row of document.querySelectorAll("#lines tr.lineprimary")) {
     const cell = row.querySelector("[data-linetotal] span");
-    const line = lines[[...row.parentNode.children].indexOf(row)];
+    const line = lines[Number(row.dataset.line)];
     if (cell && line) cell.textContent = lineTotalOf(line);
   }
   const summed = lines.reduce((total, line) => total + (Number(line["BT-131"]) || 0), 0);
@@ -1125,7 +1125,7 @@ function lineRow(line, index) {
     return el("td", { class: spec.field === "BT-130" ? "short" : undefined }, [input]);
   };
 
-  return el("tr", {}, [
+  const primary = el("tr", { class: "lineprimary", "data-line": String(index) }, [
     ...lineTableFields().map(cell),
     ...(lineTotalShown() ? [el("td", { class: "num linetotalcell", "data-linetotal": "" }, [el("span", { text: lineTotalOf(line) })])] : []),
     ...lineMatchColumnsShown().map((c) => lineMatchValueCell(line, c)),
@@ -1193,6 +1193,21 @@ function lineRow(line, index) {
         : []),
     ]),
   ]);
+
+  // Decision 0735: Item description and Line note, labelled, on a row of their own under Item name.
+  const second = lineSecondRowFields();
+  if (second.length === 0) return primary;
+  const subfields = second.map((spec) => {
+    const td = cell(spec);
+    return el("div", { class: "linesubfield", "data-subfield": spec.field }, [el("label", { text: t(`field.${spec.field.toLowerCase()}`) }), ...td.childNodes]);
+  });
+  return [
+    primary,
+    el("tr", { class: "linesecond" }, [
+      el("td", {}),
+      el("td", { colspan: String(primary.children.length - 1) }, [el("div", { class: `linesub n${subfields.length}` }, subfields)]),
+    ]),
+  ];
 }
 
 /**
@@ -1302,6 +1317,21 @@ function lineColumnOptions() {
   return [...fields, "linetotal"].sort((a, b) => rank(a) - rank(b));
 }
 
+/**
+ * **Long text on a second row — decision 0735.** Dan, against a
+ * screenshot of the table with his columns chosen: *"there is overlapping
+ * and fields cannot be read. This also spill over the boundaries of the
+ * card. Should we wrap across a second row?"* Item description and Line
+ * note, when chosen, sit under Item name with a label each, so the first
+ * row keeps the short fields and amounts in line.
+ */
+const LINE_SECOND_ROW = ["BT-154", "BT-127"];
+
+function lineSecondRowFields() {
+  const shown = chosenLineColumns();
+  return lineFields.filter((f) => LINE_SECOND_ROW.includes(f.field) && shown.has(f.field)).sort((a, b) => LINE_SECOND_ROW.indexOf(a.field) - LINE_SECOND_ROW.indexOf(b.field));
+}
+
 function lineTableFields() {
   const shown = chosenLineColumns();
   const rank = (f) => {
@@ -1309,7 +1339,7 @@ function lineTableFields() {
     return i === -1 ? LINE_TABLE_ORDER.length : i;
   };
   return lineFields
-    .filter((f) => !CODING_PICKER_FIELDS.some((c) => c.field === f.field) && shown.has(f.field))
+    .filter((f) => !CODING_PICKER_FIELDS.some((c) => c.field === f.field) && !LINE_SECOND_ROW.includes(f.field) && shown.has(f.field))
     .slice()
     .sort((a, b) => rank(a) - rank(b));
 }
@@ -2562,7 +2592,7 @@ function lineIsCoded(line) {
 function renderLines() {
   const body = document.getElementById("lines");
   if (!body) return;
-  body.replaceChildren(...lines.map((line, index) => lineRow(line, index)));
+  body.replaceChildren(...lines.flatMap((line, index) => [].concat(lineRow(line, index))));
   updateTotals();
 }
 
@@ -2592,6 +2622,8 @@ function linePanel() {
       lineColumnPicker(),
       ]),
     ]),
+    // Decision 0735: never wider than the card; more columns than fit scroll inside it.
+    el("div", { class: "linetablewrap" }, [
     el("table", { class: "linetable" }, [
       el("thead", {}, [
         el("tr", {}, [
@@ -2618,6 +2650,7 @@ function linePanel() {
         ]),
       ]),
       el("tbody", { id: "lines" }),
+    ]),
     ]),
     el("div", { class: "linefoot" }, [
       // Add line moved to the card's head — decision 0662 (structure, not a field: 0144).
@@ -3738,7 +3771,8 @@ function markOne(entry, severity, reason) {
     // only as a hijacked tooltip, since no CSS rule targets it) under
     // the old single-tier `.failing` class too; it went unnoticed
     // because nothing before this change screenshotted a line cell.
-    const rows = document.querySelectorAll("#lines tr");
+    // Decision 0735: a line's first row; its second, where there is one, follows it.
+    const rows = document.querySelectorAll("#lines tr.lineprimary");
 
     /**
      * **A line whose coding is not on the lists — decision 0511.** The
@@ -3777,6 +3811,12 @@ function markOne(entry, severity, reason) {
         if (entry.line && entry.line !== n + 1) continue;
         const cell = row.children[index];
         if (cell) setSeverity(cell, severity, reason);
+      }
+    } else if (LINE_SECOND_ROW.includes(code)) {
+      for (const [n, row] of rows.entries()) {
+        if (entry.line && entry.line !== n + 1) continue;
+        const sub = row.nextElementSibling?.classList.contains("linesecond") ? row.nextElementSibling.querySelector(`[data-subfield="${code}"]`) : null;
+        if (sub) setSeverity(sub, severity, reason);
       }
     }
   }
