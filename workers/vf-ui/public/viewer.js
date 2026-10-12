@@ -230,6 +230,11 @@ function reasonLinePanel() {
     el("span", { class: "reasonline-icon" }, [alertIcon]),
     el("span", { class: "reasonline-label", text: t("invoice.reasonline.label") }),
     el("b", { text: name }),
+    // Decision 0746 — a task for the whole invoice raised by several rules names each.
+    ...(Array.isArray(reason.others) ? reason.others : []).flatMap((o) => [
+      el("span", { class: "muted", text: "·" }),
+      el("b", { class: "reasonline-other", text: o.standardKey ? t(`matching.standardrule.${o.standardKey}.name`) : o.name }),
+    ]),
     // Decision 0709 — a task covering several lines names them.
     ...(Array.isArray(reason.lines) && reason.lines.length > 0
       ? [el("span", { class: "chip reasonline-lines", text: `${t(reason.lines.length > 1 ? "tasks.lines" : "tasks.line")} ${reason.lines.join(", ")}` })]

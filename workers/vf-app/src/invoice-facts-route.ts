@@ -392,6 +392,8 @@ async function currentOpenTaskReason(
   sourceText: string | null;
   /** The lines a combined task covers — decision 0709. Null for any other task. */
   lines: number[] | null;
+  /** Decision 0746: a task for the whole invoice's other reasons, beyond this one. */
+  others?: { name: string; standardKey: string | null }[];
 } | null> {
   // Two kinds of open task, one banner — decision 0478's own rule-
   // attributed kind, and decision 0480's engine-created kind (no rule
@@ -462,7 +464,36 @@ async function currentOpenTaskReason(
 
   const standard = STANDARD_MATCHING_RULES.find((r) => r.name === row.rule_name);
 
+  /**
+   * **The task's other reasons — decision 0746.** A task for the whole
+   * invoice raised by several rules lists them in `lines_json` (line
+   * null); the banner names each, not only the first.
+   */
+  const others: { name: string; standardKey: string | null }[] = [];
+  if (row.lines_json) {
+    let ruleIds: string[] = [];
+    try {
+      ruleIds = [...new Set((JSON.parse(row.lines_json) as { line?: unknown; rule?: unknown }[]).filter((p) => p?.line === null && typeof p.rule === "string").map((p) => p.rule as string))];
+    } catch {
+      ruleIds = [];
+    }
+    for (const id of ruleIds.filter((id) => id !== row.rule_id)) {
+      const other = await db
+        .prepare(
+          `SELECT r.name AS rule_name, rnt.name AS translated_name FROM rules r
+           LEFT JOIN rule_name_translations rnt ON rnt.rule_id = r.id AND rnt.locale = ?
+           WHERE r.id = ?`
+        )
+        .bind(locale, id)
+        .first<{ rule_name: string; translated_name: string | null }>();
+      if (!other) continue;
+      const otherStandard = STANDARD_MATCHING_RULES.find((r) => r.name === other.rule_name);
+      others.push({ name: otherStandard ? otherStandard.name : other.translated_name ?? other.rule_name, standardKey: otherStandard?.key ?? null });
+    }
+  }
+
   return {
+    others,
     ruleId: row.rule_id,
     // The frontend resolves this via `t()` in the standard-rule
     // vocabulary, the same code-known keys `matching-config-route.ts`

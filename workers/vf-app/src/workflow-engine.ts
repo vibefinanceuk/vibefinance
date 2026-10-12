@@ -1006,6 +1006,16 @@ export async function visitCurrentStage(
         ? (await db.prepare("SELECT line_tasks FROM process_stages WHERE id = ?").bind(stage.id).first<{ line_tasks: string }>())?.line_tasks === "combined"
         : false;
     const combinedGroups = new Map<string, { teamId?: string; userId?: string; permission: string | undefined; lines: { line: number; rule: string | null }[] }>();
+    /**
+     * **Reasons for the whole invoice, combined — decision 0746.** At a
+     * stage evaluated once per invoice, every rule sending it to the same
+     * team, person and permission makes one task listing each rule, not a
+     * task each (Dan: a new invoice keyed by hand fails "Failed validation
+     * requires review" and "Supplier Not Found" at once, and raised two
+     * tasks for AP Team). Always, with no setting: two open tasks for the
+     * same hands on the same invoice at the same stage help nobody.
+     */
+    const headerGroups = new Map<string, { teamId?: string; userId?: string; permission: string | undefined; rules: string[] }>();
     for (const { params, lineNumber, facts: rowFacts, ruleId, splitRows } of pendingTaskActions) {
       /**
        * **For a split line, the rows the rule matched — decision 0550.**
@@ -1128,6 +1138,15 @@ export async function visitCurrentStage(
       }
 
       for (const { teamId, userId, requiredPermission, rows } of targets) {
+        if (lineNumber === null && !(rows && rows.length > 0)) {
+          const permission = (requiredPermission ?? stage.required_permission ?? params.permission) as string | undefined;
+          const key = JSON.stringify([teamId ?? null, userId ?? null, permission ?? null]);
+          const group = headerGroups.get(key) ?? { teamId, userId, permission, rules: [] };
+          if (ruleId && !group.rules.includes(ruleId)) group.rules.push(ruleId);
+          if (!ruleId && group.rules.length === 0) group.rules.push("");
+          headerGroups.set(key, group);
+          continue;
+        }
         if (combineLines && lineNumber !== null && !(rows && rows.length > 0)) {
           const permission = (requiredPermission ?? stage.required_permission ?? params.permission) as string | undefined;
           const key = JSON.stringify([teamId ?? null, userId ?? null, permission ?? null]);
@@ -1165,6 +1184,28 @@ export async function visitCurrentStage(
           .run();
         tasksCreated++;
       }
+    }
+
+    // Decision 0746: one task per hands for the invoice's own reasons. One
+    // rule alone is stored exactly as before; several keep the first as
+    // rule_id and list each, for the whole invoice (line null), in lines_json.
+    for (const group of headerGroups.values()) {
+      const rules = group.rules.filter(Boolean);
+      const createResult = await handleCreateTask(db, {
+        id: crypto.randomUUID(),
+        stageId: stage.id,
+        teamId: group.teamId,
+        userId: group.userId,
+        requiredPermission: group.permission,
+      });
+      if (createResult.status !== 201) {
+        return { status: 500, body: { error: `assign_task fired an invalid task: ${JSON.stringify(createResult.body)}` } };
+      }
+      await db
+        .prepare("UPDATE tasks SET stage_visit_id = ?, line_number = NULL, rule_id = ?, lines_json = ? WHERE id = ?")
+        .bind(visitId, rules[0] ?? null, rules.length > 1 ? JSON.stringify(rules.map((rule) => ({ line: null, rule }))) : null, (createResult.body as { id: string }).id)
+        .run();
+      tasksCreated++;
     }
 
     // The combined tasks — decision 0709. One line alone is stored exactly

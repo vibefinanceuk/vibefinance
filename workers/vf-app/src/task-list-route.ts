@@ -100,6 +100,8 @@ export interface TaskRow {
   lineNumber: number | null;
   /** Every line a combined task covers, in order — decision 0709. Null for any other task. */
   lineNumbers: number[] | null;
+  /** Decision 0746: how many rules raised a task about the whole invoice; 1 unless combined. */
+  reasonCount?: number;
   splitRows: number[] | null;
   /** Who it belongs to — decision 0180. Not the same as who has it. */
   ownedBy?: { id: string; name: string; email: string | null };
@@ -834,6 +836,8 @@ export async function handleListMyTasks(
        */
       lineNumber: row.line_number,
       lineNumbers: linesOf(row.lines_json),
+      // Decision 0746: how many rules raised a task about the whole invoice (one, unless combined).
+      reasonCount: reasonsOf(row.lines_json),
       // Decision 0551 — the rows of a split line this task is for; null for a whole line or document.
       splitRows: row.split_rows ? row.split_rows.split(",").map(Number) : null,
     };
@@ -960,6 +964,17 @@ export async function handleListMyTasks(
       pageSize,
     },
   };
+}
+
+/** Decision 0746: the distinct rules a task about the whole invoice lists; 1 for any other task. */
+export function reasonsOf(linesJson: string | null): number {
+  if (!linesJson) return 1;
+  try {
+    const rules = (JSON.parse(linesJson) as { line?: unknown; rule?: unknown }[]).filter((l) => l?.line === null).map((l) => l?.rule);
+    return Math.max(1, new Set(rules).size);
+  } catch {
+    return 1;
+  }
 }
 
 /** The distinct lines a combined task lists, in order — decision 0709. */

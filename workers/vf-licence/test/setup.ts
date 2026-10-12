@@ -332,6 +332,7 @@ import receiptMessagesSql from "../migrations/0341_receipt_messages_strings.sql?
 import createCardsSql from "../migrations/0342_create_cards_strings.sql?raw";
 import createKeyedNoFileSql from "../migrations/0343_create_keyed_no_file_strings.sql?raw";
 import keyedClaimedSql from "../migrations/0344_keyed_claimed_strings.sql?raw";
+import combinedReasonsSql from "../migrations/0345_combined_reasons_strings.sql?raw";
 
 function stripSqlComments(sql: string): string {
   return sql
@@ -697,5 +698,6 @@ export async function applyTestSchema(): Promise<void> {
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(createCardsSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(createKeyedNoFileSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(keyedClaimedSql)));
+  await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(combinedReasonsSql)));
 
 }

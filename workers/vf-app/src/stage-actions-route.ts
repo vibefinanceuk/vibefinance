@@ -153,16 +153,18 @@ interface TaskForReverify {
 
 /**
  * The lines a task covers, each with the rule that sent it — decision
- * 0709. A combined task lists them in `lines_json`; any other task is
- * its one line (or the header, `null`) and its one rule.
+ * 0709. A combined task lists them in `lines_json` — for a task about
+ * the whole invoice with several reasons, each with line `null` (0746);
+ * any other task is its one line (or the header, `null`) and its one rule.
  */
 export function taskLines(task: { rule_id: string | null; line_number: number | null; lines_json?: string | null }): { line: number | null; rule: string | null }[] {
   if (task.lines_json) {
     try {
       const parsed = JSON.parse(task.lines_json) as { line?: unknown; rule?: unknown }[];
+      // Decision 0746: a task for the invoice's several reasons lists each with line null.
       const lines = parsed
-        .filter((p) => typeof p?.line === "number")
-        .map((p) => ({ line: p.line as number, rule: typeof p.rule === "string" ? p.rule : null }));
+        .filter((p) => typeof p?.line === "number" || p?.line === null)
+        .map((p) => ({ line: p.line as number | null, rule: typeof p.rule === "string" ? p.rule : null }));
       if (lines.length > 0) return lines;
     } catch {
       // fall through to the task's own line

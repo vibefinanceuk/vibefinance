@@ -1689,5 +1689,7 @@ export async function relaunchAfterLanguageChange() {
 export function lineLabel(task) {
   if (task.lineNumbers?.length > 1) return ` · ${t("tasks.lines")} ${task.lineNumbers.join(", ")}`;
   const one = task.lineNumber ?? task.lineNumbers?.[0];
-  return one ? ` · ${t("tasks.line")} ${one}` : "";
+  if (one) return ` · ${t("tasks.line")} ${one}`;
+  // Decision 0746: a task for the whole invoice with several reasons says how many.
+  return task.reasonCount > 1 ? ` · ${t("tasks.reasons").replace("{n}", String(task.reasonCount))}` : "";
 }

@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 12 October 2026 (decision 0745). A living document: what
+Last updated 12 October 2026 (decision 0746). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,13 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### One task for every reason an invoice-level stage raises (0746)
+
+Rules firing at a stage evaluated once per invoice make one task per team, person and
+permission, naming every reason; Complete re-checks each.
+
+Full reasoning is in decision 0746.
 
 ### An invoice created by hand is claimed for its creator (0745)
 

@@ -3795,6 +3795,8 @@ const KEYS_THE_INTERFACE_USES = [
   // Self-billed on Upload documents (decision 0744).
   "create.uploadselfbilled",
   "create.uploadselfbilledhint",
+  // A task with several reasons (decision 0746).
+  "tasks.reasons",
   // Goods receipts shared with suppliers (decision 0738).
   "apsetup.suppliernetwork",
   "apsetup.network.sub",

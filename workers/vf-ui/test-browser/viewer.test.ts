@@ -4196,6 +4196,13 @@ describe("why this task is here (decision 0478)", () => {
     expect(document.querySelector(".reasonline-lines")).toBeNull();
   });
 
+  it("names every rule one invoice-level task covers — decision 0746", async () => {
+    await open({ openTaskReason: { ruleId: "r-number", standardKey: null, name: "No number", sourceText: null, lines: null, others: [{ name: "No supplier", standardKey: null }] } });
+    expect([...document.querySelectorAll(".reasonline-other")].map((e) => e.textContent)).toEqual(["No supplier"]);
+    await open({ openTaskReason: { ruleId: "r-number", standardKey: null, name: "No number", sourceText: null, lines: null } });
+    expect(document.querySelector(".reasonline-other")).toBeNull();
+  });
+
   it("names a custom rule, already resolved to this viewer's own locale by the server", async () => {
     await open({
       openTaskReason: {
