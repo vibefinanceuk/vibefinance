@@ -1,6 +1,6 @@
 # 0746: One task for every reason an invoice-level stage raises
 
-**Status: built.** vf-app (`workflow-engine.ts`, `stage-actions-route.ts`,
+**Status: live.** vf-app (`workflow-engine.ts`, `stage-actions-route.ts`,
 `invoice-facts-route.ts`, `task-list-route.ts`), vf-ui (`viewer.js`, `tasks.js`), vf-licence
 (strings migration 0345).
 

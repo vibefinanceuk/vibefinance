@@ -1,6 +1,6 @@
 # 0745: An invoice created by hand is claimed for whoever created it
 
-**Status: built.** vf-app (`upload-route.ts`), vf-licence (strings migration 0344).
+**Status: live.** vf-app (`upload-route.ts`), vf-licence (strings migration 0344).
 
 ## What was asked
 
