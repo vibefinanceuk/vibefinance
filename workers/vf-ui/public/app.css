@@ -877,6 +877,8 @@
   .statuspill.outside { background: var(--surface-1); border-color: var(--border-strong); }
   .statuspill.archived { background: transparent; border-color: var(--border); }
   .statuspill.credited { background: transparent; border-color: var(--border-strong); }
+  /* Decision 0737: a goods receipt among the invoices, said in the Type column. */
+  .doctypereceipt { color: var(--text-accent); font-weight: 600; }
   /*
     **The Tasks list's stage pill — decision 0522.** The same pill shape
     as the status pill, coloured by the stage's place in its process from

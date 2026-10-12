@@ -146,6 +146,24 @@ let unit = "";
 let units = [];
 
 /**
+ * **Which kind of document — decision 0737.** Empty is every kind;
+ * otherwise `invoice`, `credit_note` or `goods_receipt`. Receipts are
+ * offered only to someone the server says may see them.
+ */
+let docType = "";
+let receiptsVisible = false;
+const DOC_TYPES = ["invoice", "credit_note", "goods_receipt"];
+
+/** A receipt's state, in the pill colour of the invoice state it is most like. */
+const RECEIPT_PILLS = {
+  receipt_registered: "done",
+  receipt_pending: "waiting",
+  receipt_rejected: "unreadable",
+  receipt_returned: "returned",
+  receipt_cancelled: "archived",
+};
+
+/**
  * The columns, and which are shown by default.
  *
  * **Defaults answer the questions people arrive with**: what is it, who
@@ -166,12 +184,20 @@ const COLUMNS = [
    * are on. Type, Recipient and Stage stay available in the column
    * picker, off by default, after them.
    */
+  /**
+   * **Type first, and on — decision 0737.** Goods receipts are rows here
+   * now, beside invoices and credit notes; a list of three kinds that
+   * does not say which is which reads as one.
+   */
+  { key: "type", on: true },
   { key: "number", always: true },
   { key: "status", on: true },
   { key: "amount", on: true },
   { key: "received", on: true },
   { key: "due", on: true },
   { key: "sender", on: true },
+  // The order it was raised against: an invoice's BT-13, a receipt's orders — decision 0737.
+  { key: "po", on: true },
   /**
    * Which part of the business — decision 0193.
    *
@@ -182,7 +208,6 @@ const COLUMNS = [
    */
   { key: "unit", on: true },
   { key: "hands", on: true },
-  { key: "type", on: false },
   { key: "recipient", on: false },
   { key: "stage", on: false },
 ];
@@ -200,12 +225,19 @@ const COLUMNS = [
  * key gives everyone the new set once, after which their own choices
  * are kept as before.
  */
-const STORAGE_KEY = "vf.documents.columns.v2";
+/**
+ * **`.v3` since decision 0737**, which turned Type and PO on. A choice
+ * saved under `.v2` is kept, with those two added once.
+ */
+const STORAGE_KEY = "vf.documents.columns.v3";
+const PREVIOUS_KEY = "vf.documents.columns.v2";
 
 function loadColumns() {
   try {
     const saved = window.localStorage.getItem(STORAGE_KEY);
     if (saved) return new Set(JSON.parse(saved));
+    const before = window.localStorage.getItem(PREVIOUS_KEY);
+    if (before) return new Set([...JSON.parse(before), "type", "po"]);
   } catch {
     // A browser that refuses storage gets the defaults, which is a
     // worse experience and not a broken one.
@@ -239,6 +271,7 @@ async function loadUnits() {
 
 async function load() {
   const params = new URLSearchParams({ q: query, unit, page: String(page), pageSize: String(pageSize) });
+  if (docType) params.set("type", docType);
   if (alertFilter === "unplaced") params.set("unplaced", "1");
   if (alertFilter === "duplicates") params.set("duplicates", "1");
   if (alertFilter === "donebyme") params.set("doneByMe", "1");
@@ -288,6 +321,7 @@ async function load() {
 
   const body = await response.json();
   documents = body.documents ?? [];
+  receiptsVisible = Boolean(body.receipts);
   if (agentFilter && !agentFilter.name && body.agent?.name) agentFilter.name = body.agent.name;
   /**
    * **`total` replaces the old "N of M looked through" honesty
@@ -353,14 +387,17 @@ function cell(doc, key) {
       return el("td", {}, [
         unreadable
           ? el("span", { class: "unread", text: t("documents.notread") })
-          : el("span", { text: t(`doctype.${doc.typeCode ?? "unknown"}`) }),
+          : el("span", { class: doc.kind === "goods_receipt" ? "doctypereceipt" : "", text: typeWords(doc) }),
       ]);
 
     case "status":
       return el("td", {}, [
-        // A pill, in the status's own colour — decision 0520.
-        el("span", { class: `status statuspill ${doc.status}`, text: t(`docstatus.${doc.status}`) }),
+        // A pill, in the status's own colour — decision 0520; a receipt's in the nearest (0737).
+        el("span", { class: `status statuspill ${RECEIPT_PILLS[doc.status] ?? doc.status}`, text: t(`docstatus.${doc.status}`) }),
       ]);
+
+    case "po":
+      return el("td", {}, [doc.po ? el("span", { text: doc.po }) : dash()]);
 
     case "amount":
       return el("td", { class: "num" }, [
@@ -424,6 +461,17 @@ function cell(doc, key) {
 }
 
 /**
+ * **What kind it is, in words — decision 0737.** A receipt; a credit
+ * note; an invoice by its own type code where that has words (a
+ * self-billed invoice), otherwise simply an invoice.
+ */
+function typeWords(doc) {
+  if (doc.kind === "goods_receipt") return t("doctype.goods_receipt");
+  if (doc.kind === "credit_note") return t("doctype.381");
+  return t(doc.typeCode === "389" ? "doctype.389" : "doctype.380");
+}
+
+/**
  * Open it in the viewer.
  *
  * **The same viewer a task opens** (decision 0142), and what it lets
@@ -432,6 +480,12 @@ function cell(doc, key) {
  * (decision 0164). Editing belongs to a task.
  */
 async function expand(doc) {
+  // Decision 0737: a receipt opens in its own pop-out, as it does everywhere else.
+  if (doc.kind === "goods_receipt") {
+    const { openReceipt } = await import("/goods-receipts.js");
+    await openReceipt(doc.id, { onDone: () => reload() });
+    return;
+  }
   const { openViewer } = await import("/viewer.js");
 
   /**
@@ -641,6 +695,23 @@ function render() {
   const visible = COLUMNS.filter((c) => shown.has(c.key));
 
   /**
+   * **Which kind — decision 0737.** Goods receipts are offered to someone
+   * who may see them; a card's drill-through asks about invoices, so
+   * there it offers only invoices and credit notes.
+   */
+  const drilled = Boolean(alertFilter || stageFilter || supplierFilter || agingFilter || personFilter || teamFilter || openForFilter || handledFilter || idsFilter || exceptionsFilter || agentFilter);
+  const typePicker = el("select", { class: "typepicker", id: "doctype", "aria-label": t("documents.type.label") }, [
+    el("option", { value: "", text: t("documents.type.all") }),
+    ...DOC_TYPES.filter((k) => k !== "goods_receipt" || (receiptsVisible && !drilled)).map((k) => el("option", { value: k, text: t(`documents.type.${k}`) })),
+  ]);
+  typePicker.value = docType;
+  typePicker.onchange = async () => {
+    docType = typePicker.value;
+    page = 1;
+    await reload("doctype");
+  };
+
+  /**
    * **Only where there is a choice to make** — decision 0193.
    *
    * A customer with one operating unit gets a dropdown with one entry,
@@ -692,6 +763,7 @@ function render() {
           el("div", { class: "searchrow" }, [
             ...searchAndPaginationRow(),
             ...(units.length > 1 ? [unitPicker] : []),
+            typePicker,
             columnPicker(),
           ]),
         ]),
@@ -774,6 +846,7 @@ export async function open() {
 export async function openDocumentsFiltered(kind) {
   query = "";
   unit = "";
+  docType = "";
   page = 1;
   clearFilters();
   alertFilter = kind;
@@ -809,6 +882,7 @@ export async function openDocumentsCompletedByMe() {
 export async function openDocumentsAtStage(stageId, stageName) {
   query = "";
   unit = "";
+  docType = "";
   page = 1;
   clearFilters();
   stageFilter = { id: stageId, name: stageName };
@@ -831,6 +905,7 @@ export async function openDocumentsAtStage(stageId, stageName) {
 export async function openDocumentsForSupplierExceptions(supplierName) {
   query = "";
   unit = "";
+  docType = "";
   page = 1;
   clearFilters();
   supplierFilter = { name: supplierName };
@@ -852,6 +927,7 @@ export async function openDocumentsForSupplierExceptions(supplierName) {
 export async function openDocumentsAged(bucket) {
   query = "";
   unit = "";
+  docType = "";
   page = 1;
   clearFilters();
   agingFilter = bucket;
@@ -870,6 +946,7 @@ export async function openDocumentsAged(bucket) {
 export async function openDocumentsDoneBy(userId, name) {
   query = "";
   unit = "";
+  docType = "";
   page = 1;
   clearFilters();
   personFilter = { userId, name };
@@ -883,6 +960,7 @@ export async function openDocumentsDoneBy(userId, name) {
 export async function openDocumentsForTeam(teamId, name) {
   query = "";
   unit = "";
+  docType = "";
   page = 1;
   clearFilters();
   teamFilter = { teamId, name };
@@ -901,6 +979,7 @@ export async function openDocumentsForTeam(teamId, name) {
 export async function openDocumentsOpenFor(userId, name, stage = null, team = null) {
   query = "";
   unit = "";
+  docType = "";
   page = 1;
   clearFilters();
   openForFilter = { userId, name, stage, team };
@@ -918,6 +997,7 @@ export async function openDocumentsOpenFor(userId, name, stage = null, team = nu
 export async function openDocumentsHandledBy(userId, name, stage = null, days = null) {
   query = "";
   unit = "";
+  docType = "";
   page = 1;
   clearFilters();
   handledFilter = { userId, name, stage, days };
@@ -935,6 +1015,7 @@ export async function openDocumentsHandledBy(userId, name, stage = null, days = 
 export async function openDocumentsWithIds(ids, check) {
   query = "";
   unit = "";
+  docType = "";
   page = 1;
   clearFilters();
   idsFilter = { ids, check };
@@ -953,6 +1034,7 @@ export async function openDocumentsWithIds(ids, check) {
 export async function openDocumentsWithExceptions(filter, banner) {
   query = "";
   unit = "";
+  docType = "";
   page = 1;
   clearFilters();
   exceptionsFilter = { ...filter, banner };
@@ -971,6 +1053,7 @@ export async function openDocumentsWithExceptions(filter, banner) {
 export async function openDocumentsFromAgent({ note = null, row = null, label = null, delivery = null, name = null }) {
   query = "";
   unit = "";
+  docType = "";
   page = 1;
   clearFilters();
   agentFilter = { note, row, label, delivery, name };

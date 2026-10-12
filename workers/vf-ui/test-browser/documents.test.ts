@@ -87,6 +87,16 @@ const STRINGS = {
     "docstatus.returned": "Returned to supplier",
     "docstatus.archived": "Archived",
     "doctype.380": "Invoice",
+    "doctype.381": "Credit note",
+    "doctype.goods_receipt": "Goods receipt",
+    "column.po": "PO",
+    "docstatus.receipt_registered": "Registered",
+    "docstatus.receipt_returned": "Goods returned",
+    "documents.type.label": "Document type",
+    "documents.type.all": "All types",
+    "documents.type.invoice": "Invoices",
+    "documents.type.credit_note": "Credit notes",
+    "documents.type.goods_receipt": "Goods receipts",
     "doctype.unknown": "Unknown",
     "viewer.title": "Invoice",
     "viewer.reflabel": "Unique Ref:",
@@ -230,10 +240,11 @@ describe("which columns to show", () => {
   it("shows the operator's own defaults, in the operator's own order (decision 0520)", async () => {
     await openDocuments([DOC]);
     const headings = [...document.querySelectorAll("th")].map((h) => h.textContent);
-    expect(headings).toEqual(["Document", "Status", "Amount", "Received", "Due", "Sender", "Business unit", "Hands"]);
+    // Decision 0737: Type first and PO after the supplier, both on.
+    expect(headings).toEqual(["Type", "Document", "Status", "Amount", "Received", "Due", "Sender", "PO", "Business unit", "Hands"]);
     // Off by default, still available in the picker.
     const offered = [...document.querySelectorAll(".columnlist label")].map((l) => l.textContent?.trim());
-    expect(offered.slice(-3)).toEqual(["Type", "Recipient", "Stage"]);
+    expect(offered.slice(-2)).toEqual(["Recipient", "Stage"]);
   });
 
   it("shows Status as a pill carrying the status's own class (decision 0520)", async () => {
@@ -251,20 +262,20 @@ describe("which columns to show", () => {
 
     const boxes = [...document.querySelectorAll(".columnlist input")] as HTMLInputElement[];
     // Stage — off by default since decision 0520, last in the picker.
-    const stage = boxes[10];
+    const stage = boxes[11];
     stage.checked = true;
     stage.dispatchEvent(new Event("change"));
     await new Promise((r) => setTimeout(r, 0));
 
     expect([...document.querySelectorAll("th")].map((h) => h.textContent)).toContain("Stage");
-    expect(window.localStorage.getItem("vf.documents.columns.v2")).toContain("stage");
+    expect(window.localStorage.getItem("vf.documents.columns.v3")).toContain("stage");
   });
 
   it("shows the stage as the same coloured pill as the Tasks list (decision 0535)", async () => {
     await openDocuments([{ ...DOC, stageId: "matching", stageName: "Matching", stageSequence: 3, status: "waiting" }]);
     const boxes = [...document.querySelectorAll(".columnlist input")] as HTMLInputElement[];
-    boxes[10].checked = true;
-    boxes[10].dispatchEvent(new Event("change"));
+    boxes[11].checked = true;
+    boxes[11].dispatchEvent(new Event("change"));
     await new Promise((r) => setTimeout(r, 0));
 
     const pill = document.querySelector("tbody .stage-cell .stagepill") as HTMLElement;
@@ -278,7 +289,7 @@ describe("which columns to show", () => {
     // the disabled box shows the rule rather than hiding it.
     await openDocuments([DOC]);
     const boxes = [...document.querySelectorAll(".columnlist input")] as HTMLInputElement[];
-    expect(boxes[0].disabled).toBe(true);
+    expect(boxes[1].disabled).toBe(true);
   });
 
   it("gives the checkbox a real, small size rather than the 32px text-input default (decision 0282)", async () => {
@@ -713,5 +724,87 @@ describe("pagination controls — decision 0448", () => {
 
     expect(requestedUrl()).toContain("page=2");
     expect(requestedUrl()).toContain("q=widgets");
+  });
+});
+
+describe("goods receipts among the documents — decision 0737", () => {
+  const RECEIPT = {
+    id: "gr-1",
+    kind: "goods_receipt",
+    number: "GR-20231",
+    typeCode: null,
+    supplier: "UK Office Supplies Direct",
+    amount: null,
+    currency: null,
+    dueDate: null,
+    receivedAt: "2026-10-12",
+    sender: null,
+    orgUnitName: null,
+    status: "receipt_returned",
+    hands: 0,
+    po: "690000321",
+  };
+
+  it("says which kind each row is, a receipt's state in the nearest pill colour, and its order", async () => {
+    stubDocumentsRecordingUrl({ documents: [{ ...DOC, kind: "invoice", po: "690000321" }, { ...DOC, id: "cn-1", kind: "credit_note", typeCode: "381" }, RECEIPT], total: 3, page: 1, pageSize: 50, receipts: true });
+    await openScreen();
+    const rows = [...document.querySelectorAll("tbody tr")];
+    expect(rows.map((r) => r.querySelector("td")?.textContent)).toEqual(["Invoice", "Credit note", "Goods receipt"]);
+    const receipt = rows[2];
+    const pill = receipt.querySelector(".statuspill") as HTMLElement;
+    expect(pill.textContent).toBe("Goods returned");
+    expect(pill.classList.contains("returned")).toBe(true);
+    expect(receipt.textContent).toContain("690000321");
+  });
+
+  it("filters by type, offering receipts only to someone who may see them", async () => {
+    const requestedUrl = stubDocumentsRecordingUrl({ documents: [RECEIPT], total: 1, page: 1, pageSize: 50, receipts: true });
+    await openScreen();
+    const picker = document.getElementById("doctype") as HTMLSelectElement;
+    expect([...picker.options].map((o) => o.textContent)).toEqual(["All types", "Invoices", "Credit notes", "Goods receipts"]);
+    picker.value = "goods_receipt";
+    picker.dispatchEvent(new Event("change"));
+    await until(() => requestedUrl().includes("type=goods_receipt"));
+    expect(requestedUrl()).toContain("type=goods_receipt");
+    expect(requestedUrl()).toContain("page=1");
+  });
+
+  it("offers no receipts to someone who may not see them", async () => {
+    stubDocumentsRecordingUrl({ documents: [DOC], total: 1, page: 1, pageSize: 50, receipts: false });
+    await openScreen();
+    const picker = document.getElementById("doctype") as HTMLSelectElement;
+    expect([...picker.options].map((o) => o.value)).toEqual(["", "invoice", "credit_note"]);
+  });
+
+  it("opens a receipt in its own pop-out", async () => {
+    stubDocumentsRecordingUrl({ documents: [RECEIPT], total: 1, page: 1, pageSize: 50, receipts: true });
+    await openScreen();
+    const asked: string[] = [];
+    const before = globalThis.fetch;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        asked.push(String(url));
+        if (String(url).startsWith("/api/goods-receipts/gr-1")) return { ok: false, status: 404, json: async () => ({}) } as Response;
+        return before(url, init);
+      })
+    );
+    (document.querySelector("tbody tr") as HTMLElement).click();
+    await until(() => asked.some((u) => u.startsWith("/api/goods-receipts/gr-1")));
+    expect(asked.some((u) => u.startsWith("/api/goods-receipts/gr-1"))).toBe(true);
+    expect(document.getElementById("viewer")?.hidden).toBe(true);
+  });
+});
+
+describe("keeping a column choice made before decision 0737", () => {
+  it("adds Type and PO to it once", async () => {
+    stubDocumentsRecordingUrl({ documents: [DOC], total: 1, page: 1, pageSize: 50 });
+    window.localStorage.clear();
+    window.localStorage.setItem("vf.documents.columns.v2", JSON.stringify(["number", "status", "stage"]));
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { open } = await import("/documents.js");
+    await open();
+    expect([...document.querySelectorAll("th")].map((h) => h.textContent)).toEqual(["Type", "Document", "Status", "PO", "Stage"]);
   });
 });

@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 12 October 2026 (decision 0736). A living document: what
+Last updated 12 October 2026 (decision 0737). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,14 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Goods receipts as rows of Documents (0737)
+
+Receipts listed beside invoices and credit notes for those who may see receipts, with a Type
+filter (All / Invoices / Credit notes / Goods receipts), Type first and a PO column; a receipt
+opens in its own pop-out. Sharing receipts with suppliers in the network is the next step.
+
+Full reasoning is in decision 0737.
 
 ### The network's Documents, as the app's (0736)
 

@@ -313,6 +313,7 @@ import {
   handleGoodsReceiptStatusCounts,
   handleListGoodsReceipts,
   handleLoadGoodsReceiptsCsv,
+  receiptViewScope,
 } from "./goods-receipts.js";
 import {
   continueReceiptInstance,
@@ -5047,7 +5048,18 @@ export default {
         return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
       }
 
-      const result = await handleListDocuments(db, url.searchParams, scopedToOrg, auth.user.id);
+      /**
+       * **Goods receipts beside the invoices — decision 0737**, for someone
+       * who may see receipts (AP.Receive or AP.Validate, where they hold
+       * it), narrowed to the chosen org as the invoices are.
+       */
+      const receiptScope = await receiptViewScope(db, auth.user.id);
+      const receipts =
+        receiptScope === null || receiptScope.length > 0
+          ? { units: await scopedToChosenOrg(db, receiptScope, url.searchParams.get("org")) }
+          : null;
+
+      const result = await handleListDocuments(db, url.searchParams, scopedToOrg, auth.user.id, receipts);
       return json(result.body, result.status);
     }
 

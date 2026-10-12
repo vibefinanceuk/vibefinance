@@ -32,6 +32,7 @@ interface DocumentRow {
   sender: string | null;
   recipient: string | null;
   hands: number;
+  document_kind?: string | null;
 }
 
 /**
@@ -142,7 +143,14 @@ export async function handleListDocuments(
    * caller behaves as it always did; the new filter is simply inert
    * without a real id to filter by.
    */
-  userId: string | null = null
+  userId: string | null = null,
+  /**
+   * **Goods receipts as rows — decision 0737.** `null` (or left out): this
+   * person sees no receipts here, the AP Assistant among them. Otherwise
+   * the units they may see receipts in (`receiptViewScope`, narrowed to
+   * the chosen org): `units: null` everywhere.
+   */
+  receipts: { units: string[] | null } | null = null
 ): Promise<RouteResult> {
   /**
    * **Filtered in SQL now too — decision 0448.** No longer lower-cased
@@ -514,6 +522,7 @@ export async function handleListDocuments(
              )
            )
          )
+         AND (?31 IS NULL OR h.document_kind = ?31)
          AND (
            ?16 IS NULL
            OR (
@@ -596,10 +605,47 @@ export async function handleListDocuments(
     searchPattern,
   ] as const;
   // Decision 0611: ?17 is the page's offset (below); the two new filters come after it.
+  /**
+   * **Which kind — decision 0737.** `type` is `invoice`, `credit_note` or
+   * `goods_receipt`; anything else is every kind. An invoice's kind is
+   * `invoice_headers.document_kind` (0730), bound as `?31`.
+   */
+  const typeParam = params.get("type");
+  const docType = typeParam === "invoice" || typeParam === "credit_note" || typeParam === "goods_receipt" ? typeParam : null;
   const filterBinds = [
     doneBy, team, openFor, openStage, openTeam, handledBy, handledStage, handledDays,
     ids, exceptionsSince, exceptionSupplierId, exceptionUser, exceptionType,
+    docType === "invoice" || docType === "credit_note" ? docType : null,
   ] as const;
+
+  /**
+   * **Receipts, beside the invoices — decision 0737.** Only on the
+   * Documents screen itself (it pages; the AP Assistant does not), only
+   * for someone who may see receipts, and never under a drill-through
+   * from a card: every one of those asks a question about invoices
+   * (their stage, their tasks, their checks), and a receipt is not an
+   * answer to it. The search, the unit, `since` and the chosen org apply
+   * to both.
+   */
+  const drillThrough = Boolean(
+    unplacedOnly || duplicatesOnly || stageId || stageIdsRaw || doneByMe || exceptionSupplier ||
+      agingMinDaysRaw !== null || doneBy || team || openFor || handledBy || ids || exceptionsSince
+  );
+  const withReceipts =
+    paginating && receipts !== null && (receipts.units === null || receipts.units.length > 0) && !drillThrough && (docType === null || docType === "goods_receipt");
+  const withInvoices = docType !== "goods_receipt";
+  // Decision 0737: whether this person may see receipts here, for the screen's own Type filter.
+  const receiptsFlag = paginating ? { receipts: receipts !== null } : {};
+  if (!withInvoices && !withReceipts) {
+    return { status: 200, body: { documents: [], searched: 0, ...receiptsFlag, ...(paginating ? { total: 0, page, pageSize } : {}) } };
+  }
+  if (withReceipts) {
+    return listWithReceipts(db, {
+      joins, whereClause, whereBinds, filterBinds, withInvoices, offset, page, pageSize,
+      receiptUnits: receipts!.units,
+      receiptsFlag,
+    });
+  }
 
   /**
    * **`total`, only when a page was actually asked for.** A second,
@@ -619,72 +665,11 @@ export async function handleListDocuments(
     : null;
 
   const rows = await db
-    .prepare(
-      `SELECT h.id, h.facts_json, h.created_at,
-              i.current_stage_id, i.status AS instance_status,
-              s.name AS stage_name, s.sequence AS stage_sequence,
-              h.org_unit_id, ou.name AS org_unit_name,
-              e.sender, e.recipient,
-              (SELECT count(*) FROM tasks t
-                 JOIN stage_visits v ON v.id = t.stage_visit_id
-               WHERE v.process_instance_id = i.id) AS hands
-       ${joins}
-       ${whereClause}
-       ORDER BY h.created_at DESC, h.rowid DESC
-       LIMIT ?2 OFFSET ?17`
-    )
+    .prepare(`${INVOICE_SELECT} ${joins} ${whereClause} ORDER BY h.created_at DESC, h.rowid DESC LIMIT ?2 OFFSET ?17`)
     .bind(...whereBinds, offset, ...filterBinds)
     .all<DocumentRow>();
 
-  const documents = rows.results.map((row) => {
-    let facts: Record<string, unknown> = {};
-    try {
-      facts = JSON.parse(row.facts_json) as Record<string, unknown>;
-    } catch {
-      // A document whose facts will not parse is a document with none.
-    }
-
-    return {
-      id: row.id,
-      // **The supplier's own number**, which is what a person quotes
-      // down a telephone. Null where nothing could be read.
-      number: (facts["BT-1"] as string) ?? null,
-      typeCode: (facts["BT-3"] as string) ?? null,
-      supplier: (facts["BT-27"] as string) ?? null,
-      amount: (facts["BT-112"] as number) ?? null,
-      currency: (facts["BT-5"] as string) ?? null,
-      issueDate: (facts["BT-2"] as string) ?? null,
-      dueDate: (facts["BT-9"] as string) ?? null,
-      receivedAt: row.created_at,
-      sender: row.sender,
-      recipient: row.recipient,
-      /**
-       * Which part of the business this belongs to — decision 0193.
-       *
-       * `invoice_headers.org_unit_id` has existed since decision 0036
-       * and **no screen has ever shown it**. So a customer with France,
-       * Germany and UK sees one undifferentiated list, and cannot tell
-       * which invoices are theirs to care about.
-       *
-       * **Shown, not enforced.** This is a label a person can read and
-       * filter by; it is not a boundary, and everybody still sees
-       * everything (decision 0192 records what making it a boundary
-       * would take).
-       */
-      orgUnitId: row.org_unit_id,
-      orgUnitName: row.org_unit_name,
-      stageId: row.current_stage_id,
-      stageName: row.stage_name,
-      // The stage's place in its process, for its coloured pill — decision 0535.
-      stageSequence: row.stage_sequence,
-      status: statusOf(row, facts),
-      /**
-       * **How many people touched it.** *"Straight through"* is the
-       * product's own claim and nothing anywhere counted it.
-       */
-      hands: row.hands,
-    };
-  });
+  const documents = rows.results.map(invoiceDocument);
 
   /**
    * **No longer filtered here — decision 0448.** The rows above are
@@ -711,7 +696,268 @@ export async function handleListDocuments(
       searched: documents.length,
       ...(fromAgent ? { agent: { name: fromAgent.name } } : {}),
       // Only when a page was actually asked for — see `paginating` above.
+      ...receiptsFlag,
       ...(paginating ? { total: totalRow?.n ?? 0, page, pageSize } : {}),
+    },
+  };
+}
+
+/** One invoice or credit note, as a row of the list. */
+function invoiceDocument(row: DocumentRow) {
+  let facts: Record<string, unknown> = {};
+  try {
+    facts = JSON.parse(row.facts_json) as Record<string, unknown>;
+  } catch {
+    // A document whose facts will not parse is a document with none.
+  }
+
+  return {
+    id: row.id,
+    // Decision 0737: what kind of document — invoice, credit_note or goods_receipt.
+    kind: row.document_kind ?? "invoice",
+    // **The supplier's own number**, which is what a person quotes
+    // down a telephone. Null where nothing could be read.
+    number: (facts["BT-1"] as string) ?? null,
+    typeCode: (facts["BT-3"] as string) ?? null,
+    supplier: (facts["BT-27"] as string) ?? null,
+    amount: (facts["BT-112"] as number) ?? null,
+    currency: (facts["BT-5"] as string) ?? null,
+    issueDate: (facts["BT-2"] as string) ?? null,
+    dueDate: (facts["BT-9"] as string) ?? null,
+    receivedAt: row.created_at,
+    sender: row.sender,
+    recipient: row.recipient,
+    /**
+     * Which part of the business this belongs to — decision 0193.
+     *
+     * `invoice_headers.org_unit_id` has existed since decision 0036
+     * and **no screen has ever shown it**. So a customer with France,
+     * Germany and UK sees one undifferentiated list, and cannot tell
+     * which invoices are theirs to care about.
+     *
+     * **Shown, not enforced.** This is a label a person can read and
+     * filter by; it is not a boundary, and everybody still sees
+     * everything (decision 0192 records what making it a boundary
+     * would take).
+     */
+    orgUnitId: row.org_unit_id,
+    orgUnitName: row.org_unit_name,
+    stageId: row.current_stage_id,
+    stageName: row.stage_name,
+    // The stage's place in its process, for its coloured pill — decision 0535.
+    stageSequence: row.stage_sequence,
+    status: statusOf(row, facts),
+    /**
+     * **How many people touched it.** *"Straight through"* is the
+     * product's own claim and nothing anywhere counted it.
+     */
+    hands: row.hands,
+    // Decision 0737: the order it was raised against, as the receipts beside it show theirs.
+    po: (facts["BT-13"] as string) ?? null,
+  };
+}
+
+/** What a row of the list reads, for an invoice or a credit note. */
+const INVOICE_SELECT = `SELECT h.id, h.facts_json, h.created_at, h.document_kind,
+              i.current_stage_id, i.status AS instance_status,
+              s.name AS stage_name, s.sequence AS stage_sequence,
+              h.org_unit_id, ou.name AS org_unit_name,
+              e.sender, e.recipient,
+              (SELECT count(*) FROM tasks t
+                 JOIN stage_visits v ON v.id = t.stage_visit_id
+               WHERE v.process_instance_id = i.id) AS hands`;
+
+/**
+ * **Which receipts — decision 0737.** The rule the Goods Receipts screen
+ * keeps (`receiptScopeClause`): a receipt is in a unit when an order it
+ * names is, and an order in no unit is everyone's. `?32` says whether the
+ * person is limited at all, `?33` to which units. The unit chosen on the
+ * screen (`?1`), `since` (`?14`) and the search (`?16`: the receipt
+ * number, the delivery note, an order number or the supplier's name)
+ * read as they do for invoices.
+ */
+const RECEIPT_WHERE = `WHERE (?32 = 0 OR EXISTS (
+           SELECT 1 FROM goods_receipt_lines sl JOIN purchase_orders spo ON spo.order_number = sl.order_number
+           WHERE sl.receipt_id = r.id AND (spo.org_unit_id IS NULL OR spo.org_unit_id IN (SELECT value FROM json_each(?33)))))
+         AND (?1 IS NULL OR EXISTS (
+           SELECT 1 FROM goods_receipt_lines ul JOIN purchase_orders upo ON upo.order_number = ul.order_number
+           WHERE ul.receipt_id = r.id AND upo.org_unit_id = ?1))
+         AND (?14 IS NULL OR r.created_at >= ?14)
+         AND (
+           ?16 IS NULL
+           OR r.receipt_number LIKE json_extract(?16, '$.text') ESCAPE '\\'
+           OR r.delivery_note LIKE json_extract(?16, '$.text') ESCAPE '\\'
+           OR EXISTS (
+             SELECT 1 FROM goods_receipt_lines ql
+             LEFT JOIN purchase_orders qpo ON qpo.order_number = ql.order_number
+             LEFT JOIN suppliers qs ON qs.vat_id = qpo.seller_party_id
+             WHERE ql.receipt_id = r.id
+               AND (ql.order_number LIKE json_extract(?16, '$.text') ESCAPE '\\' OR qs.name LIKE json_extract(?16, '$.text') ESCAPE '\\')
+           )
+         )`;
+
+/**
+ * **When a row happened, to sort by — decision 0737.** An invoice by when
+ * it arrived; a receipt by the day the goods did (the date its row shows),
+ * at the time it was recorded. Both as `YYYY-MM-DD HH:MM:SS`, so the two
+ * kinds interleave rather than one kind's `T` sorting after the other's
+ * space.
+ */
+const INVOICE_AT = "datetime(h.created_at)";
+const RECEIPT_AT = "r.receipt_date || substr(datetime(r.created_at), 11)";
+
+interface ReceiptRow {
+  id: string;
+  receipt_number: string;
+  receipt_date: string;
+  status: string | null;
+  cancelled_at: string | null;
+  has_returns: number;
+  orders: string | null;
+  org_unit_id: string | null;
+  org_unit_name: string | null;
+  supplier: string | null;
+  current_stage_id: string | null;
+  stage_name: string | null;
+  stage_sequence: number | null;
+  hands: number;
+}
+
+/** A receipt's state, as the list names it: cancelled, rejected, being checked, with goods sent back, or registered. */
+function receiptStatus(r: ReceiptRow): string {
+  if (r.cancelled_at) return "receipt_cancelled";
+  if (r.status === "rejected") return "receipt_rejected";
+  if (r.status === "pending") return "receipt_pending";
+  if (r.has_returns) return "receipt_returned";
+  return "receipt_registered";
+}
+
+/** One goods receipt, as a row of the list: the same fields an invoice's row has, with none for money. */
+function receiptDocument(r: ReceiptRow) {
+  return {
+    id: r.id,
+    kind: "goods_receipt",
+    number: r.receipt_number,
+    typeCode: null,
+    supplier: r.supplier,
+    amount: null,
+    currency: null,
+    issueDate: r.receipt_date,
+    dueDate: null,
+    receivedAt: r.receipt_date,
+    sender: null,
+    recipient: null,
+    orgUnitId: r.org_unit_id,
+    orgUnitName: r.org_unit_name,
+    stageId: r.current_stage_id,
+    stageName: r.stage_name,
+    stageSequence: r.stage_sequence,
+    status: receiptStatus(r),
+    hands: r.hands,
+    po: r.orders ? r.orders.split(",").join(", ") : null,
+  };
+}
+
+/**
+ * **The list with receipts in it — decision 0737.** Counted per kind;
+ * one page chosen across both, newest first, by a `UNION ALL` of ids
+ * alone; then each kind's rows read for those ids, and put back in the
+ * page's order. Invoices are read with the list's own `WHERE`, the page's
+ * ids standing in for `?26` (`ids`, never set here: a drill-through
+ * leaves receipts out).
+ */
+async function listWithReceipts(
+  db: D1Database,
+  q: {
+    joins: string;
+    whereClause: string;
+    whereBinds: readonly unknown[];
+    filterBinds: readonly unknown[];
+    withInvoices: boolean;
+    offset: number;
+    page: number;
+    pageSize: number;
+    receiptUnits: string[] | null;
+    receiptsFlag: { receipts?: boolean };
+  }
+): Promise<RouteResult> {
+  const binds = [
+    ...q.whereBinds,
+    q.offset,
+    ...q.filterBinds,
+    q.receiptUnits === null ? 0 : 1,
+    JSON.stringify(q.receiptUnits ?? []),
+  ];
+  const invoiceBinds = binds.slice(0, 31);
+
+  const receiptTotal = (await db.prepare(`SELECT count(*) AS n FROM goods_receipts r ${RECEIPT_WHERE}`).bind(...binds).first<{ n: number }>())?.n ?? 0;
+  const invoiceTotal = q.withInvoices
+    ? (await db.prepare(`SELECT count(*) AS n ${q.joins} ${q.whereClause}`).bind(...invoiceBinds).first<{ n: number }>())?.n ?? 0
+    : 0;
+
+  const pageSql = q.withInvoices
+    ? `SELECT id, kind FROM (
+         SELECT h.id AS id, ${INVOICE_AT} AS at, 'invoice' AS kind ${q.joins} ${q.whereClause}
+         UNION ALL
+         SELECT r.id, ${RECEIPT_AT}, 'goods_receipt' FROM goods_receipts r ${RECEIPT_WHERE}
+       ) ORDER BY at DESC, kind DESC, id DESC LIMIT ?2 OFFSET ?17`
+    : `SELECT r.id AS id, 'goods_receipt' AS kind FROM goods_receipts r ${RECEIPT_WHERE}
+       ORDER BY ${RECEIPT_AT} DESC, r.id DESC LIMIT ?2 OFFSET ?17`;
+  const chosen = (await db.prepare(pageSql).bind(...binds).all<{ id: string; kind: string }>()).results;
+
+  const invoiceIds = chosen.filter((c) => c.kind === "invoice").map((c) => c.id);
+  const receiptIds = chosen.filter((c) => c.kind === "goods_receipt").map((c) => c.id);
+  const read = new Map<string, unknown>();
+
+  if (invoiceIds.length) {
+    const b = [...invoiceBinds];
+    b[16] = 0; // ?17, the offset: the ids are the page already.
+    b[25] = JSON.stringify(invoiceIds); // ?26
+    const rows = (await db.prepare(`${INVOICE_SELECT} ${q.joins} ${q.whereClause} LIMIT ?2 OFFSET ?17`).bind(...b).all<DocumentRow>()).results;
+    for (const row of rows) read.set(`invoice:${row.id}`, invoiceDocument(row));
+  }
+  if (receiptIds.length) {
+    const rows = (
+      await db
+        .prepare(
+          `SELECT r.id, r.receipt_number, r.receipt_date, r.status, r.cancelled_at,
+                  EXISTS (SELECT 1 FROM goods_receipt_lines m WHERE m.receipt_id = r.id AND m.movement = 'returned') AS has_returns,
+                  (SELECT group_concat(DISTINCT o.order_number) FROM goods_receipt_lines o WHERE o.receipt_id = r.id) AS orders,
+                  po.org_unit_id, ou.name AS org_unit_name,
+                  COALESCE(
+                    (SELECT sp.name FROM suppliers sp WHERE sp.vat_id = po.seller_party_id ORDER BY sp.status = 'active' DESC, sp.name LIMIT 1),
+                    po.seller_party_id
+                  ) AS supplier,
+                  i.current_stage_id, ps.name AS stage_name, ps.sequence AS stage_sequence,
+                  (SELECT count(*) FROM tasks t JOIN stage_visits v ON v.id = t.stage_visit_id
+                   WHERE v.process_instance_id = i.id) AS hands
+           FROM goods_receipts r
+           LEFT JOIN purchase_orders po
+             ON po.order_number = (SELECT min(fl.order_number) FROM goods_receipt_lines fl WHERE fl.receipt_id = r.id)
+           LEFT JOIN org_units ou ON ou.id = po.org_unit_id
+           LEFT JOIN process_instances i
+             ON i.id = (SELECT pi.id FROM process_instances pi
+                        WHERE pi.subject_type = 'goods_receipt' AND pi.subject_id = r.id
+                        ORDER BY pi.rowid DESC LIMIT 1)
+           LEFT JOIN process_stages ps ON ps.id = i.current_stage_id
+           WHERE r.id IN (SELECT value FROM json_each(?1))`
+        )
+        .bind(JSON.stringify(receiptIds))
+        .all<ReceiptRow>()
+    ).results;
+    for (const row of rows) read.set(`goods_receipt:${row.id}`, receiptDocument(row));
+  }
+
+  const documents = chosen.map((c) => read.get(`${c.kind}:${c.id}`)).filter(Boolean);
+  return {
+    status: 200,
+    body: {
+      documents,
+      searched: documents.length,
+      ...q.receiptsFlag,
+      total: invoiceTotal + receiptTotal,
+      page: q.page,
+      pageSize: q.pageSize,
     },
   };
 }
