@@ -148,8 +148,11 @@ export function buildSupplierTab(invoiceId, initial, { url = base(invoiceId) } =
  * (optional), and who will be emailed. Asking leaves the invoice and the
  * task exactly where they are; `onAsked` redraws the viewer so the
  * banner says the question is waiting.
+ *
+ * Decision 0748: a goods receipt's too, at its own address (`url`) and
+ * with its own note (`noteKey`).
  */
-export function openAskSupplier(invoiceId, chat, lines, { onAsked } = {}) {
+export function openAskSupplier(invoiceId, chat, lines, { onAsked, url = base(invoiceId), noteKey = "asksupplier.note" } = {}) {
   const close = () => backdrop.remove();
   const supplier = chat.supplierName ?? "";
   const question = el("textarea", { class: "asksupplierquestion", placeholder: t("asksupplier.placeholder") });
@@ -166,7 +169,7 @@ export function openAskSupplier(invoiceId, chat, lines, { onAsked } = {}) {
       errorBox.textContent = t("asksupplier.empty");
       return;
     }
-    const result = await sendToSupplier(invoiceId, { body, ask: true, lines: ticks.filter((x) => x.box.checked).map((x) => x.n) });
+    const result = await sendToSupplier(invoiceId, { body, ask: true, lines: ticks.filter((x) => x.box.checked).map((x) => x.n) }, url);
     if (!result.ok) {
       errorBox.hidden = false;
       errorBox.textContent = result.body?.reason === "no_recipients" ? recipientsLine({ supplierName: supplier }) : t("supplierchat.failed");
@@ -188,7 +191,7 @@ export function openAskSupplier(invoiceId, chat, lines, { onAsked } = {}) {
       ? [el("div", { class: "kf" }, [el("label", { text: t("asksupplier.lines") }), el("div", { class: "asklines" }, ticks.map((x) => x.node))])]
       : []),
     el("div", { class: "muted sm", text: recipientsLine(chat) }),
-    el("div", { class: "muted sm", text: fill("asksupplier.note", { supplier }) }),
+    el("div", { class: "muted sm", text: fill(noteKey, { supplier }) }),
     errorBox,
   ]);
 

@@ -707,6 +707,14 @@ export async function markReceiptSeen(db: D1Database, userId: string, receiptId:
 const CONVERSATION_LIMIT = 50;
 
 export async function handleListReceiptConversations(db: D1Database, userId: string): Promise<RouteResult> {
+  /**
+   * **And what the supplier wrote — decision 0748.** A supplier's message
+   * about a receipt is new for everyone it was emailed to (0740: who
+   * recorded the receipt, who receives goods for its company, whoever last
+   * wrote to the supplier), until they catch up — as an invoice's reply
+   * reaches whoever holds its task.
+   */
+  const email = ((await db.prepare("SELECT email FROM org_users WHERE id = ?").bind(userId).first<{ email: string | null }>())?.email ?? "").toLowerCase();
   // Every receipt this person is part of the conversation on.
   const candidates = (
     await db
@@ -715,9 +723,11 @@ export async function handleListReceiptConversations(db: D1Database, userId: str
          UNION SELECT receipt_id FROM goods_receipt_comments WHERE author_id = ?1
          UNION SELECT pi.subject_id FROM tasks t JOIN stage_visits v ON v.id = t.stage_visit_id JOIN process_instances pi ON pi.id = v.process_instance_id
                WHERE pi.subject_type = 'goods_receipt' AND t.status = 'open' AND t.claimed_by = ?1
-                 AND EXISTS (SELECT 1 FROM goods_receipt_comments c WHERE c.receipt_id = pi.subject_id)`
+                 AND EXISTS (SELECT 1 FROM goods_receipt_comments c WHERE c.receipt_id = pi.subject_id)
+         UNION SELECT m.receipt_id FROM supplier_messages m, json_each(m.emailed_json) e
+               WHERE m.receipt_id IS NOT NULL AND m.direction = 'from_supplier' AND lower(e.value) = ?2`
       )
-      .bind(userId)
+      .bind(userId, email)
       .all<{ receipt_id: string }>()
   ).results.map((r) => r.receipt_id);
 
@@ -741,7 +751,19 @@ export async function handleListReceiptConversations(db: D1Database, userId: str
       .prepare(`SELECT count(*) AS n FROM goods_receipt_comments WHERE receipt_id = ? AND author_id != ? ${since ? "AND created_at > ?" : ""}`)
       .bind(...[receiptId, userId, ...(since ? [since] : [])])
       .first<{ n: number }>();
-    const newMessages = fresh?.n ?? 0;
+    // Decision 0748: the supplier's messages to this person since they last caught up.
+    const fromSupplier = email
+      ? await db
+          .prepare(
+            `SELECT count(*) AS n, max(m.created_at) AS last_at FROM supplier_messages m
+             WHERE m.receipt_id = ? AND m.direction = 'from_supplier' ${seen ? "AND m.created_at > ?" : ""}
+               AND EXISTS (SELECT 1 FROM json_each(m.emailed_json) e WHERE lower(e.value) = ?)`
+          )
+          .bind(...[receiptId, ...(seen ? [seen] : []), email])
+          .first<{ n: number; last_at: string | null }>()
+      : null;
+    const supplierMessages = fromSupplier?.n ?? 0;
+    const newMessages = (fresh?.n ?? 0) + supplierMessages;
     if (!addedNew && newMessages === 0) continue;
     const access = await receiptAccess(db, userId, receiptId);
     if (!access) continue;
@@ -753,6 +775,21 @@ export async function handleListReceiptConversations(db: D1Database, userId: str
       .bind(receiptId)
       .first<{ body: string; created_at: string; name: string | null }>();
     const context = await receiptContext(db, receiptId);
+    // The supplier's latest, quoted when it is newer than the chat's.
+    const supplierLatest =
+      supplierMessages > 0
+        ? await db
+            .prepare(
+              `SELECT m.body, m.created_at, m.author_name, s.name AS supplier_name FROM supplier_messages m LEFT JOIN suppliers s ON s.id = m.supplier_id
+               WHERE m.receipt_id = ? AND m.direction = 'from_supplier' ORDER BY m.created_at DESC, m.rowid DESC LIMIT 1`
+            )
+            .bind(receiptId)
+            .first<{ body: string; created_at: string; author_name: string; supplier_name: string | null }>()
+        : null;
+    const quoted =
+      supplierLatest && (!latest || supplierLatest.created_at > latest.created_at)
+        ? { name: supplierLatest.supplier_name ?? context.supplier ?? supplierLatest.author_name, body: supplierLatest.body, created_at: supplierLatest.created_at }
+        : latest;
     out.push({
       receiptId,
       receiptNumber: access.receipt.receipt_number,
@@ -761,8 +798,9 @@ export async function handleListReceiptConversations(db: D1Database, userId: str
       orders: context.orders,
       added: addedNew ? { by: addedNew.added_by, team: addedNew.team, at: iso(addedNew.added_at) } : null,
       newMessages,
-      latest: latest ? { by: latest.name, body: latest.body.length > 280 ? `${latest.body.slice(0, 279)}…` : latest.body, at: iso(latest.created_at) } : null,
-      lastAt: [iso(latest?.created_at), iso(addedNew?.added_at)].filter(Boolean).sort().at(-1) ?? null,
+      supplierMessages,
+      latest: quoted ? { by: quoted.name, body: quoted.body.length > 280 ? `${quoted.body.slice(0, 279)}…` : quoted.body, at: iso(quoted.created_at) } : null,
+      lastAt: [iso(quoted?.created_at), iso(addedNew?.added_at)].filter(Boolean).sort().at(-1) ?? null,
     });
   }
   out.sort((a, b) => String(b.lastAt).localeCompare(String(a.lastAt)));

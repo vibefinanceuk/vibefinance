@@ -163,6 +163,7 @@ interface PortalReceiptRow {
   has_returns: number;
   msg_total: number;
   msg_unread: number;
+  query_open: number;
 }
 
 /**
@@ -175,6 +176,9 @@ const RECEIPT_SELECT = `
          (SELECT count(*) FROM supplier_messages m WHERE m.receipt_id = r.id) AS msg_total,
          (SELECT count(*) FROM supplier_messages m WHERE m.receipt_id = r.id AND m.direction = 'to_supplier'
             AND m.created_at > COALESCE((SELECT pr.read_at FROM portal_receipt_reads pr WHERE pr.link_id = ? AND pr.receipt_id = r.id), '')) AS msg_unread,
+         -- Decision 0748: a question from the customer the supplier has not written back since.
+         EXISTS (SELECT 1 FROM supplier_messages q WHERE q.receipt_id = r.id AND q.direction = 'to_supplier' AND q.kind = 'question'
+                 AND NOT EXISTS (SELECT 1 FROM supplier_messages a WHERE a.receipt_id = r.id AND a.direction = 'from_supplier' AND a.created_at >= q.created_at)) AS query_open,
          (SELECT group_concat(DISTINCT o.order_number) FROM goods_receipt_lines o WHERE o.receipt_id = r.id) AS orders,
          po.org_unit_id, ou.name AS org_unit_name,
          EXISTS (SELECT 1 FROM goods_receipt_lines m WHERE m.receipt_id = r.id AND m.movement = 'returned') AS has_returns
@@ -183,7 +187,8 @@ const RECEIPT_SELECT = `
   LEFT JOIN org_units ou ON ou.id = po.org_unit_id`;
 
 function receiptSummary(r: PortalReceiptRow) {
-  const status = r.status === "pending" ? "goods_checking" : r.has_returns ? "goods_returned" : "goods_received";
+  // Decision 0748: Query raised while the customer's question waits on them, as an invoice's (0721).
+  const status = r.query_open ? "query_raised" : r.status === "pending" ? "goods_checking" : r.has_returns ? "goods_returned" : "goods_received";
   return {
     id: r.id,
     documentType: "goods_receipt",

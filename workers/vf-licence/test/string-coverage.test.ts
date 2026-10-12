@@ -3797,6 +3797,9 @@ const KEYS_THE_INTERFACE_USES = [
   "create.uploadselfbilledhint",
   // A task with several reasons (decision 0746).
   "tasks.reasons",
+  // Ask supplier on a receipt, and the supplier in Conversations (decision 0748).
+  "receipts.asksupplier.note",
+  "receipts.conv.tag.supplier",
   // Goods receipts shared with suppliers (decision 0738).
   "apsetup.suppliernetwork",
   "apsetup.network.sub",

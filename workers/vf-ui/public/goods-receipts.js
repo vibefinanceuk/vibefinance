@@ -6,7 +6,7 @@ import { currentOrgId } from "/orgs.js";
 import { donutChart } from "/charts.js";
 import { buildReceiptTimeline } from "/receipt-timeline.js";
 import { buildAttachmentsTab } from "/attachments.js";
-import { buildSupplierTab, fetchSupplierChat } from "/supplier-chat.js";
+import { buildSupplierTab, fetchSupplierChat, openAskSupplier, supplierQueryText } from "/supplier-chat.js";
 
 /**
  * **Goods Receipts — decision 0645, slice 3 of the Goods Receipts
@@ -641,6 +641,27 @@ export async function openReceipt(id, { onDone = null } = {}) {
     release.id = "receipt-release";
     buttons.push(release);
   }
+  /**
+   * **Ask supplier — decision 0748**, as on an invoice (0721): a question,
+   * the lines it is about, who will be emailed. The receipt does not move;
+   * the supplier sees it as Query raised until they write back.
+   */
+  if (canRecord() && supplierChat?.canWrite) {
+    const supplierUrl = `/api/goods-receipts/${encodeURIComponent(id)}/supplier-messages`;
+    const ask = actionLink("ask_supplier", {
+      onclick: () =>
+        openAskSupplier(id, supplierChat, lines.map((l) => l.lineNumber), {
+          url: supplierUrl,
+          noteKey: "receipts.asksupplier.note",
+          onAsked: async () => {
+            close();
+            await openReceipt(id, { onDone });
+          },
+        }),
+    });
+    ask.id = "receipt-ask-supplier";
+    buttons.push(ask);
+  }
   const back = el("button", { class: "actionlink", type: "button", id: "receipt-back", title: t("viewer.back"), onclick: () => close() }, [icon("back"), el("span", { text: t("viewer.back") })]);
 
   /** Decision 0657: who holds the receipt's task, with Claim or Release, as on an invoice. */
@@ -719,6 +740,8 @@ export async function openReceipt(id, { onDone = null } = {}) {
         })
       : null,
     taskBar(),
+    // Decision 0748: the question waiting on the supplier, as an invoice's banner (0721).
+    supplierChat?.query ? el("div", { class: "warn", id: "receipt-supplierquery", text: supplierQueryText(supplierChat.query) }) : null,
     receipt.status === "registered" && heldBack.length > 0
       ? el("div", { class: "warn", id: "receipt-heldback", text: t("receipts.heldback").replace("{n}", String(heldBack.length)) })
       : null,

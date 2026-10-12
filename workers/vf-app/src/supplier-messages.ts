@@ -161,7 +161,7 @@ export async function send(email: MessageEmail, to: string[], subject: string, t
   return failures.length ? failures.join("; ") : null;
 }
 
-function readLines(value: unknown): number[] | null {
+export function readLines(value: unknown): number[] | null {
   if (!Array.isArray(value) || value.length === 0) return null;
   const lines = [...new Set(value.filter((n): n is number => Number.isInteger(n) && n > 0))].sort((a, b) => a - b);
   return lines.length ? lines.slice(0, 200) : null;

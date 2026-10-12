@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 12 October 2026 (decision 0747). A living document: what
+Last updated 12 October 2026 (decision 0748). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,14 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### A goods receipt's questions to the supplier, as an invoice's (0748)
+
+Ask supplier on a receipt shows it as Query raised in the network and puts a banner here until the
+supplier writes back. A supplier's messages about receipts appear in Conversations, and so in the
+Tasks and Goods Receipts counts, for everyone they were emailed to.
+
+Full reasoning is in decision 0748.
 
 ### "No document is retained" centred (0747)
 

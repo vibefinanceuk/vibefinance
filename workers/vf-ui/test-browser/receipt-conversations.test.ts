@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import receiptsSql from "../../vf-licence/migrations/0288_goods_receipts_strings.sql?raw";
 import timelineSql from "../../vf-licence/migrations/0300_receipt_timeline_strings.sql?raw";
 import conversationsSql from "../../vf-licence/migrations/0302_receipt_conversations_strings.sql?raw";
+import receiptQuerySql from "../../vf-licence/migrations/0346_receipt_query_strings.sql?raw";
 
 /**
  * **Conversations on Tasks — decision 0660**, as agreed with Dan against
@@ -11,7 +12,7 @@ import conversationsSql from "../../vf-licence/migrations/0302_receipt_conversat
  */
 
 const strings: Record<string, string> = { "action.close": "Close", "nav.tasks": "Tasks", "nav.goodsreceipts": "Goods Receipts" };
-for (const sql of [receiptsSql, timelineSql, conversationsSql]) {
+for (const sql of [receiptsSql, timelineSql, conversationsSql, receiptQuerySql]) {
   for (const m of sql.matchAll(/\('([^']+)', 'en', '((?:[^']|'')*)'\)/g)) strings[m[1]] = m[2].replace(/''/g, "'");
 }
 
@@ -95,6 +96,16 @@ describe("Conversations on Tasks — decision 0660", () => {
     expect([...second.querySelectorAll(".agentnotetag")].map((p) => p.textContent)).toEqual(["Added to chat", "New messages: 1"]);
     expect(second.querySelector(".muted")?.textContent).toContain("Sam Ward added you (through the Warehouse team)");
     expect(badge("tasks")).toBe("2");
+  });
+
+  it("says when the supplier wrote, and quotes them — decision 0748", async () => {
+    const FROM = { ...NEW, newMessages: 1, supplierMessages: 1, latest: { by: "Northwind Packaging", body: "We sent 10, you recorded 8?", at: "2026-10-12T10:00:00.000Z" } };
+    await start(["AP.TaskView", "AP.Receive"], () => [FROM]);
+    await vi.waitFor(() => expect(document.querySelectorAll(".receiptconv").length).toBe(1));
+    const row = document.querySelector(".receiptconv")!;
+    expect([...row.querySelectorAll(".agentnotetag")].map((p) => p.textContent)).toEqual(["New messages", "From the supplier", "New messages: 1"]);
+    expect(row.querySelector(".agentnotewhy")?.textContent).toBe("Northwind Packaging: “We sent 10, you recorded 8?”");
+    expect(badge("tasks")).toBe("1");
   });
 
   it("keeps to about four rows high and scrolls past that, so the tasks below stay in view", async () => {

@@ -9,6 +9,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const STRINGS = {
   locale: "en",
   strings: {
+    // Ask supplier on a receipt (decision 0748).
+    "action.ask_supplier": "Ask supplier",
+    "asksupplier.title": "Ask {supplier}",
+    "asksupplier.question": "Your question",
+    "asksupplier.lines": "About which lines (optional)",
+    "receipts.asksupplier.note": "The receipt stays as it is. {supplier} sees the receipt as Query raised until they answer.",
+    "supplierchat.banner": "Asked {supplier} on {when} ({who}), awaiting their reply",
+    "supplierchat.to": "To {people}",
     "nav.goodsreceipts": "Goods Receipts",
     "receipts.readonly": "You can see receipts here. Recording them needs AP.Receive.",
     "viewer.back": "Back",
@@ -707,6 +715,51 @@ describe("the conversation with the supplier about a receipt — decision 0740",
     expect(document.getElementById("viewer")?.hidden).toBe(true);
     expect(document.getElementById("shell")?.hidden).toBe(false);
     expect(document.querySelector("#shell .frame")).not.toBeNull();
+  });
+
+  it("Ask supplier: a question about its lines to the receipt's address, then the receipt again — decision 0748", async () => {
+    const calls = await openScreen(["AP.Receive"], {
+      "GET /api/goods-receipts/gr-2": [200, RECEIPT],
+      "GET /api/goods-receipts/gr-2/supplier-messages": [200, CHAT],
+      "POST /api/goods-receipts/gr-2/supplier-messages": [201, { message: {} }],
+    });
+    const { openReceipt } = await import("/goods-receipts.js");
+    await openReceipt("gr-2");
+    const ask = document.getElementById("receipt-ask-supplier")!;
+    expect(ask.textContent).toBe("Ask supplier");
+    expect(ask.nextElementSibling?.id).toBe("receipt-back");
+    ask.click();
+    const box = document.querySelector(".popout.asksupplier")!;
+    expect(box.querySelector("h3")?.textContent).toBe("Ask Northwind Packaging");
+    expect(box.textContent).toContain("The receipt stays as it is. Northwind Packaging sees the receipt as Query raised until they answer.");
+    (box.querySelector(".asksupplierquestion") as HTMLTextAreaElement).value = "Were all 5 damaged?";
+    (box.querySelector(".askline input") as HTMLInputElement).checked = true;
+    (box.querySelector(".actionlink.primary") as HTMLButtonElement).click();
+    await vi.waitFor(() => expect(document.querySelector(".popout.asksupplier")).toBeNull());
+    expect(calls.find((c) => c.method === "POST" && c.path === "/api/goods-receipts/gr-2/supplier-messages")?.body).toEqual({ body: "Were all 5 damaged?", ask: true, lines: [1] });
+    await vi.waitFor(() => expect(calls.filter((c) => c.method === "GET" && c.path === "/api/goods-receipts/gr-2").length).toBe(2));
+  });
+
+  it("says a question waits on the supplier, as an invoice does — decision 0748", async () => {
+    await openScreen(["AP.Receive"], {
+      "GET /api/goods-receipts/gr-2": [200, RECEIPT],
+      "GET /api/goods-receipts/gr-2/supplier-messages": [200, { ...CHAT, awaiting: true, query: { supplierName: "Northwind Packaging", askedBy: "Priya", askedAt: "2026-10-12T10:00:00Z" } }],
+    });
+    const { openReceipt } = await import("/goods-receipts.js");
+    await openReceipt("gr-2");
+    const banner = document.getElementById("receipt-supplierquery")!;
+    expect(banner.textContent).toMatch(/^Asked Northwind Packaging on .+ \(Priya\), awaiting their reply$/);
+  });
+
+  it("offers no Ask supplier when there is nobody to ask, and no banner without a question", async () => {
+    await openScreen(["AP.Receive"], {
+      "GET /api/goods-receipts/gr-2": [200, RECEIPT],
+      "GET /api/goods-receipts/gr-2/supplier-messages": [200, { ...CHAT, canWrite: false, recipients: [] }],
+    });
+    const { openReceipt } = await import("/goods-receipts.js");
+    await openReceipt("gr-2");
+    expect(document.getElementById("receipt-ask-supplier")).toBeNull();
+    expect(document.getElementById("receipt-supplierquery")).toBeNull();
   });
 
   it("has none when the receipt is not shared and nothing has been written", async () => {

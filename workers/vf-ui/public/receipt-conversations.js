@@ -68,6 +68,8 @@ export async function fill(holder, { navScreen = "tasks" } = {}) {
           c.added
             ? el("span", { class: "rmpill q agentnotetag", text: t("receipts.conv.tag.added") })
             : el("span", { class: "rmpill warn agentnotetag", text: t("receipts.conv.tag.new") }),
+          // Decision 0748: the supplier wrote.
+          c.supplierMessages > 0 ? el("span", { class: "rmpill warn agentnotetag receiptconvsupplier", text: t("receipts.conv.tag.supplier") }) : null,
           c.newMessages > 0 ? el("span", { class: "rmpill bad agentnotetag receiptconvcount", text: words("receipts.conv.newcount", { n: c.newMessages }) }) : null,
           el("div", { class: "muted sm", text: metaLine(c) }),
           c.latest ? el("div", { class: "agentnotewhy", text: words("receipts.conv.quote", { by: c.latest.by ?? "—", body: c.latest.body }) }) : null,

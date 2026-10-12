@@ -5,6 +5,7 @@ import { signPortalToken, PORTAL_ACCESS_TTL_SECONDS, type PortalAccessClaims } f
 import { handleGetReceiptSupplierMessages, handlePortalReceiptReply, handlePostReceiptSupplierMessage } from "../src/receipt-messages.js";
 import { handlePutNetworkSharingConfig, handlePutSupplierReceiptSharing } from "../src/receipt-sharing.js";
 import type { MessageEmail } from "../src/supplier-messages.js";
+import { handleListReceiptConversations, handleReceiptConversationDone } from "../src/receipt-timeline.js";
 import { generateApiKey, hashApiKey } from "../src/user-auth.js";
 
 /**
@@ -164,5 +165,50 @@ describe("the app's route", () => {
     expect((await call(await key(["AP.Review"]))).status).toBe(403);
     // Allowed to write; nobody to write to while it is not shared.
     expect((await call(await key(["AP.Receive"]), "POST")).status).toBe(409);
+  });
+});
+
+describe("a question waits on the supplier, as an invoice's — decision 0748", () => {
+  const status = async () =>
+    ((await (await portal("/portal/invoices")).json()) as { invoices: { id: string; status: string }[] }).invoices.find((i) => i.id === "gr-1")!.status;
+  type Chat = { awaiting: boolean; query: { supplierName: string; askedBy: string; askedAt: string } | null; messages: { kind: string; lines: number[] | null }[] };
+  const chat = async () => (await handleGetReceiptSupplierMessages(env.DB, licence(), "gr-1")).body as Chat;
+
+  it("Ask supplier: Query raised in the network and a banner here, until the supplier writes back", async () => {
+    await handlePutNetworkSharingConfig(env.DB, "u-kim", { shareReceipts: true });
+    expect(await status()).toBe("goods_received");
+    const asked = await handlePostReceiptSupplierMessage(env.DB, licence(), "gr-1", SAM, { body: "Were 10 sent?", ask: true, lines: [1] }, NO_EMAIL, new Date("2026-10-12T10:00:00Z"));
+    expect(asked.status).toBe(201);
+    const waiting = await chat();
+    expect(waiting.awaiting).toBe(true);
+    expect(waiting.query).toEqual({ supplierName: "Lager Nord GmbH", askedBy: "Sam Patel", askedAt: "2026-10-12T10:00:00.000Z" });
+    expect(waiting.messages[0]).toMatchObject({ kind: "question", lines: [1] });
+    expect(await status()).toBe("query_raised");
+    await handlePortalReceiptReply(env.DB, CLAIMS, "gr-1", { body: "Yes, 10." }, NO_EMAIL, new Date("2026-10-12T11:00:00Z"));
+    expect(await chat()).toMatchObject({ awaiting: false, query: null });
+    expect(await status()).toBe("goods_received");
+  });
+
+  it("a message that is not a question raises nothing", async () => {
+    await handlePutNetworkSharingConfig(env.DB, "u-kim", { shareReceipts: true });
+    await handlePostReceiptSupplierMessage(env.DB, licence(), "gr-1", SAM, { body: "FYI" }, NO_EMAIL);
+    expect(await chat()).toMatchObject({ awaiting: false, query: null });
+    expect(await status()).toBe("goods_received");
+  });
+
+  it("the supplier's message is in Conversations for whoever it was emailed to, until they catch up", async () => {
+    await handlePutNetworkSharingConfig(env.DB, "u-kim", { shareReceipts: true });
+    type Conv = { receiptId: string; newMessages: number; supplierMessages: number; latest: { by: string; body: string } };
+    const conversations = async (user: string) => ((await handleListReceiptConversations(env.DB, user)).body as { conversations: Conv[] }).conversations;
+    await handlePortalReceiptReply(env.DB, CLAIMS, "gr-1", { body: "We sent 10, you recorded 8?" }, NO_EMAIL, new Date("2026-10-12T10:00:00Z"));
+    expect(await conversations("u-pat")).toEqual([
+      expect.objectContaining({ receiptId: "gr-1", newMessages: 1, supplierMessages: 1, latest: expect.objectContaining({ by: "Lager Nord GmbH", body: "We sent 10, you recorded 8?" }) }),
+    ]);
+    // Fran receives goods for Acme Ireland only, so was not emailed.
+    expect(await conversations("u-fran")).toEqual([]);
+    await handleReceiptConversationDone(env.DB, "u-pat", "gr-1", new Date("2026-10-12T10:30:00Z"));
+    expect(await conversations("u-pat")).toEqual([]);
+    await handlePortalReceiptReply(env.DB, CLAIMS, "gr-1", { body: "Any news?" }, NO_EMAIL, new Date("2026-10-12T12:00:00Z"));
+    expect((await conversations("u-pat")).map((c) => [c.supplierMessages, c.latest.body])).toEqual([[1, "Any news?"]]);
   });
 });

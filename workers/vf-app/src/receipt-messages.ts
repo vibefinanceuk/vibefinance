@@ -4,6 +4,7 @@ import type { LicenceLink } from "./invitations-route.js";
 import {
   MAX_BODY,
   portalView,
+  readLines,
   recipientsFor,
   send,
   unitAndAbove,
@@ -79,6 +80,17 @@ async function visibleToSupplier(db: D1Database, receipt: ReceiptRow): Promise<b
   return receipt.status === "registered" || (receipt.status === "pending" && !sharing.registeredOnly);
 }
 
+/**
+ * **The question a receipt waits on — decision 0748.** The earliest
+ * question the supplier has not written back since; null when none. The
+ * same reckoning as the network's *Query raised* (`receipt-sharing.ts`).
+ */
+export function openQuery(rows: MessageRow[]): MessageRow | null {
+  let lastReply = "";
+  for (const m of rows) if (m.direction === "from_supplier" && m.created_at > lastReply) lastReply = m.created_at;
+  return rows.find((m) => m.direction === "to_supplier" && m.kind === "question" && m.created_at > lastReply) ?? null;
+}
+
 async function receiptMessages(db: D1Database, receiptId: string): Promise<MessageRow[]> {
   return (await db.prepare("SELECT * FROM supplier_messages WHERE receipt_id = ? ORDER BY created_at, rowid").bind(receiptId).all<MessageRow>()).results;
 }
@@ -102,6 +114,7 @@ export async function handleGetReceiptSupplierMessages(db: D1Database, link: Lic
   if (!receipt) return { status: 404, body: { error: `goods receipt ${receiptId} does not exist` } };
   const rows = await receiptMessages(db, receiptId);
   const recipients = await supplierPeople(db, link, receipt);
+  const query = openQuery(rows);
   return {
     status: 200,
     body: {
@@ -109,14 +122,20 @@ export async function handleGetReceiptSupplierMessages(db: D1Database, link: Lic
       canWrite: recipients.length > 0,
       supplierName: receipt.supplier_name,
       recipients,
-      // Decision 0740: no question waits on a receipt (not yet); unread counts only.
-      awaiting: false,
+      // Decision 0748: a question waits, as an invoice's (0721), until the supplier writes back.
+      awaiting: query !== null,
+      query: query ? { supplierName: receipt.supplier_name, askedBy: query.author_name, askedAt: query.created_at } : null,
       messages: rows.map(view),
     },
   };
 }
 
-/** `POST /goods-receipts/:id/supplier-messages` `{ body }` — someone who receives goods writes to the supplier. */
+/**
+ * `POST /goods-receipts/:id/supplier-messages` `{ body, ask, lines }` —
+ * someone who receives goods writes to the supplier. `ask: true` is *Ask
+ * supplier* (decision 0748): the supplier sees the receipt as Query raised
+ * until they write back; the receipt itself does not move.
+ */
 export async function handlePostReceiptSupplierMessage(
   db: D1Database,
   link: LicenceLink | null,
@@ -139,10 +158,16 @@ export async function handlePostReceiptSupplierMessage(
     };
   }
   const customer = receipt.company_name ?? "Your customer";
+  // Decision 0748: Ask supplier, as on an invoice (0721) — a question the receipt now waits on.
+  const ask = body.ask === true;
+  const lines = readLines(body.lines);
+  const number = receipt.receipt_number;
   const mail = [
     "Hello,",
     "",
-    `${customer} has written about goods receipt ${receipt.receipt_number}:`,
+    ask
+      ? `${customer} has a question about goods receipt ${number}${lines ? ` (line ${lines.join(", ")})` : ""}:`
+      : `${customer} has written about goods receipt ${number}:`,
     "",
     text,
     "",
@@ -150,14 +175,15 @@ export async function handlePostReceiptSupplierMessage(
     "",
     "VibeFinance",
   ].join("\n");
-  const emailError = await send(email, recipients, `${customer} has written about goods receipt ${receipt.receipt_number}`, mail);
+  const subject = ask ? `${customer} has a question about goods receipt ${number}` : `${customer} has written about goods receipt ${number}`;
+  const emailError = await send(email, recipients, subject, mail);
   const id = crypto.randomUUID();
   await db
     .prepare(
-      `INSERT INTO supplier_messages (id, receipt_id, supplier_id, direction, kind, author_user_id, author_name, body, emailed_json, email_error, created_at)
-       VALUES (?, ?, ?, 'to_supplier', 'message', ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO supplier_messages (id, receipt_id, supplier_id, direction, kind, author_user_id, author_name, body, lines_json, emailed_json, email_error, created_at)
+       VALUES (?, ?, ?, 'to_supplier', ?, ?, ?, ?, ?, ?, ?, ?)`
     )
-    .bind(id, receiptId, receipt.supplier_id, user.id, user.name, text, JSON.stringify(recipients), emailError, now.toISOString())
+    .bind(id, receiptId, receipt.supplier_id, ask ? "question" : "message", user.id, user.name, text, lines ? JSON.stringify(lines) : null, JSON.stringify(recipients), emailError, now.toISOString())
     .run();
   const row = (await db.prepare("SELECT * FROM supplier_messages WHERE id = ?").bind(id).first<MessageRow>())!;
   return { status: 201, body: { message: view(row) } };
