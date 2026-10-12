@@ -656,7 +656,8 @@ export async function openReceipt(id, { onDone = null } = {}) {
      */
     if (supplierChat?.available) {
       const supplierTab = buildSupplierTab(id, supplierChat, { url: `/api/goods-receipts/${encodeURIComponent(id)}/supplier-messages` });
-      tabs.push({ key: "supplier", label: t("viewer.suppliertab"), pane: el("div", { class: "vtimeline" }, [supplierTab.content]), badge: supplierTab.countBadge });
+      // Decision 0741: laid out as Timeline / Chat's, its box to write in at the bottom.
+      tabs.push({ key: "supplier", label: t("viewer.suppliertab"), pane: el("div", { class: "vtimeline receipttimeline receiptsupplier" }, [supplierTab.content]), badge: supplierTab.countBadge });
     }
     const select = (which) => {
       for (const tab of tabs) {
@@ -762,6 +763,12 @@ export async function openReceipt(id, { onDone = null } = {}) {
     // Decision 0658: what happened to it, and the conversation, with whoever AP brings in.
     sidePanel(),
   ], true, "receiptpop");
+  /**
+   * **Decision 0741: the whole window**, as a receipt opened in the supplier
+   * network (Dan: "there is so much information to share in the page").
+   * Still above whichever screen opened it, so Close goes back to it.
+   */
+  backdrop.classList.add("receiptfull");
 }
 
 // ── Recording ──────────────────────────────────────────────────────────

@@ -668,8 +668,11 @@ describe("the conversation with the supplier about a receipt — decision 0740",
     });
     const { openReceipt } = await import("/goods-receipts.js");
     await openReceipt("gr-2");
+    // Decision 0741: the whole window, and the Supplier tab laid out as Timeline / Chat's.
+    expect(document.querySelector(".backdrop")?.classList.contains("receiptfull")).toBe(true);
     const tab = document.getElementById("receipt-tab-supplier")!;
     expect(tab).not.toBeNull();
+    expect(document.querySelector(".receiptside .receiptsupplier .suppliertab .activityinput")).not.toBeNull();
     expect(tab.querySelector(".activitycount")?.textContent).toBe("1");
     tab.click();
     expect(document.querySelector(".popout .suppliertab")?.textContent).toContain("Can you send photos?");

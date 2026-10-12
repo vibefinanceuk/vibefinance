@@ -5467,6 +5467,31 @@
   .popout.receiptpop { display: block; height: auto; overflow: auto; }
   .popout.receiptpop .receiptside { border-left: none; border-top: 0.5px solid var(--border); }
 }
+/*
+  Decision 0741: a receipt opened fills the window, as one opened in the
+  supplier network does; the receipt scrolls on the left, the panel on the
+  right keeps the window's height. Its Supplier tab is laid out as
+  Timeline / Chat's: the messages scroll, the box to write in stays at the
+  bottom.
+*/
+.backdrop.receiptfull { padding: 0; background: var(--surface-0); }
+.backdrop.receiptfull .popout.receiptpop {
+  width: 100vw;
+  height: 100vh;
+  max-height: none;
+  border: none;
+  border-radius: 0;
+  grid-template-columns: minmax(0, 1fr) minmax(340px, 440px);
+}
+.backdrop.receiptfull .popout.receiptpop .receiptmain { padding: 24px 28px; }
+.backdrop.receiptfull .popout.receiptpop .receiptside { padding: 20px; }
+.backdrop.receiptfull .popout.receiptpop .receiptmain > .cardhead h3 { font-size: var(--text-xl); }
+@media (max-width: 900px) {
+  .backdrop.receiptfull .popout.receiptpop { height: 100vh; overflow: auto; }
+}
+.receiptside .receiptsupplier > .suppliertab { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }
+.receiptside .receiptsupplier .activityfeed { flex: 1 1 auto; min-height: 0; overflow: auto; }
+.receiptside .receiptsupplier .activityinput { flex: none; margin-top: auto; }
 /* Decision 0659: Attachments and Timeline / Chat as tabs in the receipt's side panel, as in the invoice viewer. */
 .receiptside .receipttabs { align-self: flex-start; margin-bottom: 12px; flex: none; }
 .receiptside .receipttimeline[hidden], .receiptside .attachpane[hidden] { display: none; }
