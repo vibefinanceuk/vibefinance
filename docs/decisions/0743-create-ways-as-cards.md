@@ -1,6 +1,6 @@
 # 0743: Create — the ways to bring something in, as cards
 
-**Status: built.** vf-ui (`create.js`, `app.css`; `app.css` copied to vf-portal), vf-licence
+**Status: live** at `f28857b`, pushed and deployed 12 October 2026, migration 0342 applied. vf-ui (`create.js`, `app.css`; `app.css` copied to vf-portal), vf-licence
 (strings migration 0342).
 
 ## What was asked
