@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 11 October 2026 (decision 0732). A living document: what
+Last updated 12 October 2026 (decision 0733). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,13 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Credit notes and purchase orders (0733)
+
+A credit note counts negative against its PO and project (nothing once its invoice is
+Credited), and gets no `po.*` or receipt facts, so PO matching rules never stop it.
+
+Full reasoning is in decision 0733.
 
 ### Credit notes in the supplier network (0732)
 

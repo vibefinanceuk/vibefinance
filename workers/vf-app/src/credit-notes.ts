@@ -375,3 +375,16 @@ export async function creditEvents(db: D1Database, invoiceId: string) {
   }
   return items;
 }
+
+/**
+ * **What a document counts for against a PO or a project — decision 0733.**
+ * An invoice: +1. A credit note: -1, it gives back what it credits —
+ * unless its invoice is Credited, which already counts for nothing, so
+ * the credit note counts for nothing too (counting both would give it
+ * back twice). SQL, for the invoice_headers id in `idExpr`.
+ */
+export function creditSignSql(idExpr: string): string {
+  return `(SELECT CASE WHEN hx.document_kind = 'credit_note' THEN
+      CASE WHEN EXISTS (SELECT 1 FROM credit_notes cs WHERE cs.credit_note_id = hx.id AND cs.state = 'credited') THEN 0 ELSE -1 END
+    ELSE 1 END FROM invoice_headers hx WHERE hx.id = ${idExpr})`;
+}

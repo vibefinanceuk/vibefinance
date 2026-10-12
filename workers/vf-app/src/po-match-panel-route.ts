@@ -1,3 +1,4 @@
+import { creditSignSql } from "./credit-notes.js";
 import { loadSplits, saveSplitStatements } from "./coding-splits.js";
 import type { InvoiceFacts } from "@vibefinance/shared";
 import { CODING_FIELD_LISTS } from "./coding-validation.js";
@@ -156,7 +157,7 @@ async function invoicedByOthers(db: D1Database, orderNumber: string, invoiceId: 
   const rows = await db
     .prepare(
       `SELECT h.id, json_extract(h.facts_json, '$."BT-1"') AS number,
-              ${poShareSql("h")} AS amount
+              ${poShareSql("h")} * ${creditSignSql("h.id")} AS amount
        FROM invoice_headers h
        WHERE json_extract(h.facts_json, '$."BT-13"') = ? AND h.id != ?
          AND NOT EXISTS (

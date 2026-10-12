@@ -1,3 +1,4 @@
+import { creditSignSql } from "./credit-notes.js";
 import type { CodingSplit } from "./coding-splits.js";
 import type { InvoiceFacts } from "@vibefinance/shared";
 import type { RouteResult } from "./org-route.js";
@@ -49,7 +50,7 @@ async function splitSpend(db: D1Database, projectId: string, excludeInvoiceId: s
   try {
     const row = await db
       .prepare(
-        `SELECT coalesce(sum(s.amount), 0) AS spent
+        `SELECT coalesce(sum(s.amount * ${creditSignSql("s.invoice_id")}), 0) AS spent
          FROM invoice_line_coding_splits s
          WHERE s.project = ? AND s.invoice_id != ?
            AND NOT EXISTS (
@@ -70,7 +71,7 @@ async function splitSpend(db: D1Database, projectId: string, excludeInvoiceId: s
 async function wholeLineSpend(db: D1Database, projectId: string, excludeInvoiceId: string | null): Promise<number> {
   const row = await db
     .prepare(
-      `SELECT coalesce(sum(CAST(json_extract(il.facts_json, '$."BT-131"') AS REAL)), 0) AS spent
+      `SELECT coalesce(sum(CAST(json_extract(il.facts_json, '$."BT-131"') AS REAL) * ${creditSignSql("il.invoice_id")}), 0) AS spent
        FROM invoice_lines il
        WHERE json_valid(il.facts_json) AND json_extract(il.facts_json, '$."coding.project"') = ?
          AND il.invoice_id != ?

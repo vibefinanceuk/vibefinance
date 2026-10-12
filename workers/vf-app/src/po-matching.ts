@@ -1,5 +1,6 @@
 import { supplierProjectOnly } from "./supplier-project-only.js";
-import type { InvoiceFacts } from "@vibefinance/shared";
+import { isCreditNote, type InvoiceFacts } from "@vibefinance/shared";
+import { creditSignSql } from "./credit-notes.js";
 
 /**
  * Computing po.matched / po.variance_pct and their line-level siblings —
@@ -115,7 +116,7 @@ export async function loadPoConsumption(
     await db
       .prepare(
         `SELECT h.id, json_extract(h.facts_json, '$."BT-1"') AS number,
-                ${poShareSql("h")} AS amount
+                ${poShareSql("h")} * ${creditSignSql("h.id")} AS amount, ${creditSignSql("h.id")} AS sign
          FROM invoice_headers h
          WHERE json_extract(h.facts_json, '$."BT-13"') = ? AND h.id != ?
            AND NOT EXISTS (
@@ -126,8 +127,10 @@ export async function loadPoConsumption(
          ORDER BY h.created_at, h.id`
       )
       .bind(orderNumber, excludeInvoiceId ?? "", ...UNPAID_INSTANCE_STATUSES, ...(asAt ? [asAt] : []))
-      .all<{ id: string; number: string | null; amount: number | null }>()
+      .all<{ id: string; number: string | null; amount: number | null; sign: number }>()
   ).results;
+  // Decision 0733: a credit note's lines give back what they credit.
+  const signOf = new Map(invoices.map((i) => [i.id, i.sign ?? 1]));
 
   const byLine = new Map<number, { quantity: number; amount: number }>();
   if (invoices.length > 0) {
@@ -162,8 +165,9 @@ export async function loadPoConsumption(
       const ref = paired.get(`${line.invoice_id}|${line.line_number}`) ?? Number(toText(facts["BT-132"]));
       if (!Number.isFinite(ref)) continue;
       const used = byLine.get(ref) ?? { quantity: 0, amount: 0 };
-      used.quantity += toNumber(facts["BT-129"]) ?? 0;
-      used.amount += toNumber(facts["BT-131"]) ?? 0;
+      const sign = signOf.get(line.invoice_id) ?? 1;
+      used.quantity += sign * (toNumber(facts["BT-129"]) ?? 0);
+      used.amount += sign * (toNumber(facts["BT-131"]) ?? 0);
       byLine.set(ref, used);
     }
   }
@@ -523,6 +527,17 @@ export async function mergePoMatchFacts(
    */
   options: { invoiceId?: string } = {}
 ): Promise<{ headerFacts: InvoiceFacts; lines: (InvoiceFacts & { lineNumber: number })[] }> {
+  /**
+   * **A credit note is not matched to its PO — decision 0733.** It gives
+   * back what its invoice billed (counted in `loadPoConsumption`), and
+   * the invoice is what was matched. With no `po.*` facts, no matching
+   * rule fires on it (an absent fact never does); a rule can still route
+   * it on `creditNote.*`.
+   */
+  if (isCreditNote(headerFacts)) {
+    const projectOnly = options.invoiceId ? await supplierProjectOnly(db, options.invoiceId) : null;
+    return { headerFacts: projectOnly !== null ? { ...headerFacts, "supplier.projectOnly": projectOnly } : headerFacts, lines };
+  }
   // Fetched once per call, not once per line — the same "read once,
   // thread through" shape the header facts this function also builds
   // already get from their own caller.
@@ -613,7 +628,8 @@ export async function mergeReceiptFactsForInvoice(
   invoiceId: string
 ): Promise<void> {
   const orderNumber = toText(headerFacts["BT-13"]);
-  if (!orderNumber || lines.length === 0) return;
+  // Decision 0733: nor against what was received.
+  if (!orderNumber || lines.length === 0 || isCreditNote(headerFacts)) return;
   const orgConfig = await getOrgMatchingConfig(db);
   const consumption = await loadPoConsumption(db, orderNumber, invoiceId);
   await mergeReceiptFacts(db, headerFacts, lines, orderNumber, orgConfig, consumption, invoiceId);

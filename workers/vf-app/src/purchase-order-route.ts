@@ -1,3 +1,4 @@
+import { creditSignSql } from "./credit-notes.js";
 import type { RouteResult } from "./org-route.js";
 import { getOrgMatchingConfig, poShareSql } from "./po-matching.js";
 import { heldByLine, receiptStateJoin, RECEIPT_STATES } from "./goods-receipts.js";
@@ -673,7 +674,8 @@ const INVOICED_AMOUNTS_JOIN = `
   LEFT JOIN (
     SELECT json_extract(facts_json, '$."BT-13"') AS order_number,
            -- Decision 0544: less each invoice's Non-PO lines, as matching counts it.
-           SUM(${poShareSql("h")}) AS invoiced_amount
+           -- Decision 0733: a credit note gives back what it credits.
+           SUM(${poShareSql("h")} * ${creditSignSql("h.id")}) AS invoiced_amount
     FROM invoice_headers h
     WHERE json_extract(facts_json, '$."BT-13"') IS NOT NULL
       -- Decision 0533: a discarded or returned invoice will never be paid,
