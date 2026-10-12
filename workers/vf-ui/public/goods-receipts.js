@@ -904,7 +904,8 @@ export function openRecord(mode = "received", { container = null, onSaved = null
   const content = [
     el("div", { class: "cardhead" }, [
       el("h3", { text: t(returning ? "receipts.form.returnheading" : "receipts.form.receiptheading") }),
-      el("div", { class: "statebuttons" }, [actionLink("save", { primary: true, onclick: () => save() }), container ? null : actionLink("close", { onclick: () => backdrop.remove() })].filter(Boolean)),
+      // Decision 0742: small, the word beside the icon, as the other screens' cards.
+      el("div", { class: "statebuttons" }, [compactLink("save", { primary: true, onclick: () => save() }), container ? null : compactLink("close", { onclick: () => backdrop.remove() })].filter(Boolean)),
     ]),
     el("div", { class: "editgrid" }, [
       el("label", { for: "record-order", text: t("receipts.form.order") }),

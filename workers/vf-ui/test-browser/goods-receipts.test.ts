@@ -459,6 +459,9 @@ describe("Create → Goods receipts — decision 0653", () => {
   it("offers Invoices or Goods receipts to someone who may do both, and only receipts to someone who only receives", async () => {
     await openCreate(["AP.Receive", "AP.Create"]);
     expect(document.getElementById("create-kind-invoices")?.getAttribute("aria-pressed")).toBe("true");
+    // Decision 0742: the same rounded pill as the tabs beside it.
+    expect(document.getElementById("create-kind-invoices")?.className).toBe("doctab createkind on");
+    expect(document.getElementById("create-kind-invoices")?.parentElement?.classList.contains("doctabs")).toBe(true);
     document.getElementById("create-kind-receipts")!.click();
     await vi.waitFor(() => expect(document.getElementById("create-grdrop")).not.toBeNull());
     expect(document.getElementById("create-grdest")?.textContent).toBe("Warehouse Receipts");
@@ -517,6 +520,8 @@ describe("Create → Goods receipts — decision 0653", () => {
     order.dispatchEvent(new Event("change"));
     await vi.waitFor(() => expect(document.querySelector('#record-lines input[data-line="2"]')).not.toBeNull());
     (document.getElementById("record-number") as HTMLInputElement).value = "GR-1003";
+    // Decision 0742: Save small, its word beside the icon, as the other cards'.
+    expect(button("Save")!.classList.contains("compactlink")).toBe(true);
     button("Save")!.click();
     await vi.waitFor(() => expect(document.getElementById("create-grside")?.textContent).toContain("Receipt GR-1003 recorded."));
     expect(calls.find((c) => c.method === "POST" && c.path === "/api/goods-receipts")?.body).toMatchObject({ receiptNumber: "GR-1003" });

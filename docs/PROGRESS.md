@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 12 October 2026 (decision 0741). A living document: what
+Last updated 12 October 2026 (decision 0742). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,13 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Create › Goods receipts: rounded kind pill, small Save (0742)
+
+Invoices / Goods receipts as the same rounded pill as the tabs beside it; Save on Key a receipt
+and Key a return small, its word beside the icon.
+
+Full reasoning is in decision 0742.
 
 ### A goods receipt opened is a page in the frame (0741)
 

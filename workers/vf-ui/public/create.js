@@ -710,12 +710,13 @@ function kindChoice() {
   if (!canInvoices() || !canReceipts()) return null;
   return el(
     "div",
-    { class: "createkinds", role: "group", "aria-label": t("create.kind") },
+    // Decision 0742: the same rounded pill as the tabs beside it.
+    { class: "doctabs createkinds", role: "group", "aria-label": t("create.kind") },
     [
       ["invoices", "create.kind.invoices"],
       ["receipts", "create.kind.receipts"],
     ].map(([key, label]) =>
-      el("button", { type: "button", class: kind === key ? "createkind on" : "createkind", id: `create-kind-${key}`, "aria-pressed": String(kind === key), onclick: () => chooseKind(key) }, [
+      el("button", { type: "button", class: kind === key ? "doctab createkind on" : "doctab createkind", id: `create-kind-${key}`, "aria-pressed": String(kind === key), onclick: () => chooseKind(key) }, [
         el("span", { text: t(label) }),
       ])
     )
