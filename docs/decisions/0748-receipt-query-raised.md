@@ -1,6 +1,6 @@
 # 0748: A goods receipt's questions to the supplier, as an invoice's
 
-**Status: built.** vf-app (`receipt-messages.ts`, `receipt-sharing.ts`, `receipt-timeline.ts`,
+**Status: live.** vf-app (`receipt-messages.ts`, `receipt-sharing.ts`, `receipt-timeline.ts`,
 `supplier-messages.ts`), vf-ui (`goods-receipts.js`, `supplier-chat.js`,
 `receipt-conversations.js`), vf-licence (strings migration 0346).
 
