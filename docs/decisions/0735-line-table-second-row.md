@@ -1,6 +1,6 @@
 # 0735: The line table keeps to its card: long text on a second row, and scrolling inside
 
-**Status: built**, awaiting deploy. vf-ui (`viewer.js`, `app.css`); vf-portal's copy of
+**Status: live** at `181d174`, pushed and deployed 12 October 2026. vf-ui (`viewer.js`, `app.css`); vf-portal's copy of
 `app.css`.
 
 ## What was asked

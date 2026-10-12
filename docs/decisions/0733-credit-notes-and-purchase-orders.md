@@ -1,6 +1,6 @@
 # 0733: A credit note gives back what it credits on the PO, and is not matched to it
 
-**Status: live** at `07a95f2`, pushed and deployed 12 October 2026; the afterwards below awaits deploy. vf-app (`po-matching.ts`, `credit-notes.ts`,
+**Status: live** at `07a95f2`, its afterwards at `150e65c`, pushed and deployed 12 October 2026. vf-app (`po-matching.ts`, `credit-notes.ts`,
 `purchase-order-route.ts`, `po-match-panel-route.ts`, `project-budget.ts`).
 
 ## What was asked

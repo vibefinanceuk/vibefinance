@@ -1,6 +1,6 @@
 # 0734: Choose the invoice line columns
 
-**Status: built**, awaiting deploy. vf-ui (`viewer.js`, `icons.js`, `app.css`), vf-app
+**Status: live** at `c653017`, pushed and deployed 12 October 2026, migration 0336 applied. vf-ui (`viewer.js`, `icons.js`, `app.css`), vf-app
 (`field-visibility-route.ts`), vf-licence (strings migration 0336); vf-portal's copies of
 `app.css` and `icons.js`.
 
