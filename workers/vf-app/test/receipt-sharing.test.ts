@@ -207,7 +207,8 @@ describe("the settings' routes", () => {
     expect((await call("/network-sharing-config", await staff(["AP.Review"]))).status).toBe(403);
     await handlePutSupplierReceiptSharing(env.DB, "u1", "sup-x", { setting: "none" });
     const put = await call("/network-sharing-config", admin, "PUT", { shareReceipts: true, registeredOnly: false });
-    expect(await put.json()).toEqual({ config: { shareReceipts: true, registeredOnly: false }, suppliersWithOwn: 1 });
+    // Decision 0751: orders' settings ride along, untouched.
+    expect(await put.json()).toEqual({ config: { shareReceipts: true, registeredOnly: false, shareOrders: false, ordersFrom: null }, suppliersWithOwn: 1, suppliersWithOwnOrders: 0 });
   });
 
   it("a supplier's own setting is seen with AP.Supplier and changed with Supplier.Maintain", async () => {

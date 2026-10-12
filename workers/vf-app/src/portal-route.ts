@@ -5,6 +5,7 @@ import { handlePortalReply, portalMessages, type MessageEmail } from "./supplier
 import { partiesFor } from "./network-submission.js";
 import { loadCreditNoteConfig } from "./credit-notes.js";
 import { listPortalReceipts } from "./receipt-sharing.js";
+import { listPortalOrders } from "./order-sharing.js";
 
 /**
  * **The supplier portal's view of this instance — decision 0714.** Step 2
@@ -213,11 +214,13 @@ export async function listPortalInvoices(db: D1Database, claims: PortalAccessCla
    * whether this customer shares them with this supplier at all.
    */
   const shared = await listPortalReceipts(db, claims, q, PORTAL_LIST_LIMIT);
-  const more = rows.length > PORTAL_LIST_LIMIT || shared.more;
-  const invoices = [...rows.slice(0, PORTAL_LIST_LIMIT).map(summary), ...shared.receipts]
+  // Decision 0751: and purchase orders, where they are shared, the same way.
+  const orders = await listPortalOrders(db, claims, q, PORTAL_LIST_LIMIT);
+  const more = rows.length > PORTAL_LIST_LIMIT || shared.more || orders.more;
+  const invoices = [...rows.slice(0, PORTAL_LIST_LIMIT).map(summary), ...shared.receipts, ...orders.orders]
     .filter((i) => !wanted || i.status === wanted)
     .sort((a, b) => String(b.receivedAt ?? "").localeCompare(String(a.receivedAt ?? "")));
-  return { status: 200, body: { invoices, more, receipts: shared.shared } };
+  return { status: 200, body: { invoices, more, receipts: shared.shared, orders: orders.shared } };
 }
 
 /**

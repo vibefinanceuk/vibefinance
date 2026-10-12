@@ -119,6 +119,8 @@ export async function invoices(deps: Deps, session: string, params: URLSearchPar
   const capped: string[] = [];
   // Decision 0738: whether any customer shares goods receipts with this supplier.
   let receipts = false;
+  // Decision 0751: and purchase orders.
+  let orders = false;
   for (const { link, answer } of answers) {
     if (!answer.ok) {
       unavailable.push({ customer: link.customerName, reason: answer.reason });
@@ -126,12 +128,13 @@ export async function invoices(deps: Deps, session: string, params: URLSearchPar
     }
     if (answer.body.more === true) capped.push(link.customerName);
     if (answer.body.receipts === true) receipts = true;
+    if (answer.body.orders === true) orders = true;
     for (const inv of (answer.body.invoices ?? []) as Record<string, unknown>[]) {
       all.push({ ...inv, linkId: link.id, customer: link.customerName, supplier: link.supplierName });
     }
   }
   all.sort((a, b) => String(b.receivedAt ?? "").localeCompare(String(a.receivedAt ?? "")));
-  return { status: 200, body: { invoices: all, unavailable, capped, receipts } };
+  return { status: 200, body: { invoices: all, unavailable, capped, receipts, orders } };
 }
 
 /** `GET /api/invoices/:linkId/:invoiceId` — one invoice, from the customer that link is for. */
@@ -154,6 +157,17 @@ export async function receipt(deps: Deps, session: string, linkId: string, recei
   const answer = await ask(deps, pair.access, `/portal/receipts/${encodeURIComponent(receiptId)}`);
   if (!answer.ok) return { status: answer.status === 404 ? 404 : 502, body: { error: answer.status === 404 ? "not_found" : answer.reason, customer: pair.link.customerName } };
   return { status: 200, body: { ...(answer.body.receipt as Record<string, unknown>), linkId, customer: pair.link.customerName, supplier: pair.link.supplierName } };
+}
+
+/** `GET /api/orders/:linkId/:orderId` — a purchase order the customer shares, read only (decision 0751). */
+export async function order(deps: Deps, session: string, linkId: string, orderId: string): Promise<Result> {
+  const pairs = await linksWithAccess(deps, session);
+  if (!pairs) return { status: 401, body: { error: "signed_out" } };
+  const pair = pairs.find((p) => p.link.id === linkId);
+  if (!pair?.access) return { status: 404, body: { error: "not_found" } };
+  const answer = await ask(deps, pair.access, `/portal/orders/${encodeURIComponent(orderId)}`);
+  if (!answer.ok) return { status: answer.status === 404 ? 404 : 502, body: { error: answer.status === 404 ? "not_found" : answer.reason, customer: pair.link.customerName } };
+  return { status: 200, body: { ...(answer.body.order as Record<string, unknown>), linkId, customer: pair.link.customerName, supplier: pair.link.supplierName } };
 }
 
 /**

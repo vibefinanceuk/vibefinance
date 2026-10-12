@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import stringsSql from "../../vf-licence/migrations/0339_receipt_sharing_strings.sql?raw";
 import updatesSql from "../../vf-licence/migrations/0340_supplier_network_card_strings.sql?raw";
+import ordersSql from "../../vf-licence/migrations/0349_order_sharing_strings.sql?raw";
 
 /**
  * **Goods receipts shared with suppliers — decision 0738**: AP Setup ›
@@ -9,7 +10,7 @@ import updatesSql from "../../vf-licence/migrations/0340_supplier_network_card_s
  */
 
 const strings: Record<string, string> = {};
-for (const m of stringsSql.matchAll(/\('([^']+)', 'en', '((?:[^']|'')*)'\)/g)) strings[m[1]] = m[2].replace(/''/g, "'");
+for (const sql of [stringsSql, ordersSql]) for (const m of sql.matchAll(/\('([^']+)', 'en', '((?:[^']|'')*)'\)/g)) strings[m[1]] = m[2].replace(/''/g, "'");
 // Decision 0739: the words changed since.
 for (const m of updatesSql.matchAll(/SET value = '((?:[^']|'')*)' WHERE key = '([^']+)' AND locale = 'en'/g)) strings[m[2]] = m[1].replace(/''/g, "'");
 
@@ -104,5 +105,46 @@ describe("a supplier's own choice", () => {
     await vi.waitFor(() => expect(block.hidden).toBe(false));
     expect([...block.querySelectorAll("input")].every((i) => (i as HTMLInputElement).disabled)).toBe(true);
     expect((block.querySelector("#receiptsharing-sup-1-none") as HTMLInputElement).checked).toBe(true);
+  });
+});
+
+describe("purchase orders shared with suppliers — decision 0751", () => {
+  it("AP Setup asks it beside receipts: share or not, and from when; and says how many suppliers have their own", async () => {
+    const calls = stub({
+      "GET /api/network-sharing-config": () => ({ status: 200, body: { config: { shareReceipts: true, registeredOnly: true, shareOrders: false, ordersFrom: null }, suppliersWithOwn: 0, suppliersWithOwnOrders: 1 } }),
+      "PUT /api/network-sharing-config": (b) => ({ status: 200, body: { config: b, suppliersWithOwn: 0, suppliersWithOwnOrders: 1 } }),
+    });
+    const m = await load();
+    await m.loadNetworkSharingSetup();
+    const rerender = vi.fn();
+    const tab = m.supplierNetworkTab(rerender);
+    document.body.append(tab);
+    const orders = tab.querySelector("#network-orders")!;
+    expect(orders.querySelector(".creditqtitle")?.textContent).toBe("Purchase orders");
+    expect((tab.querySelector("#network-orders-none") as HTMLInputElement).checked).toBe(true);
+    expect(orders.querySelector(".networkown")?.textContent).toBe("1 supplier(s) have their own setting for orders, on their page's Supplier portal card.");
+    (tab.querySelector("#network-orders-share") as HTMLInputElement).click();
+    const from = tab.querySelector("#network-ordersfrom") as HTMLInputElement;
+    from.value = "2026-10-01";
+    from.dispatchEvent(new Event("change"));
+    (tab.querySelector(".cardhead .actionlink") as HTMLButtonElement).click();
+    await vi.waitFor(() => expect(rerender).toHaveBeenCalled());
+    expect(calls.find((c) => c.method === "PUT")?.body).toEqual({ shareReceipts: true, registeredOnly: true, shareOrders: true, ordersFrom: "2026-10-01" });
+  });
+
+  it("a supplier's own choice for orders, on its own address", async () => {
+    const calls = stub({
+      "GET /api/suppliers/sup-1/order-sharing": () => ({ status: 200, body: { setting: "default", apSetup: true, canManage: true } }),
+      "PUT /api/suppliers/sup-1/order-sharing": (b) => ({ status: 200, body: { setting: (b as { setting: string }).setting, apSetup: true, canManage: true } }),
+    });
+    const m = await load();
+    const block = m.orderSharingBlock("sup-1");
+    document.body.append(block);
+    await vi.waitFor(() => expect(block.hidden).toBe(false));
+    expect(block.querySelector(".receiptsharinghead")?.textContent).toBe("Purchase orders in the network");
+    expect(block.textContent).toContain("AP Setup shares purchase orders with every supplier.");
+    (block.querySelector("#ordersharing-sup-1-none") as HTMLInputElement).click();
+    await vi.waitFor(() => expect(block.querySelector(".portalnote")?.textContent).toBe("Saved."));
+    expect(calls.find((c) => c.method === "PUT")).toMatchObject({ path: "/api/suppliers/sup-1/order-sharing", body: { setting: "none" } });
   });
 });

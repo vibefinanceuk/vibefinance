@@ -22,39 +22,50 @@ import { portalView, type MessageRow } from "./supplier-messages.js";
 export interface ReceiptSharingConfig {
   shareReceipts: boolean;
   registeredOnly: boolean;
+  /** Decision 0751: purchase orders shared too, and only those issued on or after `ordersFrom`. */
+  shareOrders: boolean;
+  ordersFrom: string | null;
 }
 
-const DEFAULTS: ReceiptSharingConfig = { shareReceipts: false, registeredOnly: true };
+const DEFAULTS: ReceiptSharingConfig = { shareReceipts: false, registeredOnly: true, shareOrders: false, ordersFrom: null };
 
 export async function loadReceiptSharingConfig(db: D1Database): Promise<ReceiptSharingConfig> {
   const row = await db
-    .prepare("SELECT share_receipts, registered_only FROM network_sharing_config WHERE id = 'default'")
-    .first<{ share_receipts: number; registered_only: number }>();
+    .prepare("SELECT share_receipts, registered_only, share_orders, orders_from FROM network_sharing_config WHERE id = 'default'")
+    .first<{ share_receipts: number; registered_only: number; share_orders: number; orders_from: string | null }>();
   if (!row) return DEFAULTS;
-  return { shareReceipts: row.share_receipts === 1, registeredOnly: row.registered_only !== 0 };
+  return { shareReceipts: row.share_receipts === 1, registeredOnly: row.registered_only !== 0, shareOrders: row.share_orders === 1, ordersFrom: row.orders_from };
 }
 
-/** `GET /network-sharing-config` — AP Setup › Supplier Network, and how many suppliers say otherwise. */
+/** `GET /network-sharing-config` — AP Setup › Supplier Network, and how many suppliers say otherwise (for receipts, and for orders, 0751). */
 export async function handleGetNetworkSharingConfig(db: D1Database): Promise<RouteResult> {
   const own = await db.prepare("SELECT count(*) AS n FROM supplier_receipt_sharing").first<{ n: number }>();
-  return { status: 200, body: { config: await loadReceiptSharingConfig(db), suppliersWithOwn: own?.n ?? 0 } };
+  const ownOrders = await db.prepare("SELECT count(*) AS n FROM supplier_order_sharing").first<{ n: number }>();
+  return { status: 200, body: { config: await loadReceiptSharingConfig(db), suppliersWithOwn: own?.n ?? 0, suppliersWithOwnOrders: ownOrders?.n ?? 0 } };
 }
 
 /** `PUT /network-sharing-config` — Admin.Configure, as the rest of AP Setup. */
 export async function handlePutNetworkSharingConfig(db: D1Database, userId: string, body: Record<string, unknown>): Promise<RouteResult> {
   const now = await loadReceiptSharingConfig(db);
+  // Decision 0751: a date, or nothing for every order.
+  if (body.ordersFrom !== undefined && body.ordersFrom !== null && body.ordersFrom !== "" && !(typeof body.ordersFrom === "string" && /^\d{4}-\d{2}-\d{2}$/.test(body.ordersFrom))) {
+    return { status: 400, body: { error: "ordersFrom is a date, YYYY-MM-DD, or empty for every order", reason: "orders_from_invalid" } };
+  }
   const next: ReceiptSharingConfig = {
     shareReceipts: typeof body.shareReceipts === "boolean" ? body.shareReceipts : now.shareReceipts,
     registeredOnly: typeof body.registeredOnly === "boolean" ? body.registeredOnly : now.registeredOnly,
+    shareOrders: typeof body.shareOrders === "boolean" ? body.shareOrders : now.shareOrders,
+    ordersFrom: body.ordersFrom === undefined ? now.ordersFrom : body.ordersFrom ? String(body.ordersFrom) : null,
   };
   await db
     .prepare(
-      `INSERT INTO network_sharing_config (id, share_receipts, registered_only, updated_by, updated_at)
-       VALUES ('default', ?, ?, ?, ?)
+      `INSERT INTO network_sharing_config (id, share_receipts, registered_only, share_orders, orders_from, updated_by, updated_at)
+       VALUES ('default', ?, ?, ?, ?, ?, ?)
        ON CONFLICT (id) DO UPDATE SET share_receipts = excluded.share_receipts, registered_only = excluded.registered_only,
+         share_orders = excluded.share_orders, orders_from = excluded.orders_from,
          updated_by = excluded.updated_by, updated_at = excluded.updated_at`
     )
-    .bind(next.shareReceipts ? 1 : 0, next.registeredOnly ? 1 : 0, userId, new Date().toISOString())
+    .bind(next.shareReceipts ? 1 : 0, next.registeredOnly ? 1 : 0, next.shareOrders ? 1 : 0, next.ordersFrom, userId, new Date().toISOString())
     .run();
   return handleGetNetworkSharingConfig(db);
 }
@@ -110,8 +121,8 @@ export async function handlePutSupplierReceiptSharing(db: D1Database, userId: st
 export const PORTAL_RECEIPT_STATUSES = ["goods_received", "goods_returned", "goods_checking"] as const;
 
 /** A VAT number without its country prefix, spaces or dots — as credit notes match a supplier (0731). */
-const bareVat = (v: string) => v.toUpperCase().replace(/[^A-Z0-9]/g, "").replace(/^[A-Z]{2}(?=\d)/, "");
-const BARE_SQL = (col: string) =>
+export const bareVat = (v: string) => v.toUpperCase().replace(/[^A-Z0-9]/g, "").replace(/^[A-Z]{2}(?=\d)/, "");
+export const BARE_SQL = (col: string) =>
   `(CASE WHEN upper(replace(replace(${col}, ' ', ''), '.', '')) GLOB '[A-Z][A-Z][0-9]*' THEN substr(upper(replace(replace(${col}, ' ', ''), '.', '')), 3) ELSE upper(replace(replace(${col}, ' ', ''), '.', '')) END)`;
 
 /**

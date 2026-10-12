@@ -770,6 +770,8 @@ describe("the proxy carries every path a screen calls (decision 0131)", () => {
     ["PUT", "/api/network-sharing-config"],
     ["GET", "/api/suppliers/sup-1/receipt-sharing"],
     ["PUT", "/api/suppliers/sup-1/receipt-sharing"],
+    ["GET", "/api/suppliers/sup-1/order-sharing"],
+    ["PUT", "/api/suppliers/sup-1/order-sharing"],
   ];
 
   it("carries all of them", async () => {

@@ -4,6 +4,7 @@ import { icon } from "/icons.js";
 import { createPage, startCreditNote } from "/create.js";
 import { viewPage } from "/view.js";
 import { receiptPage } from "/receipt-view.js";
+import { orderPage } from "/order-view.js";
 
 /**
  * **The supplier network's pages — decisions 0717 and 0725.** Sign in;
@@ -18,6 +19,10 @@ export const STATUSES = ["received", "in_review", "query_raised", "returned", "a
 export const RECEIPT_STATUSES = ["goods_received", "goods_returned", "goods_checking"];
 /** Whether any customer shares goods receipts with this supplier: the type and statuses are offered then. */
 let receiptsShared = false;
+/** Decision 0751: a purchase order's, where a customer shares them. */
+export const ORDER_STATUSES = ["order_open", "order_part_received", "order_received", "order_part_invoiced", "order_invoiced", "order_on_hold", "order_closed"];
+/** Whether any customer shares purchase orders with this supplier. */
+let ordersShared = false;
 
 const $ = (id) => document.getElementById(id);
 
@@ -91,6 +96,8 @@ export async function render() {
           sentNotice = sent;
           go("documents");
         })
+      : current === "order" && opened
+        ? orderPage(opened.body, { statusChip, money, back: () => go("documents") }, handlers)
       : current === "receipt" && opened
         ? receiptPage(opened.body, { statusChip, back: () => go("documents"), conversation: (body) => conversation(body, opened.inv) }, handlers)
         : current === "invoice" && opened
@@ -111,7 +118,7 @@ export async function render() {
           )
         : el("div", {}, documentsPage());
   // The open invoice is one of the documents, so Documents stays chosen in the menu.
-  $("shell").replaceChildren(frame({ current: current === "invoice" || current === "receipt" ? "documents" : current, go, who: { email: me.email, supplier: supplierNames() }, page, badges: { documents: waitingCount() } }));
+  $("shell").replaceChildren(frame({ current: current === "invoice" || current === "receipt" || current === "order" ? "documents" : current, go, who: { email: me.email, supplier: supplierNames() }, page, badges: { documents: waitingCount() } }));
   $("shell").hidden = false;
   $("signin-view").hidden = true;
   // As the app (tasks.js): the page fills the window once someone is signed in.
@@ -141,11 +148,11 @@ let page = 1;
 let pageSize = 50;
 const COLUMNS_KEY = "vfn-columns";
 // Decision 0738: invoice, credit note or goods receipt.
-const typeOf = (inv) => (inv.documentType === "credit_note" || inv.documentType === "goods_receipt" ? inv.documentType : "invoice");
+const typeOf = (inv) => (inv.documentType === "credit_note" || inv.documentType === "goods_receipt" || inv.documentType === "purchase_order" ? inv.documentType : "invoice");
 const negative = (inv) => (inv.documentType === "credit_note" && typeof inv.total === "number" ? -inv.total : inv.total);
 const DOC_COLUMNS = [
   { key: "customer", label: "network.col.customer", on: true, cell: (inv) => el("td", { text: inv.customer }) },
-  { key: "type", label: "network.col.type", on: true, cell: (inv) => el("td", { class: `doctype${inv.documentType === "credit_note" ? " cn" : inv.documentType === "goods_receipt" ? " gr" : ""}`, text: t(`network.types.${typeOf(inv)}`) }) },
+  { key: "type", label: "network.col.type", on: true, cell: (inv) => el("td", { class: `doctype${inv.documentType === "credit_note" ? " cn" : inv.documentType === "goods_receipt" ? " gr" : inv.documentType === "purchase_order" ? " po" : ""}`, text: t(`network.types.${typeOf(inv)}`) }) },
   { key: "number", label: "network.col.document", always: true, cell: (inv) => el("td", { class: "nowrap", text: inv.invoiceNumber ?? "—" }) },
   { key: "date", label: "network.col.date", on: true, cls: "hide-narrow", cell: (inv) => el("td", { class: "hide-narrow", text: inv.issueDate ?? "—" }) },
   { key: "due", label: "network.col.due", on: false, cell: (inv) => el("td", { text: inv.dueDate ?? "—" }) },
@@ -248,6 +255,7 @@ function documentsPage() {
     el("option", { value: "invoice", text: t("network.types.invoice") }),
     el("option", { value: "credit_note", text: t("network.types.credit_note") }),
     ...(receiptsShared ? [el("option", { value: "goods_receipt", text: t("network.types.goods_receipt") })] : []),
+    ...(ordersShared ? [el("option", { value: "purchase_order", text: t("network.types.purchase_order") })] : []),
   ]);
   type.value = filters.type;
   type.addEventListener("change", () => {
@@ -257,7 +265,7 @@ function documentsPage() {
   });
   const status = el("select", { id: "status", "aria-label": t("network.col.status") }, [
     el("option", { value: "", text: t("network.status.all") }),
-    ...[...STATUSES, ...(receiptsShared ? RECEIPT_STATUSES : [])].map((s) => el("option", { value: s, text: t(`network.status.${s}`) })),
+    ...[...STATUSES, ...(receiptsShared ? RECEIPT_STATUSES : []), ...(ordersShared ? ORDER_STATUSES : [])].map((s) => el("option", { value: s, text: t(`network.status.${s}`) })),
   ]);
   status.value = filters.status;
   status.addEventListener("change", () => {
@@ -299,8 +307,10 @@ export async function loadInvoices() {
   if (!res.ok) return;
   invoices = body.invoices ?? [];
   // Decision 0738: the first answer that says receipts are shared draws the filters again, with them.
-  if (Boolean(body.receipts) !== receiptsShared) {
+  // Decision 0751: and orders.
+  if (Boolean(body.receipts) !== receiptsShared || Boolean(body.orders) !== ordersShared) {
     receiptsShared = Boolean(body.receipts);
+    ordersShared = Boolean(body.orders);
     if (current === "documents") await render();
   }
   // Unfiltered, the list is every invoice: the menu's count is worked out from it (0728).
@@ -372,6 +382,16 @@ function drawRows() {
 
 /** Decision 0729: an invoice opens full screen, in place of the list. */
 export async function openInvoice(inv) {
+  // Decision 0751: a purchase order opens read only, on its own page.
+  if (inv.documentType === "purchase_order") {
+    const { res, body } = await api(`/orders/${encodeURIComponent(inv.linkId)}/${encodeURIComponent(inv.id)}`);
+    if (!res.ok) return;
+    opened = { inv, body };
+    current = "order";
+    window.scrollTo?.(0, 0);
+    await render();
+    return;
+  }
   // Decision 0738: a goods receipt opens read only, on its own page.
   if (inv.documentType === "goods_receipt") {
     const { res, body } = await api(`/receipts/${encodeURIComponent(inv.linkId)}/${encodeURIComponent(inv.id)}`);

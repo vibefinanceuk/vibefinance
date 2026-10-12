@@ -734,7 +734,7 @@ export async function handleLoadPurchaseOrdersCsv(db: D1Database, csv: string): 
  * order specifically; an order already on hold or closed keeps that
  * status regardless of how much of it has been invoiced.
  */
-const INVOICED_AMOUNTS_JOIN = `
+export const INVOICED_AMOUNTS_JOIN = `
   LEFT JOIN (
     SELECT ${poOfSql("h")} AS order_number,
            -- Decision 0544: less each invoice's Non-PO lines, as matching counts it.
@@ -752,7 +752,7 @@ const INVOICED_AMOUNTS_JOIN = `
   ) inv ON inv.order_number = po.order_number
 `;
 
-const EFFECTIVE_STATUS_CASE = `
+export const EFFECTIVE_STATUS_CASE = `
   CASE
     WHEN po.status = 'closed' THEN 'closed'
     WHEN po.status = 'on_hold' THEN 'on_hold'

@@ -1,7 +1,7 @@
 import { env, SELF } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 import worker, { readSession, type Env } from "../src/index.js";
-import { invoice, invoices, me, receipt, reply, submissionCompanies, submit, type Deps } from "../src/network.js";
+import { invoice, invoices, me, order, receipt, reply, submissionCompanies, submit, type Deps } from "../src/network.js";
 
 /**
  * **The supplier network — decision 0717.** vf-licence and the customers'
@@ -308,6 +308,7 @@ describe("the network's words", () => {
       (await import("../public/create.js?raw")).default,
       (await import("../public/view.js?raw")).default,
       (await import("../public/receipt-view.js?raw")).default,
+      (await import("../public/order-view.js?raw")).default,
       (await import("../public/welcome.js?raw")).default,
     ] as string[];
     const used = new Set<string>();
@@ -325,9 +326,10 @@ describe("the network's words", () => {
     for (const r of ["not_covered", "not_accepting", "not_bis3", "unreadable", "too_large", "other", "credit_not_allowed", "unknown_invoice", "already_credited"]) used.add(`network.create.failed.${r}`);
     // Decision 0732: each credit note reason, each document type, and Credited.
     for (const r of ["duplicate", "price", "returned", "cancelled", "other"]) used.add(`network.credit.reason.${r}`);
-    for (const k of ["invoice", "credit_note", "goods_receipt"]) used.add(`network.types.${k}`);
+    for (const k of ["invoice", "credit_note", "goods_receipt", "purchase_order"]) used.add(`network.types.${k}`);
     // Decision 0738: a goods receipt's statuses.
-    for (const s of ["credited", "goods_received", "goods_returned", "goods_checking"]) {
+    // Decision 0751: and a purchase order's.
+    for (const s of ["credited", "goods_received", "goods_returned", "goods_checking", "order_open", "order_part_received", "order_received", "order_part_invoiced", "order_invoiced", "order_on_hold", "order_closed"]) {
       used.add(`network.status.${s}`);
       used.add(`network.help.status.${s}`);
     }
@@ -336,5 +338,20 @@ describe("the network's words", () => {
     expect(used.size).toBeGreaterThan(80);
     expect([...used].filter((k) => !defined.en.has(k))).toEqual([]);
     expect([...used].filter((k) => !defined.de.has(k))).toEqual([]);
+  });
+});
+
+describe("purchase orders — decision 0751", () => {
+  it("says whether any customer shares orders, and opens one from the customer its link is for", async () => {
+    const shared = () => Response.json({ invoices: [{ id: "po1", documentType: "purchase_order", invoiceNumber: "PO-1", receivedAt: "2026-10-06T09:00:00", status: "order_open" }], orders: true });
+    const list = await invoices(deps({ "acme.example": shared, "globex.example": GLOBEX }), "good", new URLSearchParams());
+    expect(list.body).toMatchObject({ orders: true });
+    expect((await invoices(deps({ "acme.example": ACME, "globex.example": GLOBEX }), "good", new URLSearchParams())).body).toMatchObject({ orders: false });
+    const seen: { url: string; auth: string | null }[] = [];
+    const one = await order(deps({ "acme.example": () => Response.json({ order: { id: "po1", lines: [] } }) }, seen), "good", "pl-acme", "po1");
+    expect(one).toMatchObject({ status: 200, body: { id: "po1", linkId: "pl-acme" } });
+    expect(seen).toEqual([{ url: "https://acme.example/portal/orders/po1", auth: "Bearer tok-acme" }]);
+    expect((await order(deps({}), "good", "pl-someone", "po1")).status).toBe(404);
+    expect((await order(deps({}), "stale", "pl-acme", "po1")).status).toBe(401);
   });
 });

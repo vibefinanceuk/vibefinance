@@ -52,6 +52,8 @@ export function supplierNetworkTab(rerender) {
   const problem = el("div", { class: "warn" });
 
   const registered = el("input", { type: "checkbox", id: "network-registered", ...(draft.registeredOnly ? { checked: "checked" } : {}) });
+  const ordersFrom = el("input", { type: "date", id: "network-ordersfrom", value: draft.ordersFrom ?? "" });
+  ordersFrom.addEventListener("change", () => (draft.ordersFrom = ordersFrom.value || null));
   registered.addEventListener("change", () => (draft.registeredOnly = registered.checked));
 
   const save = compactLink("save", {
@@ -83,6 +85,19 @@ export function supplierNetworkTab(rerender) {
       ]),
       setup.suppliersWithOwn > 0 ? el("p", { class: "muted sm networkown", text: t("apsetup.network.own").replace("{n}", String(setup.suppliersWithOwn)) }) : null,
     ]),
+    // Decision 0751: purchase orders, the same way, and from when.
+    el("div", { class: "creditq", id: "network-orders" }, [
+      el("b", { class: "creditqtitle", text: t("apsetup.network.orders") }),
+      el("div", { class: "radiochoices" }, [
+        radio("network-orders", "none", !draft.shareOrders, t("apsetup.network.orders.none"), t("apsetup.network.orders.none.help"), () => (draft.shareOrders = false)),
+        radio("network-orders", "share", draft.shareOrders, t("apsetup.network.orders.share"), t("apsetup.network.orders.share.help"), () => (draft.shareOrders = true)),
+      ]),
+      el("label", { class: "radiochoice", for: "network-ordersfrom" }, [
+        el("span", {}, [el("b", { text: t("apsetup.network.ordersfrom") }), el("span", { class: "muted sm", text: t("apsetup.network.ordersfrom.help") })]),
+        ordersFrom,
+      ]),
+      setup.suppliersWithOwnOrders > 0 ? el("p", { class: "muted sm networkown", text: t("apsetup.network.ownorders").replace("{n}", String(setup.suppliersWithOwnOrders)) }) : null,
+    ]),
     problem,
   ]);
 }
@@ -98,23 +113,32 @@ export function supplierNetworkTab(rerender) {
  * Fills itself; stays empty if the setting cannot be read.
  */
 export function receiptSharingBlock(supplierId) {
-  const block = el("div", { class: "receiptsharing", hidden: "" });
-  const base = `/api/suppliers/${encodeURIComponent(supplierId)}/receipt-sharing`;
+  return sharingBlock(supplierId, "receipt", "suppliers.receipts");
+}
+
+/** Decision 0751: whether this supplier sees its purchase orders, the same way. */
+export function orderSharingBlock(supplierId) {
+  return sharingBlock(supplierId, "order", "suppliers.orders");
+}
+
+function sharingBlock(supplierId, what, words) {
+  const block = el("div", { class: `receiptsharing ${what}sharing`, hidden: "" });
+  const base = `/api/suppliers/${encodeURIComponent(supplierId)}/${what}-sharing`;
 
   async function draw(data, message = "", warn = false) {
-    const name = `receiptsharing-${supplierId}`;
+    const name = `${what}sharing-${supplierId}`;
     const choose = (setting) => async () => {
       const r = await put(base, { setting });
-      if (!r.ok) return draw(data, t("suppliers.receipts.failed"), true);
-      draw(r.body, t("suppliers.receipts.saved"));
+      if (!r.ok) return draw(data, t(`${words}.failed`), true);
+      draw(r.body, t(`${words}.saved`));
     };
     const disabled = !data.canManage;
     const parts = [
-      el("div", { class: "portalinvitehead receiptsharinghead", text: t("suppliers.receipts.title") }),
+      el("div", { class: "portalinvitehead receiptsharinghead", text: t(`${words}.title`) }),
       el("div", { class: "radiochoices" }, [
-        radio(name, "default", data.setting === "default", t("suppliers.receipts.default"), t(data.apSetup ? "suppliers.receipts.default.share" : "suppliers.receipts.default.none"), choose("default"), disabled),
-        radio(name, "share", data.setting === "share", t("suppliers.receipts.share"), "", choose("share"), disabled),
-        radio(name, "none", data.setting === "none", t("suppliers.receipts.none"), "", choose("none"), disabled),
+        radio(name, "default", data.setting === "default", t(`${words}.default`), t(data.apSetup ? `${words}.default.share` : `${words}.default.none`), choose("default"), disabled),
+        radio(name, "share", data.setting === "share", t(`${words}.share`), "", choose("share"), disabled),
+        radio(name, "none", data.setting === "none", t(`${words}.none`), "", choose("none"), disabled),
       ]),
       message ? el("div", { class: warn ? "warn" : "portalnote", text: message }) : null,
     ];

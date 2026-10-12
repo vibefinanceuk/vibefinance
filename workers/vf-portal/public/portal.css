@@ -34,6 +34,11 @@ main#welcome .field + .field { margin-top: var(--gap-loose); }
 /* Decision 0738: a goods receipt's — received green, part returned accent, being checked neutral. */
 .status.goods_received { background: var(--bg-success); border-color: var(--border-success); color: var(--text-success); font-weight: 600; }
 .status.goods_returned { background: var(--bg-accent); border-color: var(--border-accent); color: var(--text-accent); font-weight: 600; }
+/* Decision 0751: a purchase order's. Open neutral; received and invoiced in step, green once done; on hold amber; closed quiet. */
+.status.order_part_received, .status.order_part_invoiced { background: var(--bg-accent); border-color: var(--border-accent); color: var(--text-accent); font-weight: 600; }
+.status.order_received, .status.order_invoiced { background: var(--bg-success); border-color: var(--border-success); color: var(--text-success); font-weight: 600; }
+.status.order_on_hold { background: var(--bg-warning); border-color: var(--border-warning); color: var(--text-warning); font-weight: 600; }
+.status.order_closed { opacity: 0.7; }
 
 /* An invoice, opened (0717). */
 .popout .head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 4px; }
@@ -135,6 +140,8 @@ main#welcome .field + .field { margin-top: var(--gap-loose); }
  * scrolls); the lines below, across the page.
  */
 .netview { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 16px; align-items: stretch; margin-bottom: 16px; }
+/* Decision 0751: an order has no conversation yet, so it takes the whole width. */
+.netorderview .netview { grid-template-columns: minmax(0, 1fr); }
 .netview .netviewmain > .comment:first-child { margin-top: 0; }
 .netview .netviewheader { margin-bottom: 0; }
 .netview .netviewchat { display: flex; flex-direction: column; margin: 0; min-height: 0; contain: size; }
@@ -163,6 +170,7 @@ main#welcome .field + .field { margin-top: var(--gap-loose); }
 /* Documents: a credit note's type and amount (0732). */
 .netlist .doctype.cn { color: var(--text-accent); font-weight: 600; }
 .netlist .doctype.gr { color: var(--text-accent); font-weight: 600; }
+.netlist .doctype.po { color: var(--text-success); font-weight: 600; }
 /* A goods receipt, opened (0738). */
 .netreceiptview .receiptgrid { grid-template-columns: repeat(5, minmax(0, 1fr)); }
 .netreceiptview .receiptgrid .sfield { grid-template-columns: minmax(0, 1fr); gap: 2px; }

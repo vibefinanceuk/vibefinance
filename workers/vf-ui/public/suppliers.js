@@ -4,7 +4,7 @@ import { actionLink, compactLink } from "/viewer.js";
 import { donutChart } from "/charts.js";
 import { currentOrgId } from "/orgs.js";
 import { icon } from "/icons.js";
-import { receiptSharingBlock } from "/receipt-sharing.js";
+import { orderSharingBlock, receiptSharingBlock } from "/receipt-sharing.js";
 
 /**
  * The supplier list, and loading one — decision 0213.
@@ -666,6 +666,8 @@ export function portalSection(s, onVisible = () => {}) {
   const base = `/api/suppliers/${encodeURIComponent(s.id)}/portal`;
   // Decision 0738: whether this supplier sees its goods receipts in the network.
   const receipts = receiptSharingBlock(s.id);
+  // Decision 0751: and its purchase orders.
+  const orders = orderSharingBlock(s.id);
 
   async function post(path, payload) {
     const res = await fetch(`${base}${path}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload ?? {}) }).catch(() => null);
@@ -765,7 +767,7 @@ export function portalSection(s, onVisible = () => {}) {
      * words.
      */
     const people = el("div", { class: "portalpeoplelist" }, rows.length ? rows : [el("div", { class: "muted sm", text: t("suppliers.portal.none") })]);
-    const children = [receipts];
+    const children = [receipts, orders];
 
     if (data.canManage && data.companies.length) {
       const email = el("input", { type: "email", class: "portalemail", placeholder: t("suppliers.portal.email"), "aria-label": t("suppliers.portal.email") });

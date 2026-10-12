@@ -135,7 +135,8 @@ export function openHelp() {
   document.getElementById("helppanel")?.remove();
   const close = () => panel.remove();
   // Decision 0738: a goods receipt's three after an invoice's.
-  const statuses = ["received", "in_review", "query_raised", "returned", "approved", "sent_for_payment", "paid", "rejected", "credited", "goods_received", "goods_returned", "goods_checking"];
+  // Decision 0751: and a purchase order's after them.
+  const statuses = ["received", "in_review", "query_raised", "returned", "approved", "sent_for_payment", "paid", "rejected", "credited", "goods_received", "goods_returned", "goods_checking", "order_open", "order_part_received", "order_received", "order_part_invoiced", "order_invoiced", "order_on_hold", "order_closed"];
   const panel = el("aside", { class: "helppanel", id: "helppanel", role: "dialog", "aria-label": t("network.help") }, [
     el("div", { class: "helphead" }, [el("h2", { text: t("network.help") }), control(icon("close"), t("network.close"), close)]),
     el("p", { text: t("network.help.intro") }),

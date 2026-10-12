@@ -172,6 +172,7 @@ import {
   handlePutNetworkSharingConfig,
   handlePutSupplierReceiptSharing,
 } from "./receipt-sharing.js";
+import { getPortalOrder, handleGetSupplierOrderSharing, handlePutSupplierOrderSharing } from "./order-sharing.js";
 import { handleInvoiceParties, handlePortalPurchaseOrders, handlePortalSubmission, handleSubmissionCompanies } from "./network-submission.js";
 import { DEFAULT_NETWORK_URL, handleGetSupplierMessages, handlePostSupplierMessage, type MessageEmail } from "./supplier-messages.js";
 import { handleGetReceiptSupplierMessages, handlePortalReceiptReply, handlePostReceiptSupplierMessage } from "./receipt-messages.js";
@@ -1164,6 +1165,16 @@ export default {
         return json(result.body, result.status);
       }
       return json({ error: "not found" }, 404);
+    }
+
+    // Decision 0751: a purchase order shared with this supplier, read only.
+    const portalOrderMatch = pathname.match(/^\/portal\/orders\/([^/]+)$/);
+    if (portalOrderMatch && request.method === "GET") {
+      const { db } = resolveTenant(request, env);
+      const auth = await portalAuth(db, request, isPublicKeyJwk(env.LICENCE_SIGNING_PUBLIC_KEY) ? env.LICENCE_SIGNING_PUBLIC_KEY : undefined, env.ENVIRONMENT_ID);
+      if (!auth.ok) return json(auth.body, auth.status);
+      const result = await getPortalOrder(db, auth.claims, decodeURIComponent(portalOrderMatch[1]));
+      return json(result.body, result.status);
     }
 
     // Decision 0738: a goods receipt shared with this supplier, read only.
@@ -4164,7 +4175,8 @@ export default {
       return json(result.body, result.status);
     }
     // Decision 0738: a supplier's own choice, which wins over AP Setup's. Seen with AP.Supplier; changed with Supplier.Maintain.
-    const receiptSharingMatch = pathname.match(/^\/suppliers\/([^/]+)\/receipt-sharing$/);
+    // Decision 0751: and for purchase orders, the same way.
+    const receiptSharingMatch = pathname.match(/^\/suppliers\/([^/]+)\/(receipt|order)-sharing$/);
     if (receiptSharingMatch && (request.method === "GET" || request.method === "PUT")) {
       const { db } = resolveTenant(request, env);
       const auth = await authenticatePerson(db, request, env);
@@ -4174,10 +4186,16 @@ export default {
         return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
       }
       const supplierId = decodeURIComponent(receiptSharingMatch[1]);
+      const orders = receiptSharingMatch[2] === "order";
+      const putBody = request.method === "PUT" ? (((await request.json().catch(() => ({}))) ?? {}) as Record<string, unknown>) : {};
       const result =
         request.method === "GET"
-          ? await handleGetSupplierReceiptSharing(db, supplierId)
-          : await handlePutSupplierReceiptSharing(db, auth.user.id, supplierId, ((await request.json().catch(() => ({}))) ?? {}) as Record<string, unknown>);
+          ? orders
+            ? await handleGetSupplierOrderSharing(db, supplierId)
+            : await handleGetSupplierReceiptSharing(db, supplierId)
+          : orders
+            ? await handlePutSupplierOrderSharing(db, auth.user.id, supplierId, putBody)
+            : await handlePutSupplierReceiptSharing(db, auth.user.id, supplierId, putBody);
       if (result.status === 200) (result.body as Record<string, unknown>).canManage = canManage;
       return json(result.body, result.status);
     }

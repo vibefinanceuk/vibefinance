@@ -3800,6 +3800,23 @@ const KEYS_THE_INTERFACE_USES = [
   // Ask supplier on a receipt, and the supplier in Conversations (decision 0748).
   "receipts.asksupplier.note",
   "receipts.conv.tag.supplier",
+  // Purchase orders shared with suppliers (decision 0751).
+  "apsetup.network.orders",
+  "apsetup.network.orders.none",
+  "apsetup.network.orders.none.help",
+  "apsetup.network.orders.share",
+  "apsetup.network.orders.share.help",
+  "apsetup.network.ordersfrom",
+  "apsetup.network.ordersfrom.help",
+  "apsetup.network.ownorders",
+  "suppliers.orders.title",
+  "suppliers.orders.default",
+  "suppliers.orders.default.share",
+  "suppliers.orders.default.none",
+  "suppliers.orders.share",
+  "suppliers.orders.none",
+  "suppliers.orders.saved",
+  "suppliers.orders.failed",
   // Purchase orders held at Checking (decision 0750).
   "doctype.purchase_order",
   "roles.readymade.purchasing",

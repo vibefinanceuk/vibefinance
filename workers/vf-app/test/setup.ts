@@ -171,6 +171,7 @@ import receiptSharingSql from "../../../migrations/0164_receipt_sharing.sql?raw"
 import receiptSupplierMessagesSql from "../../../migrations/0165_receipt_supplier_messages.sql?raw";
 import purchaseOrdersInSql from "../../../migrations/0166_purchase_orders_in.sql?raw";
 import orderCheckingSql from "../../../migrations/0167_order_checking.sql?raw";
+import orderSharingSql from "../../../migrations/0168_order_sharing.sql?raw";
 
 // Another known divergence from production, on top of the one below:
 // D1's exec() splits its input by newline and executes each non-empty
@@ -216,6 +217,8 @@ function toOneStatementPerLine(sql: string): string {
 // gets a genuinely clean schema regardless of what the pool does or
 // does not reset.
 const TABLES_IN_DROP_ORDER = [
+  // Decision 0751: a supplier's own order sharing references suppliers.
+  "supplier_order_sharing",
   // Decision 0749: orders on their way in reference route messages, units and people.
   "purchase_order_intake",
   // Decision 0731: credit notes reference invoices, people and teams.
@@ -548,6 +551,7 @@ export async function applyTestSchema(): Promise<void> {
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(receiptSupplierMessagesSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(purchaseOrdersInSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(orderCheckingSql)));
+  await env.DB.exec(toOneStatementPerLine(stripSqlComments(orderSharingSql)));
 }
 
 /**

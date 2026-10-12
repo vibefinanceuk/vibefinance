@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 12 October 2026 (decision 0750). A living document: what
+Last updated 12 October 2026 (decision 0751). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,15 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Purchase orders shared with suppliers (0751)
+
+AP Setup › Supplier Network shares purchase orders with suppliers (optionally only from a date),
+and a supplier's own setting wins. In the network an order sits among the documents with a
+status a supplier can act on, and opens line by line with what has been received and invoiced.
+Slice 3 of five.
+
+Full reasoning is in decision 0751.
 
 ### Checking in the Purchase Orders process (0750)
 

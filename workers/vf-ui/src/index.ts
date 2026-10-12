@@ -235,6 +235,8 @@ const PROXIED_TO_INSTANCE: RegExp[] = [
   // Decision 0738: goods receipts shared with suppliers — AP Setup, and a supplier's own choice.
   /^\/network-sharing-config$/,
   /^\/suppliers\/[^/]+\/receipt-sharing$/,
+  // Decision 0751: and for purchase orders.
+  /^\/suppliers\/[^/]+\/order-sharing$/,
   /^\/admin\/ap-team-email$/,
   // What the Validation viewer needs (decision 0106): the keyed values,
   // and a short-lived signed URL for the retained original.
