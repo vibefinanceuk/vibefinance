@@ -5694,3 +5694,6 @@
 .linetable .linesub.n2 { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
 .linetable .linesubfield label { display: block; font-size: var(--text-sm); color: var(--text-muted); margin: 0 0 2px 2px; }
 .linetable .linesubfield input, .linetable .linesubfield .readonly { width: 100%; box-sizing: border-box; }
+/* Dan, 12 October: a read-only line value is as tall as an editable one beside it (Line note beside Item description, Order line among the inputs). */
+.linetable input:not([type="checkbox"]):not([type="radio"]), .linetable select, .linetable .readonly { box-sizing: border-box; min-height: 40px; }
+.linetable .readonly { display: flex; align-items: center; padding: 8px 11px; }

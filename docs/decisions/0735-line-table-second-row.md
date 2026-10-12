@@ -35,3 +35,10 @@ Chromium at 1700 and 1280 pixels wide, Day and Night.
 ## To deploy
 
 Deploy vf-ui and vf-portal (its copy of the stylesheet). No migrations.
+
+## Afterwards: read-only values as tall as the inputs beside them
+
+Dan, once deployed: *"give the line note field equal height as the line description"*. Line
+note (read-only by default) drew as the shorter read-only box beside the Item description
+input; Order line did the same among the first row's inputs. A read-only value in the line
+table is now the inputs' height, its text centred. Deploy vf-ui and vf-portal.
