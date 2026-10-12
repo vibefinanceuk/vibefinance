@@ -34,3 +34,11 @@ tests pass unchanged.
 
 Deploy vf-app. A credit note already stopped at Matching is visited afresh when its task is
 completed or it is read again; nothing to migrate.
+
+## Afterwards: the PO of the invoice it credits
+
+Dan, 12 October: *"a credit against the invoice would need to decrease the billed amount"*.
+It did only when the credit note itself named the PO (BT-13); one from email often names only
+the invoice it credits. A document now counts against its own PO, or, for a credit note with
+none, the PO of the invoice it credits (`poOfSql`): matching, the panel, the Purchase Orders
+screen and GRNI. Its lines give back against PO lines only where they name one. Deploy vf-app.

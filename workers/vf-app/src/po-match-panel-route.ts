@@ -1,4 +1,4 @@
-import { creditSignSql } from "./credit-notes.js";
+import { creditSignSql, poOfSql } from "./credit-notes.js";
 import { loadSplits, saveSplitStatements } from "./coding-splits.js";
 import type { InvoiceFacts } from "@vibefinance/shared";
 import { CODING_FIELD_LISTS } from "./coding-validation.js";
@@ -159,7 +159,7 @@ async function invoicedByOthers(db: D1Database, orderNumber: string, invoiceId: 
       `SELECT h.id, json_extract(h.facts_json, '$."BT-1"') AS number,
               ${poShareSql("h")} * ${creditSignSql("h.id")} AS amount
        FROM invoice_headers h
-       WHERE json_extract(h.facts_json, '$."BT-13"') = ? AND h.id != ?
+       WHERE ${poOfSql("h")} = ? AND h.id != ?
          AND NOT EXISTS (
            SELECT 1 FROM process_instances pi
            WHERE pi.subject_type = 'invoice' AND pi.subject_id = h.id AND pi.status IN ('archived', 'returned_manually', 'credited')

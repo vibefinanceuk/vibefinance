@@ -1,6 +1,6 @@
 import { supplierProjectOnly } from "./supplier-project-only.js";
 import { isCreditNote, type InvoiceFacts } from "@vibefinance/shared";
-import { creditSignSql } from "./credit-notes.js";
+import { creditSignSql, poOfSql } from "./credit-notes.js";
 
 /**
  * Computing po.matched / po.variance_pct and their line-level siblings —
@@ -118,7 +118,7 @@ export async function loadPoConsumption(
         `SELECT h.id, json_extract(h.facts_json, '$."BT-1"') AS number,
                 ${poShareSql("h")} * ${creditSignSql("h.id")} AS amount, ${creditSignSql("h.id")} AS sign
          FROM invoice_headers h
-         WHERE json_extract(h.facts_json, '$."BT-13"') = ? AND h.id != ?
+         WHERE ${poOfSql("h")} = ? AND h.id != ?
            AND NOT EXISTS (
              SELECT 1 FROM process_instances pi
              WHERE pi.subject_type = 'invoice' AND pi.subject_id = h.id

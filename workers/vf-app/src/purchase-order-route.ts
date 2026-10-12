@@ -1,4 +1,4 @@
-import { creditSignSql } from "./credit-notes.js";
+import { creditSignSql, poOfSql } from "./credit-notes.js";
 import type { RouteResult } from "./org-route.js";
 import { getOrgMatchingConfig, poShareSql } from "./po-matching.js";
 import { heldByLine, receiptStateJoin, RECEIPT_STATES } from "./goods-receipts.js";
@@ -672,19 +672,19 @@ export async function handleLoadPurchaseOrdersCsv(db: D1Database, csv: string): 
  */
 const INVOICED_AMOUNTS_JOIN = `
   LEFT JOIN (
-    SELECT json_extract(facts_json, '$."BT-13"') AS order_number,
+    SELECT ${poOfSql("h")} AS order_number,
            -- Decision 0544: less each invoice's Non-PO lines, as matching counts it.
            -- Decision 0733: a credit note gives back what it credits.
            SUM(${poShareSql("h")} * ${creditSignSql("h.id")}) AS invoiced_amount
     FROM invoice_headers h
-    WHERE json_extract(facts_json, '$."BT-13"') IS NOT NULL
+    WHERE ${poOfSql("h")} IS NOT NULL
       -- Decision 0533: a discarded or returned invoice will never be paid,
       -- so it has not used the order (the same rule matching follows).
       AND NOT EXISTS (
         SELECT 1 FROM process_instances pi
         WHERE pi.subject_type = 'invoice' AND pi.subject_id = h.id AND pi.status IN ('archived', 'returned_manually', 'credited')
       )
-    GROUP BY json_extract(facts_json, '$."BT-13"')
+    GROUP BY ${poOfSql("h")}
   ) inv ON inv.order_number = po.order_number
 `;
 

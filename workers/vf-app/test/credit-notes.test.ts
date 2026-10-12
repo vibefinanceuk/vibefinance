@@ -226,6 +226,15 @@ describe("against a purchase order", () => {
     expect(credited.byLine.get(1) ?? { quantity: 0, amount: 0 }).toEqual({ quantity: 0, amount: 0 });
   });
 
+  it("one that names only the invoice it credits gives back on that invoice's PO (Dan, 12 October)", async () => {
+    const { loadPoConsumption } = await import("../src/po-matching.js");
+    await env.DB.prepare("UPDATE invoice_headers SET facts_json = json_set(facts_json, '$.\"BT-13\"', 'PO-1') WHERE id = 'inv-1'").run();
+    await doc("cn-1", { "BT-1": "CN-1", "BT-3": "381", "BT-25": "INV-1", "BT-112": 24 });
+    expect((await loadPoConsumption(env.DB, "PO-1", null)).headerAmount).toBeCloseTo(120);
+    await settle("cn-1");
+    expect((await loadPoConsumption(env.DB, "PO-1", null)).headerAmount).toBeCloseTo(96);
+  });
+
   it("is not matched to the PO itself: no po.* facts, so no matching rule stops it", async () => {
     const { mergePoMatchFacts } = await import("../src/po-matching.js");
     const merged = await mergePoMatchFacts(env.DB, { "BT-3": "381", "BT-13": "PO-1", "BT-112": 24 }, [{ lineNumber: 1, "BT-132": "1", "BT-129": 1 }], { invoiceId: "nothing" });

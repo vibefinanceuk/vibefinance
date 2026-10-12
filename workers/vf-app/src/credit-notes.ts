@@ -388,3 +388,14 @@ export function creditSignSql(idExpr: string): string {
       CASE WHEN EXISTS (SELECT 1 FROM credit_notes cs WHERE cs.credit_note_id = hx.id AND cs.state = 'credited') THEN 0 ELSE -1 END
     ELSE 1 END FROM invoice_headers hx WHERE hx.id = ${idExpr})`;
 }
+
+/**
+ * **The PO a document counts against — decision 0733, afterwards.** Its
+ * own PO reference (BT-13), or, for a credit note that names only the
+ * invoice it credits, that invoice's: the credit follows the invoice.
+ * SQL, for invoice header alias `h`.
+ */
+export function poOfSql(h = "h"): string {
+  return `COALESCE(json_extract(${h}.facts_json, '$."BT-13"'),
+    (SELECT json_extract(ci.facts_json, '$."BT-13"') FROM credit_notes cp JOIN invoice_headers ci ON ci.id = cp.invoice_id WHERE cp.credit_note_id = ${h}.id))`;
+}
