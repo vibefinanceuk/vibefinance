@@ -4,6 +4,7 @@ import type { RouteResult } from "./org-route.js";
 import { handlePortalReply, portalMessages, type MessageEmail } from "./supplier-messages.js";
 import { partiesFor } from "./network-submission.js";
 import { loadCreditNoteConfig } from "./credit-notes.js";
+import { listPortalReceipts } from "./receipt-sharing.js";
 
 /**
  * **The supplier portal's view of this instance — decision 0714.** Step 2
@@ -187,7 +188,8 @@ function summary(row: PortalRow) {
 }
 
 /**
- * `GET /portal/invoices?status=&q=` — this supplier's invoices for the
+ * `GET /portal/invoices?status=&q=` — this supplier's invoices (and, 0738,
+ * shared goods receipts) for the
  * linked companies, newest first, at most 500 (decision 0736: the
  * network pages them in the browser; `more` says there were older ones).
  * `q` matches the invoice number or purchase order.
@@ -205,9 +207,17 @@ export async function listPortalInvoices(db: D1Database, claims: PortalAccessCla
       .all<PortalRow>()
   ).results;
   const wanted = params.get("status");
-  const more = rows.length > PORTAL_LIST_LIMIT;
-  const invoices = rows.slice(0, PORTAL_LIST_LIMIT).map(summary).filter((i) => !wanted || i.status === wanted);
-  return { status: 200, body: { invoices, more } };
+  /**
+   * **Goods receipts too, where they are shared — decision 0738.** Asked
+   * separately (its own newest 500), merged newest first; `receipts` says
+   * whether this customer shares them with this supplier at all.
+   */
+  const shared = await listPortalReceipts(db, claims, q, PORTAL_LIST_LIMIT);
+  const more = rows.length > PORTAL_LIST_LIMIT || shared.more;
+  const invoices = [...rows.slice(0, PORTAL_LIST_LIMIT).map(summary), ...shared.receipts]
+    .filter((i) => !wanted || i.status === wanted)
+    .sort((a, b) => String(b.receivedAt ?? "").localeCompare(String(a.receivedAt ?? "")));
+  return { status: 200, body: { invoices, more, receipts: shared.shared } };
 }
 
 /**

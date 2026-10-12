@@ -117,18 +117,21 @@ export async function invoices(deps: Deps, session: string, params: URLSearchPar
   const unavailable: { customer: string; reason: string }[] = [];
   // Decision 0736: a customer with more than it sent (its newest 500).
   const capped: string[] = [];
+  // Decision 0738: whether any customer shares goods receipts with this supplier.
+  let receipts = false;
   for (const { link, answer } of answers) {
     if (!answer.ok) {
       unavailable.push({ customer: link.customerName, reason: answer.reason });
       continue;
     }
     if (answer.body.more === true) capped.push(link.customerName);
+    if (answer.body.receipts === true) receipts = true;
     for (const inv of (answer.body.invoices ?? []) as Record<string, unknown>[]) {
       all.push({ ...inv, linkId: link.id, customer: link.customerName, supplier: link.supplierName });
     }
   }
   all.sort((a, b) => String(b.receivedAt ?? "").localeCompare(String(a.receivedAt ?? "")));
-  return { status: 200, body: { invoices: all, unavailable, capped } };
+  return { status: 200, body: { invoices: all, unavailable, capped, receipts } };
 }
 
 /** `GET /api/invoices/:linkId/:invoiceId` — one invoice, from the customer that link is for. */
@@ -140,6 +143,17 @@ export async function invoice(deps: Deps, session: string, linkId: string, invoi
   const answer = await ask(deps, pair.access, `/portal/invoices/${encodeURIComponent(invoiceId)}`);
   if (!answer.ok) return { status: answer.status === 404 ? 404 : 502, body: { error: answer.status === 404 ? "not_found" : answer.reason, customer: pair.link.customerName } };
   return { status: 200, body: { ...(answer.body.invoice as Record<string, unknown>), linkId, customer: pair.link.customerName, supplier: pair.link.supplierName } };
+}
+
+/** `GET /api/receipts/:linkId/:receiptId` — decision 0738: a goods receipt the customer that link is for shares, read only. */
+export async function receipt(deps: Deps, session: string, linkId: string, receiptId: string): Promise<Result> {
+  const pairs = await linksWithAccess(deps, session);
+  if (!pairs) return { status: 401, body: { error: "signed_out" } };
+  const pair = pairs.find((p) => p.link.id === linkId);
+  if (!pair?.access) return { status: 404, body: { error: "not_found" } };
+  const answer = await ask(deps, pair.access, `/portal/receipts/${encodeURIComponent(receiptId)}`);
+  if (!answer.ok) return { status: answer.status === 404 ? 404 : 502, body: { error: answer.status === 404 ? "not_found" : answer.reason, customer: pair.link.customerName } };
+  return { status: 200, body: { ...(answer.body.receipt as Record<string, unknown>), linkId, customer: pair.link.customerName, supplier: pair.link.supplierName } };
 }
 
 /** `POST /api/invoices/:linkId/:invoiceId/messages` — the supplier writes, to the customer that link is for (0721). */

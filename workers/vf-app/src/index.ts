@@ -165,6 +165,13 @@ import {
   handleInviteSupplierPerson,
 } from "./portal-people-route.js";
 import { getPortalInvoice, listPortalInvoices, portalAuth, replyOnPortalInvoice } from "./portal-route.js";
+import {
+  getPortalReceipt,
+  handleGetNetworkSharingConfig,
+  handleGetSupplierReceiptSharing,
+  handlePutNetworkSharingConfig,
+  handlePutSupplierReceiptSharing,
+} from "./receipt-sharing.js";
 import { handleInvoiceParties, handlePortalPurchaseOrders, handlePortalSubmission, handleSubmissionCompanies } from "./network-submission.js";
 import { DEFAULT_NETWORK_URL, handleGetSupplierMessages, handlePostSupplierMessage, type MessageEmail } from "./supplier-messages.js";
 import { handleCreateIntakeChannel } from "./intake-channel-route.js";
@@ -1144,6 +1151,17 @@ export default {
         return json(result.body, result.status);
       }
       return json({ error: "not found" }, 404);
+    }
+
+    // Decision 0738: a goods receipt shared with this supplier, read only.
+    const portalReceiptMatch = pathname.match(/^\/portal\/receipts\/([^/]+)$/);
+    if (portalReceiptMatch) {
+      if (request.method !== "GET") return json({ error: "not found" }, 404);
+      const { db } = resolveTenant(request, env);
+      const auth = await portalAuth(db, request, isPublicKeyJwk(env.LICENCE_SIGNING_PUBLIC_KEY) ? env.LICENCE_SIGNING_PUBLIC_KEY : undefined, env.ENVIRONMENT_ID);
+      if (!auth.ok) return json(auth.body, auth.status);
+      const result = await getPortalReceipt(db, auth.claims, decodeURIComponent(portalReceiptMatch[1]));
+      return json(result.body, result.status);
     }
 
     if (pathname === "/portal/invoices" || pathname.startsWith("/portal/invoices/")) {
@@ -4109,6 +4127,37 @@ export default {
       const result = await handleGetInvoice(db, getInvoiceMatch[1], resolveLocale(url.searchParams.get("locale")));
       // Decision 0731: a credit note's invoice, or the credit notes against an invoice, and whether this person may confirm.
       if (result.status === 200) (result.body as Record<string, unknown>).credits = await creditsFor(db, getInvoiceMatch[1], auth.user.id);
+      return json(result.body, result.status);
+    }
+
+    // Decision 0738: AP Setup › Supplier Network — goods receipts shared with suppliers.
+    if (pathname === "/network-sharing-config" && (request.method === "GET" || request.method === "PUT")) {
+      const { db } = resolveTenant(request, env);
+      const auth = await authenticatePerson(db, request, env);
+      if (!auth.user) return json({ error: auth.reason }, 401);
+      if (!(await hasPermission(db, auth.user.id, "Admin.Configure"))) return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
+      const result =
+        request.method === "GET"
+          ? await handleGetNetworkSharingConfig(db)
+          : await handlePutNetworkSharingConfig(db, auth.user.id, ((await request.json().catch(() => ({}))) ?? {}) as Record<string, unknown>);
+      return json(result.body, result.status);
+    }
+    // Decision 0738: a supplier's own choice, which wins over AP Setup's. Seen with AP.Supplier; changed with Supplier.Maintain.
+    const receiptSharingMatch = pathname.match(/^\/suppliers\/([^/]+)\/receipt-sharing$/);
+    if (receiptSharingMatch && (request.method === "GET" || request.method === "PUT")) {
+      const { db } = resolveTenant(request, env);
+      const auth = await authenticatePerson(db, request, env);
+      if (!auth.user) return json({ error: auth.reason }, 401);
+      const canManage = await hasPermission(db, auth.user.id, "Supplier.Maintain");
+      if (request.method === "PUT" ? !canManage : !canManage && !(await hasPermission(db, auth.user.id, "AP.Supplier"))) {
+        return json({ error: t("forbidden", resolveLocale(env.LOCALE)) }, 403);
+      }
+      const supplierId = decodeURIComponent(receiptSharingMatch[1]);
+      const result =
+        request.method === "GET"
+          ? await handleGetSupplierReceiptSharing(db, supplierId)
+          : await handlePutSupplierReceiptSharing(db, auth.user.id, supplierId, ((await request.json().catch(() => ({}))) ?? {}) as Record<string, unknown>);
+      if (result.status === 200) (result.body as Record<string, unknown>).canManage = canManage;
       return json(result.body, result.status);
     }
 

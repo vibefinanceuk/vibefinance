@@ -31,6 +31,9 @@ main#welcome .field + .field { margin-top: var(--gap-loose); }
 .status.rejected { background: var(--bg-danger); border-color: var(--border-danger); color: var(--text-danger); font-weight: 600; }
 /* Decision 0731: a credit note credited it. */
 .status.credited { background: transparent; color: var(--text-secondary); border-color: var(--border-strong); }
+/* Decision 0738: a goods receipt's — received green, part returned accent, being checked neutral. */
+.status.goods_received { background: var(--bg-success); border-color: var(--border-success); color: var(--text-success); font-weight: 600; }
+.status.goods_returned { background: var(--bg-accent); border-color: var(--border-accent); color: var(--text-accent); font-weight: 600; }
 
 /* An invoice, opened (0717). */
 .popout .head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 4px; }
@@ -159,6 +162,14 @@ main#welcome .field + .field { margin-top: var(--gap-loose); }
 @media (max-width: 1000px) { .netcreate .cnpanel .cnrow, .netcreate .cnpanel .cnrow.cnwhy { grid-template-columns: 1fr; } }
 /* Documents: a credit note's type and amount (0732). */
 .netlist .doctype.cn { color: var(--text-accent); font-weight: 600; }
+.netlist .doctype.gr { color: var(--text-accent); font-weight: 600; }
+/* A goods receipt, opened (0738). */
+.netreceiptview .receiptgrid { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.netreceiptview .receiptgrid .sfield { grid-template-columns: minmax(0, 1fr); gap: 2px; }
+.netreceiptview > p.muted { margin: 0 0 12px; }
+.netreceiptview .receiptlines { table-layout: auto; }
+.netreceiptview .receiptlines th { white-space: nowrap; }
+@media (max-width: 900px) { .netreceiptview .receiptgrid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 
 /* Documents: pages and columns, as the app's (0736). */
 .netlist-controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-left: auto; }

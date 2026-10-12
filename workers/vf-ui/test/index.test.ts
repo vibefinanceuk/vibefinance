@@ -763,6 +763,10 @@ describe("the proxy carries every path a screen calls (decision 0131)", () => {
     ["PUT", "/api/credit-note-config"],
     ["GET", "/api/credit-notes/to-confirm"],
     ["POST", "/api/credit-notes/cn-1/decide"],
+    ["GET", "/api/network-sharing-config"],
+    ["PUT", "/api/network-sharing-config"],
+    ["GET", "/api/suppliers/sup-1/receipt-sharing"],
+    ["PUT", "/api/suppliers/sup-1/receipt-sharing"],
   ];
 
   it("carries all of them", async () => {

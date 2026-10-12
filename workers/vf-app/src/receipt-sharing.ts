@@ -1,0 +1,268 @@
+import type { PortalAccessClaims } from "@vibefinance/shared";
+import type { RouteResult } from "./org-route.js";
+
+/**
+ * **Goods receipts, shared with suppliers in the network — decision 0738.**
+ *
+ * AP Setup › Supplier Network says whether suppliers see the receipts
+ * recorded against their purchase orders (off until someone turns it on),
+ * and whether only registered ones. A supplier's own page can say
+ * otherwise for that supplier — share, or not — and **the supplier's
+ * setting wins**; left at "As AP Setup" it follows AP Setup.
+ *
+ * What a supplier sees of a receipt is what arrived and what went back:
+ * its number, date and delivery note, and per line the order line, item,
+ * quantity ordered, received, rejected and returned, and the return
+ * reason as the customer's list names it. **Never** a receipt's notes,
+ * who recorded it, why a line was rejected in checking, or its
+ * conversation: those are the customer's own.
+ */
+
+export interface ReceiptSharingConfig {
+  shareReceipts: boolean;
+  registeredOnly: boolean;
+}
+
+const DEFAULTS: ReceiptSharingConfig = { shareReceipts: false, registeredOnly: true };
+
+export async function loadReceiptSharingConfig(db: D1Database): Promise<ReceiptSharingConfig> {
+  const row = await db
+    .prepare("SELECT share_receipts, registered_only FROM network_sharing_config WHERE id = 'default'")
+    .first<{ share_receipts: number; registered_only: number }>();
+  if (!row) return DEFAULTS;
+  return { shareReceipts: row.share_receipts === 1, registeredOnly: row.registered_only !== 0 };
+}
+
+/** `GET /network-sharing-config` — AP Setup › Supplier Network, and how many suppliers say otherwise. */
+export async function handleGetNetworkSharingConfig(db: D1Database): Promise<RouteResult> {
+  const own = await db.prepare("SELECT count(*) AS n FROM supplier_receipt_sharing").first<{ n: number }>();
+  return { status: 200, body: { config: await loadReceiptSharingConfig(db), suppliersWithOwn: own?.n ?? 0 } };
+}
+
+/** `PUT /network-sharing-config` — Admin.Configure, as the rest of AP Setup. */
+export async function handlePutNetworkSharingConfig(db: D1Database, userId: string, body: Record<string, unknown>): Promise<RouteResult> {
+  const now = await loadReceiptSharingConfig(db);
+  const next: ReceiptSharingConfig = {
+    shareReceipts: typeof body.shareReceipts === "boolean" ? body.shareReceipts : now.shareReceipts,
+    registeredOnly: typeof body.registeredOnly === "boolean" ? body.registeredOnly : now.registeredOnly,
+  };
+  await db
+    .prepare(
+      `INSERT INTO network_sharing_config (id, share_receipts, registered_only, updated_by, updated_at)
+       VALUES ('default', ?, ?, ?, ?)
+       ON CONFLICT (id) DO UPDATE SET share_receipts = excluded.share_receipts, registered_only = excluded.registered_only,
+         updated_by = excluded.updated_by, updated_at = excluded.updated_at`
+    )
+    .bind(next.shareReceipts ? 1 : 0, next.registeredOnly ? 1 : 0, userId, new Date().toISOString())
+    .run();
+  return handleGetNetworkSharingConfig(db);
+}
+
+export type SupplierSetting = "default" | "share" | "none";
+
+async function supplierSetting(db: D1Database, supplierId: string): Promise<SupplierSetting> {
+  const row = await db.prepare("SELECT setting FROM supplier_receipt_sharing WHERE supplier_id = ?").bind(supplierId).first<{ setting: string }>();
+  return row?.setting === "share" || row?.setting === "none" ? row.setting : "default";
+}
+
+/** Whether this supplier sees its receipts: its own setting, or else AP Setup's. */
+export async function receiptsSharedWith(db: D1Database, supplierId: string): Promise<{ shared: boolean; registeredOnly: boolean }> {
+  const [config, own] = await Promise.all([loadReceiptSharingConfig(db), supplierSetting(db, supplierId)]);
+  return { shared: own === "default" ? config.shareReceipts : own === "share", registeredOnly: config.registeredOnly };
+}
+
+/** `GET /suppliers/:id/receipt-sharing` — the supplier's setting, and what AP Setup says. */
+export async function handleGetSupplierReceiptSharing(db: D1Database, supplierId: string): Promise<RouteResult> {
+  const supplier = await db.prepare("SELECT 1 FROM suppliers WHERE id = ?").bind(supplierId).first();
+  if (!supplier) return { status: 404, body: { error: "no such supplier" } };
+  const [config, setting] = await Promise.all([loadReceiptSharingConfig(db), supplierSetting(db, supplierId)]);
+  return { status: 200, body: { setting, apSetup: config.shareReceipts } };
+}
+
+/** `PUT /suppliers/:id/receipt-sharing` `{ setting: "default" | "share" | "none" }` — Supplier.Maintain. */
+export async function handlePutSupplierReceiptSharing(db: D1Database, userId: string, supplierId: string, body: Record<string, unknown>): Promise<RouteResult> {
+  const setting = body.setting;
+  if (setting !== "default" && setting !== "share" && setting !== "none") {
+    return { status: 400, body: { error: "setting is default, share or none" } };
+  }
+  const supplier = await db.prepare("SELECT 1 FROM suppliers WHERE id = ?").bind(supplierId).first();
+  if (!supplier) return { status: 404, body: { error: "no such supplier" } };
+  if (setting === "default") {
+    await db.prepare("DELETE FROM supplier_receipt_sharing WHERE supplier_id = ?").bind(supplierId).run();
+  } else {
+    await db
+      .prepare(
+        `INSERT INTO supplier_receipt_sharing (supplier_id, setting, updated_by, updated_at) VALUES (?, ?, ?, ?)
+         ON CONFLICT (supplier_id) DO UPDATE SET setting = excluded.setting, updated_by = excluded.updated_by, updated_at = excluded.updated_at`
+      )
+      .bind(supplierId, setting, userId, new Date().toISOString())
+      .run();
+  }
+  return handleGetSupplierReceiptSharing(db, supplierId);
+}
+
+// ---------------------------------------------------------------------------
+// In the network
+// ---------------------------------------------------------------------------
+
+/** What a supplier is told of a receipt: received, with goods sent back, or still being checked. */
+export const PORTAL_RECEIPT_STATUSES = ["goods_received", "goods_returned", "goods_checking"] as const;
+
+/** A VAT number without its country prefix, spaces or dots — as credit notes match a supplier (0731). */
+const bareVat = (v: string) => v.toUpperCase().replace(/[^A-Z0-9]/g, "").replace(/^[A-Z]{2}(?=\d)/, "");
+const BARE_SQL = (col: string) =>
+  `(CASE WHEN upper(replace(replace(${col}, ' ', ''), '.', '')) GLOB '[A-Z][A-Z][0-9]*' THEN substr(upper(replace(replace(${col}, ' ', ''), '.', '')), 3) ELSE upper(replace(replace(${col}, ' ', ''), '.', '')) END)`;
+
+/**
+ * **Which receipts are this supplier's, for these companies.** A receipt
+ * naming an order the supplier is the seller on (by its VAT number, however
+ * written, or its ERP number), placed in a company the invitation covers
+ * or beneath one. Cancelled and rejected receipts never; one still being
+ * checked only where AP Setup allows. Null when nothing is shared.
+ */
+async function receiptScope(db: D1Database, claims: PortalAccessClaims): Promise<{ sql: string; binds: unknown[] } | null> {
+  const sharing = await receiptsSharedWith(db, claims.supplierId);
+  if (!sharing.shared || claims.orgUnitIds.length === 0) return null;
+  const supplier = await db.prepare("SELECT vat_id, erp_identifier FROM suppliers WHERE id = ?").bind(claims.supplierId).first<{ vat_id: string | null; erp_identifier: string | null }>();
+  if (!supplier || (!supplier.vat_id && !supplier.erp_identifier)) return null;
+  const sellers: string[] = [];
+  const binds: unknown[] = [];
+  if (supplier.vat_id && bareVat(supplier.vat_id)) {
+    sellers.push(`${BARE_SQL("spo.seller_party_id")} = ?`);
+    binds.push(bareVat(supplier.vat_id));
+  }
+  if (supplier.erp_identifier) {
+    sellers.push("spo.seller_party_id = ?");
+    binds.push(supplier.erp_identifier);
+  }
+  return {
+    sql: `r.cancelled_at IS NULL AND r.status ${sharing.registeredOnly ? "= 'registered'" : "IN ('registered', 'pending')"}
+      AND EXISTS (
+        SELECT 1 FROM goods_receipt_lines sl JOIN purchase_orders spo ON spo.order_number = sl.order_number
+        WHERE sl.receipt_id = r.id AND (${sellers.join(" OR ")})
+          AND spo.org_unit_id IN (
+            WITH RECURSIVE covered(id) AS (
+              SELECT id FROM org_units WHERE id IN (${claims.orgUnitIds.map(() => "?").join(", ")})
+              UNION SELECT u.id FROM org_units u JOIN covered c ON u.parent_unit_id = c.id
+            ) SELECT id FROM covered))`,
+    binds: [...binds, ...claims.orgUnitIds],
+  };
+}
+
+interface PortalReceiptRow {
+  id: string;
+  receipt_number: string;
+  receipt_date: string;
+  delivery_note: string | null;
+  status: string;
+  created_at: string;
+  orders: string | null;
+  org_unit_id: string | null;
+  org_unit_name: string | null;
+  has_returns: number;
+}
+
+const RECEIPT_SELECT = `
+  SELECT r.id, r.receipt_number, r.receipt_date, r.delivery_note, r.status, r.created_at,
+         (SELECT group_concat(DISTINCT o.order_number) FROM goods_receipt_lines o WHERE o.receipt_id = r.id) AS orders,
+         po.org_unit_id, ou.name AS org_unit_name,
+         EXISTS (SELECT 1 FROM goods_receipt_lines m WHERE m.receipt_id = r.id AND m.movement = 'returned') AS has_returns
+  FROM goods_receipts r
+  LEFT JOIN purchase_orders po ON po.order_number = (SELECT min(fl.order_number) FROM goods_receipt_lines fl WHERE fl.receipt_id = r.id)
+  LEFT JOIN org_units ou ON ou.id = po.org_unit_id`;
+
+function receiptSummary(r: PortalReceiptRow) {
+  const status = r.status === "pending" ? "goods_checking" : r.has_returns ? "goods_returned" : "goods_received";
+  return {
+    id: r.id,
+    documentType: "goods_receipt",
+    invoiceNumber: r.receipt_number,
+    issueDate: r.receipt_date,
+    total: null,
+    currency: null,
+    purchaseOrder: r.orders ? r.orders.split(",").join(", ") : null,
+    company: r.org_unit_name ?? r.org_unit_id,
+    orgUnitId: r.org_unit_id,
+    // Sorted among the invoices by the day the goods arrived, at the time it was recorded.
+    receivedAt: `${r.receipt_date}T${(r.created_at.match(/\d{2}:\d{2}:\d{2}/) ?? ["00:00:00"])[0]}`,
+    status,
+    comment: null,
+    messages: { total: 0, unread: 0 },
+    creditedInvoice: null,
+    dueDate: null,
+    buyerReference: null,
+    deliveryNote: r.delivery_note,
+  };
+}
+
+/** This supplier's shared receipts, newest first, at most `limit` (+1 to say there were more). Empty when nothing is shared. */
+export async function listPortalReceipts(db: D1Database, claims: PortalAccessClaims, q: string, limit: number): Promise<{ receipts: ReturnType<typeof receiptSummary>[]; more: boolean; shared: boolean }> {
+  const scope = await receiptScope(db, claims);
+  if (!scope) return { receipts: [], more: false, shared: false };
+  const search = q
+    ? ` AND (r.receipt_number LIKE ? OR r.delivery_note LIKE ? OR EXISTS (SELECT 1 FROM goods_receipt_lines ql WHERE ql.receipt_id = r.id AND ql.order_number LIKE ?))`
+    : "";
+  const rows = (
+    await db
+      .prepare(`${RECEIPT_SELECT} WHERE ${scope.sql}${search} ORDER BY r.receipt_date DESC, r.created_at DESC, r.id DESC LIMIT ${limit + 1}`)
+      .bind(...scope.binds, ...(q ? [`%${q}%`, `%${q}%`, `%${q}%`] : []))
+      .all<PortalReceiptRow>()
+  ).results;
+  return { receipts: rows.slice(0, limit).map(receiptSummary), more: rows.length > limit, shared: true };
+}
+
+/**
+ * `GET /portal/receipts/:id` — one shared receipt, line by line. The same
+ * answer for one that does not exist, is not this supplier's, or is not
+ * shared with them.
+ */
+export async function getPortalReceipt(db: D1Database, claims: PortalAccessClaims, receiptId: string): Promise<RouteResult> {
+  const scope = await receiptScope(db, claims);
+  if (!scope) return { status: 404, body: { error: "not found" } };
+  const row = await db.prepare(`${RECEIPT_SELECT} WHERE r.id = ? AND ${scope.sql}`).bind(receiptId, ...scope.binds).first<PortalReceiptRow>();
+  if (!row) return { status: 404, body: { error: "not found" } };
+  const lines = (
+    await db
+      .prepare(
+        `SELECT l.line_number, l.order_number, l.order_line_number, l.movement, l.quantity, l.unit_code, l.line_status,
+                rr.label AS return_reason, pl.item_name, pl.item_description, pl.quantity AS ordered, pl.unit_code AS ordered_unit
+         FROM goods_receipt_lines l
+         LEFT JOIN goods_return_reasons rr ON rr.id = l.return_reason_id
+         LEFT JOIN purchase_orders po ON po.order_number = l.order_number
+         LEFT JOIN purchase_order_lines pl ON pl.purchase_order_id = po.id AND pl.line_number = l.order_line_number
+         WHERE l.receipt_id = ?
+         ORDER BY l.line_number`
+      )
+      .bind(receiptId)
+      .all<{
+        line_number: number;
+        order_number: string;
+        order_line_number: number;
+        movement: string;
+        quantity: number;
+        unit_code: string | null;
+        line_status: string | null;
+        return_reason: string | null;
+        item_name: string | null;
+        item_description: string | null;
+        ordered: number | null;
+        ordered_unit: string | null;
+      }>()
+  ).results.map((l) => {
+    const rejected = l.line_status === "rejected";
+    return {
+      lineNumber: l.line_number,
+      orderNumber: l.order_number,
+      orderLine: l.order_line_number,
+      item: l.item_name ?? l.item_description ?? null,
+      ordered: l.ordered,
+      unitCode: l.unit_code ?? l.ordered_unit ?? null,
+      received: !rejected && l.movement === "received" ? l.quantity : 0,
+      rejected: rejected ? l.quantity : 0,
+      returned: !rejected && l.movement === "returned" ? l.quantity : 0,
+      // The reason from the customer's list of return reasons; never a free-text note.
+      reason: !rejected && l.movement === "returned" ? l.return_reason : null,
+    };
+  });
+  return { status: 200, body: { receipt: { ...receiptSummary(row), lines } } };
+}

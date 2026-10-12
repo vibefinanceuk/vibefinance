@@ -3,6 +3,7 @@ import { frame, setBadge, topbar } from "/shell.js";
 import { icon } from "/icons.js";
 import { createPage, startCreditNote } from "/create.js";
 import { viewPage } from "/view.js";
+import { receiptPage } from "/receipt-view.js";
 
 /**
  * **The supplier network's pages — decisions 0717 and 0725.** Sign in;
@@ -13,6 +14,10 @@ import { viewPage } from "/view.js";
  */
 
 export const STATUSES = ["received", "in_review", "query_raised", "returned", "approved", "sent_for_payment", "paid", "rejected", "credited"];
+/** Decision 0738: a goods receipt's, where a customer shares them. */
+export const RECEIPT_STATUSES = ["goods_received", "goods_returned", "goods_checking"];
+/** Whether any customer shares goods receipts with this supplier: the type and statuses are offered then. */
+let receiptsShared = false;
 
 const $ = (id) => document.getElementById(id);
 
@@ -86,7 +91,9 @@ export async function render() {
           sentNotice = sent;
           go("documents");
         })
-      : current === "invoice" && opened
+      : current === "receipt" && opened
+        ? receiptPage(opened.body, { statusChip, back: () => go("documents") }, handlers)
+        : current === "invoice" && opened
         ? viewPage(
             opened.body,
             {
@@ -104,7 +111,7 @@ export async function render() {
           )
         : el("div", {}, documentsPage());
   // The open invoice is one of the documents, so Documents stays chosen in the menu.
-  $("shell").replaceChildren(frame({ current: current === "invoice" ? "documents" : current, go, who: { email: me.email, supplier: supplierNames() }, page, badges: { documents: waitingCount() } }));
+  $("shell").replaceChildren(frame({ current: current === "invoice" || current === "receipt" ? "documents" : current, go, who: { email: me.email, supplier: supplierNames() }, page, badges: { documents: waitingCount() } }));
   $("shell").hidden = false;
   $("signin-view").hidden = true;
   // As the app (tasks.js): the page fills the window once someone is signed in.
@@ -133,10 +140,12 @@ const PAGE_SIZES = [25, 50, 100, 200];
 let page = 1;
 let pageSize = 50;
 const COLUMNS_KEY = "vfn-columns";
+// Decision 0738: invoice, credit note or goods receipt.
+const typeOf = (inv) => (inv.documentType === "credit_note" || inv.documentType === "goods_receipt" ? inv.documentType : "invoice");
 const negative = (inv) => (inv.documentType === "credit_note" && typeof inv.total === "number" ? -inv.total : inv.total);
 const DOC_COLUMNS = [
   { key: "customer", label: "network.col.customer", on: true, cell: (inv) => el("td", { text: inv.customer }) },
-  { key: "type", label: "network.col.type", on: true, cell: (inv) => el("td", { class: `doctype${inv.documentType === "credit_note" ? " cn" : ""}`, text: t(`network.types.${inv.documentType === "credit_note" ? "credit_note" : "invoice"}`) }) },
+  { key: "type", label: "network.col.type", on: true, cell: (inv) => el("td", { class: `doctype${inv.documentType === "credit_note" ? " cn" : inv.documentType === "goods_receipt" ? " gr" : ""}`, text: t(`network.types.${typeOf(inv)}`) }) },
   { key: "number", label: "network.col.document", always: true, cell: (inv) => el("td", { class: "nowrap", text: inv.invoiceNumber ?? "—" }) },
   { key: "date", label: "network.col.date", on: true, cls: "hide-narrow", cell: (inv) => el("td", { class: "hide-narrow", text: inv.issueDate ?? "—" }) },
   { key: "due", label: "network.col.due", on: false, cell: (inv) => el("td", { text: inv.dueDate ?? "—" }) },
@@ -238,6 +247,7 @@ function documentsPage() {
     el("option", { value: "", text: t("network.types.all") }),
     el("option", { value: "invoice", text: t("network.types.invoice") }),
     el("option", { value: "credit_note", text: t("network.types.credit_note") }),
+    ...(receiptsShared ? [el("option", { value: "goods_receipt", text: t("network.types.goods_receipt") })] : []),
   ]);
   type.value = filters.type;
   type.addEventListener("change", () => {
@@ -247,7 +257,7 @@ function documentsPage() {
   });
   const status = el("select", { id: "status", "aria-label": t("network.col.status") }, [
     el("option", { value: "", text: t("network.status.all") }),
-    ...STATUSES.map((s) => el("option", { value: s, text: t(`network.status.${s}`) })),
+    ...[...STATUSES, ...(receiptsShared ? RECEIPT_STATUSES : [])].map((s) => el("option", { value: s, text: t(`network.status.${s}`) })),
   ]);
   status.value = filters.status;
   status.addEventListener("change", () => {
@@ -288,6 +298,11 @@ export async function loadInvoices() {
   const { res, body } = await api(`/invoices${params.toString() ? `?${params}` : ""}`);
   if (!res.ok) return;
   invoices = body.invoices ?? [];
+  // Decision 0738: the first answer that says receipts are shared draws the filters again, with them.
+  if (Boolean(body.receipts) !== receiptsShared) {
+    receiptsShared = Boolean(body.receipts);
+    if (current === "documents") await render();
+  }
   // Unfiltered, the list is every invoice: the menu's count is worked out from it (0728).
   if (!filters.q.trim() && !filters.status) setBadge("documents", waitingCount());
   const gone = body.unavailable ?? [];
@@ -320,7 +335,7 @@ function messagesPill(inv) {
 function drawRows() {
   const tbody = $("rows");
   if (!tbody) return;
-  const shown = invoices.filter((inv) => (!filters.customer || inv.linkId === filters.customer) && (!filters.type || (inv.documentType ?? "invoice") === filters.type));
+  const shown = invoices.filter((inv) => (!filters.customer || inv.linkId === filters.customer) && (!filters.type || typeOf(inv) === filters.type));
   // Decision 0736: this page of them.
   const pages = Math.max(1, Math.ceil(shown.length / pageSize));
   page = Math.min(Math.max(1, page), pages);
@@ -357,6 +372,16 @@ function drawRows() {
 
 /** Decision 0729: an invoice opens full screen, in place of the list. */
 export async function openInvoice(inv) {
+  // Decision 0738: a goods receipt opens read only, on its own page.
+  if (inv.documentType === "goods_receipt") {
+    const { res, body } = await api(`/receipts/${encodeURIComponent(inv.linkId)}/${encodeURIComponent(inv.id)}`);
+    if (!res.ok) return;
+    opened = { inv, body };
+    current = "receipt";
+    window.scrollTo?.(0, 0);
+    await render();
+    return;
+  }
   const { res, body } = await api(`/invoices/${encodeURIComponent(inv.linkId)}/${encodeURIComponent(inv.id)}`);
   if (!res.ok) return;
   // Decision 0728: opening it reads its messages, so its pill and the menu's count go down at once.

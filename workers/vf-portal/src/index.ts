@@ -1,4 +1,4 @@
-import { fromCustomer, invoice, invoices, me, reply, submissionCompanies, submit, type Deps } from "./network.js";
+import { fromCustomer, invoice, invoices, me, receipt, reply, submissionCompanies, submit, type Deps } from "./network.js";
 
 /**
  * **vf-portal: the supplier network — decision 0717.**
@@ -101,6 +101,9 @@ export default {
     if (url.pathname === "/api/invoices" && request.method === "GET") return signedOutClears(await invoices(deps, session, url.searchParams));
     const one = url.pathname.match(/^\/api\/invoices\/([^/]+)\/([^/]+)$/);
     if (one && request.method === "GET") return signedOutClears(await invoice(deps, session, decodeURIComponent(one[1]), decodeURIComponent(one[2])));
+    // Decision 0738: a goods receipt the customer shares, read only.
+    const oneReceipt = url.pathname.match(/^\/api\/receipts\/([^/]+)\/([^/]+)$/);
+    if (oneReceipt && request.method === "GET") return signedOutClears(await receipt(deps, session, decodeURIComponent(oneReceipt[1]), decodeURIComponent(oneReceipt[2])));
     // Decision 0721: replying to a customer about one invoice.
     const message = url.pathname.match(/^\/api\/invoices\/([^/]+)\/([^/]+)\/messages$/);
     if (message && request.method === "POST") {

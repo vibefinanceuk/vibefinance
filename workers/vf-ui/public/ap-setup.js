@@ -4,6 +4,7 @@ import { actionLink, compactLink } from "/viewer.js";
 import { currencyPicker } from "/access.js";
 import { accountCodingTab, loadCodingListCsvFormats, loadAccountCodingTables } from "/coding-lists.js";
 import { creditNotesTab, loadCreditNoteSetup } from "/credit-notes.js";
+import { loadNetworkSharingSetup, supplierNetworkTab } from "/receipt-sharing.js";
 
 /**
  * AP Setup — decision 0440.
@@ -75,6 +76,8 @@ const TABS = [
   { key: "returnreasons", labelKey: "apsetup.returnreasons" },
   // Decision 0731: what a credit note does to the invoice it credits.
   { key: "creditnotes", labelKey: "apsetup.creditnotes" },
+  // Decision 0738: what suppliers see in the supplier network.
+  { key: "suppliernetwork", labelKey: "apsetup.suppliernetwork" },
 ];
 
 let units = [];
@@ -178,6 +181,7 @@ async function load() {
       loadReturnReasonsTab(),
       loadCodingConfig(),
       loadCreditNoteSetup(),
+      loadNetworkSharingSetup(),
     ]);
     if (!overviewResponse.ok || !configResponse.ok || !matchingConfigResponse.ok || !standardRulesResponse.ok) {
       console.error(
@@ -1668,6 +1672,7 @@ function render() {
     stagerestrictions: () => stageRestrictionsTab(el("div", { class: "warn" })),
     returnreasons: () => returnReasonsTab(el("div", { class: "warn" })),
     creditnotes: () => creditNotesTab(render),
+    suppliernetwork: () => supplierNetworkTab(render),
   }[activeTab]();
 
   shell.replaceChildren(
