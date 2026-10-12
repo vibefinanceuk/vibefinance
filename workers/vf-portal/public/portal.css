@@ -16,13 +16,21 @@ main#welcome .field + .field { margin-top: var(--gap-loose); }
 .notice { background: var(--severity-warning-bg); color: var(--severity-warning-text); border: 0.5px solid var(--border-warning); border-radius: var(--radius); padding: 8px 12px; font-size: var(--text-sm); margin-bottom: 14px; }
 .linkbutton { background: none; border: 0; padding: 0; min-height: 0; color: var(--text-accent); text-decoration: underline; font: inherit; cursor: pointer; }
 
-.status { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: var(--text-sm); white-space: nowrap; background: var(--surface-2); color: var(--text-secondary); }
-.status.in_review { background: var(--bg-accent); color: var(--text-accent); }
-.status.approved, .status.sent_for_payment, .status.paid { background: var(--severity-ok-bg); color: var(--severity-ok-text); }
-.status.query_raised, .status.returned { background: var(--severity-warning-bg); color: var(--severity-warning-text); }
-.status.rejected { background: var(--severity-danger-bg); color: var(--severity-danger-text); }
+/*
+ * **Status as the application's pill — decision 0736.** A light tint, a
+ * fine edge of the same colour and the colour in the text, as the app's
+ * Documents (0520): received and in review neutral, query raised amber,
+ * returned accent, approved / sent for payment / paid green, rejected light
+ * red, credited an outline.
+ */
+.status { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: var(--text-sm); line-height: 1.5; white-space: nowrap; background: var(--surface-1); color: var(--text-secondary); border: 0.5px solid var(--border-strong); }
+.status.in_review { color: var(--text-accent); }
+.status.approved, .status.sent_for_payment, .status.paid { background: var(--bg-success); border-color: var(--border-success); color: var(--text-success); font-weight: 600; }
+.status.query_raised { background: var(--bg-warning); border-color: var(--border-warning); color: var(--text-warning); font-weight: 600; }
+.status.returned { background: var(--bg-accent); border-color: var(--border-accent); color: var(--text-accent); font-weight: 600; }
+.status.rejected { background: var(--bg-danger); border-color: var(--border-danger); color: var(--text-danger); font-weight: 600; }
 /* Decision 0731: a credit note credited it. */
-.status.credited { background: transparent; color: var(--text-secondary); border: 0.5px solid var(--border-strong); }
+.status.credited { background: transparent; color: var(--text-secondary); border-color: var(--border-strong); }
 
 /* An invoice, opened (0717). */
 .popout .head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 4px; }
@@ -104,8 +112,9 @@ main#welcome .field + .field { margin-top: var(--gap-loose); }
 @media (max-width: 1000px) { .netcreate .row3 { grid-template-columns: 1fr; } .netfoot { flex-direction: column; align-items: stretch; } .nettotals { width: auto; } }
 
 /* Messages on an invoice, and the rows waiting on a reply — decision 0728. */
-.msgpill { display: inline-block; min-width: 22px; padding: 2px 9px; border-radius: 999px; font-size: var(--text-sm); text-align: center; background: var(--surface-2); color: var(--text-secondary); white-space: nowrap; }
-.msgpill.new { background: var(--severity-warning-bg); color: var(--severity-warning-text); font-weight: 700; border: 0.5px solid var(--border-warning); }
+.msgpill { display: inline-block; min-width: 22px; padding: 2px 9px; border-radius: 999px; font-size: var(--text-sm); line-height: 1.5; text-align: center; background: var(--surface-1); color: var(--text-secondary); border: 0.5px solid var(--border); white-space: nowrap; }
+/* Decision 0736: as the status pills, the app's light tint. */
+.msgpill.new { background: var(--bg-warning); color: var(--text-warning); font-weight: 700; border-color: var(--border-warning); }
 .netlist tr.hasnew td { font-weight: 600; }
 .netlist tr.hasnew td:first-child { box-shadow: inset 3px 0 0 var(--border-warning); }
 
@@ -150,3 +159,11 @@ main#welcome .field + .field { margin-top: var(--gap-loose); }
 @media (max-width: 1000px) { .netcreate .cnpanel .cnrow, .netcreate .cnpanel .cnrow.cnwhy { grid-template-columns: 1fr; } }
 /* Documents: a credit note's type and amount (0732). */
 .netlist .doctype.cn { color: var(--text-accent); font-weight: 600; }
+
+/* Documents: pages and columns, as the app's (0736). */
+.netlist-controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-left: auto; }
+.netlist-controls select { width: auto; min-height: 34px; padding: 4px 8px; }
+.netlist-controls .iconbutton svg { width: 16px; height: 16px; }
+.netlist-controls .range { white-space: nowrap; font-size: var(--text-sm); color: var(--text-muted); min-width: 7em; text-align: center; }
+.netlist-capped { font-size: var(--text-sm); color: var(--text-muted); margin-top: 8px; }
+.columnpicker summary svg { width: 16px; height: 16px; }

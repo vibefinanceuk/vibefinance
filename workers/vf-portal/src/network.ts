@@ -115,17 +115,20 @@ export async function invoices(deps: Deps, session: string, params: URLSearchPar
   );
   const all: Record<string, unknown>[] = [];
   const unavailable: { customer: string; reason: string }[] = [];
+  // Decision 0736: a customer with more than it sent (its newest 500).
+  const capped: string[] = [];
   for (const { link, answer } of answers) {
     if (!answer.ok) {
       unavailable.push({ customer: link.customerName, reason: answer.reason });
       continue;
     }
+    if (answer.body.more === true) capped.push(link.customerName);
     for (const inv of (answer.body.invoices ?? []) as Record<string, unknown>[]) {
       all.push({ ...inv, linkId: link.id, customer: link.customerName, supplier: link.supplierName });
     }
   }
   all.sort((a, b) => String(b.receivedAt ?? "").localeCompare(String(a.receivedAt ?? "")));
-  return { status: 200, body: { invoices: all, unavailable } };
+  return { status: 200, body: { invoices: all, unavailable, capped } };
 }
 
 /** `GET /api/invoices/:linkId/:invoiceId` — one invoice, from the customer that link is for. */

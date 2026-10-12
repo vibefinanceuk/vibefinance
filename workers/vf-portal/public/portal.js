@@ -122,10 +122,104 @@ export async function render() {
 const filters = { q: "", customer: "", status: "", type: "" };
 let timer = null;
 
+/**
+ * **Pages and columns, as the app's Documents — decision 0736.** Dan:
+ * *"align the Documents screen in the supplier network with the document
+ * screen in (vf-app)"* — pages in the browser (the list is merged live
+ * from each customer, its newest 500 each), rows per page, and the
+ * column picker, remembered here.
+ */
+const PAGE_SIZES = [25, 50, 100, 200];
+let page = 1;
+let pageSize = 50;
+const COLUMNS_KEY = "vfn-columns";
+const negative = (inv) => (inv.documentType === "credit_note" && typeof inv.total === "number" ? -inv.total : inv.total);
+const DOC_COLUMNS = [
+  { key: "customer", label: "network.col.customer", on: true, cell: (inv) => el("td", { text: inv.customer }) },
+  { key: "type", label: "network.col.type", on: true, cell: (inv) => el("td", { class: `doctype${inv.documentType === "credit_note" ? " cn" : ""}`, text: t(`network.types.${inv.documentType === "credit_note" ? "credit_note" : "invoice"}`) }) },
+  { key: "number", label: "network.col.document", always: true, cell: (inv) => el("td", { class: "nowrap", text: inv.invoiceNumber ?? "—" }) },
+  { key: "date", label: "network.col.date", on: true, cls: "hide-narrow", cell: (inv) => el("td", { class: "hide-narrow", text: inv.issueDate ?? "—" }) },
+  { key: "due", label: "network.col.due", on: false, cell: (inv) => el("td", { text: inv.dueDate ?? "—" }) },
+  // A credit note is money the other way.
+  { key: "amount", label: "network.col.amount", on: true, cls: "num", cell: (inv) => el("td", { class: "num", text: money(negative(inv), inv.currency) }) },
+  { key: "currency", label: "network.col.currency", on: false, cell: (inv) => el("td", { text: inv.currency ?? "—" }) },
+  { key: "po", label: "network.col.po", on: true, cls: "hide-narrow", cell: (inv) => el("td", { class: "hide-narrow", text: inv.purchaseOrder ?? "—" }) },
+  { key: "buyerref", label: "network.col.buyerref", on: false, cell: (inv) => el("td", { text: inv.buyerReference ?? "—" }) },
+  { key: "company", label: "network.col.company", on: true, cls: "hide-narrow", cell: (inv) => el("td", { class: "hide-narrow", text: inv.company ?? "" }) },
+  { key: "received", label: "network.col.received", on: false, cell: (inv) => el("td", { text: (inv.receivedAt ?? "").slice(0, 10) || "—" }) },
+  { key: "credits", label: "network.col.credits", on: false, cell: (inv) => el("td", { text: inv.creditedInvoice ?? "—" }) },
+  { key: "messages", label: "network.col.messages", on: true, cls: "num", cell: (inv) => el("td", { class: "num" }, [messagesPill(inv)]) },
+  { key: "status", label: "network.col.status", on: true, cell: (inv) => el("td", {}, [statusChip(inv.status)]) },
+];
+
+function shownColumns() {
+  let keys = null;
+  try {
+    keys = JSON.parse(localStorage.getItem(COLUMNS_KEY) ?? "null");
+  } catch {
+    // Not kept: the standard columns.
+  }
+  const chosen = new Set(Array.isArray(keys) ? keys : DOC_COLUMNS.filter((c) => c.on).map((c) => c.key));
+  return DOC_COLUMNS.filter((c) => c.always || chosen.has(c.key));
+}
+
+function columnPicker() {
+  const shown = new Set(shownColumns().map((c) => c.key));
+  const list = el(
+    "div",
+    { class: "columnlist" },
+    DOC_COLUMNS.map((c) => {
+      const box = el("input", { type: "checkbox", ...(shown.has(c.key) ? { checked: true } : {}), ...(c.always ? { disabled: true } : {}) });
+      box.addEventListener("change", () => {
+        const now = new Set(shownColumns().map((x) => x.key));
+        if (box.checked) now.add(c.key);
+        else now.delete(c.key);
+        try {
+          localStorage.setItem(COLUMNS_KEY, JSON.stringify([...now]));
+        } catch {
+          // A convenience.
+        }
+        drawTable();
+      });
+      return el("label", {}, [box, ` ${t(c.label)}`]);
+    })
+  );
+  return el("details", { class: "columnpicker", id: "netcolumns" }, [el("summary", { title: t("network.choosecolumns"), "aria-label": t("network.choosecolumns") }, [icon("columns")]), list]);
+}
+
+function pager() {
+  const size = el("select", { id: "rowsize", "aria-label": t("network.rows") }, PAGE_SIZES.map((n) => el("option", { value: String(n), text: String(n) })));
+  size.value = String(pageSize);
+  size.addEventListener("change", () => {
+    pageSize = Number(size.value);
+    page = 1;
+    drawRows();
+  });
+  const nav = (name, label, id, onclick) => el("button", { class: "iconbutton", type: "button", id, title: t(label), "aria-label": t(label), onclick }, [icon(name)]);
+  return el("div", { class: "netlist-controls" }, [
+    el("label", { class: "sm muted", for: "rowsize", text: t("network.rows") }),
+    size,
+    nav("chevronsleft", "network.page.first", "pg-first", () => { page = 1; drawRows(); }),
+    nav("chevronleft", "network.page.prev", "pg-prev", () => { page = Math.max(1, page - 1); drawRows(); }),
+    el("span", { class: "range", id: "count" }),
+    nav("chevronright", "network.page.next", "pg-next", () => { page += 1; drawRows(); }),
+    nav("chevronsright", "network.page.last", "pg-last", () => { page = Number.MAX_SAFE_INTEGER; drawRows(); }),
+    columnPicker(),
+  ]);
+}
+
+/** The table's head for the columns chosen, then its rows. */
+function drawTable() {
+  const head = $("doc-head");
+  if (head) head.replaceChildren(el("tr", {}, shownColumns().map((c) => el("th", { class: c.cls ?? "", text: t(c.label) }))));
+  drawRows();
+}
+
 function documentsPage() {
   const search = el("input", { type: "search", id: "search", placeholder: t("network.searchdocs"), "aria-label": t("network.searchdocs"), value: filters.q });
   search.addEventListener("input", () => {
     filters.q = search.value;
+    page = 1;
     clearTimeout(timer);
     timer = setTimeout(loadInvoices, 300);
   });
@@ -136,6 +230,7 @@ function documentsPage() {
   customer.value = filters.customer;
   customer.addEventListener("change", () => {
     filters.customer = customer.value;
+    page = 1;
     drawRows();
   });
   // Decision 0732: invoices, credit notes, or both.
@@ -147,6 +242,7 @@ function documentsPage() {
   type.value = filters.type;
   type.addEventListener("change", () => {
     filters.type = type.value;
+    page = 1;
     drawRows();
   });
   const status = el("select", { id: "status", "aria-label": t("network.col.status") }, [
@@ -156,6 +252,7 @@ function documentsPage() {
   status.value = filters.status;
   status.addEventListener("change", () => {
     filters.status = status.value;
+    page = 1;
     loadInvoices();
   });
   const notice = sentNotice;
@@ -171,26 +268,15 @@ function documentsPage() {
       : null,
     el("div", { class: "notice", id: "unavailable", role: "status", hidden: true }),
     el("div", { class: "panel" }, [
-      el("div", { class: "searchrow" }, [search, el("div", { class: "filters" }, [customer, type, status]), el("span", { class: "sm muted", id: "count" })]),
+      el("div", { class: "searchrow" }, [search, el("div", { class: "filters" }, [customer, type, status]), pager()]),
     ]),
     el("div", { class: "panel" }, [
       el("table", { class: "netlist" }, [
-        el("thead", {}, [
-          el("tr", {}, [
-            el("th", { text: t("network.col.customer") }),
-            el("th", { text: t("network.col.type") }),
-            el("th", { text: t("network.col.document") }),
-            el("th", { class: "hide-narrow", text: t("network.col.date") }),
-            el("th", { class: "num", text: t("network.col.amount") }),
-            el("th", { class: "hide-narrow", text: t("network.col.po") }),
-            el("th", { class: "hide-narrow", text: t("network.col.company") }),
-            el("th", { class: "num", text: t("network.col.messages") }),
-            el("th", { text: t("network.col.status") }),
-          ]),
-        ]),
+        el("thead", { id: "doc-head" }, [el("tr", {}, shownColumns().map((c) => el("th", { class: c.cls ?? "", text: t(c.label) })))]),
         el("tbody", { id: "rows" }),
       ]),
       el("div", { class: "empty", id: "empty", hidden: true }),
+      el("div", { class: "netlist-capped", id: "capped", hidden: true }),
     ]),
   ];
 }
@@ -209,6 +295,11 @@ export async function loadInvoices() {
   if (notice) {
     notice.hidden = gone.length === 0;
     notice.textContent = t("network.unavailable", { list: gone.map((g) => g.customer).join(", ") });
+  }
+  const capped = $("capped");
+  if (capped) {
+    capped.hidden = !(body.capped ?? []).length;
+    capped.textContent = t("network.capped", { list: (body.capped ?? []).join(", ") });
   }
   drawRows();
 }
@@ -230,22 +321,25 @@ function drawRows() {
   const tbody = $("rows");
   if (!tbody) return;
   const shown = invoices.filter((inv) => (!filters.customer || inv.linkId === filters.customer) && (!filters.type || (inv.documentType ?? "invoice") === filters.type));
+  // Decision 0736: this page of them.
+  const pages = Math.max(1, Math.ceil(shown.length / pageSize));
+  page = Math.min(Math.max(1, page), pages);
+  const from = (page - 1) * pageSize;
+  const onPage = shown.slice(from, from + pageSize);
+  const columns = shownColumns();
   tbody.replaceChildren(
-    ...shown.map((inv) =>
-      el("tr", { tabindex: "0", class: waiting(inv) ? "netrow hasnew" : "netrow", onclick: () => openInvoice(inv), onkeydown: (e) => e.key === "Enter" && openInvoice(inv) }, [
-        el("td", { text: inv.customer }),
-        el("td", { class: `doctype${inv.documentType === "credit_note" ? " cn" : ""}`, text: t(`network.types.${inv.documentType === "credit_note" ? "credit_note" : "invoice"}`) }),
-        el("td", { class: "nowrap", text: inv.invoiceNumber ?? "—" }),
-        el("td", { class: "hide-narrow", text: inv.issueDate ?? "—" }),
-        // A credit note is money the other way.
-        el("td", { class: "num", text: money(inv.documentType === "credit_note" && typeof inv.total === "number" ? -inv.total : inv.total, inv.currency) }),
-        el("td", { class: "hide-narrow", text: inv.purchaseOrder ?? "—" }),
-        el("td", { class: "hide-narrow", text: inv.company ?? "" }),
-        el("td", { class: "num" }, [messagesPill(inv)]),
-        el("td", {}, [statusChip(inv.status)]),
-      ])
+    ...onPage.map((inv) =>
+      el(
+        "tr",
+        { tabindex: "0", class: waiting(inv) ? "netrow hasnew" : "netrow", onclick: () => openInvoice(inv), onkeydown: (e) => e.key === "Enter" && openInvoice(inv) },
+        columns.map((c) => c.cell(inv))
+      )
     )
   );
+  for (const [id, off] of [["pg-first", page <= 1], ["pg-prev", page <= 1], ["pg-next", page >= pages], ["pg-last", page >= pages]]) {
+    const b = $(id);
+    if (b) b.disabled = off;
+  }
   const empty = $("empty");
   empty.hidden = shown.length > 0;
   /**
@@ -258,7 +352,7 @@ function drawRows() {
     filtered || !me.customers.length
       ? t(filtered ? "network.nomatch" : "network.none")
       : t("network.noneyet", { list: me.customers.map((c) => `${c.customer}: ${c.companies.join(", ")}`).join(" · ") });
-  $("count").textContent = t("network.count", { n: shown.length });
+  $("count").textContent = t("network.range", { from: shown.length ? from + 1 : 0, to: from + onPage.length, total: shown.length });
 }
 
 /** Decision 0729: an invoice opens full screen, in place of the list. */

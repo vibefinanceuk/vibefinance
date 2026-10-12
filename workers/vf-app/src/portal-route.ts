@@ -180,27 +180,34 @@ function summary(row: PortalRow) {
     // Decision 0732: invoice or credit note, and the invoice a credit note credits.
     documentType: row.document_kind === "credit_note" ? "credit_note" : "invoice",
     creditedInvoice: row.document_kind === "credit_note" && typeof facts["BT-25"] === "string" ? facts["BT-25"] : null,
+    // Decision 0736: columns the network's Documents can add.
+    dueDate: typeof facts["BT-9"] === "string" ? facts["BT-9"] : null,
+    buyerReference: typeof facts["BT-10"] === "string" ? facts["BT-10"] : null,
   };
 }
 
 /**
  * `GET /portal/invoices?status=&q=` — this supplier's invoices for the
- * linked companies, newest first, at most 200. `q` matches the invoice
- * number or purchase order.
+ * linked companies, newest first, at most 500 (decision 0736: the
+ * network pages them in the browser; `more` says there were older ones).
+ * `q` matches the invoice number or purchase order.
  */
+export const PORTAL_LIST_LIMIT = 500;
+
 export async function listPortalInvoices(db: D1Database, claims: PortalAccessClaims, params: URLSearchParams): Promise<RouteResult> {
   const { sql, binds } = scope(claims);
   const q = (params.get("q") ?? "").trim().slice(0, 100);
   const search = q ? ` AND (h.invoice_number LIKE ? OR json_extract(h.facts_json, '$."BT-13"') LIKE ?)` : "";
   const rows = (
     await db
-      .prepare(`${SELECT} WHERE ${sql}${search} ORDER BY h.created_at DESC, h.id DESC LIMIT 200`)
+      .prepare(`${SELECT} WHERE ${sql}${search} ORDER BY h.created_at DESC, h.id DESC LIMIT ${PORTAL_LIST_LIMIT + 1}`)
       .bind(claims.linkId, ...binds, ...(q ? [`%${q}%`, `%${q}%`] : []))
       .all<PortalRow>()
   ).results;
   const wanted = params.get("status");
-  const invoices = rows.map(summary).filter((i) => !wanted || i.status === wanted);
-  return { status: 200, body: { invoices } };
+  const more = rows.length > PORTAL_LIST_LIMIT;
+  const invoices = rows.slice(0, PORTAL_LIST_LIMIT).map(summary).filter((i) => !wanted || i.status === wanted);
+  return { status: 200, body: { invoices, more } };
 }
 
 /**

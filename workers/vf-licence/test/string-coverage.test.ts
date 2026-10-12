@@ -3641,6 +3641,20 @@ const KEYS_THE_INTERFACE_USES = [
   "suppliers.layouts.columns",
   // The supplier pop-out's portal column (decision 0719).
   "suppliers.portal.invitesomeone",
+  // The network's Documents, as the app's (decision 0736).
+  "network.col.due",
+  "network.col.currency",
+  "network.col.buyerref",
+  "network.col.received",
+  "network.col.credits",
+  "network.choosecolumns",
+  "network.rows",
+  "network.page.first",
+  "network.page.prev",
+  "network.page.next",
+  "network.page.last",
+  "network.range",
+  "network.capped",
   // The line column picker (decision 0734).
   "viewer.lines.choosecolumns",
   "viewer.lines.fromdocument",

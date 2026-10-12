@@ -284,6 +284,8 @@ describe("the network's words", () => {
     ] as string[];
     const used = new Set<string>();
     for (const src of pages) for (const m of src.matchAll(/t\("(network\.[a-z0-9._]+)"/g)) used.add(m[1]);
+    // Decision 0736: the Documents columns' labels, and the pager's.
+    for (const src of pages) for (const m of src.matchAll(/(?:label: |nav\("[a-z]+", )"(network\.[a-z0-9._]+)"/g)) used.add(m[1]);
     const bis3 = (await import("../public/bis3.js?raw")).default as string;
     for (const m of bis3.matchAll(/"(network\.bis3\.[a-z]+)"/g)) used.add(m[1]);
     // Built from a value: each unit, VAT category and send failure the form can name.
