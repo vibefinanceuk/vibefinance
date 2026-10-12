@@ -3784,6 +3784,14 @@ const KEYS_THE_INTERFACE_USES = [
   "documents.type.credit_note",
   "documents.type.goods_receipt",
   "column.po",
+  // Create's ways as cards (decision 0743).
+  "create.ways",
+  "create.keyed.help",
+  "create.upload.help",
+  "create.batch.help",
+  "create.gr.upload.help",
+  "create.gr.keyreceipt.help",
+  "create.gr.keyreturn.help",
   // Goods receipts shared with suppliers (decision 0738).
   "apsetup.suppliernetwork",
   "apsetup.network.sub",

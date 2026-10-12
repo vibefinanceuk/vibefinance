@@ -5165,8 +5165,27 @@
 /* Decision 0575 — Create an invoice. */
 .createtabs { margin: 0 0 16px; display: inline-flex; }
 /* Decision 0653 — Create → Goods receipts: what to create, then how. */
-/* Decision 0742: Invoices / Goods receipts as the same rounded pill as the tabs beside it (.doctabs). */
+/* Decision 0742: Invoices / Goods receipts as a rounded pill (.doctabs). */
 .createkinds { display: inline-flex; margin: 0 0 16px; }
+/*
+  Decision 0743: the ways to create, as cards — an icon, the way, and a
+  line on what it is for. Chosen, a slim row with the chosen one outlined.
+*/
+.createcards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin: 0 0 16px; }
+.createcard {
+  display: flex; align-items: flex-start; gap: 14px; text-align: left; padding: 18px; min-height: 118px;
+  border-radius: var(--radius); background: var(--surface-2); border: 0.5px solid var(--border);
+  color: var(--text-primary); font: inherit; cursor: pointer;
+}
+.createcard:hover { border-color: var(--border-strong); }
+.createcardicon { flex: none; width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center; background: var(--bg-accent); color: var(--text-accent); }
+.createcardicon svg { width: 22px; height: 22px; }
+.createcardtext { display: flex; flex-direction: column; gap: 6px; flex: 1; min-width: 0; }
+.createcardtext b { font-size: var(--text-lg); }
+.createcards.compact .createcard { min-height: 0; padding: 12px 14px; align-items: center; }
+.createcards.compact .createcardicon { width: 32px; height: 32px; }
+.createcard.on { border: 1.5px solid var(--border-accent); box-shadow: var(--tab-active-shadow); }
+@media (max-width: 900px) { .createcards { grid-template-columns: minmax(0, 1fr); } }
 .createtarget { font-weight: 500; }
 .createkinds { margin-right: 12px; }
 .createtable td.nowrap { white-space: nowrap; }

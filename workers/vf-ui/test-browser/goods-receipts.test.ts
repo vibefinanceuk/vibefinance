@@ -312,12 +312,12 @@ describe("the Goods Receipts screen", () => {
     await openScreen(["AP.Receive"]);
     document.getElementById("receipts-toupload")!.click();
     await vi.waitFor(() => expect(document.getElementById("create-grdrop")).not.toBeNull());
-    expect(document.getElementById("create-grtab-upload")?.className).toBe("doctab on");
+    expect(document.getElementById("create-grtab-upload")?.className).toBe("createcard on");
     const { open } = await import("/goods-receipts.js");
     await open();
     button("Record a return")!.click();
     await vi.waitFor(() => expect(document.getElementById("record-reason")).not.toBeNull());
-    expect(document.getElementById("create-grtab-return")?.className).toBe("doctab on");
+    expect(document.getElementById("create-grtab-return")?.className).toBe("createcard on");
     await settle();
   });
 });
@@ -463,14 +463,20 @@ describe("Create → Goods receipts — decision 0653", () => {
     expect(document.getElementById("create-kind-invoices")?.className).toBe("doctab createkind on");
     expect(document.getElementById("create-kind-invoices")?.parentElement?.classList.contains("doctabs")).toBe(true);
     document.getElementById("create-kind-receipts")!.click();
+    // Decision 0743: the receipts' ways as cards, nothing chosen until one is.
+    await vi.waitFor(() => expect(document.getElementById("create-grtab-upload")).not.toBeNull());
+    expect([...document.querySelectorAll(".createcards .createcard")].map((b) => b.id)).toEqual(["create-grtab-upload", "create-grtab-receipt", "create-grtab-return"]);
+    expect(document.getElementById("create-grdrop")).toBeNull();
+    document.getElementById("create-grtab-upload")!.click();
     await vi.waitFor(() => expect(document.getElementById("create-grdrop")).not.toBeNull());
+    expect(document.querySelector(".createcards")?.classList.contains("compact")).toBe(true);
     expect(document.getElementById("create-grdest")?.textContent).toBe("Warehouse Receipts");
 
     document.body.innerHTML = `<main id="shell"></main><main id="viewer" hidden></main>`;
     vi.resetModules();
     await openCreate(["AP.Receive"]);
     expect(document.getElementById("create-kind-invoices")).toBeNull();
-    expect(document.getElementById("create-grdrop")).not.toBeNull();
+    expect(document.getElementById("create-grtab-upload")).not.toBeNull();
   });
 
   it("previews a CSV receipt by receipt, sends it, and lists what each became with Open", async () => {
@@ -478,6 +484,7 @@ describe("Create → Goods receipts — decision 0653", () => {
       "POST /api/goods-receipts/csv-preview": [200, PREVIEW],
       "POST /api/goods-receipts/csv-load": [200, LOADED],
     });
+    document.getElementById("create-grtab-upload")!.click();
     const picker = document.getElementById("create-grfile") as HTMLInputElement;
     Object.defineProperty(picker, "files", { value: [new File(["receipt_number\nWH-1"], "wh.csv", { type: "text/csv" })] });
     picker.dispatchEvent(new Event("change"));

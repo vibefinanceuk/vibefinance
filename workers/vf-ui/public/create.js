@@ -27,7 +27,8 @@ let chosen = "";
 let upload = null; // { messageId, receivedAt, rows: [{ name, size, status, why, invoice }] }
 let busy = false;
 // Decision 0575: which tab, and the keyed invoice's choices.
-let tab = "upload";
+// Decision 0743: nothing chosen until a card is: the cards say what each way is for.
+let tab = null;
 let keyedFile = null;
 let selfBilled = false;
 // Decision 0576: Batch upload — the layout, the published CSV mappings, and the preview.
@@ -38,7 +39,7 @@ let preview = null; // { kind: "csv"|"xml", filename, layout, rows, counts, invo
 let includeDuplicates = false;
 // Decision 0653: Create → Goods receipts.
 let kind = "invoices"; // "invoices" | "receipts"
-let receiptTab = "upload"; // "upload" | "receipt" | "return"
+let receiptTab = null; // null (choose) | "upload" | "receipt" | "return"
 let receiptProcess = null; // the Warehouse Receipts process, when set up
 let receiptPreview = null; // { filename, text, body }
 let receiptResult = null; // the load's body
@@ -729,6 +730,29 @@ async function chooseKind(key) {
   render();
 }
 
+/**
+ * **The ways to create, as cards — decision 0743** (Dan: "show the three
+ * options for each as cards on the same screen"). Before one is chosen,
+ * each says in a line what it is for; once chosen, they become a slim row
+ * with the chosen one outlined, and its form below. Ids as the tabs had
+ * (`create-tab-…`, `create-grtab-…`).
+ */
+function createCards(items, chosenKey, idPrefix, pick) {
+  return el(
+    "div",
+    { class: chosenKey ? "createcards compact" : "createcards", role: "group", "aria-label": t("create.ways") },
+    items.map(([key, label, iconName]) =>
+      el("button", { type: "button", class: chosenKey === key ? "createcard on" : "createcard", id: `${idPrefix}-${key}`, "aria-pressed": String(chosenKey === key), onclick: () => pick(key) }, [
+        el("span", { class: "createcardicon" }, [icon(iconName)]),
+        el("span", { class: "createcardtext" }, [
+          el("b", { text: t(label) }),
+          ...(chosenKey ? [] : [el("span", { class: "muted sm", text: t(`${label}.help`) })]),
+        ]),
+      ])
+    )
+  );
+}
+
 function render() {
   if (kind === "receipts") return renderReceipts();
   const shell = document.getElementById("shell");
@@ -737,24 +761,23 @@ function render() {
       el("div", {}, [
         topbar(t("create.heading"), t("create.subtitle")),
         kindChoice(),
-        // Decision 0575: a tab each, as the approved mock-up had.
-        el(
-          "div",
-          { class: "doctabs createtabs" },
+        // Decision 0743: a card each (0575 had tabs), then what the card chosen asks for.
+        createCards(
           [
-            ["upload", "create.upload"],
-            ["keyed", "create.keyed"],
-            ["batch", "create.batch"],
-          ].map(([key, label]) =>
-            el("button", { class: tab === key ? "doctab on" : "doctab", id: `create-tab-${key}`, onclick: () => selectTab(key) }, [
-              el("span", { text: t(label) }),
-            ])
-          )
+            ["keyed", "create.keyed", "rename"],
+            ["upload", "create.upload", "load"],
+            ["batch", "create.batch", "library"],
+          ],
+          tab,
+          "create-tab",
+          (key) => selectTab(key)
         ),
-        el("div", { class: "creategrid" }, [
-          tab === "keyed" ? keyedPanel() : tab === "batch" ? batchPanel() : sendPanel(),
-          el("div", { id: "create-upload" }, [tab === "batch" && preview ? previewPanel() : uploadPanel()]),
-        ]),
+        tab
+          ? el("div", { class: "creategrid" }, [
+              tab === "keyed" ? keyedPanel() : tab === "batch" ? batchPanel() : sendPanel(),
+              el("div", { id: "create-upload" }, [tab === "batch" && preview ? previewPanel() : uploadPanel()]),
+            ])
+          : null,
       ].filter(Boolean))
     )
   );
@@ -907,7 +930,7 @@ export async function open() {
   setCurrentScreen("create");
   // Decision 0653: goods receipts for someone who may only receive, or who came from Goods Receipts.
   kind = requested || (!canInvoices() && canReceipts()) ? "receipts" : "invoices";
-  receiptTab = requested?.tab ?? "upload";
+  receiptTab = requested?.tab ?? null;
   requested = null;
   receiptPreview = null;
   receiptResult = null;
@@ -919,7 +942,7 @@ export async function open() {
   }
   upload = null;
   busy = false;
-  tab = "upload";
+  tab = null;
   keyedFile = null;
   selfBilled = false;
   preview = null;
@@ -949,16 +972,16 @@ function receiptPill(status, extra = "") {
 }
 
 function receiptTabs() {
-  return el(
-    "div",
-    { class: "doctabs createtabs" },
+  // Decision 0743: as cards, as Invoices' are.
+  return createCards(
     [
-      ["upload", "create.gr.upload"],
-      ["receipt", "create.gr.keyreceipt"],
-      ["return", "create.gr.keyreturn"],
-    ].map(([key, label]) =>
-      el("button", { class: receiptTab === key ? "doctab on" : "doctab", id: `create-grtab-${key}`, onclick: () => ((receiptTab = key), (receiptSaved = null), render()) }, [el("span", { text: t(label) })])
-    )
+      ["upload", "create.gr.upload", "load"],
+      ["receipt", "create.gr.keyreceipt", "purchaseorders"],
+      ["return", "create.gr.keyreturn", "return_to_supplier"],
+    ],
+    receiptTab,
+    "create-grtab",
+    (key) => ((receiptTab = key), (receiptSaved = null), render())
   );
 }
 
@@ -1136,12 +1159,15 @@ function renderReceipts() {
         kindChoice(),
         receiptTabs(),
         // A keyed receipt's form needs the width: what was saved goes above it.
-        receiptTab === "upload"
-          ? el("div", { class: "creategrid" }, [left, el("div", { id: "create-grside" }, [receiptSide()])])
-          : el("div", { class: "createkeyed" }, [el("div", { id: "create-grside" }, [receiptSide()]), left]),
+        !receiptTab
+          ? null
+          : receiptTab === "upload"
+            ? el("div", { class: "creategrid" }, [left, el("div", { id: "create-grside" }, [receiptSide()])])
+            : el("div", { class: "createkeyed" }, [el("div", { id: "create-grside" }, [receiptSide()]), left]),
       ]))
     )
   );
+  if (!receiptTab) return;
   if (receiptTab === "upload") {
     left.append(receiptUploadPanel());
     return;

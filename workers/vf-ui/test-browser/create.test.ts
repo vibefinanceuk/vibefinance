@@ -53,11 +53,17 @@ function stub(calls: Call[], options: { targets?: unknown; files?: Record<string
   );
 }
 
-async function open() {
+/**
+ * Opens Create, and (decision 0743: nothing is chosen until a card is)
+ * chooses `start`'s card — Upload documents unless told otherwise; `null`
+ * leaves the cards as they open.
+ */
+async function open(start: string | null = "upload") {
   const { loadStrings } = await import("/strings.js");
   await loadStrings();
   const { open: openScreen } = await import("/create.js");
   await openScreen();
+  if (start) (document.getElementById(`create-tab-${start}`) as HTMLButtonElement | null)?.click();
 }
 const settle = async () => {
   for (let i = 0; i < 10; i++) await new Promise((r) => setTimeout(r, 0));
@@ -308,10 +314,13 @@ describe("Create → Upload documents (decision 0573)", () => {
       return [...document.querySelectorAll("#viewer button")].some((b) => b.textContent?.includes("Claim"));
     };
 
-    it("has its own tab beside Upload documents, with a file to start from and self-billing", async () => {
+    it("has its own card beside Upload documents, with a file to start from and self-billing", async () => {
       stubKeyed([]);
-      await open();
-      expect(texts(".createtabs .doctab")).toEqual(["Upload documents", "Create an invoice", "Batch upload"]);
+      await open(null);
+      // Decision 0743: the ways as cards, each saying what it is for, nothing chosen yet.
+      expect(texts(".createcards .createcard b")).toEqual(["Create an invoice", "Upload documents", "Batch upload"]);
+      expect(document.querySelectorAll(".createcards .createcard .muted")).toHaveLength(3);
+      expect(document.getElementById("create-drop")).toBeNull();
       (document.getElementById("create-tab-keyed") as HTMLButtonElement).click();
       expect(document.getElementById("create-tab-keyed")?.className).toContain("on");
       expect(document.getElementById("create-drop")).toBeNull();
@@ -423,7 +432,7 @@ describe("Create → Upload documents (decision 0573)", () => {
     it("offers the template, or a supplier's layout by its mapping", async () => {
       const calls: Call[] = [];
       await openBatch(calls);
-      expect(texts(".createtabs .doctab")).toEqual(["Upload documents", "Create an invoice", "Batch upload"]);
+      expect(texts(".createcards .createcard b")).toEqual(["Create an invoice", "Upload documents", "Batch upload"]);
       expect((document.getElementById("create-layout-template") as HTMLInputElement).checked).toBe(true);
       expect(document.getElementById("create-template")?.getAttribute("href")).toBe("/api/uploads/template.csv");
       expect(texts("#create-mapping option")).toEqual(["Lager Nord CSV · v2"]);
