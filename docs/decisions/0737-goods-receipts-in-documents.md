@@ -1,6 +1,6 @@
 # 0737: Goods receipts as rows of Documents, with a Type filter
 
-**Status: built.** vf-app (`documents-route.ts`, `index.ts`), vf-ui (`documents.js`, `app.css`;
+**Status: live** at `b4798f6`, pushed and deployed 12 October 2026, migration 0338 applied. vf-app (`documents-route.ts`, `index.ts`), vf-ui (`documents.js`, `app.css`;
 `app.css` copied to vf-portal), vf-licence (strings migration 0338). The first of two steps;
 the second (sharing receipts with suppliers in the network) is below.
 
