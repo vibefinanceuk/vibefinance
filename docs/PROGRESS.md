@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 12 October 2026 (decision 0746). A living document: what
+Last updated 12 October 2026 (decision 0747). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,12 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### "No document is retained" centred (0747)
+
+The message fills the document panel and is centred, instead of shrinking to its words on the left.
+
+Full reasoning is in decision 0747.
 
 ### One task for every reason an invoice-level stage raises (0746)
 

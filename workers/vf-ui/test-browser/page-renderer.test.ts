@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import stylesheets from "virtual:stylesheets";
 import { resolvePages, pageViewer, ZOOM_STEPS, DEFAULT_ZOOM_INDEX, REAL_DEPS } from "/page-renderer.js";
 
 /**
@@ -171,6 +172,18 @@ describe("pageViewer — the widget", () => {
     await Promise.resolve();
     expect(root.querySelector(".vthumb")).toBeTruthy();
     expect(root.querySelector(".vrail")).toBeFalsy();
+  });
+
+  it("puts the no-document message in the middle of the panel — decision 0747", async () => {
+    const root = pageViewer("inv-1", null, baseDeps({ resolvePages: vi.fn(async () => []) })) as HTMLElement;
+    await Promise.resolve();
+    await Promise.resolve();
+    // Mounted straight into the flex row of .vpagesroot, so it must grow to fill it.
+    expect(root.classList.contains("vpagesroot")).toBe(true);
+    expect(root.firstElementChild?.classList.contains("vthumb")).toBe(true);
+    const css = stylesheets["app.css"];
+    expect(css).toContain(".vpagesroot > .vthumb { flex: 1; }");
+    expect(css).toMatch(/\.vthumb \{[^}]*text-align: center;/);
   });
 
   it("draws the first page on open, at the default (1×) zoom and no rotation", async () => {

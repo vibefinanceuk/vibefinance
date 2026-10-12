@@ -4150,6 +4150,9 @@
     that fixed-height box.
   */
   .vpagesroot { display: flex; height: 100%; }
+  /* Decision 0747: "no document retained" fills the row, so it sits in the
+     middle of the document panel rather than shrinking to its words on the left. */
+  .vpagesroot > .vthumb { flex: 1; }
 
   /* A vertical rail, per the operator's own request — thumbnails in a
      column beside the page, not a strip above it. */
@@ -4456,6 +4459,8 @@
     background: var(--surface-1);
     color: var(--text-muted);
     font-size: var(--text-base);
+    text-align: center;
+    padding: 16px;
   }
 
   .vdoc .act { width: 100%; }
