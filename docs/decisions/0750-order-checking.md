@@ -1,6 +1,6 @@
 # 0750: Checking in the Purchase Orders process: its checks, the Purchasing team, changes and cancellations
 
-**Status: built.**
+**Status: live.**
 
 - vf-app: migration 0167, `order-checking.ts` (new), `purchase-orders-in.ts`,
   `purchase-order-route.ts`, `workflow-engine.ts`, `task-list-route.ts`, `permissions.ts`,
