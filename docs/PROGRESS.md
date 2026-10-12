@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 12 October 2026 (decision 0743). A living document: what
+Last updated 12 October 2026 (decision 0744). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,13 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Create an invoice keyed from nothing (0744)
+
+Create an invoice no longer takes a file; Upload documents is the one place for files, with a
+Self-billed invoices tick for the whole upload.
+
+Full reasoning is in decision 0744.
 
 ### Create: the ways as cards (0743)
 

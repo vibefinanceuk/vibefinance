@@ -330,6 +330,7 @@ import receiptSharingSql from "../migrations/0339_receipt_sharing_strings.sql?ra
 import supplierNetworkCardSql from "../migrations/0340_supplier_network_card_strings.sql?raw";
 import receiptMessagesSql from "../migrations/0341_receipt_messages_strings.sql?raw";
 import createCardsSql from "../migrations/0342_create_cards_strings.sql?raw";
+import createKeyedNoFileSql from "../migrations/0343_create_keyed_no_file_strings.sql?raw";
 
 function stripSqlComments(sql: string): string {
   return sql
@@ -693,5 +694,6 @@ export async function applyTestSchema(): Promise<void> {
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(supplierNetworkCardSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(receiptMessagesSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(createCardsSql)));
+  await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(createKeyedNoFileSql)));
 
 }

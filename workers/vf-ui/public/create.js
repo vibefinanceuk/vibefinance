@@ -29,8 +29,8 @@ let busy = false;
 // Decision 0575: which tab, and the keyed invoice's choices.
 // Decision 0743: nothing chosen until a card is: the cards say what each way is for.
 let tab = null;
-let keyedFile = null;
 let selfBilled = false;
+let uploadSelfBilled = false;
 // Decision 0576: Batch upload — the layout, the published CSV mappings, and the preview.
 let batchLayout = "template";
 let batchMapping = "";
@@ -279,16 +279,6 @@ function keyedPanel() {
       el("div", { class: "muted", text: t("create.notargets") }),
     ]);
   }
-  const picker = el("input", {
-    type: "file",
-    id: "create-keyedfile",
-    accept: ".pdf,.xml,.png,.jpg,.jpeg,.tif,.tiff",
-    hidden: true,
-    onchange: (e) => {
-      keyedFile = e.target.files?.[0] ?? null;
-      render();
-    },
-  });
   const box = el("input", {
     type: "checkbox",
     id: "create-selfbilled",
@@ -299,21 +289,7 @@ function keyedPanel() {
     el("div", { class: "cardhead" }, [el("h3", { text: t("create.keyed") })]),
     el("div", { class: "createmeta createintro", text: t("create.keyedintro") }),
     targetField(),
-    el("div", { class: "createfield" }, [
-      el("label", { text: t("create.startfrom") }),
-      el("div", { class: "createfilepick" }, [
-        el("span", { id: "create-keyedname", text: keyedFile ? `${keyedFile.name} · ${size(keyedFile.size)}` : t("create.nofile") }),
-        el("button", { class: "actionlink", onclick: () => picker.click() }, [icon("load"), el("span", { text: t("create.choosefile") })]),
-        keyedFile
-          ? el("button", { class: "actionlink", id: "create-keyedclear", onclick: () => ((keyedFile = null), render()) }, [
-              icon("close"),
-              el("span", { text: t("create.removefile") }),
-            ])
-          : null,
-        picker,
-      ].filter(Boolean)),
-      el("div", { class: "createmeta", text: t("create.startfromhint") }),
-    ]),
+    // Decision 0744: keyed from nothing. A file goes through Upload documents (Dan: "that makes more sense").
     el("label", { class: "createcheck", for: "create-selfbilled" }, [box, el("span", { text: t("create.selfbilled") })]),
     el("div", { class: "createmeta", text: t("create.selfbilledhint") }),
     el("div", { class: "createbuttons" }, [
@@ -364,6 +340,13 @@ function sendPanel() {
     drop.classList.remove("over");
     if (!busy) send(e.dataTransfer.files);
   });
+  // Decision 0744: self-billed for the whole upload, moved here with the file from Create an invoice.
+  const selfBilledBox = el("input", {
+    type: "checkbox",
+    id: "create-uploadselfbilled",
+    onchange: (e) => (uploadSelfBilled = e.target.checked),
+    ...(uploadSelfBilled ? { checked: "checked" } : {}),
+  });
   return el("div", { class: "panel" }, [
     el("div", { class: "cardhead" }, [el("h3", { text: t("create.upload") })]),
     el("div", { class: "createfield" }, [
@@ -371,6 +354,8 @@ function sendPanel() {
       select,
       el("div", { class: "createmeta", text: t("create.sendtohint") }),
     ]),
+    el("label", { class: "createcheck", for: "create-uploadselfbilled" }, [selfBilledBox, el("span", { text: t("create.uploadselfbilled") })]),
+    el("div", { class: "createmeta", text: t("create.uploadselfbilledhint") }),
     drop,
   ]);
 }
@@ -836,7 +821,7 @@ export async function send(fileList) {
     }
     row.status = "reading";
     renderUpload();
-    const result = await getJson(`/api/uploads/${encodeURIComponent(upload.messageId)}/files?name=${encodeURIComponent(f.name)}`, {
+    const result = await getJson(`/api/uploads/${encodeURIComponent(upload.messageId)}/files?name=${encodeURIComponent(f.name)}${uploadSelfBilled ? "&selfBilled=1" : ""}`, {
       method: "POST",
       headers: { "Content-Type": f.type || "application/octet-stream" },
       body: f.bytes ?? f.file,
@@ -857,25 +842,26 @@ export async function send(fileList) {
 }
 
 /**
- * Makes the invoice: a keyed upload, its file read first if there is
- * one, then opened in the viewer to be claimed and keyed. Where it has no
+ * Makes the invoice: a keyed upload of nothing (decision 0744: a file
+ * goes through Upload documents), then opened in the viewer to be
+ * claimed and keyed. Where it has no
  * task this person can open, it is listed like an upload's file.
  */
 export async function createKeyed() {
   if (busy || !chosen) return;
   busy = true;
-  const file = keyedFile;
+  // Decision 0744: always from nothing; a file is an upload.
   upload = {
     messageId: null,
     receivedAt: null,
     note: null,
-    rows: [{ name: file ? file.name : t("create.keyedrow"), size: file ? file.size : 0, status: "reading", why: null, invoice: null }],
+    rows: [{ name: t("create.keyedrow"), size: 0, status: "reading", why: null, invoice: null }],
   };
   render();
   const opened = await getJson("/api/uploads", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ sourceId: chosen, kind: "keyed", files: file ? 1 : 0 }),
+    body: JSON.stringify({ sourceId: chosen, kind: "keyed", files: 0 }),
   });
   if (!opened.ok) {
     upload.note = opened.body?.error ?? t("create.failed");
@@ -887,17 +873,11 @@ export async function createKeyed() {
   upload.messageId = opened.body.messageId;
   upload.receivedAt = opened.body.receivedAt;
   const id = encodeURIComponent(upload.messageId);
-  const result = file
-    ? await getJson(`/api/uploads/${id}/files?name=${encodeURIComponent(file.name)}${selfBilled ? "&selfBilled=1" : ""}`, {
-        method: "POST",
-        headers: { "Content-Type": file.type || "application/octet-stream" },
-        body: file,
-      })
-    : await getJson(`/api/uploads/${id}/keyed`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ selfBilled }),
-      });
+  const result = await getJson(`/api/uploads/${id}/keyed`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ selfBilled }),
+  });
   await getJson(`/api/uploads/${id}/finish`, { method: "POST" });
   const row = upload.rows[0];
   if (result.ok && result.body?.captured) {
@@ -908,7 +888,6 @@ export async function createKeyed() {
     row.why = result.body?.why ?? result.body?.error ?? t("create.failed");
   }
   busy = false;
-  keyedFile = null;
   selfBilled = false;
   render();
   if (row.invoice?.taskId) {
@@ -943,8 +922,8 @@ export async function open() {
   upload = null;
   busy = false;
   tab = null;
-  keyedFile = null;
   selfBilled = false;
+  uploadSelfBilled = false;
   preview = null;
   includeDuplicates = false;
   const result = await getJson("/api/uploads/targets");

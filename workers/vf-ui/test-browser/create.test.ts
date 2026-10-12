@@ -314,7 +314,7 @@ describe("Create → Upload documents (decision 0573)", () => {
       return [...document.querySelectorAll("#viewer button")].some((b) => b.textContent?.includes("Claim"));
     };
 
-    it("has its own card beside Upload documents, with a file to start from and self-billing", async () => {
+    it("has its own card beside Upload documents, keyed from nothing, with self-billing", async () => {
       stubKeyed([]);
       await open(null);
       // Decision 0743: the ways as cards, each saying what it is for, nothing chosen yet.
@@ -324,7 +324,9 @@ describe("Create → Upload documents (decision 0573)", () => {
       (document.getElementById("create-tab-keyed") as HTMLButtonElement).click();
       expect(document.getElementById("create-tab-keyed")?.className).toContain("on");
       expect(document.getElementById("create-drop")).toBeNull();
-      expect(document.getElementById("create-keyedname")?.textContent).toBe("No file");
+      // Decision 0744: no file here; a file goes through Upload documents.
+      expect(document.getElementById("create-keyedfile")).toBeNull();
+      expect(document.getElementById("create-keyedname")).toBeNull();
       expect(document.body.textContent).toContain("Self-billed invoice");
       expect(document.body.textContent).toContain("It is marked with invoice type 389.");
       expect(document.getElementById("create-keyedgo")?.textContent).toBe("Create invoice");
@@ -347,22 +349,15 @@ describe("Create → Upload documents (decision 0573)", () => {
       expect(calls.find((c) => c.path === "/api/tasks")?.query).toBe("task=t-9");
     });
 
-    it("reads a chosen file first, marked self-billed, instead of an empty invoice", async () => {
+    it("a file, self-billed, goes through Upload documents, for the whole upload — decision 0744", async () => {
       const calls: Call[] = [];
       stubKeyed(calls);
       await open();
-      (document.getElementById("create-tab-keyed") as HTMLButtonElement).click();
-      const input = document.getElementById("create-keyedfile") as HTMLInputElement;
-      Object.defineProperty(input, "files", { value: [new File(["<Invoice/>"], "Rechnung_88240.xml", { type: "text/xml" })] });
-      input.dispatchEvent(new Event("change"));
-      expect(document.getElementById("create-keyedname")?.textContent).toContain("Rechnung_88240.xml");
-      (document.getElementById("create-selfbilled") as HTMLInputElement).click();
-      (document.getElementById("create-keyedgo") as HTMLButtonElement).click();
-
-      expect(await viewerShowsClaim()).toBe(true);
+      (document.getElementById("create-uploadselfbilled") as HTMLInputElement).click();
+      const { send } = await import("/create.js");
+      await send([new File(["<Invoice/>"], "Rechnung_88240.xml", { type: "text/xml" })]);
+      await settle();
       expect(calls.find((c) => c.path.endsWith("/files"))?.query).toBe("name=Rechnung_88240.xml&selfBilled=1");
-      expect(calls.some((c) => c.path.endsWith("/keyed"))).toBe(false);
-      expect(JSON.parse(String(calls.find((c) => c.path === "/api/uploads")?.body))).toMatchObject({ kind: "keyed", files: 1 });
     });
   });
 

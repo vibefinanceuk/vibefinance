@@ -3792,6 +3792,9 @@ const KEYS_THE_INTERFACE_USES = [
   "create.gr.upload.help",
   "create.gr.keyreceipt.help",
   "create.gr.keyreturn.help",
+  // Self-billed on Upload documents (decision 0744).
+  "create.uploadselfbilled",
+  "create.uploadselfbilledhint",
   // Goods receipts shared with suppliers (decision 0738).
   "apsetup.suppliernetwork",
   "apsetup.network.sub",
