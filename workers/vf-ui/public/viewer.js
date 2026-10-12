@@ -1012,6 +1012,12 @@ function note(message, { success = false } = {}) {
  * It says what it found. It does not stop anybody saving.
  */
 function updateTotals() {
+  // Decision 0734: each line's total with VAT follows what is keyed.
+  for (const row of document.querySelectorAll("#lines tr")) {
+    const cell = row.querySelector("[data-linetotal] span");
+    const line = lines[[...row.parentNode.children].indexOf(row)];
+    if (cell && line) cell.textContent = lineTotalOf(line);
+  }
   const summed = lines.reduce((total, line) => total + (Number(line["BT-131"]) || 0), 0);
   const totalControl = document.getElementById("f-BT-112");
   // Decision 0677: the total is shown as money, an input's value or a read-only field's text.
@@ -1121,6 +1127,8 @@ function lineRow(line, index) {
 
   return el("tr", {}, [
     ...lineTableFields().map(cell),
+    ...(lineTotalShown() ? [el("td", { class: "num linetotalcell", "data-linetotal": "" }, [el("span", { text: lineTotalOf(line) })])] : []),
+    ...lineMatchColumnsShown().map((c) => lineMatchValueCell(line, c)),
     ...(stored.poMatch ? [matchCell(line)] : []),
     // Its own column — decision 0537. Sharing a cell with the × let it ride over the Match chip.
     el("td", { class: "codingcol" }, [
@@ -1233,13 +1241,140 @@ const CODING_PICKER_FIELDS = [
  */
 // Decision 0681: a line's text is its Item name (BT-153) and Item description (BT-154),
 // whichever way the invoice arrived; the separate read-only "description" (0171, 0680) is gone.
-const LINE_TABLE_ORDER = ["BT-126", "BT-153", "BT-154", "BT-130", "BT-146", "BT-129", "BT-131", "BT-151", "BT-152"];
+const LINE_TABLE_ORDER = ["BT-126", "BT-153", "BT-154", "BT-130", "BT-146", "BT-129", "BT-131", "BT-151", "BT-152", "linetotal", "BT-132", "BT-127"];
+
+/**
+ * **Choose the line columns — decision 0734.** Dan: *"provide a way to
+ * show more fields via tick box in the top right of the lines table.
+ * Similar to the documents screen"*. Field visibility still decides what a
+ * person may see (a hidden field is never offered); this only chooses,
+ * for this person in this browser, which of those are columns.
+ *
+ * - **Standard:** the seven the table always showed. Line ID, Item name
+ *   and Net amount cannot be turned off: a line without them cannot be
+ *   read.
+ * - **Line total with VAT** is worked out (net plus VAT at the line's
+ *   rate), never stored, never edited.
+ * - **Matching** (an invoice that names a PO): the Match column's own
+ *   verdict, a column each.
+ *
+ * A field the customer or a stage chose to show is a column until the
+ * person turns it off, as before this picker existed.
+ */
+const LINE_COLUMNS_KEY = "vf-line-columns";
+const LINE_STANDARD = ["BT-126", "BT-153", "BT-130", "BT-146", "BT-129", "BT-131", "BT-151"];
+const LINE_ALWAYS = new Set(["BT-126", "BT-153", "BT-131"]);
+const LINE_MATCH_COLUMNS = [
+  { key: "m.found", value: (s) => s.result.referenceFound, kind: "tick" },
+  { key: "m.price", value: (s) => s.result.priceMatched, kind: "tick" },
+  { key: "m.pricepct", value: (s) => s.result.variancePct, kind: "pct" },
+  { key: "m.qty", value: (s) => s.result.quantityMatched, kind: "tick" },
+  { key: "m.qtypct", value: (s) => s.result.quantityVariancePct, kind: "pct" },
+  { key: "m.unit", value: (s) => (s.poLine ? !s.result.unitMismatch : null), kind: "tick" },
+  { key: "m.nonpo", value: (s) => s.state === "nonpo", kind: "tick" },
+];
+
+function chosenLineColumns() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(LINE_COLUMNS_KEY) ?? "null");
+    if (Array.isArray(saved)) return new Set([...saved, ...LINE_ALWAYS]);
+  } catch {
+    // Not kept: the standard columns.
+  }
+  return new Set([...LINE_STANDARD, ...lineFields.filter((f) => f.decidedBy && f.decidedBy !== "default").map((f) => f.field)]);
+}
+
+function saveLineColumns(set) {
+  try {
+    localStorage.setItem(LINE_COLUMNS_KEY, JSON.stringify([...set]));
+  } catch {
+    // A convenience; the table still draws.
+  }
+}
+
+/** Every column this person may choose, in reading order: the line's fields, Line total with VAT. */
+function lineColumnOptions() {
+  const fields = lineFields.filter((f) => !CODING_PICKER_FIELDS.some((c) => c.field === f.field)).map((f) => f.field);
+  const rank = (k) => {
+    const i = LINE_TABLE_ORDER.indexOf(k);
+    return i === -1 ? LINE_TABLE_ORDER.length : i;
+  };
+  return [...fields, "linetotal"].sort((a, b) => rank(a) - rank(b));
+}
+
 function lineTableFields() {
+  const shown = chosenLineColumns();
   const rank = (f) => {
     const i = LINE_TABLE_ORDER.indexOf(f.field);
     return i === -1 ? LINE_TABLE_ORDER.length : i;
   };
-  return lineFields.filter((f) => !CODING_PICKER_FIELDS.some((c) => c.field === f.field)).slice().sort((a, b) => rank(a) - rank(b));
+  return lineFields
+    .filter((f) => !CODING_PICKER_FIELDS.some((c) => c.field === f.field) && shown.has(f.field))
+    .slice()
+    .sort((a, b) => rank(a) - rank(b));
+}
+
+const lineTotalShown = () => chosenLineColumns().has("linetotal");
+const lineMatchColumnsShown = () => (stored.poMatch ? LINE_MATCH_COLUMNS.filter((c) => chosenLineColumns().has(c.key)) : []);
+
+/** Net plus VAT at the line's own rate; the net alone where it has no rate. */
+function lineTotalOf(line) {
+  const net = Number(parseAmount(String(line["BT-131"] ?? "")));
+  if (!Number.isFinite(net) || String(line["BT-131"] ?? "").trim() === "") return "";
+  const rate = Number(parseAmount(String(line["BT-152"] ?? "")));
+  return formatMoney(Math.round(net * (1 + (Number.isFinite(rate) ? rate : 0) / 100) * 100) / 100, stored.facts?.["BT-5"]);
+}
+
+function lineColumnLabel(key) {
+  if (key === "linetotal") return t("viewer.lines.col.linetotal");
+  if (key.startsWith("m.")) return t(`viewer.lines.col.${key.slice(2)}`);
+  return t(`field.${key.toLowerCase()}`);
+}
+
+function lineColumnPicker() {
+  const shown = chosenLineColumns();
+  const box = (key) => {
+    const input = el("input", { type: "checkbox", ...(shown.has(key) ? { checked: "checked" } : {}), ...(LINE_ALWAYS.has(key) ? { disabled: "disabled" } : {}) });
+    input.addEventListener("change", () => {
+      const now = chosenLineColumns();
+      if (input.checked) now.add(key);
+      else now.delete(key);
+      saveLineColumns(now);
+      redrawLineTable();
+    });
+    return el("label", {}, [input, el("span", { text: ` ${lineColumnLabel(key)}` }), key === "linetotal" ? el("span", { class: "muted", text: ` ${t("viewer.lines.workedout")}` }) : null].filter(Boolean));
+  };
+  const groups = [
+    el("div", { class: "linecolgroup" }, [el("div", { class: "linecolhead", text: t("viewer.lines.fromdocument") }), ...lineColumnOptions().map(box)]),
+    stored.poMatch ? el("div", { class: "linecolgroup" }, [el("div", { class: "linecolhead", text: t("viewer.lines.matching") }), ...LINE_MATCH_COLUMNS.map((c) => box(c.key))]) : null,
+  ].filter(Boolean);
+  const reset = el("button", {
+    type: "button",
+    class: "linky",
+    text: t("viewer.lines.reset"),
+    onclick: () => {
+      try {
+        localStorage.removeItem(LINE_COLUMNS_KEY);
+      } catch {
+        // Nothing kept.
+      }
+      redrawLineTable();
+    },
+  });
+  return el("details", { class: "columnpicker linecolumnpicker", id: "linecolumnpicker" }, [
+    el("summary", { title: t("viewer.lines.choosecolumns"), "aria-label": t("viewer.lines.choosecolumns") }, [icon("columns")]),
+    el("div", { class: `columnlist linecolumnlist${groups.length > 1 ? " two" : ""}` }, [...groups, el("div", { class: "linecolfoot" }, [el("span", { text: t("viewer.lines.remembered") }), reset])]),
+  ]);
+}
+
+/** The line table again, keeping the picker open, after a column is chosen. */
+function redrawLineTable() {
+  const panel = document.getElementById("linepanel");
+  if (!panel) return;
+  const open = document.getElementById("linecolumnpicker")?.open;
+  panel.replaceWith(linePanel());
+  if (open) document.getElementById("linecolumnpicker")?.setAttribute("open", "");
+  renderLines();
 }
 
 /**
@@ -2341,6 +2476,16 @@ async function openLineCodingPopout(line, { lockedNote = null } = {}) {
  * topbar's own PO matching button makes (0530/0531), and the panel's own
  * routes still decide what may change.
  */
+/** Decision 0734: one of the Match column's verdicts, as a column of its own. */
+function lineMatchValueCell(line, column) {
+  const n = lineNumberOf.get(line);
+  const summary = n === undefined ? null : stored.poMatch?.lines.find((l) => l.lineNumber === n);
+  const value = summary ? column.value(summary) : null;
+  if (value === null || value === undefined) return el("td", { class: "linematchcol" }, [el("span", { class: "muted", text: "—" })]);
+  if (column.kind === "pct") return el("td", { class: "linematchcol num" }, [el("span", { text: `${Math.round(Number(value) * 10) / 10}%` })]);
+  return el("td", { class: "linematchcol" }, [el("span", { class: value ? "linematchyes" : "linematchno", text: value ? "✓" : "✕", title: t(value ? "viewer.lines.yes" : "viewer.lines.no") })]);
+}
+
 function matchCell(line) {
   const n = lineNumberOf.get(line);
   const summary = n === undefined ? null : stored.poMatch.lines.find((l) => l.lineNumber === n);
@@ -2422,10 +2567,11 @@ function renderLines() {
 }
 
 function linePanel() {
-  return el("div", { class: "panel" }, [
+  return el("div", { class: "panel", id: "linepanel" }, [
     // Decision 0662: Add line, with its icon, top right of the card, as the other cards' own actions.
     el("div", { class: "cardhead" }, [
       el("h3", { text: t("viewer.lines") }),
+      el("div", { class: "lineheadactions" }, [
       ...(canEditAnything
         ? [
             (() => {
@@ -2442,6 +2588,9 @@ function linePanel() {
             })(),
           ]
         : []),
+      // Decision 0734: which columns.
+      lineColumnPicker(),
+      ]),
     ]),
     el("table", { class: "linetable" }, [
       el("thead", {}, [
@@ -2458,6 +2607,9 @@ function linePanel() {
               text: t(`field.${spec.field.toLowerCase()}`),
             })
           ),
+          // Decision 0734: chosen in the picker.
+          ...(lineTotalShown() ? [el("th", { class: "num money lf-linetotal", text: lineColumnLabel("linetotal") })] : []),
+          ...lineMatchColumnsShown().map((c) => el("th", { class: "linematchcol", text: lineColumnLabel(c.key) })),
           // Decision 0536 — only for an invoice that names a PO.
           ...(stored.poMatch ? [el("th", { class: "matchcol", title: matchLegend(), text: t("pomatch.col.match") })] : []),
           // Decision 0537 — Coding in its own column.

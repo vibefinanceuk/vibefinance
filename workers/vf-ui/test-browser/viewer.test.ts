@@ -634,7 +634,8 @@ describe("three-tier severity on key fields (decision 0400)", () => {
         { field: "BT-129", visibility: "edit", type: "number", line: true, description: "quantity" },
         { field: "BT-146", visibility: "edit", type: "number", line: true, description: "price" },
         { field: "BT-130", visibility: "edit", type: "text", line: true, description: "unit" },
-        { field: "BT-154", visibility: "edit", type: "text", line: true, description: "description" },
+        // Shown because the customer chose it (decision 0734: otherwise offered in the picker).
+        { field: "BT-154", visibility: "edit", type: "text", line: true, description: "description", decidedBy: "customer" },
         { field: "BT-153", visibility: "edit", type: "text", line: true, description: "name" },
         { field: "BT-126", visibility: "read", type: "text", line: true, description: "line no" },
         { field: "coding.gl_code", visibility: "edit", type: "text", line: true, description: "GL" },
@@ -8147,5 +8148,68 @@ describe("the supplier conversation on an invoice — decision 0721", () => {
     expect(tabLabels()).not.toContain("Supplier");
     expect(actionLabels()).not.toContain("Ask supplier");
     expect(document.querySelector(".supplierquery")).toBeNull();
+  });
+});
+
+
+/**
+ * **Choose the line columns — decision 0734.** The seven standard columns;
+ * Item description, VAT rate and Line total with VAT from the picker,
+ * remembered; the always-on three cannot be turned off.
+ */
+describe("the line column picker (decision 0734)", () => {
+  const FIELDS = {
+    fields: ["BT-126", "BT-153", "BT-154", "BT-130", "BT-146", "BT-129", "BT-131", "BT-151", "BT-152", "BT-132", "BT-127", "BT-133"].map((field) => ({
+      field,
+      visibility: field === "BT-126" || field === "BT-132" || field === "BT-127" ? "read" : "edit",
+      type: ["BT-146", "BT-129", "BT-131", "BT-152"].includes(field) ? "number" : "text",
+      line: true,
+      description: field,
+      decidedBy: "default",
+    })),
+  };
+  const open = async () => {
+    stubFetch({
+      "/api/code-lists": { fields: {} },
+      "/api/ui-strings": STRINGS,
+      "/api/field-visibility": FIELDS,
+      "/api/invoices/inv-1": {
+        facts: { "BT-5": "GBP" },
+        lines: [{ lineNumber: 1, facts: { "BT-126": "1", "BT-153": "Rolls", "BT-154": "Delivered 18 March", "BT-131": 60.9, "BT-151": "S", "BT-152": 20 } }],
+        validation: { passed: true, checked: [], failures: [] },
+      },
+      "/api/documents/inv-1/activity": { items: [] },
+    });
+    const { loadStrings } = await import("/strings.js");
+    await loadStrings();
+    const { openViewer } = await import("/viewer.js");
+    await openViewer(TASK, () => {});
+  };
+  const heads = () => [...document.querySelectorAll(".linetable thead th")].map((th) => [...th.classList].find((c) => c.startsWith("lf-"))).filter(Boolean);
+
+  beforeEach(() => {
+    try {
+      localStorage.removeItem("vf-line-columns");
+    } catch {
+      // None kept.
+    }
+  });
+
+  it("shows the standard seven, and offers the rest with Line total with VAT", async () => {
+    await open();
+    expect(heads()).toEqual(["lf-bt-126", "lf-bt-153", "lf-bt-130", "lf-bt-146", "lf-bt-129", "lf-bt-131", "lf-bt-151"]);
+    const labels = [...document.querySelectorAll("#linecolumnpicker label")];
+    expect(labels).toHaveLength(12);
+    const box = (n: number) => labels[n].querySelector("input") as HTMLInputElement;
+    expect([box(0).disabled, box(1).disabled]).toEqual([true, true]);
+  });
+
+  it("adds Item description, VAT rate and Line total with VAT, worked out, and remembers them", async () => {
+    await open();
+    // In reading order: Line ID, Item name, Item description (2), … VAT category, VAT rate (8), Line total with VAT (9).
+    for (const n of [2, 8, 9]) ([...document.querySelectorAll("#linecolumnpicker label")][n].querySelector("input") as HTMLInputElement).click();
+    expect(heads()).toEqual(["lf-bt-126", "lf-bt-153", "lf-bt-154", "lf-bt-130", "lf-bt-146", "lf-bt-129", "lf-bt-131", "lf-bt-151", "lf-bt-152", "lf-linetotal"]);
+    expect(document.querySelector("[data-linetotal]")?.textContent).toBe("£73.08");
+    expect(JSON.parse(localStorage.getItem("vf-line-columns") ?? "[]")).toEqual(expect.arrayContaining(["BT-154", "BT-152", "linetotal"]));
   });
 });

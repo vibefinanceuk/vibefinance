@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 12 October 2026 (decision 0733). A living document: what
+Last updated 12 October 2026 (decision 0734). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,15 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Choose the invoice line columns (0734)
+
+A column picker on Invoice lines: the line fields a person may see, Line total with VAT
+(worked out) and, on a PO invoice, the matching verdicts as columns; remembered per browser.
+Item description, VAT rate, PO line and Line note are now visible by default (not columns
+until chosen).
+
+Full reasoning is in decision 0734.
 
 ### Credit notes and purchase orders (0733)
 

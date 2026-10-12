@@ -68,6 +68,18 @@ const DEFAULT_VISIBILITY: Record<string, Visibility> = {
   "BT-153": "edit",
   "BT-151": "edit",
 
+  /**
+   * **Offered in the line column picker — decision 0734.** Visible, so a
+   * person can choose them as columns; not columns until they do (the
+   * picker's standard set is the seven above). Item description and VAT
+   * rate are keyed as the line's other text and amounts are; the PO line
+   * the supplier named and the line note are the document's to say.
+   */
+  "BT-154": "edit",
+  "BT-152": "edit",
+  "BT-132": "read",
+  "BT-127": "read",
+
   // **Read, not hidden.** Identifiers and codes a person refers to and
   // does not type — the case that makes three states worth having.
   "BT-126": "read",

@@ -3641,6 +3641,23 @@ const KEYS_THE_INTERFACE_USES = [
   "suppliers.layouts.columns",
   // The supplier pop-out's portal column (decision 0719).
   "suppliers.portal.invitesomeone",
+  // The line column picker (decision 0734).
+  "viewer.lines.choosecolumns",
+  "viewer.lines.fromdocument",
+  "viewer.lines.matching",
+  "viewer.lines.workedout",
+  "viewer.lines.remembered",
+  "viewer.lines.reset",
+  "viewer.lines.yes",
+  "viewer.lines.no",
+  "viewer.lines.col.linetotal",
+  "viewer.lines.col.found",
+  "viewer.lines.col.price",
+  "viewer.lines.col.pricepct",
+  "viewer.lines.col.qty",
+  "viewer.lines.col.qtypct",
+  "viewer.lines.col.unit",
+  "viewer.lines.col.nonpo",
   // Credit notes in the network (decision 0732).
   "network.col.type",
   "network.col.document",

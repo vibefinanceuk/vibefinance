@@ -563,6 +563,8 @@ Object.assign(ICONS, {
   rules:
     '<g transform="translate(1.96,0)"><circle cx="6" cy="5" r="2"/><path d="M6 7v3a3 3 0 0 0 3 3h6a3 3 0 0 1 3 3v3"/><circle cx="18" cy="19" r="2"/><path d="M6 7v10"/><circle cx="6" cy="19" r="2"/></g>',
 
+  // Decision 0734: choose a table's columns.
+  columns: '<rect x="3" y="4" width="18" height="16" rx="1.5"/><path d="M9 4v16M15 4v16"/>',
   // A page with a folded corner — the plainest possible "a document,"
   // deliberately generic since this screen holds every kind at once.
   documents: '<path d="M6 3h9l4 4v14a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"/><path d="M15 3v4h4"/><path d="M8 12h8M8 16h5"/>',

@@ -323,6 +323,7 @@ import networkMessageCountsSql from "../migrations/0332_network_message_counts_s
 import networkInvoiceViewSql from "../migrations/0333_network_invoice_view_strings.sql?raw";
 import creditNotesStringsSql from "../migrations/0334_credit_notes_strings.sql?raw";
 import networkCreditNotesSql from "../migrations/0335_network_credit_notes_strings.sql?raw";
+import lineColumnsSql from "../migrations/0336_line_columns_strings.sql?raw";
 
 function stripSqlComments(sql: string): string {
   return sql
@@ -679,5 +680,6 @@ export async function applyTestSchema(): Promise<void> {
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(networkInvoiceViewSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(creditNotesStringsSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(networkCreditNotesSql)));
+  await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(lineColumnsSql)));
 
 }
