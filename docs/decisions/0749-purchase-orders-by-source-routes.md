@@ -1,6 +1,6 @@
 # 0749: Purchase orders arrive by Source Routes, through a Purchase Orders process
 
-**Status: built.** vf-app (migration 0166, `purchase-orders-in.ts`, `purchase-order-route.ts`,
+**Status: live.** vf-app (migration 0166, `purchase-orders-in.ts`, `purchase-order-route.ts`,
 `inbound-email.ts`, `source-route.ts`, `https-in-route.ts`, `route-monitor-route.ts`,
 `route-reprocess.ts`, `warehouse-receipts.ts`, `index.ts`), vf-ui (`purchase-orders.js`,
 `process-routes.js`, `https-keys.js`, `route-monitor.js`), vf-licence (strings migration 0347).
