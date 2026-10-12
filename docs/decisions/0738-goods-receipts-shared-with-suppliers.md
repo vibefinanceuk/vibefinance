@@ -1,6 +1,6 @@
 # 0738: Goods receipts shared with suppliers in the network
 
-**Status: built.** vf-app (`receipt-sharing.ts`, `portal-route.ts`, `index.ts`, migration
+**Status: live** at `2922daf`, pushed and deployed 12 October 2026, migrations 0164 and 0339 applied. vf-app (`receipt-sharing.ts`, `portal-route.ts`, `index.ts`, migration
 0164), vf-ui (`receipt-sharing.js`, `ap-setup.js`, `suppliers.js`, `src/index.ts`), vf-portal
 (`receipt-view.js`, `portal.js`, `shell.js`, `portal.css`, `src/network.ts`, `src/index.ts`),
 vf-licence (strings migration 0339). The second step after 0737.
