@@ -1,6 +1,6 @@
 # 0739: The supplier record's Supplier Network card, rearranged
 
-**Status: built.** vf-ui (`suppliers.js`, `receipt-sharing.js`, `app.css`; `app.css` copied to
+**Status: live** at `4f5a5b0`, pushed and deployed 12 October 2026. vf-ui (`suppliers.js`, `receipt-sharing.js`, `app.css`; `app.css` copied to
 vf-portal), vf-licence (strings migration 0340).
 
 ## What was asked
