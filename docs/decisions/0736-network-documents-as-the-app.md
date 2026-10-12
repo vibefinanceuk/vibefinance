@@ -1,6 +1,6 @@
 # 0736: The network's Documents, as the app's: pages, columns and pills
 
-**Status: built**, awaiting deploy. vf-portal (`portal.js`, `portal.css`, `src/network.ts`),
+**Status: live** at `838b518`, pushed and deployed 12 October 2026, migration 0337 applied. vf-portal (`portal.js`, `portal.css`, `src/network.ts`),
 vf-app (`portal-route.ts`), vf-licence (strings migration 0337).
 
 ## What was asked
