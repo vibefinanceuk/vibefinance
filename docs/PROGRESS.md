@@ -2987,10 +2987,11 @@ section for the full reasoning and tests.
   untouched here.
 - Full reasoning and verification counts in decision 0469.
 
-### A goods receipt opened fills the window (0741)
+### A goods receipt opened is a page in the frame (0741)
 
-The receipt fills the window as it does in the supplier network; its Supplier tab keeps the box
-to write in at the bottom, as Timeline / Chat does.
+As an invoice opened: the side menu, the top bar with the receipt's actions beside Back, the
+receipt on the left and its Attachments / Timeline / Chat / Supplier panel on the right; the
+Supplier tab keeps the box to write in at the bottom, as Timeline / Chat does.
 
 Full reasoning is in decision 0741.
 

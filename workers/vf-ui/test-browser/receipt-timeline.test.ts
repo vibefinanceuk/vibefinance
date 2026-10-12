@@ -114,10 +114,10 @@ describe("the receipt's Timeline — decision 0658", () => {
     expect(tabs.map((b) => b.textContent)).toEqual(["Attachments", "Timeline / Chat8"]);
     expect(document.getElementById("receipt-tab-timeline")?.className).toBe("doctab on");
     expect(document.getElementById("receipt-attachments")?.hidden).toBe(true);
-    // On the right of a widened pop-out, beside the receipt, as the invoice viewer has it.
-    expect(document.querySelector(".popout.receiptpop > .receiptside > #receipt-timeline")).not.toBeNull();
-    expect(document.querySelector(".popout.receiptpop > .receiptmain #receipt-timeline")).toBeNull();
-    expect(document.querySelector(".popout.receiptpop > .receiptmain h3")?.textContent).toBe("WH-1");
+    // On the right of the receipt's page, beside the receipt, as the invoice viewer has it (0741).
+    expect(document.querySelector(".receiptview .receiptsidepanel > .receiptside > #receipt-timeline")).not.toBeNull();
+    expect(document.querySelector(".receiptview .receiptmain #receipt-timeline")).toBeNull();
+    expect(document.querySelector(".receiptview .topbar h2")?.textContent).toBe("WH-1");
     expect(timelineText()).toEqual([
       "It came in by Receipts upload, message MSG-AAAA-BBBB-CCCC, from Sam: 1 lines.",
       "Stopped at Matching: a task for AP Receiving to check its lines.",

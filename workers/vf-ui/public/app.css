@@ -5468,26 +5468,25 @@
   .popout.receiptpop .receiptside { border-left: none; border-top: 0.5px solid var(--border); }
 }
 /*
-  Decision 0741: a receipt opened fills the window, as one opened in the
-  supplier network does; the receipt scrolls on the left, the panel on the
-  right keeps the window's height. Its Supplier tab is laid out as
-  Timeline / Chat's: the messages scroll, the box to write in stays at the
-  bottom.
+  Decision 0741: a receipt opened is a page of its own in the application's
+  frame — the side menu, the top bar with the receipt's actions beside
+  Back — as an invoice opened is. The receipt on the left; on the right its
+  Attachments, Timeline / Chat and Supplier panel, the window's height and
+  kept in view as the receipt scrolls, its box to write in at the bottom.
+  Stacked on a narrow screen. The Supplier tab is laid out as Timeline /
+  Chat's: the messages scroll, the box stays at the bottom.
 */
-.backdrop.receiptfull { padding: 0; background: var(--surface-0); }
-.backdrop.receiptfull .popout.receiptpop {
-  width: 100vw;
-  height: 100vh;
-  max-height: none;
-  border: none;
-  border-radius: 0;
-  grid-template-columns: minmax(0, 1fr) minmax(340px, 440px);
-}
-.backdrop.receiptfull .popout.receiptpop .receiptmain { padding: 24px 28px; }
-.backdrop.receiptfull .popout.receiptpop .receiptside { padding: 20px; }
-.backdrop.receiptfull .popout.receiptpop .receiptmain > .cardhead h3 { font-size: var(--text-xl); }
+.receiptpage { display: grid; grid-template-columns: minmax(0, 1fr) minmax(340px, 440px); gap: 16px; align-items: start; }
+.receiptpage > .receiptmain { min-width: 0; margin-bottom: 0; }
+/* The window less the top bar above it, so its box to write in is in view from the start. */
+.receiptpage > .receiptsidepanel { position: sticky; top: 16px; height: calc(100vh - 200px); min-height: 420px; display: flex; flex-direction: column; margin-bottom: 0; }
+.receiptsidepanel > .receiptside { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }
+.receiptview .receiptactions { display: flex; align-items: center; gap: 4px; }
+.receiptmain .receiptcorrected { white-space: normal; max-width: 11em; margin-left: auto; }
+.receiptmain td.nowrap { white-space: nowrap; }
 @media (max-width: 900px) {
-  .backdrop.receiptfull .popout.receiptpop { height: 100vh; overflow: auto; }
+  .receiptpage { grid-template-columns: minmax(0, 1fr); }
+  .receiptpage > .receiptsidepanel { position: static; height: 70vh; }
 }
 .receiptside .receiptsupplier > .suppliertab { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }
 .receiptside .receiptsupplier .activityfeed { flex: 1 1 auto; min-height: 0; overflow: auto; }

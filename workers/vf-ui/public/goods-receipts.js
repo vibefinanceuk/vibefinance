@@ -422,8 +422,28 @@ export async function openReceipt(id, { onDone = null } = {}) {
   // Decision 0740: the conversation with the supplier, fetched beside the receipt; none when it cannot be read.
   const supplierChat = await fetchSupplierChat(id, `/api/goods-receipts/${encodeURIComponent(id)}/supplier-messages`);
   const problem = el("div", { class: "warn", id: "receipt-problem" });
-  let backdrop;
-  const close = () => backdrop.remove();
+  /**
+   * **Decision 0741: a page of its own, in the application's frame** —
+   * the side menu, the top bar with its controls, and the receipt's own
+   * actions beside Back, as an invoice opened is (Dan: "full screen, but
+   * still with the side menu displayed ... and with the header bar, and
+   * header buttons"). Drawn where the invoice viewer draws, over whichever
+   * screen opened it; Back returns to that screen, or to whatever the
+   * viewer was showing before.
+   */
+  const viewerPane = document.getElementById("viewer");
+  const shellPane = document.getElementById("shell");
+  const before = viewerPane && !viewerPane.hidden ? [...viewerPane.childNodes] : null;
+  const close = () => {
+    if (!viewerPane) return;
+    if (before) {
+      viewerPane.replaceChildren(...before);
+      return;
+    }
+    viewerPane.replaceChildren();
+    viewerPane.hidden = true;
+    if (shellPane) shellPane.hidden = false;
+  };
   const pending = receipt.status === "pending";
   // Decision 0654: lines waiting for their purchase order, on a pending receipt or held back on a registered one.
   const heldBack = lines.filter((l) => l.waitingSince && l.lineStatus !== "rejected");
@@ -621,7 +641,7 @@ export async function openReceipt(id, { onDone = null } = {}) {
     release.id = "receipt-release";
     buttons.push(release);
   }
-  buttons.push(actionLink("close", { onclick: () => close() }));
+  const back = el("button", { class: "actionlink", type: "button", id: "receipt-back", title: t("viewer.back"), onclick: () => close() }, [icon("back"), el("span", { text: t("viewer.back") })]);
 
   /** Decision 0657: who holds the receipt's task, with Claim or Release, as on an invoice. */
   const taskBar = () => {
@@ -685,8 +705,7 @@ export async function openReceipt(id, { onDone = null } = {}) {
    * scrolls on the left; the conversation keeps its own height on the
    * right, its box to write in always in view.
    */
-  backdrop = popout([el("div", { class: "receiptmain" }, [
-    el("div", { class: "cardhead" }, [el("h3", { text: receipt.receiptNumber }), el("div", { class: "statebuttons" }, buttons)]),
+  const main = el("div", { class: "panel receiptmain" }, [
     receipt.cancelled
       ? el("div", { class: "warn", text: t("receipts.cancelledby").replace("{who}", receipt.cancelledBy ?? "—").replace("{why}", receipt.cancelReason ?? "") })
       : null,
@@ -759,16 +778,26 @@ export async function openReceipt(id, { onDone = null } = {}) {
     problem,
     el("h4", { text: t("receipts.ordersnow") }),
     ...orders.flatMap((o) => [orderHeading(o), figuresTable(o)]),
-  ]),
-    // Decision 0658: what happened to it, and the conversation, with whoever AP brings in.
-    sidePanel(),
-  ], true, "receiptpop");
-  /**
-   * **Decision 0741: the whole window**, as a receipt opened in the supplier
-   * network (Dan: "there is so much information to share in the page").
-   * Still above whichever screen opened it, so Close goes back to it.
-   */
-  backdrop.classList.add("receiptfull");
+  ].filter(Boolean));
+  const orderNumbers = [...new Set(lines.map((l) => l.orderNumber))].join(", ");
+  const supplierName = orders.find((o) => o.supplier?.name)?.supplier?.name ?? null;
+  const page = frame(
+    el("div", { class: "receiptview" }, [
+      topbar(
+        receipt.receiptNumber,
+        [t("doctype.goods_receipt"), supplierName, orderNumbers].filter(Boolean).join(" · "),
+        [el("div", { class: "statebuttons receiptactions" }, [...buttons, back])]
+      ),
+      // Decision 0658: what happened to it, and the conversations, on the right.
+      el("div", { class: "receiptpage" }, [main, el("div", { class: "panel receiptsidepanel" }, [sidePanel()])]),
+    ])
+  );
+  if (viewerPane) {
+    viewerPane.replaceChildren(page);
+    viewerPane.hidden = false;
+    if (shellPane) shellPane.hidden = true;
+    window.scrollTo?.(0, 0);
+  }
 }
 
 // ── Recording ──────────────────────────────────────────────────────────

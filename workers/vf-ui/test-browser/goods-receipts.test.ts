@@ -11,6 +11,7 @@ const STRINGS = {
   strings: {
     "nav.goodsreceipts": "Goods Receipts",
     "receipts.readonly": "You can see receipts here. Recording them needs AP.Receive.",
+    "viewer.back": "Back",
     "receipts.recordreceipt": "Record a receipt",
     "receipts.recordreturn": "Record a return",
     "receipts.state.not_received": "Not received",
@@ -241,8 +242,9 @@ describe("the Goods Receipts screen", () => {
       "POST /api/goods-receipts/gr-2/cancel": [409, { reason: "returns_depend_on_it" }],
     });
     (document.querySelector('[data-receipt="gr-2"]') as HTMLElement).click();
-    await vi.waitFor(() => expect(document.querySelector(".popout")).not.toBeNull());
-    const pop = document.querySelector(".popout")!;
+    // Decision 0741: a page of its own, in the frame.
+    await vi.waitFor(() => expect(document.querySelector("#viewer .receiptview")).not.toBeNull());
+    const pop = document.querySelector(".receiptview")!;
     expect(pop.textContent).toContain("PO-4501 / 2");
     const line2 = pop.querySelector('.receiptfigures [data-line="2"]')!;
     expect([...line2.querySelectorAll("td")].map((c) => c.textContent)).toEqual(["2", "Bubble wrap roll", "50", "40", "5", "35", "40", "Partially receivedCredit expected 5"]);
@@ -395,7 +397,7 @@ describe("working a receipt at Matching — decision 0652", () => {
     });
     const { openReceipt } = await import("/goods-receipts.js");
     await openReceipt("wh-1");
-    const checks = [...document.querySelector(".popout table")!.querySelectorAll("tbody tr[data-line]")].map((r) => r.children[5]?.textContent);
+    const checks = [...document.querySelector(".receiptview .receiptmain table")!.querySelectorAll("tbody tr[data-line]")].map((r) => r.children[5]?.textContent);
     expect(checks).toEqual(["Matched", "The purchase order has no such line."]);
     expect(document.getElementById("fix-change-1")).toBeNull();
     button("Register")!.click();
@@ -557,7 +559,7 @@ describe("Waiting for the PO — decision 0654", () => {
     const { openReceipt } = await import("/goods-receipts.js");
     await openReceipt("wh-2");
     expect(document.getElementById("receipt-heldback")?.textContent).toBe("Registered. Lines held back waiting for their purchase order: 1. Each counts once its order is loaded and it matches.");
-    const checks = [...document.querySelector(".popout table")!.querySelectorAll("tbody tr[data-line]")].map((r) => r.children[5]?.textContent);
+    const checks = [...document.querySelector(".receiptview .receiptmain table")!.querySelectorAll("tbody tr[data-line]")].map((r) => r.children[5]?.textContent);
     expect(checks).toEqual(["Counted", "Waiting for its PO · days: 2"]);
     expect(document.getElementById("fix-change-1")).toBeNull();
     expect(document.getElementById("fix-change-2")).not.toBeNull();
@@ -584,15 +586,15 @@ describe("claim before acting, and correcting the unit and quantity — decision
     const { openReceipt } = await import("/goods-receipts.js");
     await openReceipt("wh-1");
     expect(document.getElementById("receipt-task")?.textContent).toContain("Nobody has claimed this receipt's task.");
-    // Decision 0659: Claim with the other actions, top right, just left of Close, with its icon.
-    const actions = [...document.querySelectorAll(".popout .cardhead .statebuttons .actionlink")];
-    expect(actions.map((a) => a.textContent)).toEqual(["Claim", "Close"]);
+    // Decision 0659: Claim with the other actions, top right, just left of Back (0741), with its icon.
+    const actions = [...document.querySelectorAll(".receiptview .receiptactions .actionlink")];
+    expect(actions.map((a) => a.textContent)).toEqual(["Claim", "Back"]);
     expect(document.getElementById("receipt-claim")?.querySelector("svg")).not.toBeNull();
     expect(document.getElementById("fix-change-1")).toBeNull();
     expect(button("Register")).toBeUndefined();
     expect(button("Reject receipt")).toBeUndefined();
     // The order line is shown, so the unit to correct to is plain.
-    const orderCells = [...document.querySelectorAll(".popout [data-orderline]")].map((c) => c.textContent);
+    const orderCells = [...document.querySelectorAll(".receiptview [data-orderline]")].map((c) => c.textContent);
     expect(orderCells).toEqual(["Bubble wrap roll · ordered 50 EA", "Not a line on this order"]);
     document.getElementById("receipt-claim")!.click();
     await vi.waitFor(() => expect(calls.some((c) => c.path === "/api/tasks/t-1/claim" && c.method === "POST")).toBe(true));
@@ -620,7 +622,7 @@ describe("claim before acting, and correcting the unit and quantity — decision
     await openReceipt("wh-1");
     expect(document.getElementById("receipt-task")?.textContent).toContain("You have claimed this receipt's task.");
     expect(document.getElementById("receipt-release")).not.toBeNull();
-    expect([...document.querySelectorAll(".popout .cardhead .statebuttons .actionlink")].map((a) => a.textContent)).toEqual(["Register", "Reject receipt", "Release", "Close"]);
+    expect([...document.querySelectorAll(".receiptview .receiptactions .actionlink")].map((a) => a.textContent)).toEqual(["Register", "Reject receipt", "Release", "Back"]);
     expect(button("Register")).not.toBeUndefined();
     expect((document.getElementById("fix-unit-1") as HTMLInputElement).value).toBe("BOX");
     (document.getElementById("fix-unit-1") as HTMLInputElement).value = "ea";
@@ -640,7 +642,7 @@ describe("claim before acting, and correcting the unit and quantity — decision
     });
     const again = await import("/goods-receipts.js");
     await again.openReceipt("wh-1");
-    expect(document.querySelector(".popout [data-corrected]")?.textContent).toBe("Was 2 BOX, corrected by Sam");
+    expect(document.querySelector(".receiptview [data-corrected]")?.textContent).toBe("Was 2 BOX, corrected by Sam");
   });
 });
 
@@ -668,18 +670,31 @@ describe("the conversation with the supplier about a receipt — decision 0740",
     });
     const { openReceipt } = await import("/goods-receipts.js");
     await openReceipt("gr-2");
-    // Decision 0741: the whole window, and the Supplier tab laid out as Timeline / Chat's.
-    expect(document.querySelector(".backdrop")?.classList.contains("receiptfull")).toBe(true);
+    // Decision 0741: a page of its own in the frame, over the screen that opened it; the Supplier tab laid out as Timeline / Chat's.
+    expect(document.getElementById("viewer")?.hidden).toBe(false);
+    expect(document.getElementById("shell")?.hidden).toBe(true);
+    expect(document.querySelector("#viewer .frame .receiptview .topbar h2")?.textContent).toBe("GR-1002");
     const tab = document.getElementById("receipt-tab-supplier")!;
     expect(tab).not.toBeNull();
     expect(document.querySelector(".receiptside .receiptsupplier .suppliertab .activityinput")).not.toBeNull();
     expect(tab.querySelector(".activitycount")?.textContent).toBe("1");
     tab.click();
-    expect(document.querySelector(".popout .suppliertab")?.textContent).toContain("Can you send photos?");
-    (document.querySelector(".popout .supplierinput") as HTMLTextAreaElement).value = "Photos attached to the receipt.";
-    (document.querySelector(".popout .suppliertab .activitypost") as HTMLButtonElement).click();
+    expect(document.querySelector(".receiptview .suppliertab")?.textContent).toContain("Can you send photos?");
+    (document.querySelector(".receiptview .supplierinput") as HTMLTextAreaElement).value = "Photos attached to the receipt.";
+    (document.querySelector(".receiptview .suppliertab .activitypost") as HTMLButtonElement).click();
     await vi.waitFor(() => expect(calls.some((c) => c.method === "POST" && c.path === "/api/goods-receipts/gr-2/supplier-messages")).toBe(true));
     expect(calls.find((c) => c.method === "POST" && c.path === "/api/goods-receipts/gr-2/supplier-messages")?.body).toEqual({ body: "Photos attached to the receipt." });
+  });
+
+  it("Back returns to the screen that opened it — decision 0741", async () => {
+    await openScreen(["AP.Receive"], { "GET /api/goods-receipts/gr-2": [200, RECEIPT] });
+    const { openReceipt } = await import("/goods-receipts.js");
+    await openReceipt("gr-2");
+    expect(document.getElementById("shell")?.hidden).toBe(true);
+    document.getElementById("receipt-back")!.click();
+    expect(document.getElementById("viewer")?.hidden).toBe(true);
+    expect(document.getElementById("shell")?.hidden).toBe(false);
+    expect(document.querySelector("#shell .frame")).not.toBeNull();
   });
 
   it("has none when the receipt is not shared and nothing has been written", async () => {

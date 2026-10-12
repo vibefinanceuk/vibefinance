@@ -229,7 +229,7 @@ afterEach(() => {
 });
 
 describe("a goods receipt at Matching (decision 0652)", () => {
-  it("opens the receipt's pop-out over the list, not the invoice viewer", async () => {
+  it("opens the receipt's own page, not the invoice viewer", async () => {
     const receiptTask = {
       id: "t-wh",
       stageId: "warehouse-receipts-matching",
@@ -251,8 +251,9 @@ describe("a goods receipt at Matching (decision 0652)", () => {
       },
     });
     row.click();
-    await vi.waitFor(() => expect(document.querySelector(".popout h3")?.textContent).toBe("WH-88213"));
-    expect((document.getElementById("viewer") as HTMLElement).hidden).toBe(true);
+    // Decision 0741: the receipt's own page, in the frame, not the invoice viewer.
+    await vi.waitFor(() => expect(document.querySelector("#viewer .receiptview .topbar h2")?.textContent).toBe("WH-88213"));
+    expect(document.querySelector("#viewer .receiptview .receiptmain")).not.toBeNull();
   });
 });
 
