@@ -5,6 +5,7 @@ import { generateApiKey, hashApiKey } from "../src/user-auth.js";
 import {
   handleFinishUpload,
   handleKeyedInvoice,
+  claimForCreator,
   handleOpenUpload,
   handleUploadFile,
   handleUploadTargets,
@@ -255,5 +256,48 @@ describe("the upload routes need AP.Create", () => {
       headers: { Authorization: `Bearer ${creator}` },
     });
     expect(await finished.json()).toEqual({ messageId, captured: 0, failed: 0 });
+  });
+});
+
+describe("claimed by whoever created it — decision 0745", () => {
+  async function keyedInvoice(): Promise<string> {
+    const { messageId } = (await handleOpenUpload(env.DB, DAN, { sourceId: "upload-ap", kind: "keyed" })).body as { messageId: string };
+    const made = await handleKeyedInvoice(env.DB, DAN, messageId, {});
+    // No task at Received in this process: nothing to claim.
+    expect(made.body).toMatchObject({ captured: true, claimed: false });
+    return (made.body as { invoice: { id: string } }).invoice.id;
+  }
+  async function openTask(invoiceId: string, permission = "AP.Validate") {
+    const pi = await env.DB.prepare("SELECT id FROM process_instances WHERE subject_type = 'invoice' AND subject_id = ?").bind(invoiceId).first<{ id: string }>();
+    await env.DB.prepare("INSERT INTO stage_visits (id, process_instance_id, stage_id, outcome) VALUES ('sv-k', ?, 'received', 'matched')").bind(pi!.id).run();
+    await env.DB.prepare("INSERT INTO org_teams (id, name, unit_id) VALUES ('ap-team', 'AP Review', 'ou-uk')").run();
+    await env.DB.prepare("INSERT INTO tasks (id, stage_id, stage_visit_id, owner_team_id, required_permission, status) VALUES ('t-k', 'received', 'sv-k', 'ap-team', ?, 'open')").bind(permission).run();
+  }
+  async function role(userId: string, permissions: string[]) {
+    await env.DB.prepare("INSERT INTO org_roles (id, name, permissions_json) VALUES (?, ?, ?)").bind(`r-${userId}`, `r-${userId}`, JSON.stringify(permissions)).run();
+    await env.DB.prepare("INSERT INTO org_user_roles (user_id, role_id, unit_id) VALUES (?, ?, NULL)").bind(userId, `r-${userId}`).run();
+  }
+
+  it("claims the invoice's open task for its creator, as their own Claim would, with its Timeline entry", async () => {
+    const invoiceId = await keyedInvoice();
+    await openTask(invoiceId);
+    await role(DAN.id, ["AP.Validate"]);
+    await env.DB.prepare("INSERT INTO org_team_members (team_id, user_id) VALUES ('ap-team', 'u-dan')").run();
+    expect(await claimForCreator(env.DB, invoiceId, DAN.id)).toBe(true);
+    expect(await env.DB.prepare("SELECT claimed_by FROM tasks WHERE id = 't-k'").first()).toEqual({ claimed_by: "u-dan" });
+    expect(await env.DB.prepare("SELECT action, actor_id FROM task_action_events WHERE task_id = 't-k'").first()).toEqual({ action: "claim", actor_id: "u-dan" });
+    // Already claimed: nothing more to do.
+    expect(await claimForCreator(env.DB, invoiceId, PRIYA.id)).toBe(false);
+  });
+
+  it("leaves it for its team where the creator may not claim it: not in the team, or without the task's permission", async () => {
+    const invoiceId = await keyedInvoice();
+    await openTask(invoiceId);
+    await role(DAN.id, ["AP.Validate"]);
+    expect(await claimForCreator(env.DB, invoiceId, DAN.id)).toBe(false);
+    await env.DB.prepare("INSERT INTO org_team_members (team_id, user_id) VALUES ('ap-team', 'u-priya')").run();
+    await role(PRIYA.id, ["AP.Create"]);
+    expect(await claimForCreator(env.DB, invoiceId, PRIYA.id)).toBe(false);
+    expect(await env.DB.prepare("SELECT claimed_by FROM tasks WHERE id = 't-k'").first()).toEqual({ claimed_by: null });
   });
 });

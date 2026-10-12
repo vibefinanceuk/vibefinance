@@ -1,3 +1,6 @@
+import { hasPermission } from "./enforce.js";
+import type { Permission } from "./permissions.js";
+import { handleClaimTask } from "./task-route.js";
 import type { RouteResult } from "./examples-route.js";
 import type { ExtractionModel } from "./extraction.js";
 import { captureAttachmentPart } from "./inbound-email.js";
@@ -323,7 +326,37 @@ export async function handleKeyedInvoice(db: D1Database, person: Person, message
   }
   await linkRouteItem(db, messageId, invoiceId, null);
   await addRouteEvent(db, messageId, "invoice_keyed", { detail: invoiceId, actor: person.id });
-  return { status: 200, body: { captured: true, invoice: await invoiceSummary(db, invoiceId) } };
+  const claimed = await claimForCreator(db, invoiceId, person.id);
+  return { status: 200, body: { captured: true, claimed, invoice: await invoiceSummary(db, invoiceId) } };
+}
+
+/**
+ * **Claimed by whoever created it — decision 0745** (Dan: "they have
+ * decided to create an invoice, therefore they would logically be the
+ * person entering and validating the details"). The invoice's first open
+ * task, where it is a team's and unclaimed, is claimed for that person —
+ * as their own Claim would, so only where they may: a member of the team
+ * holding the task's permission for the invoice's company. Otherwise it
+ * waits for its team as any other. True when claimed.
+ */
+export async function claimForCreator(db: D1Database, invoiceId: string, userId: string): Promise<boolean> {
+  const task = await db
+    .prepare(
+      `SELECT t.id, t.required_permission, h.org_unit_id
+       FROM tasks t
+       JOIN stage_visits v ON v.id = t.stage_visit_id
+       JOIN process_instances pi ON pi.id = v.process_instance_id
+       JOIN invoice_headers h ON h.id = pi.subject_id
+       WHERE pi.subject_type = 'invoice' AND pi.subject_id = ? AND t.status = 'open'
+         AND t.owner_team_id IS NOT NULL AND t.claimed_by IS NULL
+       ORDER BY t.created_at DESC LIMIT 1`
+    )
+    .bind(invoiceId)
+    .first<{ id: string; required_permission: string; org_unit_id: string | null }>();
+  if (!task) return false;
+  if (!(await hasPermission(db, userId, task.required_permission as Permission, task.org_unit_id ?? null))) return false;
+  const result = await handleClaimTask(db, task.id, userId, null);
+  return result.status === 200;
 }
 
 /**
