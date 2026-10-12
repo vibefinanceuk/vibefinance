@@ -6,6 +6,7 @@ import {
   handleFinishUpload,
   handleKeyedInvoice,
   claimForCreator,
+  invoiceSummary,
   handleOpenUpload,
   handleUploadFile,
   handleUploadTargets,
@@ -288,6 +289,25 @@ describe("claimed by whoever created it — decision 0745", () => {
     expect(await env.DB.prepare("SELECT action, actor_id FROM task_action_events WHERE task_id = 't-k'").first()).toEqual({ action: "claim", actor_id: "u-dan" });
     // Already claimed: nothing more to do.
     expect(await claimForCreator(env.DB, invoiceId, PRIYA.id)).toBe(false);
+  });
+
+  it("claims every task raised on it, and opens on one claimed — two rules in the same second (found live)", async () => {
+    const invoiceId = await keyedInvoice();
+    await openTask(invoiceId);
+    await env.DB.prepare("INSERT INTO tasks (id, stage_id, stage_visit_id, owner_team_id, required_permission, status, created_at) SELECT 't-k2', 'received', 'sv-k', 'ap-team', 'AP.Validate', 'open', created_at FROM tasks WHERE id = 't-k'").run();
+    await role(DAN.id, ["AP.Validate"]);
+    await env.DB.prepare("INSERT INTO org_team_members (team_id, user_id) VALUES ('ap-team', 'u-dan')").run();
+    expect(await claimForCreator(env.DB, invoiceId, DAN.id)).toBe(true);
+    expect((await env.DB.prepare("SELECT id, claimed_by FROM tasks ORDER BY id").all()).results).toEqual([
+      { id: "t-k", claimed_by: "u-dan" },
+      { id: "t-k2", claimed_by: "u-dan" },
+    ]);
+    // With one claimed and one not, the invoice opens on the claimed one.
+    await env.DB.prepare("UPDATE tasks SET claimed_by = NULL WHERE id = 't-k2'").run();
+    expect((await invoiceSummary(env.DB, invoiceId)).taskId).toBe("t-k");
+    await env.DB.prepare("UPDATE tasks SET claimed_by = NULL WHERE id = 't-k'").run();
+    await env.DB.prepare("UPDATE tasks SET claimed_by = 'u-dan' WHERE id = 't-k2'").run();
+    expect((await invoiceSummary(env.DB, invoiceId)).taskId).toBe("t-k2");
   });
 
   it("leaves it for its team where the creator may not claim it: not in the team, or without the task's permission", async () => {

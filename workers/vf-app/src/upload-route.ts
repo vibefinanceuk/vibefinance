@@ -176,15 +176,19 @@ async function openUploadOf(db: D1Database, messageId: string, person: Person): 
 }
 
 /** One file's invoice, as the screen shows it: number, supplier, total, stage, and its task to open. */
-async function invoiceSummary(db: D1Database, invoiceId: string) {
+export async function invoiceSummary(db: D1Database, invoiceId: string) {
   const row = await db
     .prepare(
       `SELECT h.invoice_number, json_extract(h.facts_json, '$."BT-27"') AS seller, h.total_with_vat, h.currency,
               st.name AS stage_name,
+              -- Decision 0745: a claimed one first, so a keyed invoice opens on the task claimed for its creator;
+              -- then the newest, and by rowid where two were raised in the same second.
               (SELECT t.id FROM tasks t JOIN stage_visits v ON v.id = t.stage_visit_id
-                 WHERE v.process_instance_id = pi.id AND t.status = 'open' ORDER BY t.created_at DESC LIMIT 1) AS task_id,
+                 WHERE v.process_instance_id = pi.id AND t.status = 'open'
+                 ORDER BY t.claimed_by IS NOT NULL DESC, t.created_at DESC, t.rowid DESC LIMIT 1) AS task_id,
               (SELECT t.stage_id FROM tasks t JOIN stage_visits v ON v.id = t.stage_visit_id
-                 WHERE v.process_instance_id = pi.id AND t.status = 'open' ORDER BY t.created_at DESC LIMIT 1) AS task_stage_id
+                 WHERE v.process_instance_id = pi.id AND t.status = 'open'
+                 ORDER BY t.claimed_by IS NOT NULL DESC, t.created_at DESC, t.rowid DESC LIMIT 1) AS task_stage_id
        FROM invoice_headers h
        LEFT JOIN process_instances pi ON pi.subject_type = 'invoice' AND pi.subject_id = h.id
        LEFT JOIN process_stages st ON st.id = pi.current_stage_id
@@ -340,23 +344,34 @@ export async function handleKeyedInvoice(db: D1Database, person: Person, message
  * waits for its team as any other. True when claimed.
  */
 export async function claimForCreator(db: D1Database, invoiceId: string, userId: string): Promise<boolean> {
-  const task = await db
-    .prepare(
-      `SELECT t.id, t.required_permission, h.org_unit_id
-       FROM tasks t
-       JOIN stage_visits v ON v.id = t.stage_visit_id
-       JOIN process_instances pi ON pi.id = v.process_instance_id
-       JOIN invoice_headers h ON h.id = pi.subject_id
-       WHERE pi.subject_type = 'invoice' AND pi.subject_id = ? AND t.status = 'open'
-         AND t.owner_team_id IS NOT NULL AND t.claimed_by IS NULL
-       ORDER BY t.created_at DESC LIMIT 1`
-    )
-    .bind(invoiceId)
-    .first<{ id: string; required_permission: string; org_unit_id: string | null }>();
-  if (!task) return false;
-  if (!(await hasPermission(db, userId, task.required_permission as Permission, task.org_unit_id ?? null))) return false;
-  const result = await handleClaimTask(db, task.id, userId, null);
-  return result.status === 200;
+  /**
+   * **Every open task on it, not the newest — found live, 12 October.**
+   * Two rules ("Failed validation requires review", "Supplier Not
+   * Found") each raised a task for AP Team in the same second; the first
+   * version claimed one, and the viewer opened the other, unclaimed.
+   * Each is claimed where the person may claim it.
+   */
+  const tasks = (
+    await db
+      .prepare(
+        `SELECT t.id, t.required_permission, h.org_unit_id
+         FROM tasks t
+         JOIN stage_visits v ON v.id = t.stage_visit_id
+         JOIN process_instances pi ON pi.id = v.process_instance_id
+         JOIN invoice_headers h ON h.id = pi.subject_id
+         WHERE pi.subject_type = 'invoice' AND pi.subject_id = ? AND t.status = 'open'
+           AND t.owner_team_id IS NOT NULL AND t.claimed_by IS NULL
+         ORDER BY t.created_at, t.rowid`
+      )
+      .bind(invoiceId)
+      .all<{ id: string; required_permission: string; org_unit_id: string | null }>()
+  ).results;
+  let claimed = false;
+  for (const task of tasks) {
+    if (!(await hasPermission(db, userId, task.required_permission as Permission, task.org_unit_id ?? null))) continue;
+    if ((await handleClaimTask(db, task.id, userId, null)).status === 200) claimed = true;
+  }
+  return claimed;
 }
 
 /**

@@ -22,9 +22,22 @@ something coming via email, or another channel"*.
   channel are unchanged: nobody chose to key those.
 - The Create an invoice card's words say it opens already claimed.
 
+## Found live, the same day
+
+Dan: *"it launches the invoice viewer, but the document is not claimed."* Seen in the live
+data: two rules (*Failed validation requires review*, *Supplier Not Found*) each raised a task
+for AP Team on the new invoice **in the same second**. The first version claimed the newest
+one; the viewer opened "the newest" too, and with the same timestamp the two picked different
+tasks — so it opened on the unclaimed one. Now:
+
+- **every** open team task on the invoice is claimed for its creator, where they may;
+- the invoice opens on a **claimed** task first, then the newest, by `rowid` where two share a
+  second (`invoiceSummary`).
+
 ## Tests
 
-vf-app `upload.test.ts`: the open task claimed for its creator with its claim event; not
+vf-app `upload.test.ts`: the open task claimed for its creator with its claim event; two
+tasks raised in the same second both claimed, and the invoice opening on a claimed one; not
 claimed for someone outside the team or without the task's permission; nothing to claim where
 the first stage has no task; the existing keyed and upload tests unchanged and passing.
 vf-licence string coverage.
