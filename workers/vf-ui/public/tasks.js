@@ -204,6 +204,12 @@ async function openTask(taskId) {
     await openReceipt(task.subject.id, { onDone: () => reload() });
     return;
   }
+  // Decision 0750: a purchase order held at Checking opens on its own page, worked there and released or rejected.
+  if (task.subject.type === "purchase_order") {
+    const { openOrderIntake } = await import("/purchase-order-intake.js");
+    await openOrderIntake(task.subject.id, { onDone: () => reload() });
+    return;
+  }
 
   const { openViewer } = await import("/viewer.js");
   document.getElementById("shell").hidden = true;

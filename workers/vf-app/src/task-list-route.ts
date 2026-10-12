@@ -168,6 +168,8 @@ interface Raw {
   subject_type: string | null;
   receipt_number?: string | null;
   receipt_supplier?: string | null;
+  order_supplier?: string | null;
+  order_seller?: string | null;
   subject_id: string | null;
   supplier_vat_id: string | null;
   facts_json: string | null;
@@ -563,7 +565,10 @@ export async function handleListMyTasks(
          ON pi.subject_type = 'invoice' AND h.id = pi.subject_id
        -- Decision 0652: a goods receipt at Matching.
        LEFT JOIN goods_receipts gr
-         ON pi.subject_type = 'goods_receipt' AND gr.id = pi.subject_id`;
+         ON pi.subject_type = 'goods_receipt' AND gr.id = pi.subject_id
+       -- Decision 0750: a purchase order held at Checking.
+       LEFT JOIN purchase_order_intake poi
+         ON pi.subject_type = 'purchase_order' AND poi.id = pi.subject_id`;
 
   /**
    * **One `WHERE`, shared by the counts query, the total query, and
@@ -620,6 +625,7 @@ export async function handleListMyTasks(
              OR replace(h.supplier_vat_id, ' ', '') LIKE json_extract(?8, '$.compact') ESCAPE '\\'
              OR json_extract(h.facts_json, '$."BT-13"') LIKE json_extract(?8, '$.text') ESCAPE '\\'
              OR gr.receipt_number LIKE json_extract(?8, '$.text') ESCAPE '\\'
+             OR poi.order_number LIKE json_extract(?8, '$.text') ESCAPE '\\'
              OR (json_extract(?8, '$.amount') IS NOT NULL
                  AND printf('%.2f', h.total_with_vat) LIKE json_extract(?8, '$.amount') ESCAPE '\\')
            )
@@ -710,8 +716,12 @@ export async function handleListMyTasks(
          v.process_instance_id AS instance_id,
          pi.subject_type, pi.subject_id, pi.process_version,
          h.supplier_vat_id, h.currency, h.issue_date, h.total_with_vat, h.facts_json,
-         h.org_unit_id, COALESCE(h.created_at, gr.created_at) AS received_at,
-         gr.receipt_number,
+         h.org_unit_id, COALESCE(h.created_at, gr.created_at, poi.created_at) AS received_at,
+         COALESCE(gr.receipt_number, poi.order_number) AS receipt_number,
+         (SELECT sp.name FROM suppliers sp
+          WHERE poi.id IS NOT NULL AND (sp.vat_id = json_extract(poi.order_json, '$.sellerPartyId') OR sp.erp_identifier = json_extract(poi.order_json, '$.sellerPartyId'))
+          ORDER BY sp.status = 'active' DESC LIMIT 1) AS order_supplier,
+         json_extract(poi.order_json, '$.sellerPartyId') AS order_seller,
          (SELECT s2.name FROM goods_receipt_lines gl2 JOIN purchase_orders po2 ON po2.order_number = gl2.order_number
             JOIN suppliers s2 ON s2.vat_id = po2.seller_party_id
           WHERE gl2.receipt_id = gr.id ORDER BY gl2.line_number, s2.status = 'active' DESC LIMIT 1) AS receipt_supplier
@@ -900,11 +910,11 @@ export async function handleListMyTasks(
       task.subject = {
         type: row.subject_type,
         id: row.subject_id,
-        supplierVatId: row.supplier_vat_id,
+        supplierVatId: row.supplier_vat_id ?? row.order_seller ?? null,
         // BT-27, read from the facts because there is no column for it.
         // **A person expects a company, not a tax number** — and until
         // decision 0112 the seller's name was not read at all.
-        supplierName: row.receipt_supplier ?? sellerNameOf(row.facts_json),
+        supplierName: row.receipt_supplier ?? row.order_supplier ?? sellerNameOf(row.facts_json),
         currency: row.currency,
         issueDate: row.issue_date,
         totalWithVat: row.total_with_vat,

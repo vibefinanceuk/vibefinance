@@ -16,6 +16,10 @@ function mountShell() {
 const STRINGS = {
   locale: "en",
   strings: {
+    // Orders held at Checking (decision 0750).
+    "purchaseorders.waiting.heading": "Waiting in the Purchase Orders process: {n}",
+    "poin.kind.change": "Change to an order",
+    "poin.short.supplier_unknown": "supplier not known",
     // The Purchase Orders process (decision 0749).
     "purchaseorders.process.direct": "Orders loaded here count at once.",
     "purchaseorders.process.through": "Orders loaded here go through {process} and count once released.",
@@ -1264,5 +1268,30 @@ describe("the Purchase Orders process — decision 0749", () => {
     await openScreen();
     expect(document.getElementById("po-process")?.textContent).toBe("Orders loaded here count at once.");
     expect(document.getElementById("po-setup-process")).toBeNull();
+  });
+});
+
+describe("orders waiting in the process — decision 0750", () => {
+  it("lists them above the orders in force, each saying what was found", async () => {
+    stubFetch({
+      "/api/purchase-orders": { body: EMPTY_LIST },
+      "/api/purchase-orders/process": { body: { process: { id: "purchase-orders", name: "Purchase Orders", stages: [] } } },
+      "/api/purchase-orders/intake": {
+        body: { orders: [{ id: "in-1", orderNumber: "PO-4502", kind: "change", receivedAt: "2026-10-13T09:00:00Z", company: "Acme UK", supplier: "GB999", stage: "Checking", claimedBy: null, problems: ["supplier_unknown"] }] },
+      },
+    });
+    await openScreen();
+    expect(document.querySelector("#po-waiting h3")?.textContent).toBe("Waiting in the Purchase Orders process: 1");
+    expect([...document.querySelectorAll("#po-waiting tbody td")].map((td) => td.textContent)).toEqual(["PO-4502", "Change to an order", "Acme UK", "GB999", "supplier not known", "—"]);
+  });
+
+  it("shows nothing while none wait", async () => {
+    stubFetch({
+      "/api/purchase-orders": { body: EMPTY_LIST },
+      "/api/purchase-orders/process": { body: { process: { id: "purchase-orders", name: "Purchase Orders", stages: [] } } },
+      "/api/purchase-orders/intake": { body: { orders: [] } },
+    });
+    await openScreen();
+    expect(document.getElementById("po-waiting")).toBeNull();
   });
 });

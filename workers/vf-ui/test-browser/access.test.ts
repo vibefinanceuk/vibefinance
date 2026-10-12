@@ -112,6 +112,8 @@ const STRINGS = {
     "action.newrole": "New role",
     "roles.readymade.receiving": "Add the AP Receiving role",
     "roles.readymade.receivingname": "AP Receiving",
+    "roles.readymade.purchasing": "Add the Purchasing role",
+    "roles.readymade.purchasingname": "Purchasing",
     "action.close": "Close",
     "action.save": "Save",
     "column.unit": "Unit",
@@ -710,6 +712,17 @@ describe("creating a role — decision 0326", () => {
     });
     switchTab("Roles");
     expect([...document.querySelectorAll("button")].some((b) => b.textContent?.includes("Add the AP Receiving role"))).toBe(false);
+  });
+
+  it("offers the ready-made Purchasing role while no role holds AP.Purchasing, with AP.TaskView so its tasks are seen — decision 0750", async () => {
+    const WITH = [...KNOWN, { name: "AP.Purchasing", description: "Work purchase orders" }, { name: "AP.TaskView", description: "See tasks" }];
+    await openRolesAs(["Admin.RoleManagement", "Admin.Configure"], { ...EMPTY, knownPermissions: WITH });
+    switchTab("Roles");
+    [...document.querySelectorAll("button")].find((b) => b.textContent?.includes("Add the Purchasing role"))!.click();
+    const [idInput, nameInput] = [...document.querySelectorAll<HTMLInputElement>(".editgrid input")];
+    expect([idInput.value, nameInput.value]).toEqual(["purchasing", "Purchasing"]);
+    const checked = [...document.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')].filter((b) => b.checked).map((b) => b.nextElementSibling?.textContent);
+    expect(checked.sort()).toEqual(["AP.Purchasing", "AP.TaskView"]);
   });
 
   it("posts the entered id, name, and checked permissions, then reloads", async () => {

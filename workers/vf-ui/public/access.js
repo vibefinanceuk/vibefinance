@@ -306,7 +306,11 @@ function permissionCheckboxes(selected) {
  * way in. Offered while no role holds it: the role form opens filled
  * in, and the administrator can change any of it before creating it.
  */
-const READY_MADE_ROLES = [{ id: "ap-receiving", nameKey: "roles.readymade.receivingname", labelKey: "roles.readymade.receiving", permissions: ["AP.Receive"] }];
+const READY_MADE_ROLES = [
+  { id: "ap-receiving", nameKey: "roles.readymade.receivingname", labelKey: "roles.readymade.receiving", permissions: ["AP.Receive"] },
+  // Decision 0750: who works orders held at Checking, and sees them on Tasks.
+  { id: "purchasing", nameKey: "roles.readymade.purchasingname", labelKey: "roles.readymade.purchasing", permissions: ["AP.Purchasing", "AP.TaskView"] },
+];
 
 function readyMadeRoleButtons() {
   return READY_MADE_ROLES.filter(

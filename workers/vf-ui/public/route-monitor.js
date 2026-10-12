@@ -548,6 +548,8 @@ function detailPanel() {
                   o.number,
                   o.status === "pending" && o.stage ? t("routemonitor.order.waiting").replace("{stage}", o.stage) : t(`routemonitor.order.${o.status}`),
                   o.change ? t("routemonitor.order.change") : null,
+                  // Decision 0750: a cancellation.
+                  o.kind === "cancellation" ? t("routemonitor.order.cancellation") : null,
                 ]
                   .filter(Boolean)
                   .join(" · "),

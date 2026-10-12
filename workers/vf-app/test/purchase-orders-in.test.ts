@@ -27,7 +27,7 @@ const ORDER = (number: string, lines = 1) => `<?xml version="1.0" encoding="UTF-
   <cbc:DocumentCurrencyCode>GBP</cbc:DocumentCurrencyCode>
   <cac:SellerSupplierParty><cac:Party><cac:PartyIdentification><cbc:ID>GB111</cbc:ID></cac:PartyIdentification></cac:Party></cac:SellerSupplierParty>
   <cac:BuyerCustomerParty><cac:Party><cac:PartyIdentification><cbc:ID>GB907856452</cbc:ID></cac:PartyIdentification></cac:Party></cac:BuyerCustomerParty>
-  ${Array.from({ length: lines }, (_, i) => `<cac:OrderLine><cac:LineItem><cbc:ID>${i + 1}</cbc:ID><cbc:Quantity unitCode="EA">10</cbc:Quantity><cac:Item><cbc:Name>Bubble wrap</cbc:Name></cac:Item></cac:LineItem></cac:OrderLine>`).join("\n  ")}
+  ${Array.from({ length: lines }, (_, i) => `<cac:OrderLine><cac:LineItem><cbc:ID>${i + 1}</cbc:ID><cbc:Quantity unitCode="EA">10</cbc:Quantity><cac:Item><cbc:Name>Bubble wrap</cbc:Name></cac:Item><cac:Price><cbc:PriceAmount currencyID="GBP">2</cbc:PriceAmount></cac:Price></cac:LineItem></cac:OrderLine>`).join("\n  ")}
 </Order>`;
 
 const JSON_ORDER = (id: string, buyer = "GB907856452") => ({
@@ -46,6 +46,8 @@ beforeEach(async () => {
   await env.DB.prepare(`INSERT INTO org_roles (id, name, permissions_json) VALUES ('admin', 'admin', '["Admin.Configure","AP.Validate","Integration.Monitor"]')`).run();
   await env.DB.prepare("INSERT INTO org_user_roles (user_id, role_id) VALUES ('u-dan', 'admin')").run();
   await env.DB.prepare("INSERT INTO org_units (id, name, kind, vat_id) VALUES ('acme-uk', 'Acme UK', 'legal_entity', 'GB907856452')").run();
+  // Decision 0750: Checking looks for the supplier, so the one these orders name is on file.
+  await env.DB.prepare("INSERT INTO suppliers (id, erp_identifier, name, vat_id, status, loaded_at) VALUES ('nw', 'N1', 'Northwind', 'GB111', 'active', datetime('now'))").run();
   expect((await handleSetUpOrdersProcess(env.DB, {})).status).toBe(201);
 });
 
@@ -126,7 +128,7 @@ describe("reading an order, whatever it was sent as", () => {
     });
     const xml = readOrdersFile(ORDER("PO-X", 2));
     expect("entries" in xml && xml.entries.map((e) => ("order" in e ? [e.order.parsed.orderNumber, e.order.parsed.lines.length] : null))).toEqual([["PO-X", 2]]);
-    const csv = readOrdersFile("order_number,buyer_party_id,line_number,item_name\nPO-C,GB907856452,1,Tape");
+    const csv = readOrdersFile("order_number,buyer_party_id,seller_party_id,currency,line_number,item_name,quantity,unit_code,price\nPO-C,GB907856452,GB111,GBP,1,Tape,5,EA,2");
     expect("entries" in csv && csv.entries.length).toBe(1);
     expect(readOrdersFile("{ not json")).toMatchObject({ reason: "not_json" });
   });
@@ -172,15 +174,18 @@ describe("Orders in — HTTPS", () => {
     expect((await env.DB.prepare("SELECT count(*) AS n FROM purchase_order_lines").first<{ n: number }>())!.n).toBe(3);
   });
 
-  it("takes JSON too; an order for an unknown company is refused and the message partial, every order refused fails it", async () => {
+  it("takes JSON too; an order for an unknown company waits at Checking (0750), one with a status not recognised is refused, and every order refused fails the message", async () => {
     const key = await procurementApi();
-    const partial = (await (await post(key, JSON.stringify({ orders: [JSON_ORDER("PO-1"), JSON_ORDER("PO-2", "DE999")] }), "application/json")).json()) as Record<string, unknown>;
+    const partial = (await (await post(key, JSON.stringify({ orders: [JSON_ORDER("PO-1"), JSON_ORDER("PO-2", "DE999"), { ...JSON_ORDER("PO-5"), status: "maybe" }] }), "application/json")).json()) as Record<string, unknown>;
     expect(partial).toMatchObject({
       status: "partial",
-      orders: [{ orderNumber: "PO-1", status: "released" }],
-      refused: [{ orderNumber: "PO-2", reason: "buyer tax reference DE999 does not match any known legal entity" }],
+      orders: [
+        { orderNumber: "PO-1", status: "released" },
+        { orderNumber: "PO-2", status: "pending", stage: "Checking" },
+      ],
+      refused: [{ orderNumber: "PO-5", reason: 'status "maybe" is not recognised — use Active, On Hold, or Closed' }],
     });
-    const failed = await post(key, JSON.stringify({ orders: [JSON_ORDER("PO-3", "DE999")] }), "application/json");
+    const failed = await post(key, JSON.stringify({ orders: [{ ...JSON_ORDER("PO-3"), status: "maybe" }] }), "application/json");
     expect(failed.status).toBe(422);
     expect(await env.DB.prepare("SELECT failed_part, error_code FROM route_messages WHERE status = 'failed'").first()).toEqual({ failed_part: "translation", error_code: "refused" });
     // Run again would read it as invoices: it is sent again instead.
@@ -262,7 +267,7 @@ describe("Orders by email", () => {
   });
 
   it("reads each order file attached and sends its orders through, never as invoices", async () => {
-    const m = message([{ name: "PO-21.xml", type: "application/xml", text: ORDER("PO-21") }, { name: "orders.csv", type: "text/csv", text: "order_number,buyer_party_id,line_number,item_name\nPO-22,GB907856452,1,Tape" }]);
+    const m = message([{ name: "PO-21.xml", type: "application/xml", text: ORDER("PO-21") }, { name: "orders.csv", type: "text/csv", text: "order_number,buyer_party_id,seller_party_id,currency,line_number,item_name,quantity,unit_code,price\nPO-22,GB907856452,GB111,GBP,1,Tape,5,EA,2" }]);
     await handleInboundEmail(m, env.DB, noModel, undefined, undefined, undefined, { readLater: true });
     expect(m.rejected).toBeNull();
     expect((await env.DB.prepare("SELECT order_number FROM purchase_orders ORDER BY order_number").all<{ order_number: string }>()).results.map((r) => r.order_number)).toEqual(["PO-21", "PO-22"]);
@@ -285,15 +290,16 @@ describe("Orders upload — Purchase Orders' own load", () => {
     const res = await SELF.fetch("https://example.com/purchase-orders/csv-load?name=week-41.csv", {
       method: "POST",
       headers: { Authorization: `Bearer ${key}`, "Content-Type": "text/csv" },
-      body: "order_number,buyer_party_id,line_number,item_name\nPO-31,GB907856452,1,Tape\nPO-32,DE999,1,Tape",
+      body: "order_number,buyer_party_id,seller_party_id,currency,line_number,item_name,quantity,unit_code,price,status\nPO-31,GB907856452,GB111,GBP,1,Tape,5,EA,2,\nPO-32,DE999,GB111,GBP,1,Tape,5,EA,2,\nPO-34,GB907856452,GB111,GBP,1,Tape,5,EA,2,maybe",
     });
     expect(res.status).toBe(200);
     const body = (await res.json()) as Record<string, unknown> & { messageId: string };
     expect(body).toMatchObject({
       ordersLoaded: 1,
       orderNumbers: ["PO-31"],
-      refused: [{ orderNumber: "PO-32", reason: "buyer tax reference DE999 does not match any known legal entity" }],
-      process: { id: "purchase-orders", waiting: 0 },
+      refused: [{ orderNumber: "PO-34", reason: 'status "maybe" is not recognised — use Active, On Hold, or Closed' }],
+      // Decision 0750: an unknown company waits at Checking.
+      process: { id: "purchase-orders", waiting: 1 },
     });
     expect(await env.DB.prepare("SELECT instance_id, route_id, counterparty, subject, status FROM route_messages WHERE id = ?").bind(body.messageId).first()).toEqual({
       instance_id: "upload-purchase-orders",
@@ -302,7 +308,7 @@ describe("Orders upload — Purchase Orders' own load", () => {
       subject: "Upload of week-41.csv",
       status: "partial",
     });
-    expect(await env.DB.prepare("SELECT created_by FROM purchase_order_intake").first()).toEqual({ created_by: "u-dan" });
+    expect(await env.DB.prepare("SELECT created_by FROM purchase_order_intake WHERE order_number = 'PO-31'").first()).toEqual({ created_by: "u-dan" });
 
     // A file with no order number column is refused as before, the message failed at its format.
     const bad = await SELF.fetch("https://example.com/purchase-orders/csv-load", { method: "POST", headers: { Authorization: `Bearer ${key}`, "Content-Type": "text/csv" }, body: "x,y\n1,2" });
@@ -312,7 +318,7 @@ describe("Orders upload — Purchase Orders' own load", () => {
     // Without the process: stored at once, no message.
     await env.DB.prepare("UPDATE sources SET status = 'retired', retired_at = datetime('now') WHERE id = 'upload-purchase-orders'").run();
     const before = (await env.DB.prepare("SELECT count(*) AS n FROM route_messages").first<{ n: number }>())!.n;
-    const direct = await SELF.fetch("https://example.com/purchase-orders/csv-load", { method: "POST", headers: { Authorization: `Bearer ${key}`, "Content-Type": "text/csv" }, body: "order_number,buyer_party_id,line_number,item_name\nPO-33,GB907856452,1,Tape" });
+    const direct = await SELF.fetch("https://example.com/purchase-orders/csv-load", { method: "POST", headers: { Authorization: `Bearer ${key}`, "Content-Type": "text/csv" }, body: "order_number,buyer_party_id,seller_party_id,currency,line_number,item_name,quantity,unit_code,price\nPO-33,GB907856452,GB111,GBP,1,Tape,5,EA,2" });
     expect(((await direct.json()) as { ordersLoaded: number; process?: unknown }).ordersLoaded).toBe(1);
     expect((await env.DB.prepare("SELECT count(*) AS n FROM route_messages").first<{ n: number }>())!.n).toBe(before);
   });

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseUblOrder, UblOrderParseError } from "./ubl-order-parser.js";
+import { parseUblOrder, parseUblOrderCancellation, parseUblOrderChange, ublOrderingDocumentKind, UblOrderParseError } from "./ubl-order-parser.js";
 
 /**
  * Shaped after the spec's own examples (docs.peppol.eu, BIS Order Only
@@ -152,5 +152,53 @@ describe("parseUblOrder — refusals", () => {
     const o = parseUblOrder(noTotals);
     expect(o.payableAmount).toBeUndefined();
     expect(o.orderNumber).toBe("PO-34500");
+  });
+});
+
+describe("Peppol BIS Advanced Ordering — decision 0750", () => {
+  const NS = `xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2" xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2"`;
+  const CHANGE = `<?xml version="1.0"?>
+<OrderChange xmlns="urn:oasis:names:specification:ubl:schema:xsd:OrderChange-2" ${NS}>
+  <cbc:CustomizationID>urn:fdc:peppol.eu:poacc:trns:order_change:3</cbc:CustomizationID>
+  <cbc:ID>CHG-1</cbc:ID>
+  <cbc:SequenceNumberID>2</cbc:SequenceNumberID>
+  <cbc:IssueDate>2026-10-13</cbc:IssueDate>
+  <cbc:DocumentCurrencyCode>GBP</cbc:DocumentCurrencyCode>
+  <cac:OrderReference><cbc:ID>PO-4501</cbc:ID></cac:OrderReference>
+  <cac:BuyerCustomerParty><cac:Party><cac:PartyIdentification><cbc:ID>GB907856452</cbc:ID></cac:PartyIdentification></cac:Party></cac:BuyerCustomerParty>
+  <cac:OrderLine><cac:LineItem><cbc:ID>1</cbc:ID><cbc:LineStatusCode>3</cbc:LineStatusCode><cbc:Quantity unitCode="EA">40</cbc:Quantity><cac:Item><cbc:Name>Bubble wrap</cbc:Name></cac:Item></cac:LineItem></cac:OrderLine>
+  <cac:OrderLine><cac:LineItem><cbc:ID>2</cbc:ID><cbc:LineStatusCode>2</cbc:LineStatusCode><cac:Item><cbc:Name>Tape</cbc:Name></cac:Item></cac:LineItem></cac:OrderLine>
+</OrderChange>`;
+  const CANCEL = `<?xml version="1.0"?>
+<OrderCancellation xmlns="urn:oasis:names:specification:ubl:schema:xsd:OrderCancellation-2" ${NS}>
+  <cbc:ID>CAN-1</cbc:ID>
+  <cbc:IssueDate>2026-10-14</cbc:IssueDate>
+  <cbc:CancellationNote>Project stopped</cbc:CancellationNote>
+  <cac:OrderReference><cbc:ID>PO-4501</cbc:ID></cac:OrderReference>
+  <cac:BuyerCustomerParty><cac:Party><cac:PartyIdentification><cbc:ID>GB907856452</cbc:ID></cac:PartyIdentification></cac:Party></cac:BuyerCustomerParty>
+  <cac:SellerSupplierParty><cac:Party><cac:PartyIdentification><cbc:ID>GB111</cbc:ID></cac:PartyIdentification></cac:Party></cac:SellerSupplierParty>
+</OrderCancellation>`;
+
+  it("tells an order, a change and a cancellation apart by their root", () => {
+    expect(ublOrderingDocumentKind(CHANGE)).toBe("order_change");
+    expect(ublOrderingDocumentKind(CANCEL)).toBe("order_cancellation");
+    expect(ublOrderingDocumentKind("<Invoice/>")).toBeNull();
+    expect(ublOrderingDocumentKind("not xml <")).toBeNull();
+  });
+
+  it("reads an Order Change as the order it references, each line with its status code", () => {
+    const change = parseUblOrderChange(CHANGE);
+    expect(change).toMatchObject({ changeId: "CHG-1", sequenceNumber: "2" });
+    expect(change.order).toMatchObject({ orderNumber: "PO-4501", currency: "GBP", buyerPartyId: "GB907856452" });
+    expect(change.order.lines.map((l) => [l.lineNumber, l.statusCode, l.quantity])).toEqual([
+      [1, "3", 40],
+      [2, "2", undefined],
+    ]);
+    expect(() => parseUblOrderChange(CHANGE.replace(/<cac:OrderReference>.*<\/cac:OrderReference>/, ""))).toThrow(UblOrderParseError);
+  });
+
+  it("reads an Order Cancellation: the order, why, and the parties", () => {
+    expect(parseUblOrderCancellation(CANCEL)).toEqual({ orderNumber: "PO-4501", note: "Project stopped", issueDate: "2026-10-14", buyerPartyId: "GB907856452", sellerPartyId: "GB111" });
+    expect(() => parseUblOrderCancellation(CHANGE)).toThrow(UblOrderParseError);
   });
 });

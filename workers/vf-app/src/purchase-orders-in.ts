@@ -1,7 +1,8 @@
 import type { RouteResult } from "./org-route.js";
-import { parseUblOrder, UblOrderParseError, type ParsedOrder, type ParsedOrderLine } from "@vibefinance/shared";
+import { parseUblOrder, parseUblOrderCancellation, parseUblOrderChange, ublOrderingDocumentKind, UblOrderParseError, type ParsedOrder, type ParsedOrderLine } from "@vibefinance/shared";
 import { handleCreateProcessInstance, visitCurrentStage } from "./workflow-engine.js";
-import { admitOrder, orderLineProblem, readOrdersCsv, storeOrder, type ReadEntry, type ReadOrders, type ReceiptWarning } from "./purchase-order-route.js";
+import { admitOrder, isCancelStatus, orderLineProblem, readOrdersCsv, storeOrder, type CandidateOrder, type ReadEntry, type ReadOrders, type ReceiptWarning } from "./purchase-order-route.js";
+import { ensurePurchasingTeam, ORDER_CHECKING_CHECK, PURCHASING_PERMISSION, type IntakeRow } from "./order-checking.js";
 import { addRouteEvent, finishRouteMessage, openRouteMessage, routePartKey, storeRoutePart } from "./route-messages.js";
 import type { SourceKey } from "./https-in-route.js";
 
@@ -85,8 +86,8 @@ export async function handleGetOrdersProcess(db: D1Database): Promise<RouteResul
  * Checking and Complete in version 1, Intake its entry and Complete its
  * exit, and its upload source. Asking again changes nothing. `name` and
  * `stageNames` in the person's words, as Warehouse Receipts' (0651).
- * Checking has no checks of its own yet (slice 2), so an order passes
- * straight through unless a rule there stops it.
+ * Checking runs its own check (decision 0750, `order-checking.ts`), its
+ * tasks for the Purchasing team, made here when missing.
  */
 export async function handleSetUpOrdersProcess(db: D1Database, body: Record<string, unknown>): Promise<RouteResult> {
   const existing = await ordersProcess(db);
@@ -104,14 +105,17 @@ export async function handleSetUpOrdersProcess(db: D1Database, body: Record<stri
     db.prepare("INSERT INTO processes (id, name, subject_type) VALUES (?, ?, 'purchase_order')").bind(p, name),
     ...STAGES.map((s) =>
       db
-        .prepare("INSERT INTO process_stages (id, process_id, name, sequence, rule_set_id, evaluation_scope, required_permission, builtin_check) VALUES (?, ?, ?, ?, NULL, 'header', NULL, NULL)")
-        .bind(s.id, p, stageName(s), s.sequence)
+        .prepare("INSERT INTO process_stages (id, process_id, name, sequence, rule_set_id, evaluation_scope, required_permission, builtin_check) VALUES (?, ?, ?, ?, NULL, 'header', ?, ?)")
+        // Decision 0750: Checking's own check, its tasks needing AP.Purchasing.
+        .bind(s.id, p, stageName(s), s.sequence, s.sequence === 2 ? PURCHASING_PERMISSION : null, s.sequence === 2 ? ORDER_CHECKING_CHECK : null)
     ),
     ...STAGES.map((s) => db.prepare("INSERT INTO process_stage_versions (process_id, version, stage_id, sequence) VALUES (?, 1, ?, ?)").bind(p, s.id, s.sequence)),
     db.prepare("UPDATE processes SET entry_stage_id = ?, exit_stage_id = ? WHERE id = ?").bind(STAGES[0].id, STAGES[2].id, p),
   ]);
   await ensureOrdersUploadSource(db);
-  return { status: 201, body: { process: await ordersProcess(db), created: true } };
+  // Decision 0750: who works Checking's tasks.
+  const team = await ensurePurchasingTeam(db, typeof body.teamName === "string" && body.teamName.trim() ? body.teamName.trim().slice(0, 60) : "Purchasing");
+  return { status: 201, body: { process: await ordersProcess(db), created: true, team } };
 }
 
 /** The upload source, made with the process when missing. */
@@ -150,6 +154,28 @@ export async function ordersUploadSource(db: D1Database): Promise<{ id: string; 
 /** A Peppol BIS Order Only 3 document (UBL Order), as 0081 reads it, held to the line rules. */
 export function readOrderXml(xml: string): ReadOrders {
   if (!xml.trim()) return { error: "an order document is required", reason: "empty" };
+  /**
+   * **Peppol BIS Advanced Ordering — decision 0750.** An Order Change is
+   * read as a change to the order it references, its lines with their
+   * status codes; an Order Cancellation as a cancellation of it, with
+   * its note.
+   */
+  const document = ublOrderingDocumentKind(xml);
+  try {
+    if (document === "order_change") {
+      const change = parseUblOrderChange(xml);
+      return { entries: [{ order: { parsed: change.order, kind: "change", changeReference: change.changeId, sequenceNumber: change.sequenceNumber } }] };
+    }
+    if (document === "order_cancellation") {
+      const c = parseUblOrderCancellation(xml);
+      return {
+        entries: [{ order: { parsed: { orderNumber: c.orderNumber, issueDate: c.issueDate, buyerPartyId: c.buyerPartyId, sellerPartyId: c.sellerPartyId, lines: [] }, kind: "cancellation", note: c.note } }],
+      };
+    }
+  } catch (err) {
+    if (err instanceof UblOrderParseError) return { error: err.message, reason: "not_an_order" };
+    throw err;
+  }
   let parsed: ParsedOrder;
   try {
     parsed = parseUblOrder(xml);
@@ -177,7 +203,8 @@ const partyId = (v: unknown): string | undefined => (v && typeof v === "object" 
  *       "buyerCustomerParty": { "id" }, "sellerSupplierParty": { "id" }?,
  *       "originatorDocumentReference"?, "anticipatedMonetaryTotal"?: {
  *         "lineExtensionAmount", "taxExclusiveAmount", "taxInclusiveAmount", "payableAmount" },
- *       "status"?, "holdReason"?,
+ *       "status"? (Cancelled cancels the order in force, decision 0750),
+ *       "holdReason"?, "cancellationNote"?,
  *       "orderLines": [ { "id", "quantity"?, "unitCode"?, "lineExtensionAmount"?,
  *         "price"?: { "priceAmount", "baseQuantity"? },
  *         "item": { "name"?, "description"?, "sellersItemId"?, "standardItemId"? } } ] } ] }
@@ -197,7 +224,7 @@ export function readOrdersJson(body: unknown): ReadOrders {
       continue;
     }
     const rawLines = Array.isArray(o.orderLines) ? o.orderLines : Array.isArray(o.lines) ? o.lines : [];
-    if (rawLines.length === 0) {
+    if (rawLines.length === 0 && !isCancelStatus(text(o.status))) {
       entries.push({ refused: { orderNumber, reason: "the order has no lines" } });
       continue;
     }
@@ -233,7 +260,12 @@ export function readOrdersJson(body: unknown): ReadOrders {
       lines,
     };
     const problem = orderLineProblem(parsed);
-    entries.push(problem ? { refused: { orderNumber, reason: problem } } : { order: { parsed, status: text(o.status), holdReason: text(o.holdReason) } });
+    const cancel = isCancelStatus(text(o.status));
+    entries.push(
+      problem
+        ? { refused: { orderNumber, reason: problem } }
+        : { order: { parsed, status: text(o.status), holdReason: text(o.holdReason), ...(cancel ? { kind: "cancellation" as const, note: text(o.cancellationNote) ?? text(o.holdReason) } : {}) } }
+    );
   }
   return { entries };
 }
@@ -267,13 +299,88 @@ export interface SentOrder {
   /** The stage it waits at, while pending. */
   stage: string | null;
   change: boolean;
+  kind: "order" | "change" | "cancellation";
 }
 
 export interface ReleasedOrder {
+  kind: "order" | "change" | "cancellation";
   orderNumber: string;
   replaced: boolean;
   lines: number;
   receiptWarnings: ReceiptWarning[];
+}
+
+/** The order in force of this number, as an order read, or null. */
+async function inForceOrder(db: D1Database, orderNumber: string): Promise<ParsedOrder | null> {
+  const po = await db
+    .prepare(
+      `SELECT id, order_number, issue_date, order_type_code, currency, seller_party_id, buyer_party_id, line_extension_amount,
+              tax_exclusive_amount, tax_inclusive_amount, payable_amount, originator_reference
+       FROM purchase_orders WHERE order_number = ?`
+    )
+    .bind(orderNumber)
+    .first<Record<string, string | number | null>>();
+  if (!po) return null;
+  const lines = (
+    await db
+      .prepare(
+        `SELECT line_number, quantity, unit_code, line_extension_amount, item_name, item_description, sellers_item_id, standard_item_id, price_amount, base_quantity
+         FROM purchase_order_lines WHERE purchase_order_id = ? ORDER BY line_number`
+      )
+      .bind(po.id)
+      .all<Record<string, string | number | null>>()
+  ).results;
+  const u = <T>(v: unknown) => (v === null || v === undefined ? undefined : (v as T));
+  return {
+    orderNumber: String(po.order_number),
+    issueDate: u<string>(po.issue_date),
+    orderTypeCode: u<string>(po.order_type_code),
+    currency: u<string>(po.currency),
+    sellerPartyId: u<string>(po.seller_party_id),
+    buyerPartyId: u<string>(po.buyer_party_id),
+    lineExtensionAmount: u<number>(po.line_extension_amount),
+    taxExclusiveAmount: u<number>(po.tax_exclusive_amount),
+    taxInclusiveAmount: u<number>(po.tax_inclusive_amount),
+    payableAmount: u<number>(po.payable_amount),
+    originatorReference: u<string>(po.originator_reference),
+    lines: lines.map((l) => ({
+      lineNumber: Number(l.line_number),
+      quantity: u<number>(l.quantity),
+      unitCode: u<string>(l.unit_code),
+      lineExtensionAmount: u<number>(l.line_extension_amount),
+      itemName: u<string>(l.item_name),
+      itemDescription: u<string>(l.item_description),
+      sellersItemId: u<string>(l.sellers_item_id),
+      standardItemId: u<string>(l.standard_item_id),
+      priceAmount: u<number>(l.price_amount),
+      baseQuantity: u<number>(l.base_quantity),
+    })),
+  };
+}
+
+/**
+ * **A Peppol Order Change, applied to the order in force — decision
+ * 0750.** Each line it carries with status code `2` (Deleted) is taken
+ * out; any other is added, or replaces the line of its number, keeping
+ * what the change does not say. Lines it does not carry stay as they
+ * are, so a change sending every line and one sending only those changed
+ * come to the same order. Header values it gives replace the order's.
+ * With no order in force, it is the order it describes, less its deleted
+ * lines.
+ */
+export function applyOrderChange(inForce: ParsedOrder | null, change: ParsedOrder): ParsedOrder {
+  const defined = <T extends object>(o: T) => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined)) as Partial<T>;
+  const lines = new Map((inForce?.lines ?? []).map((l) => [l.lineNumber, l]));
+  for (const l of change.lines) {
+    if (l.statusCode === "2") {
+      lines.delete(l.lineNumber);
+      continue;
+    }
+    const { statusCode: _code, ...rest } = l;
+    lines.set(l.lineNumber, { ...(lines.get(l.lineNumber) ?? { lineNumber: l.lineNumber }), ...defined(rest) });
+  }
+  const { lines: _l, ...header } = change;
+  return { ...(inForce ?? { orderNumber: change.orderNumber, lines: [] }), ...defined(header), lines: [...lines.values()].sort((a, b) => a.lineNumber - b.lineNumber) };
 }
 
 /**
@@ -293,26 +400,42 @@ async function stageOrders(
       refused.push(entry.refused);
       continue;
     }
-    const admitted = await admitOrder(db, entry.order);
-    if ("refusalReason" in admitted) {
-      refused.push({ orderNumber: entry.order.parsed.orderNumber, reason: admitted.refusalReason });
+    const candidate: CandidateOrder = entry.order.kind === "cancellation" ? { ...entry.order, status: undefined } : entry.order;
+    const admitted = await admitOrder(db, candidate);
+    /**
+     * **An unknown company waits for a person — decision 0750**, rather
+     * than being refused: the process holds the order at Checking for
+     * the Purchasing team to say which company it is. Anything else that
+     * is refused (an unrecognised status column) still is.
+     */
+    if ("refusalReason" in admitted && !admitted.companyUnknown) {
+      refused.push({ orderNumber: candidate.parsed.orderNumber, reason: admitted.refusalReason });
       continue;
     }
+    const orgUnitId = "refusalReason" in admitted ? null : admitted.orgUnitId;
+    const statusOverride = "refusalReason" in admitted ? undefined : admitted.statusOverride;
+    const inForce = await inForceOrder(db, candidate.parsed.orderNumber);
+    const kind = candidate.kind === "cancellation" ? "cancellation" : inForce || candidate.kind === "change" ? "change" : "order";
+    // A Peppol Order Change, applied to the order in force line by line.
+    const order = candidate.kind === "change" ? applyOrderChange(inForce, candidate.parsed) : candidate.parsed;
     const id = crypto.randomUUID();
-    const inForce = await db.prepare("SELECT 1 FROM purchase_orders WHERE order_number = ?").bind(entry.order.parsed.orderNumber).first();
     await db
       .prepare(
-        `INSERT INTO purchase_order_intake (id, order_number, order_json, status_json, org_unit_id, route_message_id, is_change, created_by, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        `INSERT INTO purchase_order_intake (id, order_number, order_json, status_json, org_unit_id, route_message_id, is_change, kind, note, change_reference, sequence_number, created_by, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .bind(
         id,
-        entry.order.parsed.orderNumber,
-        JSON.stringify(entry.order.parsed),
-        admitted.statusOverride ? JSON.stringify(admitted.statusOverride) : null,
-        admitted.orgUnitId,
+        candidate.parsed.orderNumber,
+        JSON.stringify(order),
+        statusOverride ? JSON.stringify(statusOverride) : null,
+        orgUnitId,
         params.routeMessageId,
-        inForce ? 1 : 0,
+        kind === "change" ? 1 : 0,
+        kind,
+        candidate.note ?? null,
+        candidate.changeReference ?? null,
+        candidate.sequenceNumber ?? null,
         params.userId,
         now.toISOString()
       )
@@ -322,15 +445,6 @@ async function stageOrders(
   return { intakeIds, refused };
 }
 
-interface IntakeRow {
-  id: string;
-  order_number: string;
-  order_json: string;
-  status_json: string | null;
-  org_unit_id: string;
-  status: IntakeStatus;
-  is_change: number;
-}
 
 /**
  * **Releasing** — the process has completed. Only a pending order moves:
@@ -340,6 +454,21 @@ interface IntakeRow {
 export async function releaseOrder(db: D1Database, intakeId: string, now = new Date()): Promise<ReleasedOrder | null> {
   const row = await db.prepare("SELECT * FROM purchase_order_intake WHERE id = ? AND status = 'pending'").bind(intakeId).first<IntakeRow>();
   if (!row) return null;
+  /**
+   * **A cancellation, released — decision 0750**: the order in force is
+   * closed (0377), so nothing more is invoiced or received against it.
+   */
+  if (row.kind === "cancellation") {
+    const po = await db.prepare("SELECT id FROM purchase_orders WHERE order_number = ?").bind(row.order_number).first<{ id: string }>();
+    if (!po) return null;
+    await db.batch([
+      db.prepare("UPDATE purchase_orders SET status = 'closed', hold_reason = NULL WHERE id = ?").bind(po.id),
+      db.prepare("UPDATE purchase_order_intake SET status = 'released', released_at = ?, purchase_order_id = ? WHERE id = ? AND status = 'pending'").bind(now.toISOString(), po.id, intakeId),
+    ]);
+    return { kind: "cancellation", orderNumber: row.order_number, replaced: true, lines: 0, receiptWarnings: [] };
+  }
+  // Checking holds an order with no company (0750); nothing reaches here without one.
+  if (!row.org_unit_id) return null;
   const parsed = JSON.parse(row.order_json) as ParsedOrder;
   const statusOverride = row.status_json ? (JSON.parse(row.status_json) as { status: "active" | "on_hold" | "closed"; holdReason: string | null }) : undefined;
   const stored = await storeOrder(db, parsed, row.org_unit_id, statusOverride);
@@ -347,7 +476,7 @@ export async function releaseOrder(db: D1Database, intakeId: string, now = new D
     .prepare("UPDATE purchase_order_intake SET status = 'released', released_at = ?, purchase_order_id = ? WHERE id = ? AND status = 'pending'")
     .bind(now.toISOString(), stored.id, intakeId)
     .run();
-  return { orderNumber: stored.orderNumber, replaced: stored.replaced, lines: stored.lines, receiptWarnings: stored.receiptWarnings };
+  return { kind: row.kind, orderNumber: stored.orderNumber, replaced: stored.replaced, lines: stored.lines, receiptWarnings: stored.receiptWarnings };
 }
 
 function orderFacts(row: IntakeRow): Record<string, unknown> {
@@ -362,12 +491,13 @@ function orderFacts(row: IntakeRow): Record<string, unknown> {
     payable_amount: parsed.payableAmount ?? null,
     lines: parsed.lines.length,
     change: row.is_change === 1,
+    kind: row.kind,
   };
 }
 
 /**
  * **Where an order's instance has got to**, after any visit: completed
- * means released. Called after sending, and (slice 2) after a task on it.
+ * means released. Called after sending, and after its task is done (0750).
  */
 export async function settleOrderInstance(db: D1Database, instanceId: string, now = new Date()): Promise<{ status: IntakeStatus; stage: string | null; released: ReleasedOrder | null }> {
   const row = await db
@@ -399,7 +529,7 @@ export async function sendOrdersThroughProcess(db: D1Database, intakeIds: string
   for (const intakeId of intakeIds) {
     const row = await db.prepare("SELECT * FROM purchase_order_intake WHERE id = ?").bind(intakeId).first<IntakeRow>();
     if (!row) continue;
-    const pending: SentOrder = { intakeId, orderNumber: row.order_number, status: "pending", stage: null, change: row.is_change === 1 };
+    const pending: SentOrder = { intakeId, orderNumber: row.order_number, status: "pending", stage: null, change: row.kind === "change", kind: row.kind };
     if (!process) {
       sent.push(pending);
       continue;
@@ -527,13 +657,13 @@ export async function ordersReport(db: D1Database, messageId: string, checkUrl: 
   const orders = (
     await db
       .prepare(
-        `SELECT i.order_number, i.status, i.is_change,
+        `SELECT i.order_number, i.status, i.is_change, i.kind,
                 (SELECT st.name FROM process_instances pi JOIN process_stages st ON st.id = pi.current_stage_id
                  WHERE pi.subject_type = 'purchase_order' AND pi.subject_id = i.id AND pi.status = 'in_progress' LIMIT 1) AS stage
          FROM purchase_order_intake i WHERE i.route_message_id = ? ORDER BY i.created_at, i.rowid`
       )
       .bind(messageId)
-      .all<{ order_number: string; status: IntakeStatus; is_change: number; stage: string | null }>()
+      .all<{ order_number: string; status: IntakeStatus; is_change: number; kind: string; stage: string | null }>()
   ).results;
   return {
     message: m?.id ?? messageId,
@@ -542,7 +672,7 @@ export async function ordersReport(db: D1Database, messageId: string, checkUrl: 
     receivedAt: m?.received_at ?? null,
     completedAt: m?.completed_at ?? null,
     ...(m?.error_text ? { error: m.error_text } : {}),
-    orders: orders.map((o) => ({ orderNumber: o.order_number, status: o.status, change: o.is_change === 1, ...(o.stage ? { stage: o.stage } : {}) })),
+    orders: orders.map((o) => ({ orderNumber: o.order_number, status: o.status, change: o.kind === "change", ...(o.kind === "cancellation" ? { cancellation: true } : {}), ...(o.stage ? { stage: o.stage } : {}) })),
     check: checkUrl,
   };
 }

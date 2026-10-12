@@ -5748,3 +5748,9 @@
 /* Dan, 12 October: a read-only line value is as tall as an editable one beside it (Line note beside Item description, Order line among the inputs). */
 .linetable input:not([type="checkbox"]):not([type="radio"]), .linetable select, .linetable .readonly { box-sizing: border-box; min-height: 40px; }
 .linetable .readonly { display: flex; align-items: center; padding: 8px 11px; }
+
+  /* A purchase order held at Checking — decision 0750: the lines Checking found something on, and suppliers to choose. */
+  #poin-lines tr.poinflagged td { background: var(--bg-warning); }
+  .poinsuppliers { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; margin-top: 4px; }
+  .poinsuppliers .linkish { background: none; border: 0; padding: 0; color: var(--text-accent); cursor: pointer; font: inherit; text-align: left; }
+  .poinsuppliers .linkish:hover { text-decoration: underline; }

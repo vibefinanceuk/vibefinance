@@ -866,7 +866,7 @@ describe("the CSV status column — decision 0377", () => {
   it("refuses a row with an unrecognised status, while a sibling order still loads", async () => {
     const csv = `order_number,line number,item,buyer vat id,status
 PO-GOOD,1,Widgets,GB907856452,active
-PO-BAD,1,Widgets,GB907856452,cancelled`;
+PO-BAD,1,Widgets,GB907856452,pending`; // Decision 0750: Cancelled is recognised now (it closes the order).
     const result = await handleLoadPurchaseOrdersCsv(env.DB, csv);
     expect(result.body).toMatchObject({
       ordersLoaded: 1,
@@ -880,6 +880,8 @@ PO-BAD,1,Widgets,GB907856452,cancelled`;
       ["On Hold", "on_hold"],
       ["Hold", "on_hold"],
       ["Close", "closed"],
+      // Decision 0750.
+      ["Cancelled", "closed"],
     ]) {
       const csv = `order_number,line number,item,buyer vat id,status\nPO-${expected}-${alias},1,Widgets,GB907856452,${alias}`;
       await handleLoadPurchaseOrdersCsv(env.DB, csv);

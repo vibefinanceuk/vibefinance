@@ -491,6 +491,8 @@ const PROXIED_TO_INSTANCE: RegExp[] = [
   /^\/purchase-orders$/,
   /^\/purchase-orders\/csv-load$/,
   /^\/purchase-orders\/[^/]+$/,
+  // Orders held at Checking, and working them — decision 0750.
+  /^\/purchase-orders\/intake\/[^/]+(\/(fix|release|reject|suppliers))?$/,
   // Finding one of our own units, and re-routing (decision 0224).
   /^\/org\/units\/search$/,
   /^\/invoices\/[^/]+\/org$/,

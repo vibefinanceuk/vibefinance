@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 12 October 2026 (decision 0749). A living document: what
+Last updated 12 October 2026 (decision 0750). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,16 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Checking in the Purchase Orders process (0750)
+
+Checking looks at each order: company, supplier, currency, complete lines, a change against goods
+received, a cancellation against goods or invoices. One it finds something on waits with a task
+for the Purchasing team (AP.Purchasing), who set the company or supplier, release it anyway or
+reject it on its own page. Peppol Order Change is applied line by line. Order Cancellation and a
+status of Cancelled close the order in force. Slice 2 of five.
+
+Full reasoning is in decision 0750.
 
 ### Purchase orders by Source Routes (0749)
 

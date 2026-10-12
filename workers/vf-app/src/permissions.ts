@@ -197,6 +197,14 @@ const AP_PERMISSIONS = [
    * screen offers a ready-made AP Receiving role holding it.
    */
   "AP.Receive",
+  /**
+   * **Decision 0750.** Work the Purchase Orders process's Checking tasks:
+   * fix an order a procurement system sent (its company or supplier),
+   * release it anyway, or reject it. Its own permission because whoever
+   * looks after orders is in purchasing, not AP; granted to nobody by
+   * default. The Access screen offers a ready-made Purchasing role.
+   */
+  "AP.Purchasing",
 ] as const;
 
 /**
@@ -414,6 +422,7 @@ export const PERMISSION_DESCRIPTIONS: Record<Permission, string> = {
   "AP.Assistant": "Ask the AP Analytics screen's Talk to an AP Expert tab a question — each answer still scoped by whatever else you hold",
   "AP.Agents": "Make agents: reports run on a schedule for chosen organisations and delivered to your task list (decision 0622)",
   "AP.Receive": "Record goods receipts and returns against purchase order lines (decision 0643)",
+  "AP.Purchasing": "Work purchase orders held at Checking in the Purchase Orders process: fix, release or reject them (decision 0750)",
   "AP.Manager": "Remove a collaborator from an invoice's conversation — decision 0476, deliberately narrower than the AP.Review that can add one",
 
   "AR.Validate": "Accounts Receivable — not yet built",

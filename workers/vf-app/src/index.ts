@@ -349,7 +349,8 @@ import {
   RECEIPT_TOKEN_PREFIX,
 } from "./receipt-timeline.js";
 import { handleHttpsReceipts, receiptsReport, receiptsSource, receiptsUploadSource, receiveReceipts, RECEIPTS_FILE_ROUTE } from "./receipts-in-route.js";
-import { handleGetOrdersProcess, handleHttpsOrders, handleSetUpOrdersProcess, ordersReport, ordersSource, ordersUploadSource, uploadOrders } from "./purchase-orders-in.js";
+import { handleGetOrdersProcess, handleHttpsOrders, handleSetUpOrdersProcess, ordersReport, ordersSource, ordersUploadSource, settleOrderInstance, uploadOrders } from "./purchase-orders-in.js";
+import { continueOrderInstance, handleFixIntake, handleGetIntake, handleIntakeSuppliers, handleListIntake, handleRejectIntake, handleReleaseIntake, isOrderCheckingTask } from "./order-checking.js";
 import {
   handleGetApTeamEmail,
   handleSetApTeamEmail,
@@ -1016,6 +1017,16 @@ async function followUpAfterTaskCompletion(
       // 0655: a receipt a sender's system sent has no person; the re-check then ends tasks as nobody.
       await recheckReceiptTasks(db, touched, by?.created_by ?? null, (id) => followUpAfterTaskCompletion(db, id));
     }
+    return;
+  }
+  /**
+   * **A purchase order — decision 0750.** Its instance goes on from where
+   * it stands (a rule's task completed at Checking, say); reaching the
+   * end releases it, and receipts waiting for it go on (0654).
+   */
+  if (instanceRow?.subject_type === "purchase_order") {
+    const outcome = await continueOrderInstance(db, instanceId, settleOrderInstance);
+    if (outcome.released && (outcome.released as { kind?: string }).kind !== "cancellation") await withWaitingReceipts(db, {}, [outcome.released.orderNumber], null);
     return;
   }
   if (instanceRow?.subject_type !== "invoice") return;
@@ -6198,7 +6209,7 @@ export default {
        */
       if (httpsInMatch[2] === "orders" && request.method === "POST") {
         const result = await handleHttpsOrders(db, key, request, url.origin, { bucket: documents, customerId: env.CUSTOMER_ID });
-        const released = (result.released ?? []).map((r) => r.orderNumber);
+        const released = (result.released ?? []).filter((r) => r.kind !== "cancellation").map((r) => r.orderNumber);
         if (released.length > 0) await withWaitingReceipts(db, {}, released, null);
         return json(result.body, result.status);
       }
@@ -6660,7 +6671,7 @@ export default {
       if (ordersUpload) {
         const person = auth.user as { id: string; name?: string | null; email?: string | null };
         const up = await uploadOrders(db, ordersUpload, person, xml, "order.xml", "xml", { bucket: resolveTenant(request, env).documents, customerId: env.CUSTOMER_ID });
-        const released = up.released.map((r) => r.orderNumber);
+        const released = up.released.filter((r) => r.kind !== "cancellation").map((r) => r.orderNumber);
         return json(released.length > 0 ? await withWaitingReceipts(db, up.body, released, auth.user.id) : up.body, up.status);
       }
       const result = await handleIngestPurchaseOrder(db, xml);
@@ -6686,7 +6697,7 @@ export default {
         const person = auth.user as { id: string; name?: string | null; email?: string | null };
         const name = (url.searchParams.get("name") ?? "orders.csv").trim().slice(0, 200) || "orders.csv";
         const up = await uploadOrders(db, ordersUpload, person, csv, name, "csv", { bucket: resolveTenant(request, env).documents, customerId: env.CUSTOMER_ID });
-        const released = up.released.map((r) => r.orderNumber);
+        const released = up.released.filter((r) => r.kind !== "cancellation").map((r) => r.orderNumber);
         return json(released.length > 0 ? await withWaitingReceipts(db, up.body, released, auth.user.id) : up.body, up.status);
       }
       const result = await handleLoadPurchaseOrdersCsv(db, csv);
@@ -6700,6 +6711,49 @@ export default {
      * up (anyone who may load orders, or read them), and setting it up
      * (Admin.Configure). Before `/purchase-orders/:orderNumber`.
      */
+    /**
+     * **Orders on their way in — decision 0750.** Read by whoever works
+     * them (AP.Purchasing), configures the process, or reads orders
+     * (AP.Validate); worked (fix, release, reject) by AP.Purchasing, once
+     * its Checking task is claimed. Before `/purchase-orders/:orderNumber`.
+     */
+    const intakeMatch = pathname.match(/^\/purchase-orders\/intake(?:\/([^/]+)(?:\/(fix|release|reject|suppliers))?)?$/);
+    if (intakeMatch) {
+      const { db } = resolveTenant(request, env);
+      const denied = (status: number) => json({ error: t(status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, status);
+      if (request.method === "GET" && !intakeMatch[2]) {
+        const auth = await requireAnyPermission(db, request, ["AP.Purchasing", "Admin.Configure", "AP.Validate"], sessionContext(env));
+        if (!auth.authorized) return denied(auth.status);
+        const result = intakeMatch[1] ? await handleGetIntake(db, auth.user.id, decodeURIComponent(intakeMatch[1])) : await handleListIntake(db, url.searchParams.get("status"));
+        return json(result.body, result.status);
+      }
+      if (request.method === "GET" && intakeMatch[2] === "suppliers") {
+        const auth = await requirePermission(db, request, "AP.Purchasing", sessionContext(env));
+        if (!auth.authorized) return denied(auth.status);
+        const result = await handleIntakeSuppliers(db, url.searchParams.get("q") ?? "");
+        return json(result.body, result.status);
+      }
+      if (request.method === "POST" && intakeMatch[1] && intakeMatch[2] && intakeMatch[2] !== "suppliers") {
+        const auth = await requirePermission(db, request, "AP.Purchasing", sessionContext(env));
+        if (!auth.authorized) return denied(auth.status);
+        const id = decodeURIComponent(intakeMatch[1]);
+        const body = ((await request.json().catch(() => null)) ?? {}) as Record<string, unknown>;
+        if (intakeMatch[2] === "fix") {
+          const result = await handleFixIntake(db, auth.user.id, id, body);
+          return json(result.body, result.status);
+        }
+        if (intakeMatch[2] === "reject") {
+          const result = await handleRejectIntake(db, auth.user.id, id, body);
+          return json(result.body, result.status);
+        }
+        const result = await handleReleaseIntake(db, auth.user.id, id, body, settleOrderInstance);
+        const kind = (result.body as { order?: { kind?: string } }).order?.kind;
+        if (result.released?.length && kind !== "cancellation") return json(await withWaitingReceipts(db, result.body, result.released, auth.user.id), result.status);
+        return json(result.body, result.status);
+      }
+      return json({ error: "method not allowed" }, 405);
+    }
+
     if (pathname === "/purchase-orders/process" && request.method === "GET") {
       const { db } = resolveTenant(request, env);
       const auth = await requireAnyPermission(db, request, ["Admin.Configure", "AP.Validate"], sessionContext(env));
@@ -7483,6 +7537,10 @@ export default {
        */
       if (completeTaskMatch && (await isReceiptMatchingTask(db, taskId))) {
         return json({ error: "register the receipt from its pop-out", reason: "register_receipt" }, 409);
+      }
+      // Decision 0750: Checking's order task is done by Release or Reject, which check the order again.
+      if (completeTaskMatch && (await isOrderCheckingTask(db, taskId))) {
+        return json({ error: "release or reject the order from its page", reason: "release_order" }, 409);
       }
       const result = claimTaskMatch
         ? await handleClaimTask(db, taskId, auth.user.id, comment)

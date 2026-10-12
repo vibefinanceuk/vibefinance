@@ -346,6 +346,58 @@ async function loadOrdersProcess() {
   }
 }
 
+/**
+ * **Orders waiting in the process — decision 0750**: those Checking holds
+ * (or a rule stopped), newest first, each opening its own page. Shown
+ * only while there are some.
+ */
+let waitingOrders = [];
+
+async function loadWaitingOrders() {
+  if (!ordersProcessNow) return void (waitingOrders = []);
+  try {
+    const response = await fetch("/api/purchase-orders/intake?status=pending");
+    waitingOrders = response.ok ? ((await response.json()).orders ?? []) : [];
+  } catch {
+    waitingOrders = [];
+  }
+}
+
+function waitingCard() {
+  if (waitingOrders.length === 0) return null;
+  const openOne = async (id) => {
+    const { openOrderIntake } = await import("/purchase-order-intake.js");
+    await openOrderIntake(id, {
+      onDone: async () => {
+        await Promise.all([load(), loadWaitingOrders()]);
+        render();
+      },
+    });
+  };
+  return el("div", { class: "panel", id: "po-waiting" }, [
+    el("h3", { text: t("purchaseorders.waiting.heading").replace("{n}", String(waitingOrders.length)) }),
+    el("div", { class: "tablewrap" }, [
+      el("table", {}, [
+        el("thead", {}, [el("tr", {}, ["purchaseorders.waiting.number", "purchaseorders.waiting.kind", "purchaseorders.waiting.company", "purchaseorders.waiting.supplier", "purchaseorders.waiting.found", "purchaseorders.waiting.claimed"].map((k) => el("th", { text: t(k) })))]),
+        el(
+          "tbody",
+          {},
+          waitingOrders.map((o) =>
+            el("tr", { class: "clickable", "data-intake": o.id, onclick: () => openOne(o.id) }, [
+              el("td", { text: o.orderNumber }),
+              el("td", { text: t(`poin.kind.${o.kind}`) }),
+              el("td", { text: o.company ?? "—" }),
+              el("td", { text: o.supplier ?? "—" }),
+              el("td", { text: o.problems.length ? o.problems.map((c) => t(`poin.short.${c}`)).join(", ") : o.stage ?? "—" }),
+              el("td", { text: o.claimedBy ?? "—" }),
+            ])
+          )
+        ),
+      ]),
+    ]),
+  ]);
+}
+
 function processLine() {
   if (ordersProcessNow) return el("p", { class: "sm", id: "po-process", text: t("purchaseorders.process.through").replace("{process}", ordersProcessNow.name) });
   const parts = [el("span", { class: "sm muted", text: t("purchaseorders.process.direct") })];
@@ -432,7 +484,7 @@ function loader() {
       // Back to page 1 — decision 0376 — since a newly-loaded order
       // sorts to the top and a person left on page 3 would not see it.
       page = 1;
-      await load();
+      await Promise.all([load(), loadWaitingOrders()]);
       render();
       const panel = document.getElementById("purchaseorders-note");
       if (panel) panel.replaceChildren(outcome(body));
@@ -888,6 +940,8 @@ function render() {
         topbar(t("purchaseorders.heading"), t("purchaseorders.subtitle")),
         el("div", { id: "purchaseorders-note", class: "warn" }),
         el("div", { class: "poloadhead" }, [loader(), statusCard()]),
+        // Decision 0750: orders the process holds, above the orders in force.
+        ...[waitingCard()].filter(Boolean),
         el("div", { class: "panel" }, [searchAndPaginationRow()]),
         el("div", { class: "panel" }, [purchaseOrderRows()]),
       ])
@@ -920,6 +974,7 @@ export async function open() {
   await loadFormat();
   // Decision 0749: whether loads go through the Purchase Orders process.
   await loadOrdersProcess();
+  await loadWaitingOrders();
   // Same treatment — decision 0377's own chart is a help affordance
   // beside the list, not core to it.
   await loadStatusCounts();

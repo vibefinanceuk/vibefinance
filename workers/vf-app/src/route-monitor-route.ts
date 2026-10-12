@@ -349,14 +349,14 @@ export async function handleGetRouteMessage(db: D1Database, id: string): Promise
       orders: (
         await db
           .prepare(
-            `SELECT i.id, i.order_number, i.status, i.is_change,
+            `SELECT i.id, i.order_number, i.status, i.is_change, i.kind,
                     (SELECT st.name FROM process_instances pi JOIN process_stages st ON st.id = pi.current_stage_id
                      WHERE pi.subject_type = 'purchase_order' AND pi.subject_id = i.id AND pi.status = 'in_progress' LIMIT 1) AS stage
              FROM purchase_order_intake i WHERE i.route_message_id = ? ORDER BY i.created_at, i.rowid`
           )
           .bind(id)
-          .all<{ id: string; order_number: string; status: string; is_change: number; stage: string | null }>()
-      ).results.map((o) => ({ intakeId: o.id, number: o.order_number, status: o.status, change: o.is_change === 1, stage: o.stage })),
+          .all<{ id: string; order_number: string; status: string; is_change: number; kind: string; stage: string | null }>()
+      ).results.map((o) => ({ intakeId: o.id, number: o.order_number, status: o.status, change: o.kind === "change", kind: o.kind, stage: o.stage })),
     },
   };
 }

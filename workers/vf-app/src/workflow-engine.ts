@@ -1,5 +1,6 @@
 import { loadSplits, splitAsLineFacts, type CodingSplit } from "./coding-splits.js";
 import { RECEIPT_MATCHING_CHECK, receiptMatchingGuard } from "./warehouse-receipts.js";
+import { ORDER_CHECKING_CHECK, orderCheckingGuard } from "./order-checking.js";
 import { evaluateRuleSet } from "@vibefinance/shared";
 import type { InvoiceFacts } from "@vibefinance/shared";
 import {
@@ -607,6 +608,19 @@ export async function visitCurrentStage(
        */
       if (instance.subject_type === "goods_receipt" && stage.builtin_check === RECEIPT_MATCHING_CHECK) {
         const guard = await receiptMatchingGuard(db, stage, instance.subject_id, visitId);
+        if (guard.stop) {
+          visitsThisCall.push({ stageId: stage.id, outcome: "automatic", tasksCreated: guard.tasksCreated });
+          return { status: 200, body: { instanceId: currentInstanceId, status: "in_progress", currentStageId: stage.id, visits: visitsThisCall, correctedFacts } };
+        }
+      }
+
+      /**
+       * **Checking's own check for a purchase order — decision 0750.**
+       * Nothing found (or released anyway): on it goes. Otherwise it
+       * stops here, with one task for Purchasing.
+       */
+      if (instance.subject_type === "purchase_order" && stage.builtin_check === ORDER_CHECKING_CHECK) {
+        const guard = await orderCheckingGuard(db, stage, instance.subject_id, visitId);
         if (guard.stop) {
           visitsThisCall.push({ stageId: stage.id, outcome: "automatic", tasksCreated: guard.tasksCreated });
           return { status: 200, body: { instanceId: currentInstanceId, status: "in_progress", currentStageId: stage.id, visits: visitsThisCall, correctedFacts } };

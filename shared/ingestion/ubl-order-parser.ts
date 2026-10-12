@@ -44,6 +44,12 @@ export interface ParsedOrderLine {
   standardItemId?: string;
   priceAmount?: number;
   baseQuantity?: number;
+  /**
+   * **On an Order Change only — decision 0750**: the line's
+   * `cbc:LineStatusCode` (UNCL1229, Peppol's Order Change subset). `2`
+   * deletes the line from the order; any other code adds or replaces it.
+   */
+  statusCode?: string;
 }
 
 export interface ParsedOrder {
@@ -98,22 +104,36 @@ function partyId(party: unknown): string | undefined {
   return getText(asObject(first)?.ID);
 }
 
-export function parseUblOrder(xml: string): ParsedOrder {
+function parseXml(xml: string): Record<string, unknown> | undefined {
   const parser = new XMLParser({
     ignoreAttributes: false,
     removeNSPrefix: true,
     parseTagValue: false,
     trimValues: true,
   });
-
-  let parsed: unknown;
   try {
-    parsed = parser.parse(xml);
+    return asObject(parser.parse(xml));
   } catch (err) {
     throw new UblOrderParseError(`not well-formed XML: ${(err as Error).message}`);
   }
+}
 
-  const root = asObject(parsed);
+/** Which of the Peppol ordering documents this is, by its root element — decision 0750. */
+export function ublOrderingDocumentKind(xml: string): "order" | "order_change" | "order_cancellation" | null {
+  let root: Record<string, unknown> | undefined;
+  try {
+    root = parseXml(xml);
+  } catch {
+    return null;
+  }
+  if (asObject(root?.Order)) return "order";
+  if (asObject(root?.OrderChange)) return "order_change";
+  if (asObject(root?.OrderCancellation)) return "order_cancellation";
+  return null;
+}
+
+export function parseUblOrder(xml: string): ParsedOrder {
+  const root = parseXml(xml);
   const order = asObject(root?.Order);
   if (!order) {
     // Refused rather than guessed. An Invoice handed to this parser is
@@ -124,7 +144,11 @@ export function parseUblOrder(xml: string): ParsedOrder {
     );
   }
 
-  const orderNumber = getText(order.ID);
+  return orderFrom(order, getText(order.ID));
+}
+
+/** The order's own content, from an `Order` or an `OrderChange` element: `orderNumber` is the order it is. */
+function orderFrom(order: Record<string, unknown>, orderNumber: string | undefined): ParsedOrder {
   if (orderNumber === undefined || orderNumber.trim() === "") {
     // cbc:ID is what an invoice's BT-13 points at. Without it the order
     // cannot be matched against anything, which is the entire reason it
@@ -160,6 +184,7 @@ export function parseUblOrder(xml: string): ParsedOrder {
       standardItemId: getText(asObject(item?.StandardItemIdentification)?.ID),
       priceAmount: getNumber(price?.PriceAmount),
       baseQuantity: getNumber(price?.BaseQuantity),
+      ...(getText(lineItem.LineStatusCode) !== undefined ? { statusCode: getText(lineItem.LineStatusCode) } : {}),
     });
   }
 
@@ -178,5 +203,61 @@ export function parseUblOrder(xml: string): ParsedOrder {
     payableAmount: getNumber(totals?.PayableAmount),
     originatorReference: getText(asObject(order.OriginatorDocumentReference)?.ID),
     lines,
+  };
+}
+
+/**
+ * **A Peppol BIS Advanced Ordering Order Change — decision 0750**
+ * (`urn:fdc:peppol.eu:poacc:trns:order_change:3`). The order it changes
+ * is `cac:OrderReference/cbc:ID`; its own `cbc:ID` names the change, and
+ * `cbc:SequenceNumberID` orders the changes. Its lines carry
+ * `cbc:LineStatusCode`. Read as an order of the referenced number, for
+ * the receiver to apply to the order in force.
+ */
+export interface ParsedOrderChange {
+  changeId?: string;
+  sequenceNumber?: string;
+  order: ParsedOrder;
+}
+
+export function parseUblOrderChange(xml: string): ParsedOrderChange {
+  const root = parseXml(xml);
+  const change = asObject(root?.OrderChange);
+  if (!change) throw new UblOrderParseError("no <OrderChange> root element — a Peppol BIS Order Change is expected here");
+  const reference = getText(asObject(change.OrderReference)?.ID);
+  if (reference === undefined || reference.trim() === "") {
+    throw new UblOrderParseError("the order change has no cac:OrderReference/cbc:ID — it does not say which order it changes");
+  }
+  return { changeId: getText(change.ID), sequenceNumber: getText(change.SequenceNumberID), order: orderFrom(change, reference) };
+}
+
+/**
+ * **A Peppol BIS Advanced Ordering Order Cancellation — decision 0750**
+ * (`urn:fdc:peppol.eu:poacc:trns:order_cancellation:3`): the order it
+ * cancels (`cac:OrderReference/cbc:ID`), why (`cbc:CancellationNote`),
+ * and the parties, so the buyer's company is known.
+ */
+export interface ParsedOrderCancellation {
+  orderNumber: string;
+  note?: string;
+  issueDate?: string;
+  buyerPartyId?: string;
+  sellerPartyId?: string;
+}
+
+export function parseUblOrderCancellation(xml: string): ParsedOrderCancellation {
+  const root = parseXml(xml);
+  const cancellation = asObject(root?.OrderCancellation);
+  if (!cancellation) throw new UblOrderParseError("no <OrderCancellation> root element — a Peppol BIS Order Cancellation is expected here");
+  const orderNumber = getText(asObject(cancellation.OrderReference)?.ID);
+  if (orderNumber === undefined || orderNumber.trim() === "") {
+    throw new UblOrderParseError("the order cancellation has no cac:OrderReference/cbc:ID — it does not say which order it cancels");
+  }
+  return {
+    orderNumber,
+    note: getText(cancellation.CancellationNote),
+    issueDate: getText(cancellation.IssueDate),
+    buyerPartyId: partyId(cancellation.BuyerCustomerParty),
+    sellerPartyId: partyId(cancellation.SellerSupplierParty),
   };
 }

@@ -93,6 +93,10 @@ const STATUS_ALIASES: Record<string, "active" | "on_hold" | "closed"> = {
   held: "on_hold",
   closed: "closed",
   close: "closed",
+  // Decision 0750: a cancelled order is closed — the Purchase Orders process reads it as a cancellation.
+  cancelled: "closed",
+  canceled: "closed",
+  cancel: "closed",
 };
 
 function normalizeStatus(raw: string | undefined): { status: "active" | "on_hold" | "closed" } | { refusalReason: string } | null {
@@ -370,7 +374,7 @@ export const HEADER_FIELD_SPECS: CsvFieldSpec[] = [
     columns: ["status", "po status"],
     required: false,
     description:
-      "Active, On Hold, or Closed. Overrides whatever status this order already has, since the ERP is the system of truth — left blank on a re-upload, the existing status is kept rather than reset.",
+      "Active, On Hold, Closed, or Cancelled (closed; through the Purchase Orders process, a cancellation of the order). Overrides whatever status this order already has, since the ERP is the system of truth — left blank on a re-upload, the existing status is kept rather than reset.",
   },
   {
     key: "hold_reason",
@@ -499,6 +503,21 @@ export interface CandidateOrder {
   parsed: ParsedOrder;
   status?: string;
   holdReason?: string;
+  /**
+   * **Decision 0750**: a change to the order in force (a Peppol Order
+   * Change, its lines carrying a status code), or a cancellation of it
+   * (a Peppol Order Cancellation, or a status of Cancelled). An order is
+   * whole, as before.
+   */
+  kind?: "order" | "change" | "cancellation";
+  note?: string;
+  changeReference?: string;
+  sequenceNumber?: string;
+}
+
+/** A status column meaning the order is cancelled — decision 0750. */
+export function isCancelStatus(raw: string | undefined): boolean {
+  return /^(cancel|cancelled|canceled)$/i.test(raw?.trim() ?? "");
 }
 
 /** Each order in the file in turn: read, or refused with why, in the order the file has them. */
@@ -612,7 +631,14 @@ export function readOrdersCsv(csv: string): ReadOrders {
       entries.push({ refused: { orderNumber, reason: problem } });
       continue;
     }
-    entries.push({ order: { parsed, status: first.status || undefined, holdReason: first.hold_reason || undefined } });
+    entries.push({
+      order: {
+        parsed,
+        status: first.status || undefined,
+        holdReason: first.hold_reason || undefined,
+        ...(isCancelStatus(first.status) ? { kind: "cancellation" as const, note: first.hold_reason || undefined } : {}),
+      },
+    });
   }
   return { entries };
 }
@@ -625,14 +651,15 @@ export function readOrdersCsv(csv: string): ReadOrders {
 export async function admitOrder(
   db: D1Database,
   candidate: CandidateOrder
-): Promise<{ orgUnitId: string; statusOverride?: { status: "active" | "on_hold" | "closed"; holdReason: string | null } } | { refusalReason: string }> {
+): Promise<{ orgUnitId: string; statusOverride?: { status: "active" | "on_hold" | "closed"; holdReason: string | null } } | { refusalReason: string; companyUnknown?: true }> {
   // Refused per order, not the whole file — decision 0374. Every
   // other order in the same CSV still loads; only the ones whose
   // buyer tax reference is missing or unmatched are skipped, each
   // with its own reason in the same refused[] a person already sees
   // for a missing line number or a duplicate one.
   const orgResult = await deriveOrgForOrder(db, candidate.parsed.buyerPartyId);
-  if ("refusalReason" in orgResult) return orgResult;
+  // Decision 0750: said apart, so the Purchase Orders process can hold the order for a person instead.
+  if ("refusalReason" in orgResult) return { refusalReason: orgResult.refusalReason, companyUnknown: true };
   // Decision 0377 — an unrecognised status refuses the order, the
   // same discipline as every other CSV validation failure; absent
   // entirely, storeOrder() itself decides (preserve on a replace,

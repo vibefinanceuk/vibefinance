@@ -258,6 +258,30 @@ describe("a goods receipt at Matching (decision 0652)", () => {
   });
 });
 
+describe("a purchase order held at Checking (decision 0750)", () => {
+  it("opens the order's own page", async () => {
+    const orderTask = {
+      id: "t-po",
+      stageId: "purchase-orders-checking",
+      stageName: "Checking",
+      ownership: "available",
+      createdAt: "2026-10-13 09:00:00",
+      actions: ["claim"],
+      subject: { type: "purchase_order", id: "in-1", invoiceNumber: "PO-4502", supplierName: "Northwind", totalWithVat: null },
+    };
+    await openList([orderTask]);
+    const row = document.querySelector("tbody tr.clickable") as HTMLElement;
+    expect(row.textContent).toContain("PO-4502");
+    stubFetch({
+      "/api/purchase-orders/intake/in-1": {
+        order: { id: "in-1", orderNumber: "PO-4502", kind: "order", status: "pending", from: {}, company: null, supplier: null, lines: [], problems: [], blocked: false, process: null, task: null, inForce: null, companies: [], totals: {} },
+      },
+    });
+    row.click();
+    await vi.waitFor(() => expect(document.querySelector("#viewer #poin .topbar h2")?.textContent).toBe("PO-4502"));
+  });
+});
+
 describe("opening a task that cannot be keyed (decision 0142)", () => {
   it("makes the document itself clickable", async () => {
     // **A row names a document**, and looking at one is the first thing
