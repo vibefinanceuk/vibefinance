@@ -1,6 +1,6 @@
 # 0747: "No document is retained" sits in the middle of the document panel
 
-**Status: built.** vf-ui (`app.css`), vf-portal (`app.css`, kept identical).
+**Status: live.** vf-ui (`app.css`), vf-portal (`app.css`, kept identical).
 
 ## What was asked
 
