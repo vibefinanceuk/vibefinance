@@ -26,9 +26,9 @@ export interface MessageEmail {
 }
 
 export const DEFAULT_NETWORK_URL = "https://network.vibefinance-ai.com";
-const MAX_BODY = 4000;
+export const MAX_BODY = 4000;
 
-interface InvoiceRow {
+export interface InvoiceRow {
   id: string;
   supplier_id: string | null;
   org_unit_id: string | null;
@@ -37,7 +37,7 @@ interface InvoiceRow {
   company_name: string | null;
 }
 
-interface MessageRow {
+export interface MessageRow {
   id: string;
   direction: "to_supplier" | "from_supplier";
   kind: "question" | "message" | "return";
@@ -66,7 +66,7 @@ async function invoiceOf(db: D1Database, invoiceId: string): Promise<InvoiceRow 
 }
 
 /** The invoice's company and every unit above it: a link for any of them covers the invoice (0715). */
-async function unitAndAbove(db: D1Database, unitId: string): Promise<string[]> {
+export async function unitAndAbove(db: D1Database, unitId: string): Promise<string[]> {
   const rows = (
     await db
       .prepare(
@@ -114,7 +114,7 @@ export function awaitingReply(rows: Pick<MessageRow, "direction" | "kind">[]): b
   return false;
 }
 
-function view(m: MessageRow) {
+export function view(m: MessageRow) {
   return {
     id: m.id,
     direction: m.direction,
@@ -150,7 +150,7 @@ export async function handleGetSupplierMessages(db: D1Database, link: LicenceLin
   };
 }
 
-async function send(email: MessageEmail, to: string[], subject: string, text: string): Promise<string | null> {
+export async function send(email: MessageEmail, to: string[], subject: string, text: string): Promise<string | null> {
   if (to.length === 0) return null;
   if (!email.apiKey || !email.from) return "email sending is not configured for this deployment";
   const failures: string[] = [];

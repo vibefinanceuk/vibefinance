@@ -220,7 +220,7 @@ const PROXIED_TO_INSTANCE: RegExp[] = [
   /^\/goods-receipts\/order\/[^/]+$/,
   /^\/goods-receipts\/[^/]+(\/cancel|\/reject|\/register|\/lines\/\d+)?$/,
   // Decision 0658: a receipt's Timeline and Chat, and who is in it.
-  /^\/goods-receipts\/[^/]+\/(timeline|comments|people|collaborators)$/,
+  /^\/goods-receipts\/[^/]+\/(timeline|comments|people|collaborators|supplier-messages)$/,
   /^\/goods-receipts\/[^/]+\/collaborators\/[^/]+$/,
   // Decision 0659: what a receipt came with.
   /^\/goods-receipts\/[^/]+\/attachments$/,

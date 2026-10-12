@@ -763,6 +763,9 @@ describe("the proxy carries every path a screen calls (decision 0131)", () => {
     ["PUT", "/api/credit-note-config"],
     ["GET", "/api/credit-notes/to-confirm"],
     ["POST", "/api/credit-notes/cn-1/decide"],
+    // Decision 0740: a goods receipt's conversation with the supplier.
+    ["GET", "/api/goods-receipts/gr-1/supplier-messages"],
+    ["POST", "/api/goods-receipts/gr-1/supplier-messages"],
     ["GET", "/api/network-sharing-config"],
     ["PUT", "/api/network-sharing-config"],
     ["GET", "/api/suppliers/sup-1/receipt-sharing"],

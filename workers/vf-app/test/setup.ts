@@ -168,6 +168,7 @@ import portalReadsSql from "../../../migrations/0161_portal_reads.sql?raw";
 import documentKindSql from "../../../migrations/0162_document_kind.sql?raw";
 import creditNotesSql from "../../../migrations/0163_credit_notes.sql?raw";
 import receiptSharingSql from "../../../migrations/0164_receipt_sharing.sql?raw";
+import receiptSupplierMessagesSql from "../../../migrations/0165_receipt_supplier_messages.sql?raw";
 
 // Another known divergence from production, on top of the one below:
 // D1's exec() splits its input by newline and executes each non-empty
@@ -216,6 +217,7 @@ const TABLES_IN_DROP_ORDER = [
   // Decision 0731: credit notes reference invoices, people and teams.
   "supplier_receipt_sharing", "network_sharing_config", "credit_notes", "credit_note_config",
   // Decision 0721: the supplier conversation references invoices and people.
+  "portal_receipt_reads",
   "portal_reads",
   "supplier_messages",
   // Agents (decision 0622): notes reference runs and agents, runs reference agents, agents reference people.
@@ -539,6 +541,7 @@ export async function applyTestSchema(): Promise<void> {
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(documentKindSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(creditNotesSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(receiptSharingSql)));
+  await env.DB.exec(toOneStatementPerLine(stripSqlComments(receiptSupplierMessagesSql)));
 }
 
 /**

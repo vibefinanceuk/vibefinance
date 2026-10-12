@@ -156,14 +156,17 @@ export async function receipt(deps: Deps, session: string, linkId: string, recei
   return { status: 200, body: { ...(answer.body.receipt as Record<string, unknown>), linkId, customer: pair.link.customerName, supplier: pair.link.supplierName } };
 }
 
-/** `POST /api/invoices/:linkId/:invoiceId/messages` — the supplier writes, to the customer that link is for (0721). */
-export async function reply(deps: Deps, session: string, linkId: string, invoiceId: string, body: unknown): Promise<Result> {
+/**
+ * `POST /api/invoices/:linkId/:invoiceId/messages` — the supplier writes, to the customer that link is for (0721);
+ * `POST /api/receipts/:linkId/:receiptId/messages` the same about a goods receipt (decision 0740).
+ */
+export async function reply(deps: Deps, session: string, linkId: string, invoiceId: string, body: unknown, about: "invoices" | "receipts" = "invoices"): Promise<Result> {
   const pairs = await linksWithAccess(deps, session);
   if (!pairs) return { status: 401, body: { error: "signed_out" } };
   const pair = pairs.find((p) => p.link.id === linkId);
   if (!pair?.access) return { status: 404, body: { error: "not_found" } };
   try {
-    const res = await deps.instance(`${pair.access.instanceUrl.replace(/\/+$/, "")}/portal/invoices/${encodeURIComponent(invoiceId)}/messages`, {
+    const res = await deps.instance(`${pair.access.instanceUrl.replace(/\/+$/, "")}/portal/${about}/${encodeURIComponent(invoiceId)}/messages`, {
       method: "POST",
       headers: { ...bearer(pair.access.token), "Content-Type": "application/json" },
       body: JSON.stringify({ body: typeof (body as { body?: unknown })?.body === "string" ? (body as { body: string }).body : "" }),

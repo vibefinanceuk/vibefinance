@@ -180,6 +180,17 @@ describe("replying — decision 0721", () => {
     expect(posted).toEqual([{ url: "https://globex.example/portal/invoices/g1/messages", auth: "Bearer tok-globex", body: '{"body":"Corrected invoice to follow."}' }]);
   });
 
+  it("about a goods receipt, to the receipt — decision 0740", async () => {
+    const posted: string[] = [];
+    const d = deps({});
+    d.instance = async (url) => {
+      posted.push(url);
+      return Response.json({ messages: [] }, { status: 201 });
+    };
+    expect((await reply(d, "good", "pl-acme", "gr1", { body: "You recorded 8?" }, "receipts")).status).toBe(201);
+    expect(posted).toEqual(["https://acme.example/portal/receipts/gr1/messages"]);
+  });
+
   it("not for a link that is not theirs, and signed out for a stale session", async () => {
     expect((await reply(deps({}), "good", "pl-someone", "i1", { body: "x" })).status).toBe(404);
     expect((await reply(deps({}), "stale", "pl-acme", "i1", { body: "x" })).status).toBe(401);

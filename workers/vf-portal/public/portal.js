@@ -92,7 +92,7 @@ export async function render() {
           go("documents");
         })
       : current === "receipt" && opened
-        ? receiptPage(opened.body, { statusChip, back: () => go("documents") }, handlers)
+        ? receiptPage(opened.body, { statusChip, back: () => go("documents"), conversation: (body) => conversation(body, opened.inv) }, handlers)
         : current === "invoice" && opened
         ? viewPage(
             opened.body,
@@ -376,10 +376,13 @@ export async function openInvoice(inv) {
   if (inv.documentType === "goods_receipt") {
     const { res, body } = await api(`/receipts/${encodeURIComponent(inv.linkId)}/${encodeURIComponent(inv.id)}`);
     if (!res.ok) return;
+    // Decision 0740: opening it reads its messages, as an invoice's.
+    if ((inv.messages?.unread ?? 0) > 0) inv.messages = { ...inv.messages, unread: 0 };
     opened = { inv, body };
     current = "receipt";
     window.scrollTo?.(0, 0);
     await render();
+    if (!filters.q.trim() && !filters.status) setBadge("documents", waitingCount());
     return;
   }
   const { res, body } = await api(`/invoices/${encodeURIComponent(inv.linkId)}/${encodeURIComponent(inv.id)}`);
@@ -431,7 +434,9 @@ export function conversation(body, inv) {
       problem.textContent = "";
       if (!box.value.trim()) return;
       send.disabled = true;
-      const { res } = await api(`/invoices/${encodeURIComponent(inv.linkId)}/${encodeURIComponent(inv.id)}/messages`, {
+      // Decision 0740: about a goods receipt, to the receipt.
+      const about = inv.documentType === "goods_receipt" ? "receipts" : "invoices";
+      const { res } = await api(`/${about}/${encodeURIComponent(inv.linkId)}/${encodeURIComponent(inv.id)}/messages`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ body: box.value }),

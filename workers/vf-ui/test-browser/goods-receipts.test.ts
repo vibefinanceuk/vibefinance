@@ -644,3 +644,49 @@ describe("claim before acting, and correcting the unit and quantity — decision
   });
 });
 
+
+describe("the conversation with the supplier about a receipt — decision 0740", () => {
+  const RECEIPT = {
+    receipt: { id: "gr-2", receiptNumber: "GR-1002", receiptDate: "2026-10-03", source: "screen", createdBy: "Priya", cancelled: false, status: "registered" },
+    lines: [{ lineNumber: 1, orderNumber: "PO-4501", orderLine: 2, movement: "returned", quantity: 5, unitCode: "EA", returnReason: "Damaged" }],
+    orders: [ORDER],
+  };
+  const CHAT = {
+    available: true,
+    canWrite: true,
+    supplierName: "Northwind Packaging",
+    recipients: ["jo@northwind.example"],
+    awaiting: false,
+    messages: [{ id: "m1", direction: "from_supplier", kind: "message", authorName: "jo@northwind.example", authorEmail: "jo@northwind.example", body: "Can you send photos?", lines: null, at: "2026-10-10T08:41:00Z", emailed: [], emailError: null }],
+  };
+
+  it("has its own Supplier tab beside Timeline / Chat, and writes to the receipt's address", async () => {
+    const calls = await openScreen(["AP.Receive"], {
+      "GET /api/goods-receipts/gr-2": [200, RECEIPT],
+      "GET /api/goods-receipts/gr-2/supplier-messages": [200, CHAT],
+      "POST /api/goods-receipts/gr-2/supplier-messages": [201, { message: {} }],
+    });
+    const { openReceipt } = await import("/goods-receipts.js");
+    await openReceipt("gr-2");
+    const tab = document.getElementById("receipt-tab-supplier")!;
+    expect(tab).not.toBeNull();
+    expect(tab.querySelector(".activitycount")?.textContent).toBe("1");
+    tab.click();
+    expect(document.querySelector(".popout .suppliertab")?.textContent).toContain("Can you send photos?");
+    (document.querySelector(".popout .supplierinput") as HTMLTextAreaElement).value = "Photos attached to the receipt.";
+    (document.querySelector(".popout .suppliertab .activitypost") as HTMLButtonElement).click();
+    await vi.waitFor(() => expect(calls.some((c) => c.method === "POST" && c.path === "/api/goods-receipts/gr-2/supplier-messages")).toBe(true));
+    expect(calls.find((c) => c.method === "POST" && c.path === "/api/goods-receipts/gr-2/supplier-messages")?.body).toEqual({ body: "Photos attached to the receipt." });
+  });
+
+  it("has none when the receipt is not shared and nothing has been written", async () => {
+    await openScreen(["AP.Receive"], {
+      "GET /api/goods-receipts/gr-2": [200, RECEIPT],
+      "GET /api/goods-receipts/gr-2/supplier-messages": [200, { ...CHAT, available: false, canWrite: false, recipients: [], messages: [] }],
+    });
+    const { openReceipt } = await import("/goods-receipts.js");
+    await openReceipt("gr-2");
+    expect(document.getElementById("receipt-tab-timeline")).not.toBeNull();
+    expect(document.getElementById("receipt-tab-supplier")).toBeNull();
+  });
+});

@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 12 October 2026 (decision 0739). A living document: what
+Last updated 12 October 2026 (decision 0740). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,14 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### The conversation with a supplier about a goods receipt (0740)
+
+The invoice's supplier conversation on a goods receipt: a Supplier tab on the receipt pop-out,
+messages beside the receipt in the network with unread counts, email both ways; only while
+the receipt is shared. One message store for invoices and receipts.
+
+Full reasoning is in decision 0740.
 
 ### The supplier record's Supplier Network card (0739)
 

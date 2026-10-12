@@ -28,9 +28,9 @@ import { stamp } from "/timestamp.js";
 const base = (invoiceId) => `/api/invoices/${encodeURIComponent(invoiceId)}/supplier-messages`;
 
 /** The conversation for one invoice, or null when it cannot be read (no permission, an older server). */
-export async function fetchSupplierChat(invoiceId) {
+export async function fetchSupplierChat(invoiceId, url = base(invoiceId)) {
   try {
-    const response = await fetch(base(invoiceId));
+    const response = await fetch(url);
     return response.ok ? await response.json() : null;
   } catch {
     return null;
@@ -38,9 +38,9 @@ export async function fetchSupplierChat(invoiceId) {
 }
 
 /** Send one message. `{ ok, body }`; the body is the server's answer either way. */
-export async function sendToSupplier(invoiceId, payload) {
+export async function sendToSupplier(invoiceId, payload, url = base(invoiceId)) {
   try {
-    const response = await fetch(base(invoiceId), {
+    const response = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
@@ -82,7 +82,11 @@ function messageRow(m, chat) {
  * already fetched; posting reloads from the server rather than
  * appending a guess.
  */
-export function buildSupplierTab(invoiceId, initial) {
+/**
+ * Decision 0740: a goods receipt's conversation too, at its own address
+ * (`url`); everything else the same.
+ */
+export function buildSupplierTab(invoiceId, initial, { url = base(invoiceId) } = {}) {
   let chat = initial;
   let error = null;
   const content = el("div", { class: "activitytabcontent suppliertab" });
@@ -113,7 +117,7 @@ export function buildSupplierTab(invoiceId, initial) {
       const body = box.value.trim();
       if (!body) return;
       send.disabled = true;
-      const result = await sendToSupplier(invoiceId, { body });
+      const result = await sendToSupplier(invoiceId, { body }, url);
       if (!result.ok) {
         error = result.body?.reason === "no_recipients" ? recipientsLine({ supplierName: chat?.supplierName }) : t("supplierchat.failed");
         send.disabled = false;
@@ -121,7 +125,7 @@ export function buildSupplierTab(invoiceId, initial) {
         return;
       }
       error = null;
-      chat = (await fetchSupplierChat(invoiceId)) ?? chat;
+      chat = (await fetchSupplierChat(invoiceId, url)) ?? chat;
       render();
     };
 

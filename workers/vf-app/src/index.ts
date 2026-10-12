@@ -174,6 +174,7 @@ import {
 } from "./receipt-sharing.js";
 import { handleInvoiceParties, handlePortalPurchaseOrders, handlePortalSubmission, handleSubmissionCompanies } from "./network-submission.js";
 import { DEFAULT_NETWORK_URL, handleGetSupplierMessages, handlePostSupplierMessage, type MessageEmail } from "./supplier-messages.js";
+import { handleGetReceiptSupplierMessages, handlePortalReceiptReply, handlePostReceiptSupplierMessage } from "./receipt-messages.js";
 import { handleCreateIntakeChannel } from "./intake-channel-route.js";
 import { handleCaptureIntake, handleCaptureUblXml, handleCapturePdf, handleCaptureImage, handleFinalisePendingDocument, handleIntakeStats } from "./intake-capture-route.js";
 import {
@@ -1154,13 +1155,21 @@ export default {
     }
 
     // Decision 0738: a goods receipt shared with this supplier, read only.
-    const portalReceiptMatch = pathname.match(/^\/portal\/receipts\/([^/]+)$/);
+    const portalReceiptMatch = pathname.match(/^\/portal\/receipts\/([^/]+)(\/messages)?$/);
     if (portalReceiptMatch) {
-      if (request.method !== "GET") return json({ error: "not found" }, 404);
+      const writing = portalReceiptMatch[2] !== undefined;
+      if (writing ? request.method !== "POST" : request.method !== "GET") return json({ error: "not found" }, 404);
       const { db } = resolveTenant(request, env);
       const auth = await portalAuth(db, request, isPublicKeyJwk(env.LICENCE_SIGNING_PUBLIC_KEY) ? env.LICENCE_SIGNING_PUBLIC_KEY : undefined, env.ENVIRONMENT_ID);
       if (!auth.ok) return json(auth.body, auth.status);
-      const result = await getPortalReceipt(db, auth.claims, decodeURIComponent(portalReceiptMatch[1]));
+      const receiptId = decodeURIComponent(portalReceiptMatch[1]);
+      // Decision 0740: the supplier writes about a receipt shared with them.
+      if (writing) {
+        const body = ((await request.json().catch(() => ({}))) ?? {}) as Record<string, unknown>;
+        const result = await handlePortalReceiptReply(db, auth.claims, receiptId, body, messageEmail(env));
+        return json(result.body, result.status);
+      }
+      const result = await getPortalReceipt(db, auth.claims, receiptId);
       return json(result.body, result.status);
     }
 
@@ -6356,6 +6365,25 @@ export default {
         const outcome = await recheckReceiptTasks(db, touched, userId, (instanceId) => followUpAfterTaskCompletion(db, instanceId));
         return { status: result.status, body: { ...(result.body as object), recheck: { closed: outcome.closed.length, stillOpen: outcome.stillOpen } } };
       };
+      /**
+       * **Decision 0740: the conversation with the supplier about a receipt.**
+       * Read by whoever may see receipts; written by whoever receives goods.
+       */
+      const receiptSupplierMatch = pathname.match(/^\/goods-receipts\/([^/]+)\/supplier-messages$/);
+      if (receiptSupplierMatch && (request.method === "GET" || request.method === "POST")) {
+        const auth = request.method === "GET" ? await view() : await record();
+        if (!auth.authorized) return forbidden(auth.status);
+        const link = env.LICENCE_SERVICE && env.ENVIRONMENT_ID && env.VF_LICENCE_API_KEY ? { service: env.LICENCE_SERVICE, environmentId: env.ENVIRONMENT_ID, apiKey: env.VF_LICENCE_API_KEY } : null;
+        const receiptId = decodeURIComponent(receiptSupplierMatch[1]);
+        if (request.method === "GET") {
+          const result = await handleGetReceiptSupplierMessages(db, link, receiptId);
+          return json(result.body, result.status);
+        }
+        const body = await readJson();
+        if (!body) return json({ error: t("invalidJsonBody", resolveLocale(env.LOCALE)) }, 400);
+        const result = await handlePostReceiptSupplierMessage(db, link, receiptId, { id: auth.user.id, name: auth.user.name }, body, messageEmail(env));
+        return json(result.body, result.status);
+      }
       const orderMatch = pathname.match(/^\/goods-receipts\/order\/([^/]+)$/);
       const rejectMatch = pathname.match(/^\/goods-receipts\/([^/]+)\/reject$/);
       const registerMatch = pathname.match(/^\/goods-receipts\/([^/]+)\/register$/);

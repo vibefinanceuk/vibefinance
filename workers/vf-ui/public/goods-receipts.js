@@ -6,6 +6,7 @@ import { currentOrgId } from "/orgs.js";
 import { donutChart } from "/charts.js";
 import { buildReceiptTimeline } from "/receipt-timeline.js";
 import { buildAttachmentsTab } from "/attachments.js";
+import { buildSupplierTab, fetchSupplierChat } from "/supplier-chat.js";
 
 /**
  * **Goods Receipts — decision 0645, slice 3 of the Goods Receipts
@@ -418,6 +419,8 @@ export async function openReceipt(id, { onDone = null } = {}) {
   const r = await call(`/goods-receipts/${encodeURIComponent(id)}`);
   if (!r.ok) return note(t("receipts.detailfailed"));
   const { receipt, lines, orders, process, task = null } = r.body;
+  // Decision 0740: the conversation with the supplier, fetched beside the receipt; none when it cannot be read.
+  const supplierChat = await fetchSupplierChat(id, `/api/goods-receipts/${encodeURIComponent(id)}/supplier-messages`);
   const problem = el("div", { class: "warn", id: "receipt-problem" });
   let backdrop;
   const close = () => backdrop.remove();
@@ -644,6 +647,17 @@ export async function openReceipt(id, { onDone = null } = {}) {
       { key: "attachments", label: t("viewer.attachmentstab"), pane: attachments.content, onSelect: attachments.open },
       { key: "timeline", label: t("activity.timelinetab"), pane: buildReceiptTimeline(id, { countBadge }), badge: countBadge },
     ];
+    /**
+     * **Supplier — decision 0740**, as the invoice viewer's (0721): what is
+     * written to the supplier about this receipt and what they answer, apart
+     * from the internal Timeline / Chat. Offered when the receipt is shared
+     * with its supplier and someone there is linked, or a conversation
+     * already exists.
+     */
+    if (supplierChat?.available) {
+      const supplierTab = buildSupplierTab(id, supplierChat, { url: `/api/goods-receipts/${encodeURIComponent(id)}/supplier-messages` });
+      tabs.push({ key: "supplier", label: t("viewer.suppliertab"), pane: el("div", { class: "vtimeline" }, [supplierTab.content]), badge: supplierTab.countBadge });
+    }
     const select = (which) => {
       for (const tab of tabs) {
         tab.button.className = tab.key === which ? "doctab on" : "doctab";

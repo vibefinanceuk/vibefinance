@@ -5,8 +5,9 @@ import { icon } from "/icons.js";
 /**
  * **A goods receipt, opened — decision 0738.** Read only, laid out as an
  * invoice opened (0729): what the customer recorded as arriving and going
- * back against this supplier's purchase orders, line by line. No
- * conversation: a question about a delivery goes on its invoice.
+ * back against this supplier's purchase orders, line by line; and the
+ * conversation with the customer about it on the right, as an invoice's
+ * (decision 0740).
  */
 
 const dash = (v) => (v === null || v === undefined || v === "" ? "—" : String(v));
@@ -18,8 +19,8 @@ function pair(label, value) {
   return el("div", { class: "sfield" }, [el("span", { class: "slabel", text: label }), value ? el("span", { text: String(value) }) : el("span", { class: "muted", text: "—" })]);
 }
 
-/** The page. `deps` carries what portal.js owns: the status chip, and back to Documents. */
-export function receiptPage(r, { statusChip, back }, handlers) {
+/** The page. `deps` carries what portal.js owns: the status chip, back to Documents, and the conversation (0740). */
+export function receiptPage(r, { statusChip, back, conversation }, handlers) {
   const title = topbar(
     r.invoiceNumber ?? "—",
     t("network.receipt.subtitle", { customer: r.customer ?? "", company: r.company ?? "", date: r.issueDate ?? "" }),
@@ -32,10 +33,12 @@ export function receiptPage(r, { statusChip, back }, handlers) {
 
   const lines = r.lines ?? [];
   const cell = (v, cls = "num") => el("td", { class: cls }, [typeof v === "string" || typeof v === "number" ? String(v) : v]);
+  const chat = conversation ? conversation(r) : null;
+  chat?.classList.add("panel", "netviewchat");
   return el("div", { class: "netinvoiceview netreceiptview" }, [
     title,
     el("p", { class: "muted sm", text: t("network.receipt.note", { customer: r.customer ?? "" }) }),
-    el("div", { class: "panel" }, [
+    el("div", { class: "netview netcreate" }, [el("div", { class: "netviewmain" }, [el("div", { class: "panel" }, [
       el("div", { class: "cardhead" }, [el("h3", { text: t("network.receipt.title") })]),
       el("div", { class: "sellergrid receiptgrid" }, [
         pair(t("network.col.customer"), r.customer),
@@ -81,6 +84,6 @@ export function receiptPage(r, { statusChip, back }, handlers) {
             ),
           ])
         : el("p", { class: "muted", text: t("network.receipt.nolines") }),
-    ]),
+    ])]), chat].filter(Boolean)),
   ]);
 }

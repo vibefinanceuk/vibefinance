@@ -1,5 +1,6 @@
 import type { PortalAccessClaims } from "@vibefinance/shared";
 import type { RouteResult } from "./org-route.js";
+import { portalView, type MessageRow } from "./supplier-messages.js";
 
 /**
  * **Goods receipts, shared with suppliers in the network — decision 0738.**
@@ -160,10 +161,20 @@ interface PortalReceiptRow {
   org_unit_id: string | null;
   org_unit_name: string | null;
   has_returns: number;
+  msg_total: number;
+  msg_unread: number;
 }
 
+/**
+ * What a row says. The first placeholder is the person's link, for which of
+ * the customer's messages they have not read yet (decision 0740, as 0728
+ * for invoices).
+ */
 const RECEIPT_SELECT = `
   SELECT r.id, r.receipt_number, r.receipt_date, r.delivery_note, r.status, r.created_at,
+         (SELECT count(*) FROM supplier_messages m WHERE m.receipt_id = r.id) AS msg_total,
+         (SELECT count(*) FROM supplier_messages m WHERE m.receipt_id = r.id AND m.direction = 'to_supplier'
+            AND m.created_at > COALESCE((SELECT pr.read_at FROM portal_receipt_reads pr WHERE pr.link_id = ? AND pr.receipt_id = r.id), '')) AS msg_unread,
          (SELECT group_concat(DISTINCT o.order_number) FROM goods_receipt_lines o WHERE o.receipt_id = r.id) AS orders,
          po.org_unit_id, ou.name AS org_unit_name,
          EXISTS (SELECT 1 FROM goods_receipt_lines m WHERE m.receipt_id = r.id AND m.movement = 'returned') AS has_returns
@@ -187,7 +198,7 @@ function receiptSummary(r: PortalReceiptRow) {
     receivedAt: `${r.receipt_date}T${(r.created_at.match(/\d{2}:\d{2}:\d{2}/) ?? ["00:00:00"])[0]}`,
     status,
     comment: null,
-    messages: { total: 0, unread: 0 },
+    messages: { total: r.msg_total ?? 0, unread: r.msg_unread ?? 0 },
     creditedInvoice: null,
     dueDate: null,
     buyerReference: null,
@@ -205,10 +216,17 @@ export async function listPortalReceipts(db: D1Database, claims: PortalAccessCla
   const rows = (
     await db
       .prepare(`${RECEIPT_SELECT} WHERE ${scope.sql}${search} ORDER BY r.receipt_date DESC, r.created_at DESC, r.id DESC LIMIT ${limit + 1}`)
-      .bind(...scope.binds, ...(q ? [`%${q}%`, `%${q}%`, `%${q}%`] : []))
+      .bind(claims.linkId, ...scope.binds, ...(q ? [`%${q}%`, `%${q}%`, `%${q}%`] : []))
       .all<PortalReceiptRow>()
   ).results;
   return { receipts: rows.slice(0, limit).map(receiptSummary), more: rows.length > limit, shared: true };
+}
+
+/** Decision 0740: whether this receipt is one the token's person may see (shared, theirs, their companies). */
+export async function portalMayReadReceipt(db: D1Database, claims: PortalAccessClaims, receiptId: string): Promise<boolean> {
+  const scope = await receiptScope(db, claims);
+  if (!scope) return false;
+  return Boolean(await db.prepare(`SELECT 1 FROM goods_receipts r WHERE r.id = ? AND ${scope.sql}`).bind(receiptId, ...scope.binds).first());
 }
 
 /**
@@ -219,8 +237,13 @@ export async function listPortalReceipts(db: D1Database, claims: PortalAccessCla
 export async function getPortalReceipt(db: D1Database, claims: PortalAccessClaims, receiptId: string): Promise<RouteResult> {
   const scope = await receiptScope(db, claims);
   if (!scope) return { status: 404, body: { error: "not found" } };
-  const row = await db.prepare(`${RECEIPT_SELECT} WHERE r.id = ? AND ${scope.sql}`).bind(receiptId, ...scope.binds).first<PortalReceiptRow>();
+  const row = await db.prepare(`${RECEIPT_SELECT} WHERE r.id = ? AND ${scope.sql}`).bind(claims.linkId, receiptId, ...scope.binds).first<PortalReceiptRow>();
   if (!row) return { status: 404, body: { error: "not found" } };
+  // Decision 0740: opened, so its messages are read, for this person.
+  await db
+    .prepare("INSERT INTO portal_receipt_reads (link_id, receipt_id, read_at) VALUES (?, ?, ?) ON CONFLICT (link_id, receipt_id) DO UPDATE SET read_at = excluded.read_at")
+    .bind(claims.linkId, receiptId, new Date().toISOString())
+    .run();
   const lines = (
     await db
       .prepare(
@@ -264,5 +287,9 @@ export async function getPortalReceipt(db: D1Database, claims: PortalAccessClaim
       reason: !rejected && l.movement === "returned" ? l.return_reason : null,
     };
   });
-  return { status: 200, body: { receipt: { ...receiptSummary(row), lines } } };
+  const messages = portalView(
+    (await db.prepare("SELECT * FROM supplier_messages WHERE receipt_id = ? ORDER BY created_at, rowid").bind(receiptId).all<MessageRow>()).results
+  );
+  // The conversation in place of the list's counts, as an invoice's (0721).
+  return { status: 200, body: { receipt: { ...receiptSummary(row), lines, messages } } };
 }
