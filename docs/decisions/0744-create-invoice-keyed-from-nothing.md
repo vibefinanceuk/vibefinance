@@ -1,6 +1,6 @@
 # 0744: Create an invoice is keyed from nothing; a file goes through Upload documents
 
-**Status: built.** vf-ui (`create.js`), vf-licence (strings migration 0343).
+**Status: live** at `d042dd8`, pushed and deployed 12 October 2026, migration 0343 applied. vf-ui (`create.js`), vf-licence (strings migration 0343).
 
 ## What was asked
 
