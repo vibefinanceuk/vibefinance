@@ -110,7 +110,7 @@ export function receiptSharingBlock(supplierId) {
     };
     const disabled = !data.canManage;
     const parts = [
-      el("div", { class: "portalinvitehead", text: t("suppliers.receipts.title") }),
+      el("div", { class: "portalinvitehead receiptsharinghead", text: t("suppliers.receipts.title") }),
       el("div", { class: "radiochoices" }, [
         radio(name, "default", data.setting === "default", t("suppliers.receipts.default"), t(data.apSetup ? "suppliers.receipts.default.share" : "suppliers.receipts.default.none"), choose("default"), disabled),
         radio(name, "share", data.setting === "share", t("suppliers.receipts.share"), "", choose("share"), disabled),

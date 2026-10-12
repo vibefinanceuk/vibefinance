@@ -759,9 +759,13 @@ export function portalSection(s, onVisible = () => {}) {
         ].filter(Boolean))
       ),
     ];
-    const children = rows.length ? rows : [el("div", { class: "muted sm", text: t("suppliers.portal.none") })];
-
-    children.push(receipts);
+    /**
+     * **Decision 0739** (Dan): goods receipts first, then inviting someone,
+     * and the people already invited last, beneath the invitation's own
+     * words.
+     */
+    const people = el("div", { class: "portalpeoplelist" }, rows.length ? rows : [el("div", { class: "muted sm", text: t("suppliers.portal.none") })]);
+    const children = [receipts];
 
     if (data.canManage && data.companies.length) {
       const email = el("input", { type: "email", class: "portalemail", placeholder: t("suppliers.portal.email"), "aria-label": t("suppliers.portal.email") });
@@ -789,6 +793,7 @@ export function portalSection(s, onVisible = () => {}) {
         el("div", { class: "portalinvite" }, [el("div", { class: "portalinviterow" }, [email, invite]), picker.node, el("div", { class: "muted sm", text: t("suppliers.portal.help") }), problem])
       );
     }
+    children.push(people);
     if (message) children.unshift(el("div", { class: warn ? "warn" : "portalnote", text: message }));
     body.replaceChildren(...children);
   }

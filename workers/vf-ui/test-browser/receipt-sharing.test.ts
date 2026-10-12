@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import stringsSql from "../../vf-licence/migrations/0339_receipt_sharing_strings.sql?raw";
+import updatesSql from "../../vf-licence/migrations/0340_supplier_network_card_strings.sql?raw";
 
 /**
  * **Goods receipts shared with suppliers — decision 0738**: AP Setup ›
@@ -9,6 +10,8 @@ import stringsSql from "../../vf-licence/migrations/0339_receipt_sharing_strings
 
 const strings: Record<string, string> = {};
 for (const m of stringsSql.matchAll(/\('([^']+)', 'en', '((?:[^']|'')*)'\)/g)) strings[m[1]] = m[2].replace(/''/g, "'");
+// Decision 0739: the words changed since.
+for (const m of updatesSql.matchAll(/SET value = '((?:[^']|'')*)' WHERE key = '([^']+)' AND locale = 'en'/g)) strings[m[2]] = m[1].replace(/''/g, "'");
 
 type Route = (body: unknown) => { status: number; body: unknown };
 function stub(routes: Record<string, Route>) {
@@ -58,7 +61,7 @@ describe("AP Setup › Supplier Network", () => {
     document.body.append(tab);
     expect(tab.querySelector("h3")?.textContent).toBe("Supplier Network");
     expect((tab.querySelector("#network-receipts-none") as HTMLInputElement).checked).toBe(true);
-    expect(tab.querySelector(".networkown")?.textContent).toBe("2 supplier(s) have their own setting, on their page's Supplier portal card.");
+    expect(tab.querySelector(".networkown")?.textContent).toBe("2 supplier(s) have their own setting, on their page's Supplier Network card.");
     (tab.querySelector("#network-receipts-share") as HTMLInputElement).click();
     (tab.querySelector("#network-registered") as HTMLInputElement).click();
     (tab.querySelector(".cardhead .actionlink") as HTMLButtonElement).click();
@@ -84,7 +87,7 @@ describe("a supplier's own choice", () => {
     const block = m.receiptSharingBlock("sup-1");
     document.body.append(block);
     await vi.waitFor(() => expect(block.hidden).toBe(false));
-    expect(block.querySelector(".portalinvitehead")?.textContent).toBe("Goods receipts in the network");
+    expect(block.querySelector(".receiptsharinghead")?.textContent).toBe("Goods receipts in the network");
     expect([...block.querySelectorAll(".radiochoice b")].map((b) => b.textContent)).toEqual(["As AP Setup", "Share with this supplier", "Don't share with this supplier"]);
     expect(block.textContent).toContain("AP Setup does not share goods receipts.");
     expect(block.textContent).not.toContain("null");

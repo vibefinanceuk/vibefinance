@@ -4314,6 +4314,9 @@
   .supplierportal .portalperson > .actionlink { grid-row: 1 / span 2; white-space: nowrap; }
   .portaleditbuttons { gap: 6px; }
   .portalinvitehead { margin: 18px 0 6px; font-size: var(--text-sm); color: var(--text-secondary); font-weight: 700; }
+  /* Decision 0739: goods receipts first under the heading; the people invited last, set off from the invitation above. */
+  .supplierportal .receiptsharinghead { margin-top: 4px; }
+  .supplierportal .portalpeoplelist { margin-top: 14px; border-top: 0.5px solid var(--border); }
   /* Decision 0718 — changing a person's companies in place, and choosing among many. */
   .portalpersonwrap { border-bottom: 0.5px solid var(--border); }
   .portalpersonwrap .portalperson { border-bottom: 0; }

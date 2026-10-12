@@ -1167,6 +1167,16 @@ describe("the supplier portal on a supplier's page — decision 0715", () => {
     expect(rows[1]).toContain("2026-10-13");
   });
 
+  it("puts the invitation first and the people already invited last, beneath its words — decision 0739", async () => {
+    const { section } = await openWithPortal(PORTAL);
+    const body = section.querySelector(".portalpeople") as HTMLElement;
+    const order = [...body.children].map((c) => c.className);
+    expect(order.indexOf("portalinvite")).toBeGreaterThan(-1);
+    expect(order.indexOf("portalpeoplelist")).toBeGreaterThan(order.indexOf("portalinvite"));
+    expect(order.at(-1)).toBe("portalpeoplelist");
+    expect(body.querySelectorAll(".portalpeoplelist .portalperson")).toHaveLength(2);
+  });
+
   it("invites for the companies ticked, and says who it was sent to", async () => {
     const { section, posted } = await openWithPortal(PORTAL, { "/portal/invitations": { status: 201, body: { invitation: { email: "new@lager-nord.example" } } } });
     (section.querySelector(".portalemail") as HTMLInputElement).value = "new@lager-nord.example";
