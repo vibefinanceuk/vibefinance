@@ -1,6 +1,6 @@
 # 0742: Create › Goods receipts — the kind as a rounded pill, and a small Save
 
-**Status: built.** vf-ui (`create.js`, `goods-receipts.js`, `app.css`; `app.css` copied to
+**Status: live** at `ac0120b`, pushed and deployed 12 October 2026. vf-ui (`create.js`, `goods-receipts.js`, `app.css`; `app.css` copied to
 vf-portal).
 
 ## What was asked
