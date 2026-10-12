@@ -16,6 +16,11 @@ function mountShell() {
 const STRINGS = {
   locale: "en",
   strings: {
+    // The Purchase Orders process (decision 0749).
+    "purchaseorders.process.direct": "Orders loaded here count at once.",
+    "purchaseorders.process.through": "Orders loaded here go through {process} and count once released.",
+    "purchaseorders.process.sent": "Sent through {process}. Released: {released}. Waiting: {waiting}.",
+    "purchaseorders.process.message": "Route monitor message: {id}",
     "nav.tasks": "Tasks",
     "nav.dashboard": "Dashboard",
     "nav.purchaseorders": "Purchase Orders",
@@ -1221,5 +1226,43 @@ describe("receipts on Purchase Orders — decision 0646", () => {
     await vi.waitFor(() => expect(document.getElementById("po-waitingreceipts")).not.toBeNull());
     expect(document.getElementById("po-waitingreceipts")!.textContent).toBe("Goods receipts waiting for these orders. Registered: 2. Lines now counted: 1. Still waiting or needing attention: 1.");
     expect(document.getElementById("po-waitingreceipts")!.className).toBe("warn");
+  });
+});
+
+describe("the Purchase Orders process — decision 0749", () => {
+  it("says loads go through it, sends the file's name, and says what the process did", async () => {
+    const calls: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        calls.push(String(url));
+        const path = String(url).split("?")[0];
+        if (path === "/api/ui-strings") return { ok: true, json: async () => STRINGS } as Response;
+        if (path === "/api/purchase-orders") return { ok: true, json: async () => EMPTY_LIST } as Response;
+        if (path === "/api/purchase-orders/process") return { ok: true, json: async () => ({ process: { id: "purchase-orders", name: "Purchase Orders", stages: [] } }) } as Response;
+        if (path === "/api/purchase-orders/csv-load")
+          return {
+            ok: true,
+            json: async () => ({ loadId: "MSG-1", messageId: "MSG-1", ordersLoaded: 2, ordersReplaced: 0, linesLoaded: 3, refused: [], receiptWarnings: [], process: { id: "purchase-orders", name: "Purchase Orders", sent: [], waiting: 1 } }),
+          } as Response;
+        throw new Error(`no stub for ${path}`);
+      })
+    );
+    await openScreen();
+    expect(document.getElementById("po-process")?.textContent).toBe("Orders loaded here go through Purchase Orders and count once released.");
+    const picker = document.querySelector("#purchaseorderfile") as HTMLInputElement;
+    Object.defineProperty(picker, "files", { value: [{ name: "week 41.csv", text: async () => "order_number,line number\nPO-1,1" }], configurable: true });
+    [...document.querySelectorAll("button")].find((b) => b.textContent === "Load CSV")?.click();
+    await vi.waitFor(() => expect(document.getElementById("po-sent")).not.toBeNull());
+    expect(calls).toContain("/api/purchase-orders/csv-load?name=week%2041.csv");
+    expect(document.getElementById("po-sent")?.textContent).toBe("Sent through Purchase Orders. Released: 2. Waiting: 1.");
+    expect(document.getElementById("po-message")?.textContent).toBe("Route monitor message: MSG-1");
+  });
+
+  it("says loads count at once until it is set up, with no set-up offered without Admin.Configure", async () => {
+    stubFetch({ "/api/purchase-orders": { body: EMPTY_LIST }, "/api/purchase-orders/process": { body: { process: null } } });
+    await openScreen();
+    expect(document.getElementById("po-process")?.textContent).toBe("Orders loaded here count at once.");
+    expect(document.getElementById("po-setup-process")).toBeNull();
   });
 });

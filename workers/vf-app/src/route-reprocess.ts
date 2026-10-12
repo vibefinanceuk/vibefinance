@@ -57,6 +57,8 @@ export async function whyNotReprocess(db: D1Database, m: MessageRow): Promise<st
   if (source.status === "retired") return "source_retired";
   // Decision 0655: running again reads invoices. Goods receipts are sent again instead, and what loaded is skipped.
   if (source.subject_type === "goods_receipt") return "receipts_resend";
+  // Decision 0749: and purchase orders likewise; an order sent again replaces itself.
+  if (source.subject_type === "purchase_order") return "orders_resend";
   const original = await db
     .prepare("SELECT count(*) AS n FROM route_message_parts WHERE message_id = ?")
     .bind(m.id)

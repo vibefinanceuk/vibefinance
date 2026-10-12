@@ -349,6 +349,7 @@ import {
   RECEIPT_TOKEN_PREFIX,
 } from "./receipt-timeline.js";
 import { handleHttpsReceipts, receiptsReport, receiptsSource, receiptsUploadSource, receiveReceipts, RECEIPTS_FILE_ROUTE } from "./receipts-in-route.js";
+import { handleGetOrdersProcess, handleHttpsOrders, handleSetUpOrdersProcess, ordersReport, ordersSource, ordersUploadSource, uploadOrders } from "./purchase-orders-in.js";
 import {
   handleGetApTeamEmail,
   handleSetApTeamEmail,
@@ -980,7 +981,7 @@ function r2Storage(bucket: R2Bucket): PendingDocumentStorage {
  * that now register or count send invoices waiting on the goods through
  * the re-check (0648). What happened rides along on the response.
  */
-async function withWaitingReceipts(db: D1Database, body: unknown, orderNumbers: string[], userId: string): Promise<unknown> {
+async function withWaitingReceipts(db: D1Database, body: unknown, orderNumbers: string[], userId: string | null): Promise<unknown> {
   const released = await releaseWaitingReceipts(db, orderNumbers, userId);
   if (released.registered === 0 && released.linesReleased === 0 && released.stillWaiting === 0) return body;
   const recheck = released.touched.length > 0 ? await recheckReceiptTasks(db, released.touched, userId, (id) => followUpAfterTaskCompletion(db, id)) : { closed: [], stillOpen: 0 };
@@ -6164,7 +6165,7 @@ export default {
      * became of them. No session and no user key: the source key is the
      * only authority, and it reaches only its own source.
      */
-    const httpsInMatch = pathname.match(/^\/v1\/sources\/([^/]+)\/(invoices|receipts|messages\/([^/]+))$/);
+    const httpsInMatch = pathname.match(/^\/v1\/sources\/([^/]+)\/(invoices|receipts|orders|messages\/([^/]+))$/);
     if (httpsInMatch) {
       const { db, documents } = resolveTenant(request, env);
       const sourceId = decodeURIComponent(httpsInMatch[1]);
@@ -6190,8 +6191,24 @@ export default {
         if (result.touched?.length) await recheckReceiptTasks(db, result.touched, null, (id) => followUpAfterTaskCompletion(db, id));
         return json(result.body, result.status);
       }
+      /**
+       * **Orders in — decision 0749.** A procurement system's purchase
+       * orders, by the same key; what they make goes through the Purchase
+       * Orders process, and receipts waiting for a released order go on.
+       */
+      if (httpsInMatch[2] === "orders" && request.method === "POST") {
+        const result = await handleHttpsOrders(db, key, request, url.origin, { bucket: documents, customerId: env.CUSTOMER_ID });
+        const released = (result.released ?? []).map((r) => r.orderNumber);
+        if (released.length > 0) await withWaitingReceipts(db, {}, released, null);
+        return json(result.body, result.status);
+      }
       if (httpsInMatch[3] && request.method === "GET") {
         const messageId = decodeURIComponent(httpsInMatch[3]);
+        if (await ordersSource(db, sourceId)) {
+          const m = await db.prepare("SELECT instance_id FROM route_messages WHERE id = ? AND direction = 'in'").bind(messageId).first<{ instance_id: string | null }>();
+          if (!m || m.instance_id !== sourceId) return json({ error: `there is no message ${messageId} for this source` }, 404);
+          return json(await ordersReport(db, messageId, `${url.origin}/v1/sources/${encodeURIComponent(sourceId)}/messages/${encodeURIComponent(messageId)}`), 200);
+        }
         if (await receiptsSource(db, sourceId)) {
           const m = await db.prepare("SELECT instance_id FROM route_messages WHERE id = ? AND direction = 'in'").bind(messageId).first<{ instance_id: string | null }>();
           if (!m || m.instance_id !== sourceId) return json({ error: `there is no message ${messageId} for this source` }, 404);
@@ -6634,6 +6651,18 @@ export default {
         return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
       }
       const xml = await request.text();
+      /**
+       * **Decision 0749: once the Purchase Orders process is set up**, an
+       * order sent here is one message of Orders upload, from the person,
+       * and goes through the process; until then, stored at once as before.
+       */
+      const ordersUpload = await ordersUploadSource(db);
+      if (ordersUpload) {
+        const person = auth.user as { id: string; name?: string | null; email?: string | null };
+        const up = await uploadOrders(db, ordersUpload, person, xml, "order.xml", "xml", { bucket: resolveTenant(request, env).documents, customerId: env.CUSTOMER_ID });
+        const released = up.released.map((r) => r.orderNumber);
+        return json(released.length > 0 ? await withWaitingReceipts(db, up.body, released, auth.user.id) : up.body, up.status);
+      }
       const result = await handleIngestPurchaseOrder(db, xml);
       const orderNumber = (result.body as { orderNumber?: string }).orderNumber;
       if (result.status < 300 && orderNumber) return json(await withWaitingReceipts(db, result.body, [orderNumber], auth.user.id), result.status);
@@ -6651,9 +6680,39 @@ export default {
         return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
       }
       const csv = await request.text();
+      // Decision 0749: one message of Orders upload once the process is set up.
+      const ordersUpload = await ordersUploadSource(db);
+      if (ordersUpload) {
+        const person = auth.user as { id: string; name?: string | null; email?: string | null };
+        const name = (url.searchParams.get("name") ?? "orders.csv").trim().slice(0, 200) || "orders.csv";
+        const up = await uploadOrders(db, ordersUpload, person, csv, name, "csv", { bucket: resolveTenant(request, env).documents, customerId: env.CUSTOMER_ID });
+        const released = up.released.map((r) => r.orderNumber);
+        return json(released.length > 0 ? await withWaitingReceipts(db, up.body, released, auth.user.id) : up.body, up.status);
+      }
       const result = await handleLoadPurchaseOrdersCsv(db, csv);
       const loaded = (result.body as { orderNumbers?: string[] }).orderNumbers ?? [];
       if (result.status < 300 && loaded.length > 0) return json(await withWaitingReceipts(db, result.body, loaded, auth.user.id), result.status);
+      return json(result.body, result.status);
+    }
+
+    /**
+     * **The Purchase Orders process — decision 0749.** Whether it is set
+     * up (anyone who may load orders, or read them), and setting it up
+     * (Admin.Configure). Before `/purchase-orders/:orderNumber`.
+     */
+    if (pathname === "/purchase-orders/process" && request.method === "GET") {
+      const { db } = resolveTenant(request, env);
+      const auth = await requireAnyPermission(db, request, ["Admin.Configure", "AP.Validate"], sessionContext(env));
+      if (!auth.authorized) return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
+      const result = await handleGetOrdersProcess(db);
+      return json(result.body, result.status);
+    }
+    if (pathname === "/purchase-orders/process" && request.method === "POST") {
+      const { db } = resolveTenant(request, env);
+      const auth = await requirePermission(db, request, "Admin.Configure", sessionContext(env));
+      if (!auth.authorized) return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
+      const body = ((await request.json().catch(() => null)) ?? {}) as Record<string, unknown>;
+      const result = await handleSetUpOrdersProcess(db, body);
       return json(result.body, result.status);
     }
 

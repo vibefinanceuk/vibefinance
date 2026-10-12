@@ -173,6 +173,11 @@ function outcomeLine(m) {
     const made = t("routemonitor.made.receipts").replace("{n}", String(m.receipts));
     return m.receiptsWaiting > 0 ? `${made} · ${t("routemonitor.made.receiptswaiting").replace("{n}", String(m.receiptsWaiting))}` : made;
   }
+  // Decision 0749: purchase orders, and how many wait in the process.
+  if (m.orders > 0) {
+    const made = t("routemonitor.made.orders").replace("{n}", String(m.orders));
+    return m.ordersWaiting > 0 ? `${made} · ${t("routemonitor.made.orderswaiting").replace("{n}", String(m.ordersWaiting))}` : made;
+  }
   if (m.invoices === 1 && m.firstInvoice) return t("routemonitor.made.one").replace("{number}", m.firstInvoice);
   if (m.invoices > 1) return t("routemonitor.made.many").replace("{n}", String(m.invoices));
   return t("routemonitor.made.none");
@@ -530,6 +535,27 @@ function detailPanel() {
           ),
         ]
       : []),
+    // Decision 0749: the purchase orders it brought, and where each stands.
+    ...(detail.orders?.length > 0
+      ? [
+          el("h4", { class: "rmh4", text: t("routemonitor.orders") }),
+          el(
+            "ul",
+            { class: "rmlist", id: "rm-orders" },
+            detail.orders.map((o) =>
+              el("li", {
+                text: [
+                  o.number,
+                  o.status === "pending" && o.stage ? t("routemonitor.order.waiting").replace("{stage}", o.stage) : t(`routemonitor.order.${o.status}`),
+                  o.change ? t("routemonitor.order.change") : null,
+                ]
+                  .filter(Boolean)
+                  .join(" · "),
+              })
+            )
+          ),
+        ]
+      : []),
     el("h4", { class: "rmh4", text: t(message.direction === "out" ? "routemonitor.sent" : "routemonitor.originals") }),
     parts.length === 0
       ? el("p", { class: "muted sm", text: t("routemonitor.nooriginals") })
@@ -559,7 +585,7 @@ function detailPanel() {
           ...(e.actorName ? [el("span", { class: "muted", text: ` · ${t("routemonitor.by").replace("{who}", e.actorName)}` })] : []),
           // The reason a person gave, for what they closed (0558, 0559).
           // Decision 0577: a CSV split says into which invoices.
-          ...((e.event === "dismissed" || e.event === "undone" || e.event === "csv_split") && e.detail ? [el("div", { class: "muted sm rmreason", text: e.detail })] : []),
+          ...((e.event === "dismissed" || e.event === "undone" || e.event === "csv_split" || e.event === "attachment_passed_over") && e.detail ? [el("div", { class: "muted sm rmreason", text: e.detail })] : []),
           ...(e.partSeq ? [el("span", { class: "muted", text: ` · ${t("routemonitor.partn").replace("{n}", String(e.partSeq))}` })] : []),
         ])
       )

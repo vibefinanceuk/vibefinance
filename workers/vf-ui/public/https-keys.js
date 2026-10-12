@@ -194,7 +194,10 @@ function render(holder, source, data, reload) {
     data.receives === "receipts"
       ? // Decision 0655: Receipts in takes JSON, or our receipt CSV as text/csv.
         `curl -X POST "${data.address}" \\\n  -H "Authorization: Bearer <your key>" \\\n  -H "Content-Type: application/json" \\\n  -H "X-Reference: Delivery 4471" \\\n  -d '{ "receipts": [ { "receiptNumber": "WH-88213", "receiptDate": "2026-10-04",\n        "lines": [ { "orderNumber": "PO-4501", "orderLine": 1, "quantity": 200, "unit": "EA" } ] } ] }'`
-      : `curl -X POST "${data.address}" \\\n  -H "Authorization: Bearer <your key>" \\\n  -H "Content-Type: application/xml" \\\n  -H "X-Filename: Rechnung_88240.xml" \\\n  --data-binary @Rechnung_88240.xml`;
+      : data.receives === "orders"
+        ? // Decision 0749: a Peppol BIS order, as the procurement system sends it.
+          `curl -X POST "${data.address}" \\\n  -H "Authorization: Bearer <your key>" \\\n  -H "Content-Type: application/xml" \\\n  -H "X-Reference: PO-4501" \\\n  --data-binary @PO-4501.xml`
+        : `curl -X POST "${data.address}" \\\n  -H "Authorization: Bearer <your key>" \\\n  -H "Content-Type: application/xml" \\\n  -H "X-Filename: Rechnung_88240.xml" \\\n  --data-binary @Rechnung_88240.xml`;
   holder.replaceChildren(
     el("div", { class: "cardhead httpshead" }, [
       el("h4", { text: t("httpsin.heading") }),
@@ -217,7 +220,7 @@ function render(holder, source, data, reload) {
     el("div", { class: "httpsfield" }, [
       el("label", { text: t("httpsin.howto") }),
       el("pre", { class: "httpspre", text: example }),
-      el("div", { class: "muted sm", text: t(data.receives === "receipts" ? "receiptsin.howtohint" : "httpsin.howtohint") }),
+      el("div", { class: "muted sm", text: t(data.receives === "receipts" ? "receiptsin.howtohint" : data.receives === "orders" ? "ordersin.howtohint" : "httpsin.howtohint") }),
     ]),
   );
 }

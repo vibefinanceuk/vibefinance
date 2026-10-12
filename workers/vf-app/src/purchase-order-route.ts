@@ -58,7 +58,7 @@ export interface ReceiptWarning {
  * a refusal reason instead of a nullable result, and neither caller
  * below ever calls `storeOrder` without a real, matched org unit id.
  */
-async function deriveOrgForOrder(
+export async function deriveOrgForOrder(
   db: D1Database,
   buyerPartyId: string | undefined
 ): Promise<{ orgUnitId: string } | { refusalReason: string }> {
@@ -105,7 +105,7 @@ function normalizeStatus(raw: string | undefined): { status: "active" | "on_hold
   return { status: normalized };
 }
 
-async function storeOrder(
+export async function storeOrder(
   db: D1Database,
   parsed: ParsedOrder,
   orgUnitId: string,
@@ -489,10 +489,40 @@ export async function handleGetPurchaseOrderCsvFormat(): Promise<RouteResult> {
   return { status: 200, body: { header: HEADER_FIELD_SPECS, line: LINE_FIELD_SPECS } };
 }
 
-export async function handleLoadPurchaseOrdersCsv(db: D1Database, csv: string): Promise<RouteResult> {
+/**
+ * **An order read, before it is admitted — decision 0749.** What every
+ * way an order arrives is read into (our CSV, a UBL Order, JSON), so each
+ * is judged exactly alike: the order, and the status column a load may
+ * carry (0377), still as written.
+ */
+export interface CandidateOrder {
+  parsed: ParsedOrder;
+  status?: string;
+  holdReason?: string;
+}
+
+/** Each order in the file in turn: read, or refused with why, in the order the file has them. */
+export type ReadEntry = { order: CandidateOrder } | { refused: { orderNumber: string; reason: string } };
+export type ReadOrders = { entries: ReadEntry[] } | { error: string; reason: string };
+
+/**
+ * **The line rules every order is held to** (0081, 0370): each line has
+ * an item name or an identifier, as Peppol BIS Order Only requires, and
+ * line numbers are unique. The reason, or null.
+ */
+export function orderLineProblem(parsed: ParsedOrder): string | null {
+  const anonymous = parsed.lines.filter((l) => !l.itemName?.trim() && !l.sellersItemId?.trim() && !l.standardItemId?.trim());
+  if (anonymous.length > 0) return `line(s) ${anonymous.map((l) => l.lineNumber).join(", ")} have neither an item name nor an identifier`;
+  const lineNumbers = parsed.lines.map((l) => l.lineNumber);
+  if (new Set(lineNumbers).size !== lineNumbers.length) return "line numbers must be unique within one order";
+  return null;
+}
+
+/** Our order CSV (0370), read into orders: one row per line, grouped by order number. */
+export function readOrdersCsv(csv: string): ReadOrders {
   const rows = parseCsv(csv);
   if (rows.length < 2) {
-    return { status: 400, body: { error: "the file needs a header row and at least one order line" } };
+    return { error: "the file needs a header row and at least one order line", reason: "no_rows" };
   }
 
   const headerCols = rows[0].map((h) => HEADER_COLUMNS[h.trim().toLowerCase()] ?? null);
@@ -500,20 +530,14 @@ export async function handleLoadPurchaseOrdersCsv(db: D1Database, csv: string): 
 
   if (!headerCols.includes("order_number")) {
     return {
-      status: 400,
-      body: {
-        error: "the file needs an order number column — without it a line cannot be grouped into an order",
-        reason: "no_order_number_column",
-      },
+      error: "the file needs an order number column — without it a line cannot be grouped into an order",
+      reason: "no_order_number_column",
     };
   }
   if (!lineCols.includes("line_number")) {
     return {
-      status: 400,
-      body: {
-        error: "the file needs a line number column — without it BT-132 has nothing to reference",
-        reason: "no_line_number_column",
-      },
+      error: "the file needs a line number column — without it BT-132 has nothing to reference",
+      reason: "no_line_number_column",
     };
   }
 
@@ -543,52 +567,14 @@ export async function handleLoadPurchaseOrdersCsv(db: D1Database, csv: string): 
     groups.get(orderNumber)!.push({ row: i + 1, values: { ...headerValues, ...lineValues } });
   }
 
-  const loadId = crypto.randomUUID();
-  const refused: { orderNumber: string; reason: string }[] = [];
-  let ordersLoaded = 0;
-  const orderNumbers: string[] = [];
-  let ordersReplaced = 0;
-  let linesLoaded = 0;
-  const receiptWarnings: ReceiptWarning[] = [];
-
+  const entries: ReadEntry[] = [];
   for (const orderNumber of rowOrder) {
     const groupRows = groups.get(orderNumber)!;
     const first = groupRows[0].values;
 
     const missingLineNumber = groupRows.find((r) => !r.values.line_number);
     if (missingLineNumber) {
-      refused.push({ orderNumber, reason: `row ${missingLineNumber.row} has no line number` });
-      continue;
-    }
-
-    const lines = groupRows.map((r) => ({
-      lineNumber: Number(r.values.line_number),
-      quantity: num(r.values.quantity),
-      unitCode: r.values.unit_code || undefined,
-      lineExtensionAmount: num(r.values.line_amount),
-      itemName: r.values.item_name || undefined,
-      itemDescription: r.values.item_description || undefined,
-      sellersItemId: r.values.sellers_item_id || undefined,
-      standardItemId: r.values.standard_item_id || undefined,
-      priceAmount: num(r.values.price_amount),
-      baseQuantity: num(r.values.base_quantity),
-    }));
-
-    // The spec's own line rule (decision 0081), enforced identically
-    // here rather than only on the XML path — a CSV line with neither
-    // an item name nor an identifier is exactly as unmatchable as one
-    // parsed from a document.
-    const anonymous = lines.filter((l) => !l.itemName?.trim() && !l.sellersItemId?.trim() && !l.standardItemId?.trim());
-    if (anonymous.length > 0) {
-      refused.push({
-        orderNumber,
-        reason: `line(s) ${anonymous.map((l) => l.lineNumber).join(", ")} have neither an item name nor an identifier`,
-      });
-      continue;
-    }
-    const lineNumbers = lines.map((l) => l.lineNumber);
-    if (new Set(lineNumbers).size !== lineNumbers.length) {
-      refused.push({ orderNumber, reason: "line numbers must be unique within one order" });
+      entries.push({ refused: { orderNumber, reason: `row ${missingLineNumber.row} has no line number` } });
       continue;
     }
 
@@ -604,36 +590,87 @@ export async function handleLoadPurchaseOrdersCsv(db: D1Database, csv: string): 
       taxInclusiveAmount: num(first.tax_inclusive_amount),
       payableAmount: num(first.payable_amount),
       originatorReference: first.originator_reference || undefined,
-      lines,
+      lines: groupRows.map((r) => ({
+        lineNumber: Number(r.values.line_number),
+        quantity: num(r.values.quantity),
+        unitCode: r.values.unit_code || undefined,
+        lineExtensionAmount: num(r.values.line_amount),
+        itemName: r.values.item_name || undefined,
+        itemDescription: r.values.item_description || undefined,
+        sellersItemId: r.values.sellers_item_id || undefined,
+        standardItemId: r.values.standard_item_id || undefined,
+        priceAmount: num(r.values.price_amount),
+        baseQuantity: num(r.values.base_quantity),
+      })),
     };
-
-    // Refused per order, not the whole file — decision 0374. Every
-    // other order in the same CSV still loads; only the ones whose
-    // buyer tax reference is missing or unmatched are skipped, each
-    // with its own reason in the same refused[] a person already sees
-    // for a missing line number or a duplicate one.
-    const orgResult = await deriveOrgForOrder(db, parsed.buyerPartyId);
-    if ("refusalReason" in orgResult) {
-      refused.push({ orderNumber, reason: orgResult.refusalReason });
+    // The spec's own line rule (decision 0081), enforced identically
+    // here rather than only on the XML path — a CSV line with neither
+    // an item name nor an identifier is exactly as unmatchable as one
+    // parsed from a document.
+    const problem = orderLineProblem(parsed);
+    if (problem) {
+      entries.push({ refused: { orderNumber, reason: problem } });
       continue;
     }
+    entries.push({ order: { parsed, status: first.status || undefined, holdReason: first.hold_reason || undefined } });
+  }
+  return { entries };
+}
 
-    // Decision 0377 — an unrecognised status refuses the order, the
-    // same discipline as every other CSV validation failure; absent
-    // entirely, storeOrder() itself decides (preserve on a replace,
-    // Active on a new order).
-    const statusResult = normalizeStatus(first.status);
-    if (statusResult && "refusalReason" in statusResult) {
-      refused.push({ orderNumber, reason: statusResult.refusalReason });
+/**
+ * **Admitting an order** — which company it is (refused when unknown,
+ * 0374), and its status column (refused when unrecognised, 0377). What
+ * storing or staging it needs, or why it cannot be.
+ */
+export async function admitOrder(
+  db: D1Database,
+  candidate: CandidateOrder
+): Promise<{ orgUnitId: string; statusOverride?: { status: "active" | "on_hold" | "closed"; holdReason: string | null } } | { refusalReason: string }> {
+  // Refused per order, not the whole file — decision 0374. Every
+  // other order in the same CSV still loads; only the ones whose
+  // buyer tax reference is missing or unmatched are skipped, each
+  // with its own reason in the same refused[] a person already sees
+  // for a missing line number or a duplicate one.
+  const orgResult = await deriveOrgForOrder(db, candidate.parsed.buyerPartyId);
+  if ("refusalReason" in orgResult) return orgResult;
+  // Decision 0377 — an unrecognised status refuses the order, the
+  // same discipline as every other CSV validation failure; absent
+  // entirely, storeOrder() itself decides (preserve on a replace,
+  // Active on a new order).
+  const statusResult = normalizeStatus(candidate.status);
+  if (statusResult && "refusalReason" in statusResult) return statusResult;
+  return {
+    orgUnitId: orgResult.orgUnitId,
+    ...(statusResult ? { statusOverride: { status: statusResult.status, holdReason: candidate.holdReason || null } } : {}),
+  };
+}
+
+export async function handleLoadPurchaseOrdersCsv(db: D1Database, csv: string): Promise<RouteResult> {
+  const read = readOrdersCsv(csv);
+  if ("error" in read) {
+    return { status: 400, body: { error: read.error, ...(read.reason !== "no_rows" ? { reason: read.reason } : {}) } };
+  }
+
+  const loadId = crypto.randomUUID();
+  const refused: { orderNumber: string; reason: string }[] = [];
+  let ordersLoaded = 0;
+  const orderNumbers: string[] = [];
+  let ordersReplaced = 0;
+  let linesLoaded = 0;
+  const receiptWarnings: ReceiptWarning[] = [];
+
+  for (const entry of read.entries) {
+    if ("refused" in entry) {
+      refused.push(entry.refused);
       continue;
     }
-
-    const result = await storeOrder(
-      db,
-      parsed,
-      orgResult.orgUnitId,
-      statusResult ? { status: statusResult.status, holdReason: first.hold_reason || null } : undefined
-    );
+    const candidate = entry.order;
+    const admitted = await admitOrder(db, candidate);
+    if ("refusalReason" in admitted) {
+      refused.push({ orderNumber: candidate.parsed.orderNumber, reason: admitted.refusalReason });
+      continue;
+    }
+    const result = await storeOrder(db, candidate.parsed, admitted.orgUnitId, admitted.statusOverride);
     ordersLoaded++;
     orderNumbers.push(result.orderNumber);
     linesLoaded += result.lines;

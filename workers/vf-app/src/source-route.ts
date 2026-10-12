@@ -95,11 +95,16 @@ export async function handleCreateSource(
    * in (HTTPS); its upload source is made with it. Any other takes none.
    */
   const receipts = process.subject_type === "goods_receipt";
-  if (process.subject_type !== "invoice" && !receipts) {
+  // Decision 0749: a purchase order process takes Orders in (HTTPS) and Orders by email.
+  const orders = process.subject_type === "purchase_order";
+  if (process.subject_type !== "invoice" && !receipts && !orders) {
     return { status: 409, body: { error: `process ${processId} does not take invoices`, reason: "process_not_invoices" } };
   }
   if (receipts && body.mechanism !== "https") {
     return { status: 409, body: { error: `process ${processId} takes goods receipts by HTTPS only`, reason: "receipts_https_only" } };
+  }
+  if (orders && body.mechanism !== "https" && body.mechanism !== "email") {
+    return { status: 409, body: { error: `process ${processId} takes purchase orders by HTTPS or email`, reason: "orders_https_or_email" } };
   }
   /**
    * **Supplier network in — decision 0726.** Invoices suppliers create in
@@ -156,11 +161,12 @@ export async function handleCreateSource(
     db.prepare("INSERT INTO sources (id, process_id, name, mechanism) VALUES (?, ?, ?, ?)").bind(id, processId, name, mechanism),
     db
       .prepare("INSERT INTO route_instances (id, route_id, process_id, source_id) VALUES (?, ?, ?, ?)")
-      .bind(id, receipts ? "receipts-in" : network ? "network-in" : SOURCE_ROUTE_FOR_MECHANISM[mechanism], processId, id),
+      .bind(id, receipts ? "receipts-in" : orders ? (mechanism === "email" ? "orders-email" : "orders-in") : network ? "network-in" : SOURCE_ROUTE_FOR_MECHANISM[mechanism], processId, id),
     // A process's first source makes it one that receives invoices, and
     // so one with an ERP Destination, as 0107 gave every such process.
     // Not a goods receipt process: Complete registers the receipt (0651).
-    ...(receipts
+    // Nor a purchase order process: Complete releases the order (0749).
+    ...(receipts || orders
       ? []
       : [
           db

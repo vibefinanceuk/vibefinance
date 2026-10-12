@@ -6,6 +6,7 @@ import formatStringsSql from "../../vf-licence/migrations/0211_formats_and_en169
 import splitStringsSql from "../../vf-licence/migrations/0225_csv_several_invoices_strings.sql?raw";
 import receiptsInStringsSql from "../../vf-licence/migrations/0297_receipts_in_strings.sql?raw";
 import createReceiptsStringsSql from "../../vf-licence/migrations/0295_create_goods_receipts_strings.sql?raw";
+import ordersInStringsSql from "../../vf-licence/migrations/0347_purchase_orders_in_strings.sql?raw";
 
 /**
  * The Route monitor — decision 0556. Four counts, the messages with
@@ -18,7 +19,7 @@ import createReceiptsStringsSql from "../../vf-licence/migrations/0295_create_go
  */
 
 const strings: Record<string, string> = { "action.close": "Close", "action.save": "Save" };
-for (const sql of [stringsSql, destinationStringsSql, fixStringsSql, formatStringsSql, splitStringsSql, receiptsInStringsSql, createReceiptsStringsSql]) {
+for (const sql of [stringsSql, destinationStringsSql, fixStringsSql, formatStringsSql, splitStringsSql, receiptsInStringsSql, createReceiptsStringsSql, ordersInStringsSql]) {
   for (const m of sql.matchAll(/\('([^']+)', 'en', '((?:[^']|'')*)'\)/g)) strings[m[1]] = m[2].replace(/''/g, "'");
 }
 
@@ -622,3 +623,36 @@ describe("goods receipts in the Route monitor — decision 0655", () => {
   });
 });
 
+
+describe("purchase orders in the Route monitor — decision 0749", () => {
+  it("says what a message brought in orders, and lists them with where each stands", async () => {
+    const ORDERS_MSG = { ...LIST.messages[1], id: "MSG-PO-0001-0002", sourceId: "erp-po", sourceName: "Procurement", counterparty: "Coupa", subject: "PO-4501", attachments: 1, captured: 0, invoices: 0, firstInvoice: null, receipts: 0, receiptsWaiting: 0, orders: 2, ordersWaiting: 1 };
+    stub([], { ...LIST, messages: [ORDERS_MSG] });
+    const inner = globalThis.fetch as unknown as (url: string, init?: RequestInit) => Promise<Response>;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        if (String(url).split("?")[0] === "/api/route-messages/MSG-PO-0001-0002")
+          return {
+            ok: true,
+            json: async () => ({
+              ...DETAIL,
+              message: { ...DETAIL.message, id: ORDERS_MSG.id, status: "delivered", failedPart: null, errorCode: null, errorText: null, subject: "PO-4501", sourceName: "Procurement" },
+              parts: [],
+              events: [],
+              orders: [
+                { intakeId: "a", number: "PO-4501", status: "released", change: false, stage: null },
+                { intakeId: "b", number: "PO-4502", status: "pending", change: true, stage: "Checking" },
+              ],
+            }),
+          } as Response;
+        return inner(url, init);
+      })
+    );
+    await open();
+    expect(text(".rmtable tbody tr td:nth-child(3) .muted")).toBe("Purchase orders: 2 · waiting: 1");
+    (document.querySelector(".rmtable tbody tr") as HTMLElement).click();
+    await settle();
+    expect([...document.querySelectorAll("#rm-orders li")].map((li) => li.textContent)).toEqual(["PO-4501 · Released", "PO-4502 · Waiting at Checking · a change to the order in force"]);
+  });
+});

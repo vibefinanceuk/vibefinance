@@ -36,6 +36,10 @@ describe("the standard routes", () => {
       ["edi-in", "source", "standard", false],
       ["email-in", "source", "standard", true],
       ["https-in", "source", "standard", true],
+      // Decision 0749: purchase orders, by email, HTTPS and upload.
+      ["orders-email", "source", "standard", true],
+      ["orders-in", "source", "standard", true],
+      ["orders-file", "source", "standard", true],
       // Decision 0655: goods receipts, by HTTPS and by upload.
       ["receipts-in", "source", "standard", true],
       ["receipts-file", "source", "standard", true],

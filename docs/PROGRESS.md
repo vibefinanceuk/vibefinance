@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 12 October 2026 (decision 0748). A living document: what
+Last updated 12 October 2026 (decision 0749). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,15 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Purchase orders by Source Routes (0749)
+
+A customer's procurement system sends orders by Orders in (HTTPS: Peppol BIS order, JSON or CSV)
+or Orders by email, and Purchase Orders' own load is a message of Orders upload. Once the Purchase
+Orders process is set up, each order waits until released at Complete. A change waiting leaves
+the order in force untouched. Slice 1 of five.
+
+Full reasoning is in decision 0749.
 
 ### A goods receipt's questions to the supplier, as an invoice's (0748)
 

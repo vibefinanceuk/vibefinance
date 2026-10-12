@@ -666,7 +666,7 @@ export async function isReceiptMatchingTask(db: D1Database, taskId: string): Pro
 export async function releaseWaitingReceipts(
   db: D1Database,
   orderNumbers: string[],
-  actorUserId: string,
+  actorUserId: string | null,
   now = new Date()
 ): Promise<{ registered: number; linesReleased: number; stillWaiting: number; touched: Touched[] }> {
   const out = { registered: 0, linesReleased: 0, stillWaiting: 0, touched: [] as Touched[] };

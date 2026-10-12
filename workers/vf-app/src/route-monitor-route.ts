@@ -43,6 +43,8 @@ interface ListRow {
   invoices: number;
   receipts: number;
   receipts_waiting: number;
+  orders: number;
+  orders_waiting: number;
 }
 
 /** The start of the period, as an ISO string: midnight UTC today, less `days`. */
@@ -93,7 +95,10 @@ export async function handleListRouteMessages(
               (SELECT count(*) FROM route_message_items i WHERE i.message_id = m.id) AS invoices,
               -- Decision 0655: goods receipts it made, and those not yet registered.
               (SELECT count(*) FROM goods_receipts gr WHERE gr.route_message_id = m.id) AS receipts,
-              (SELECT count(*) FROM goods_receipts gr WHERE gr.route_message_id = m.id AND gr.status = 'pending') AS receipts_waiting
+              (SELECT count(*) FROM goods_receipts gr WHERE gr.route_message_id = m.id AND gr.status = 'pending') AS receipts_waiting,
+              -- Decision 0749: purchase orders it brought, and those not yet released.
+              (SELECT count(*) FROM purchase_order_intake oi WHERE oi.route_message_id = m.id) AS orders,
+              (SELECT count(*) FROM purchase_order_intake oi WHERE oi.route_message_id = m.id AND oi.status = 'pending') AS orders_waiting
        FROM route_messages m
        LEFT JOIN sources s ON s.id = m.instance_id
        LEFT JOIN route_instances d ON d.id = m.destination_id
@@ -131,7 +136,7 @@ export async function handleListRouteMessages(
     // Decision 0655: and the sources goods receipts arrive by.
     .prepare(
       `SELECT s.id, s.name, s.status FROM sources s JOIN processes p ON p.id = s.process_id
-       WHERE s.mechanism = 'email' OR p.subject_type = 'goods_receipt' ORDER BY s.name`
+       WHERE s.mechanism = 'email' OR p.subject_type IN ('goods_receipt', 'purchase_order') ORDER BY s.name`
     )
     .all<{ id: string; name: string; status: string }>();
   // Decision 0558: the Destinations messages go out on, to filter by too.
@@ -178,6 +183,8 @@ export async function handleListRouteMessages(
         firstInvoice: r.first_invoice,
         receipts: r.receipts,
         receiptsWaiting: r.receipts_waiting,
+        orders: r.orders,
+        ordersWaiting: r.orders_waiting,
       })),
     },
   };
@@ -338,6 +345,18 @@ export async function handleGetRouteMessage(db: D1Database, id: string): Promise
           .bind(id)
           .all<{ id: string; receipt_number: string; status: string; stage: string | null }>()
       ).results.map((r) => ({ receiptId: r.id, number: r.receipt_number, status: r.status, stage: r.stage })),
+      // Decision 0749: purchase orders it brought, each released, or waiting at a stage.
+      orders: (
+        await db
+          .prepare(
+            `SELECT i.id, i.order_number, i.status, i.is_change,
+                    (SELECT st.name FROM process_instances pi JOIN process_stages st ON st.id = pi.current_stage_id
+                     WHERE pi.subject_type = 'purchase_order' AND pi.subject_id = i.id AND pi.status = 'in_progress' LIMIT 1) AS stage
+             FROM purchase_order_intake i WHERE i.route_message_id = ? ORDER BY i.created_at, i.rowid`
+          )
+          .bind(id)
+          .all<{ id: string; order_number: string; status: string; is_change: number; stage: string | null }>()
+      ).results.map((o) => ({ intakeId: o.id, number: o.order_number, status: o.status, change: o.is_change === 1, stage: o.stage })),
     },
   };
 }

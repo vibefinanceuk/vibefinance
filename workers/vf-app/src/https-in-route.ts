@@ -65,7 +65,7 @@ async function httpsSource(db: D1Database, sourceId: string): Promise<SourceRow 
   return source && source.mechanism === "https" ? source : null;
 }
 
-export function sourceAddress(origin: string, sourceId: string, what: "invoices" | "receipts" = "invoices"): string {
+export function sourceAddress(origin: string, sourceId: string, what: "invoices" | "receipts" | "orders" = "invoices"): string {
   return `${origin}/v1/sources/${encodeURIComponent(sourceId)}/${what}`;
 }
 
@@ -93,12 +93,14 @@ export async function handleListSourceKeys(db: D1Database, sourceId: string, ori
       created_by_name: string | null;
     }>();
   // Decision 0655: a source on a goods receipt process receives receipts.
-  const receipts = (await db.prepare("SELECT subject_type FROM processes WHERE id = ?").bind(source.process_id).first<{ subject_type: string }>())?.subject_type === "goods_receipt";
+  // Decision 0749: and one on a purchase order process, orders.
+  const subject = (await db.prepare("SELECT subject_type FROM processes WHERE id = ?").bind(source.process_id).first<{ subject_type: string }>())?.subject_type;
+  const receives = subject === "goods_receipt" ? "receipts" : subject === "purchase_order" ? "orders" : "invoices";
   return {
     status: 200,
     body: {
-      address: sourceAddress(origin, sourceId, receipts ? "receipts" : "invoices"),
-      receives: receipts ? "receipts" : "invoices",
+      address: sourceAddress(origin, sourceId, receives),
+      receives,
       keys: keys.results.map((k) => ({
         id: k.id,
         name: k.name,

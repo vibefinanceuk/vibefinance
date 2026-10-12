@@ -1,3 +1,4 @@
+import { emailOrders } from "./purchase-orders-in.js";
 import { BUILTIN_TOO_LARGE_MESSAGE, DEFAULT_MAX_EMAIL_MB, fillRejectMessage } from "./source-route.js";
 import type { PageShrinker } from "./page-shrink.js";
 import { handleCaptureFromSource, type NetworkPlacement } from "./source-capture-route.js";
@@ -100,11 +101,12 @@ export interface EmailMessage {
 async function sourceFor(db: D1Database, address: string) {
   return db
     .prepare(
-      `SELECT id, name, status, email_routing, max_email_mb, email_reject_message FROM sources
-       WHERE email_address = ? AND mechanism = 'email'`
+      `SELECT s.id, s.name, s.status, s.email_routing, s.max_email_mb, s.email_reject_message, p.subject_type FROM sources s
+       LEFT JOIN processes p ON p.id = s.process_id
+       WHERE s.email_address = ? AND s.mechanism = 'email'`
     )
     .bind(address.toLowerCase())
-    .first<{ id: string; name: string; status: string; email_routing: string; max_email_mb: number | null; email_reject_message: string | null }>();
+    .first<{ id: string; name: string; status: string; email_routing: string; max_email_mb: number | null; email_reject_message: string | null; subject_type: string | null }>();
 }
 
 /**
@@ -713,6 +715,19 @@ async function receiveInboundEmail(
       else await addRouteEvent(db, messageId!, "attachment_not_stored", { partSeq: seq, detail: part.reason });
     }
     storedParts.push(stored);
+  }
+
+  /**
+   * **Orders by email — decision 0749.** A source on the Purchase Orders
+   * process: its attachments are order files, read now (no AI is
+   * involved) and sent through that process, never captured as invoices.
+   */
+  if (source.subject_type === "purchase_order" && messageId) {
+    const received = await emailOrders(db, messageId, attachments);
+    await record(db, message, received.status === "failed" ? "rejected" : "captured", received.status === "failed" ? "no_orders" : null, source.id, attachments.length, received.sent.length);
+    // As an invoice nothing could be read from: the sender learns it was not taken.
+    if (received.status === "failed") message.setReject("The attached file could not be read as purchase orders.");
+    return { id: messageId };
   }
 
   /**

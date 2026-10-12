@@ -428,6 +428,21 @@ describe("Process routes — decision 0557", () => {
   });
 });
 
+describe("a process that moves purchase orders — decision 0749", () => {
+  it("says so, takes Orders in and Orders by email, and adds no destination", async () => {
+    strings["processroutes.subject.purchase_order"] = "Moves purchase orders";
+    strings["processroutes.subject.purchase_order.note"] = "Purchase orders reach this process from Purchase Orders and from procurement systems.";
+    stub([], { "/api/process-routes": { ...FLOW, process: { ...FLOW.process, name: "Purchase Orders", subjectType: "purchase_order" }, sources: [], destinations: [] } });
+    await openScreen("/process-routes.js");
+    expect(text("#pr-subject")).toBe("Moves purchase orders");
+    expect(text("#pr-subject-note")).toBe("Purchase orders reach this process from Purchase Orders and from procurement systems.");
+    expect([...document.querySelectorAll(".prpanel .statebuttons button")].map((b) => b.textContent)).toEqual([strings["processroutes.addsource"] ?? "processroutes.addsource"]);
+    (document.querySelector(".prpanel .statebuttons button") as HTMLElement).click();
+    await settle();
+    expect([...document.querySelectorAll(".popout select option")].map((o) => (o as HTMLOptionElement).value)).toEqual(["https", "email"]);
+  });
+});
+
 describe("Supplier network in — decision 0726", () => {
   const NETWORK = { ...FLOW.sources[0], id: "network", name: "Supplier network", mechanism: "network", emailAddress: null, emailRouting: "not_configured", routeId: "network-in", routeName: "Supplier network in", networkOrgUnitIds: null, receivedThisWeek: 2, failedOpen: 0 };
   const UNITS = { units: [{ id: "uk", name: "Acme UK Ltd", parentUnitId: null }, { id: "ie", name: "Acme Ireland Ltd", parentUnitId: null }] };
@@ -524,6 +539,16 @@ describe("HTTPS in — decision 0578", () => {
     expect(how).toContain("Content-Type: application/json");
     expect(how).toContain('"receiptNumber": "WH-88213"');
     expect(how).not.toContain("X-Filename");
+  });
+
+  it("shows an Orders in source's orders address and a Peppol BIS order example — decision 0749", async () => {
+    stubHttps([], { ...KEYS, address: "https://acme.vibefinance.example/v1/sources/portal/orders", receives: "orders" } as typeof KEYS);
+    await openPortal();
+    expect(text("#httpsin-address")).toBe("POST https://acme.vibefinance.example/v1/sources/portal/orders");
+    const how = text(".httpspre");
+    expect(how).toContain("Content-Type: application/xml");
+    expect(how).toContain("X-Reference: PO-4501");
+    expect(how).toContain("--data-binary @PO-4501.xml");
   });
 
   it("shows an HTTPS source's address, its keys by their start, and how to send", async () => {

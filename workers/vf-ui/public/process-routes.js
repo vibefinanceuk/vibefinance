@@ -258,7 +258,8 @@ function sourcePanel(s) {
       ),
       // Decision 0655: a receipt's unit is its purchase order's, so a receipts source places nothing.
       // Decision 0726: a Supplier network invoice's company is the supplier's choice, set out below.
-      ...(data.process?.subjectType === "goods_receipt" || s.mechanism === "network"
+      // Decision 0749: nor an orders source; an order names its own company (its buyer).
+      ...(data.process?.subjectType === "goods_receipt" || data.process?.subjectType === "purchase_order" || s.mechanism === "network"
         ? []
         : [el("div", { class: "l", text: t("sources.org") }), el("div", {}, [s.status === "retired" ? el("span", { class: "muted", text: "—" }) : orgPicker(s)])]),
       el("div", { class: "l", text: t("processroutes.field.status") }),
@@ -729,7 +730,9 @@ function openAddSource() {
   const receipts = data.process?.subjectType === "goods_receipt";
   // Decision 0726: and Supplier network, one per process.
   const hasNetwork = (data.sources ?? []).some((x) => x.mechanism === "network" && x.status !== "retired");
-  for (const value of receipts ? ["https"] : ["email", "https", "sftp", "file_import", "edi", ...(hasNetwork ? [] : ["network"])]) {
+  // Decision 0749: a process that moves purchase orders takes Orders in (HTTPS) and Orders by email.
+  const orders = data.process?.subjectType === "purchase_order";
+  for (const value of receipts ? ["https"] : orders ? ["https", "email"] : ["email", "https", "sftp", "file_import", "edi", ...(hasNetwork ? [] : ["network"])]) {
     mechanism.append(el("option", { value, text: t(`mechanism.${value}`) }));
   }
   const close = () => backdrop.remove();
@@ -810,13 +813,16 @@ function render() {
     // Decision 0651: a process that moves goods receipts takes no invoice
     // sources or destinations; receipts reach it from Goods Receipts.
     const receipts = data.process.subjectType === "goods_receipt";
+    // Decision 0749: and one that moves purchase orders, likewise with no destinations.
+    const orders = data.process.subjectType === "purchase_order";
+    const subject = receipts ? "goods_receipt" : orders ? "purchase_order" : null;
     body.push(
       el("div", { class: "panel prpanel" }, [
         el("div", { class: "cardhead" }, [
           el("h3", { text: data.process.name }),
-          receipts
+          subject
             ? el("div", { class: "statebuttons" }, [
-                el("span", { class: "pill", id: "pr-subject", text: t("processroutes.subject.goods_receipt") }),
+                el("span", { class: "pill", id: "pr-subject", text: t(`processroutes.subject.${subject}`) }),
                 // Decision 0655: Receipts in, a warehouse system's source.
                 actionLink("addcard", { label: t("processroutes.addsource"), onclick: openAddSource }),
               ])
@@ -827,7 +833,7 @@ function render() {
               ]),
         ]),
         processChips(),
-        receipts ? el("p", { class: "sm muted", id: "pr-subject-note", text: t("processroutes.subject.goods_receipt.note") }) : null,
+        subject ? el("p", { class: "sm muted", id: "pr-subject-note", text: t(`processroutes.subject.${subject}.note`) }) : null,
         flow(),
       ].filter(Boolean))
     );

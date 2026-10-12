@@ -1,5 +1,5 @@
 import { t } from "/strings.js";
-import { el, frame, topbar, setCurrentScreen } from "/tasks.js";
+import { el, frame, topbar, setCurrentScreen, hasMyPermission } from "/tasks.js";
 import { actionLink, compactLink } from "/viewer.js";
 import { icon } from "/icons.js";
 import { currentOrgId } from "/orgs.js";
@@ -130,6 +130,19 @@ function outcome(result) {
   const lines = [
     el("div", { text: t("purchaseorders.ordersloaded").replace("{n}", String(result.ordersLoaded)) }),
   ];
+  // Decision 0749: sent through the process, as one message of Orders upload.
+  if (result.process) {
+    lines.unshift(
+      el("div", {
+        id: "po-sent",
+        text: t("purchaseorders.process.sent")
+          .replace("{process}", result.process.name)
+          .replace("{released}", String(result.ordersLoaded))
+          .replace("{waiting}", String(result.process.waiting ?? 0)),
+      })
+    );
+    if (result.messageId) lines.push(el("div", { class: "muted sm", id: "po-message", text: t("purchaseorders.process.message").replace("{id}", result.messageId) }));
+  }
 
   if (result.ordersReplaced > 0) {
     lines.push(
@@ -316,6 +329,58 @@ function statusCard() {
   ]);
 }
 
+/**
+ * **The Purchase Orders process — decision 0749.** Once it is set up, a
+ * load is one message of Orders upload and goes through it: an order
+ * counts once released. Before, a load stores orders at once, and
+ * Admin.Configure may set the process up here.
+ */
+let ordersProcessNow = null;
+
+async function loadOrdersProcess() {
+  try {
+    const response = await fetch("/api/purchase-orders/process");
+    ordersProcessNow = response.ok ? ((await response.json()).process ?? null) : null;
+  } catch {
+    ordersProcessNow = null;
+  }
+}
+
+function processLine() {
+  if (ordersProcessNow) return el("p", { class: "sm", id: "po-process", text: t("purchaseorders.process.through").replace("{process}", ordersProcessNow.name) });
+  const parts = [el("span", { class: "sm muted", text: t("purchaseorders.process.direct") })];
+  if (hasMyPermission("Admin.Configure")) {
+    const button = compactLink("addcard", {
+      label: t("purchaseorders.process.setup"),
+      onclick: async () => {
+        button.disabled = true;
+        let response;
+        try {
+          response = await fetch("/api/purchase-orders/process", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              name: t("purchaseorders.process.name"),
+              stageNames: { intake: t("purchaseorders.process.stage.intake"), checking: t("purchaseorders.process.stage.checking"), complete: t("purchaseorders.process.stage.complete") },
+            }),
+          });
+        } catch {
+          response = null;
+        }
+        button.disabled = false;
+        const body = response ? await response.json().catch(() => ({})) : {};
+        if (!response?.ok) return note(body.error ?? t("purchaseorders.process.failed"));
+        ordersProcessNow = body.process ?? null;
+        render();
+        note(t("purchaseorders.process.done").replace("{process}", ordersProcessNow?.name ?? ""));
+      },
+    });
+    button.id = "po-setup-process";
+    parts.push(button);
+  }
+  return el("div", { class: "receiptsprocess", id: "po-process" }, parts);
+}
+
 function loader() {
   const picker = el("input", { type: "file", accept: ".csv,text/csv", id: "purchaseorderfile" });
   // The handler goes in at construction — actionLink disables a button
@@ -338,7 +403,8 @@ function loader() {
     // "we could not reach the service."
     let response;
     try {
-      response = await fetch("/api/purchase-orders/csv-load", {
+      // Decision 0749: the file's name names the message in the Route monitor.
+      response = await fetch(`/api/purchase-orders/csv-load?name=${encodeURIComponent(file.name ?? "orders.csv")}`, {
         method: "POST",
         headers: { "Content-Type": "text/csv" },
         body: await file.text(),
@@ -393,6 +459,7 @@ function loader() {
       el("div", { class: "statebuttons" }, [templateButton, button]),
     ]),
     el("p", { class: "muted", text: t("purchaseorders.loadhelp") }),
+    processLine(),
     picker,
     formatReference(),
   ]);
@@ -851,6 +918,8 @@ export async function open() {
   // reference is a help affordance, not core functionality, so its
   // own failure must never block the list or the load card either one.
   await loadFormat();
+  // Decision 0749: whether loads go through the Purchase Orders process.
+  await loadOrdersProcess();
   // Same treatment — decision 0377's own chart is a help affordance
   // beside the list, not core to it.
   await loadStatusCounts();
