@@ -1,6 +1,6 @@
 # 0741: A goods receipt opened is a page in the frame; the Supplier tab's box at the bottom
 
-**Status: built.** vf-ui (`goods-receipts.js`, `app.css`; `app.css` copied to vf-portal).
+**Status: live** at `8d8fd44`, pushed and deployed 12 October 2026. vf-ui (`goods-receipts.js`, `app.css`; `app.css` copied to vf-portal).
 
 ## What was asked
 
