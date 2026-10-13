@@ -4,21 +4,16 @@ import { icon } from "/icons.js";
 /**
  * **A purchase order's Document tab, in the supplier network — decision
  * 0760**: the order as the customer sends it, as a PDF made by their
- * VibeFinance, with downloads as PDF, UBL XML and CSV. Loaded when the tab
- * is first opened. VibeFinance's own copy is vf-ui's `order-document.js`.
+ * VibeFinance. Loaded when the tab is first opened. Its downloads are on
+ * the Attachments tab (decision 0763). VibeFinance's own copy is vf-ui's
+ * `order-document.js`.
  */
 export function buildOrderDocumentTab(order, linkId) {
   const base = `/api/orders/${encodeURIComponent(linkId)}/${encodeURIComponent(order.id)}/document`;
   const number = order.invoiceNumber ?? "";
   const frame = el("iframe", { class: "vframe podocframe", id: "net-document-frame", title: t("orderdoc.title").replace("{order}", number) });
   const status = el("div", { class: "muted sm", id: "net-document-status", text: t("orderdoc.loading") });
-  const link = (format, label) =>
-    el("a", { class: "actionlink compactlink", id: `net-document-${format}`, href: `${base}?format=${format}&download=1`, download: "" }, [icon("download"), el("span", { text: label })]);
-  const content = el("div", { class: "podoc", id: "net-document" }, [
-    el("div", { class: "podocbar" }, [link("pdf", t("orderdoc.pdf")), link("ubl", t("orderdoc.ubl")), link("csv", t("orderdoc.csv"))]),
-    status,
-    frame,
-  ]);
+  const content = el("div", { class: "podoc", id: "net-document" }, [status, frame]);
   let loaded = false;
   async function open() {
     if (loaded) return;
@@ -36,4 +31,32 @@ export function buildOrderDocumentTab(order, linkId) {
     }
   }
   return { content, open };
+}
+
+/**
+ * **The order's Attachments tab, in the supplier network — decision
+ * 0763**: the order as the customer sends it, as PDF, UBL XML and CSV,
+ * listed as the application lists files, each to download. Dan: *"format
+ * as other locations with an Attachments tab, providing available
+ * downloads."*
+ */
+export function buildOrderAttachmentsTab(order, linkId) {
+  const base = `/api/orders/${encodeURIComponent(linkId)}/${encodeURIComponent(order.id)}/document`;
+  const number = order.invoiceNumber ?? "order";
+  const row = (format, ext, detail) =>
+    el("div", { class: "attachrow", "data-made": format }, [
+      el("span", { class: "attachpick" }, [el("span", { class: "attachname", text: `${number}.${ext}` }), el("span", { class: "attachdetail", text: detail })]),
+      el("a", { class: "actionlink", id: `net-attach-${format}`, href: `${base}?format=${format}&download=1`, download: "", title: t("action.download") }, [icon("download"), el("span", { text: t("action.download") })]),
+    ]);
+  const content = el("div", { class: "attachpane", id: "net-attachments" }, [
+    el("div", { class: "attachlist" }, [
+      el("div", { class: "attachgroup" }, [
+        el("div", { class: "attachhead", text: t("network.order.attachhead", { customer: order.customer ?? "" }) }),
+        row("pdf", "pdf", t("orderdoc.pdf")),
+        row("ubl", "xml", t("orderdoc.ubl")),
+        row("csv", "csv", t("orderdoc.csv")),
+      ]),
+    ]),
+  ]);
+  return { content };
 }

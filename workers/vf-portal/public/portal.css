@@ -201,3 +201,7 @@ main#confirm #confirm-problem:empty { display: none; }
 .netsidetabs .receipttabs { align-self: flex-start; margin-bottom: 10px; flex: none; }
 .netsidetabs .netsidepane { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }
 .netsidetabs .netsidepane[hidden] { display: none; }
+/* Decision 0763: the order's downloads, listed as the application lists files; the row is not a link, its Download is. */
+#net-attachments .attachpick { cursor: default; }
+#net-attachments .attachpick:hover .attachname { text-decoration: none; }
+#net-attachments .attachrow a.actionlink { text-decoration: none; }

@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 13 October 2026 (decision 0762). A living document: what
+Last updated 13 October 2026 (decision 0763). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,14 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### An order's PDF, UBL XML and CSV on its Attachments tab (0763)
+
+An order's Document tab now shows only its PDF. Its PDF, UBL XML and CSV are listed on an
+Attachments tab, each to download, as received files are. In VibeFinance they follow what came in
+with the order; in the supplier network the order gains an Attachments tab for them.
+
+Full reasoning is in decision 0763.
 
 ### The supplier confirms it has the order (0762)
 

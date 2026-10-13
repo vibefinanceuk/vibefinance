@@ -3806,6 +3806,10 @@ const KEYS_THE_INTERFACE_USES = [
   "purchaseorders.conv.order",
   // A purchase order opened as a page (decision 0753).
   "purchaseorders.supplierchat.none",
+  // A purchase order's files on an Attachments tab (decision 0763).
+  "orderdoc.attachhead",
+  "network.order.attachtab",
+  "network.order.attachhead",
   // The supplier confirms it has the order (decision 0762).
   "network.confirm.title",
   "network.confirm.titledone",

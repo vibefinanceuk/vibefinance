@@ -5776,7 +5776,6 @@
 /* Decision 0760: a purchase order's Document tab — the PDF, with its downloads above it. */
 .podoc { display: flex; flex-direction: column; gap: 8px; flex: 1 1 auto; min-height: 0; }
 .podoc[hidden] { display: none; }
-.podocbar { display: flex; flex-wrap: wrap; gap: 4px 12px; flex: none; }
 .podocframe { flex: 1 1 auto; width: 100%; min-height: 480px; border: 0.5px solid var(--border); border-radius: var(--radius); background: var(--surface-2); }
 /* Four tabs on an order's panel: each kept on one line. */
 .poview .receipttabs .doctab { padding: 6px 10px; white-space: nowrap; }

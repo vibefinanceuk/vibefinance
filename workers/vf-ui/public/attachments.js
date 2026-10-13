@@ -29,7 +29,14 @@ import { icon } from "/icons.js";
  * pop-out can have the same tab (`base` its `/api/goods-receipts/:id`)
  * while an invoice's viewer is open beneath it.
  */
-export function buildAttachmentsTab(invoiceId, { base = `/api/invoices/${encodeURIComponent(invoiceId)}`, id: paneId = "vattach", subject = "invoice" } = {}) {
+export function buildAttachmentsTab(invoiceId, { base = `/api/invoices/${encodeURIComponent(invoiceId)}`, id: paneId = "vattach", subject = "invoice", generated = null } = {}) {
+  /**
+   * `generated` — decision 0763: files made from the record itself rather
+   * than received with it (a purchase order as PDF, UBL XML and CSV), as
+   * `{ heading, files: [{ key, name, detail, url, view }] }`. Listed after
+   * what was received, as a group of their own.
+   */
+  const made = (generated?.files ?? []).map((f) => ({ ...f, kind: "generated" }));
   const state = { invoiceId, base, subject, loaded: false, failed: false, messages: [], files: [], selected: null };
 
   async function postJson(path) {
@@ -43,6 +50,7 @@ export function buildAttachmentsTab(invoiceId, { base = `/api/invoices/${encodeU
 
   /** A signed link for one file: a received part, or one of the invoice's own documents. */
   async function linkFor(file) {
+    if (file.kind === "generated") return file.url;
     const body =
       file.kind === "part"
         ? await postJson(`${state.base}/attachments/${encodeURIComponent(file.messageId)}/${file.seq}/url`)
@@ -51,10 +59,12 @@ export function buildAttachmentsTab(invoiceId, { base = `/api/invoices/${encodeU
   }
 
   function keyOf(file) {
+    if (file.kind === "generated") return `made/${file.key}`;
     return file.kind === "part" ? `${file.messageId}/${file.seq}` : `doc/${file.documentType}`;
   }
 
   function nameOf(file) {
+    if (file.kind === "generated") return file.name;
     if (file.kind === "document") return t(file.documentType === "embedded_xml" ? "attachments.embedded" : "attachments.original");
     if (file.role === "original" && file.contentType === "message/rfc822") return t("attachments.email");
     return file.filename;
@@ -135,7 +145,7 @@ export function buildAttachmentsTab(invoiceId, { base = `/api/invoices/${encodeU
 
   function fileRow(content, file) {
     const on = state.selected === keyOf(file);
-    const detail = [file.filename && nameOf(file) !== file.filename ? file.filename : null, size(file.bytes)].filter(Boolean).join(" · ");
+    const detail = file.kind === "generated" ? file.detail ?? "" : [file.filename && nameOf(file) !== file.filename ? file.filename : null, size(file.bytes)].filter(Boolean).join(" · ");
     const pick = el("button", { class: "attachpick", title: nameOf(file), onclick: () => show(content, file) }, [
       el("span", { class: "attachname", text: nameOf(file) }),
       detail ? el("span", { class: "attachdetail", text: detail }) : null,
@@ -144,7 +154,7 @@ export function buildAttachmentsTab(invoiceId, { base = `/api/invoices/${encodeU
       icon("download"),
       el("span", { text: t("action.download") }),
     ]);
-    return el("div", { class: on ? "attachrow on" : "attachrow" }, [
+    return el("div", { class: on ? "attachrow on" : "attachrow", ...(file.kind === "generated" ? { "data-made": file.key } : {}) }, [
       pick,
       file.thisInvoice ? el("span", { class: "attachthis", text: t("attachments.thisinvoice") }) : null,
       save,
@@ -160,7 +170,7 @@ export function buildAttachmentsTab(invoiceId, { base = `/api/invoices/${encodeU
       content.replaceChildren(el("div", { class: "vthumb", text: t("attachments.failed") }));
       return;
     }
-    if (state.files.length === 0) {
+    if (state.files.length === 0 && made.length === 0) {
       content.replaceChildren(el("div", { class: "vthumb", text: t(state.subject === "receipt" ? "receipts.attach.empty" : state.subject === "order" ? "purchaseorders.attach.empty" : "attachments.empty") }));
       return;
     }
@@ -186,6 +196,9 @@ export function buildAttachmentsTab(invoiceId, { base = `/api/invoices/${encodeU
           ...others.map((f) => fileRow(content, f)),
         ])
       );
+    }
+    if (made.length > 0) {
+      groups.push(el("div", { class: "attachgroup", id: `${paneId}-made` }, [el("div", { class: "attachhead", text: generated.heading }), ...made.map((f) => fileRow(content, f))]));
     }
     const existing = content.querySelector(".attachview");
     content.replaceChildren(
@@ -216,7 +229,8 @@ export function buildAttachmentsTab(invoiceId, { base = `/api/invoices/${encodeU
     }
     state.loaded = true;
     render(content);
-    if (!state.failed && state.files.length > 0) await show(content, firstToShow(state.files));
+    // What was received first; the record's own files where nothing was.
+    if (!state.failed && state.files.length + made.length > 0) await show(content, firstToShow([...state.files, ...made]));
   }
   return { content, open };
 }

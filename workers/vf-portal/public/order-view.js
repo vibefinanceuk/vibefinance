@@ -33,7 +33,7 @@ export function invoiceable(o) {
 }
 
 /** The page. `deps` carries what portal.js owns: the status chip, money, back to Documents, the conversation (0752), and invoicing it (0755). */
-export function orderPage(o, { statusChip, money, back, conversation, invoice, document: documentTab, confirm }, handlers) {
+export function orderPage(o, { statusChip, money, back, conversation, invoice, document: documentTab, attachments: attachmentsTab, confirm }, handlers) {
   const can = invoiceable(o);
   /**
    * **Confirming receipt — decision 0762**, for a supplier who never saw
@@ -102,10 +102,13 @@ export function orderPage(o, { statusChip, money, back, conversation, invoice, d
    */
   let side = chat;
   const doc = documentTab ? documentTab(o) : null;
+  // Decision 0763: its downloads, as the application lists files.
+  const files = attachmentsTab ? attachmentsTab(o) : null;
   if (doc) {
     const panes = [
       { key: "messages", label: t("network.order.messagestab"), pane: chat ?? el("div", {}) },
       { key: "document", label: t("orderdoc.tab"), pane: doc.content, onSelect: doc.open },
+      ...(files ? [{ key: "attachments", label: t("network.order.attachtab"), pane: files.content }] : []),
     ];
     for (const p of panes) {
       p.pane.classList.remove("panel", "netviewchat");

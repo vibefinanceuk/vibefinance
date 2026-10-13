@@ -5,7 +5,7 @@ import { createPage, startCreditNote, startFromOrder } from "/create.js";
 import { viewPage } from "/view.js";
 import { receiptPage } from "/receipt-view.js";
 import { orderPage } from "/order-view.js";
-import { buildOrderDocumentTab } from "/order-document.js";
+import { buildOrderAttachmentsTab, buildOrderDocumentTab } from "/order-document.js";
 
 /**
  * **The supplier network's pages — decisions 0717 and 0725.** Sign in;
@@ -112,6 +112,8 @@ export async function render() {
               },
               // Decision 0760: the order as the customer sends it, a PDF with its downloads.
               document: (o) => buildOrderDocumentTab(o, opened.inv.linkId),
+              // Decision 0763: its downloads, on an Attachments tab.
+              attachments: (o) => buildOrderAttachmentsTab(o, opened.inv.linkId),
               // Decision 0762: confirming receipt, for a supplier who never saw the email.
               confirm: async () => {
                 const { res } = await api(`/orders/${encodeURIComponent(opened.inv.linkId)}/${encodeURIComponent(opened.inv.id)}/confirm`, { method: "POST" });

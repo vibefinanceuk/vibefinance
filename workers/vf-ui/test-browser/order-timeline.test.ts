@@ -109,12 +109,14 @@ describe("the order's panel — decision 0754", () => {
     const calls = (globalThis.fetch as unknown as { mock: { calls: [string][] } }).mock.calls.map((c) => String(c[0]));
     expect(calls).not.toContain("/api/purchase-orders/PO-9/attachments");
     (document.getElementById("po-tab-attachments") as HTMLElement).click();
-    await vi.waitFor(() => expect(document.getElementById("po-attachments")?.textContent).toContain("Nothing was received with this order"));
+    // Decision 0763: nothing received, so the order's own files, the PDF shown.
+    await vi.waitFor(() => expect(document.querySelector("#po-attachments .attachview iframe")).not.toBeNull());
+    expect((document.querySelector("#po-attachments .attachview iframe") as HTMLIFrameElement).getAttribute("src")).toBe("/api/purchase-orders/PO-9/document?format=pdf");
   });
 });
 
 describe("the order's Document tab — decision 0760", () => {
-  it("shows the PDF when first opened, with downloads as PDF, UBL XML and CSV", async () => {
+  it("shows the PDF when first opened, and nothing else: its downloads are on Attachments (0763)", async () => {
     const pdf = new Blob(["%PDF-1.7"], { type: "application/pdf" });
     const calls = await openOrder({ "GET /api/purchase-orders/PO-9/document": [200, null] });
     const fetched = () => calls.filter((c) => c.path === "/api/purchase-orders/PO-9/document");
@@ -124,11 +126,39 @@ describe("the order's Document tab — decision 0760", () => {
     (document.getElementById("po-tab-document") as HTMLElement).click();
     await vi.waitFor(() => expect((document.getElementById("po-document-frame") as HTMLIFrameElement).src).toMatch(/^blob:/));
     expect(document.getElementById("po-document-status")).toBeNull();
-    expect([...document.querySelectorAll("#po-document .podocbar a")].map((a) => [a.textContent, a.getAttribute("href")])).toEqual([
-      ["PDF", "/api/purchase-orders/PO-9/document?format=pdf&download=1"],
-      ["UBL XML", "/api/purchase-orders/PO-9/document?format=ubl&download=1"],
-      ["CSV", "/api/purchase-orders/PO-9/document?format=csv&download=1"],
+    expect(document.querySelectorAll("#po-document a")).toHaveLength(0);
+  });
+
+  it("lists the order's PDF, UBL XML and CSV on Attachments, after what came in with it, each to download — decision 0763", async () => {
+    const received = {
+      messages: [{ id: "MSG-1", sender: "erp@acme.example", source: "Orders by email", receivedAt: "2026-10-01T09:00:00Z" }],
+      files: [{ kind: "part", messageId: "MSG-1", seq: 1, role: "original", contentType: "message/rfc822", filename: "message.eml", bytes: 8000, view: "inline" }],
+    };
+    await openOrder({ "GET /api/purchase-orders/PO-9/attachments": [200, received], "POST /api/purchase-orders/PO-9/attachments/MSG-1/1/url": [200, { url: "/signed/msg" }] });
+    (document.getElementById("po-tab-attachments") as HTMLElement).click();
+    await vi.waitFor(() => expect(document.getElementById("po-attachments-made")).not.toBeNull());
+    const groups = [...document.querySelectorAll("#po-attachments .attachgroup .attachhead")].map((h) => h.textContent);
+    expect(groups.at(-1)).toBe("The order as the supplier gets it");
+    expect(groups).toHaveLength(2);
+    expect([...document.querySelectorAll("#po-attachments-made .attachrow")].map((r) => [r.querySelector(".attachname")?.textContent, r.querySelector(".attachdetail")?.textContent])).toEqual([
+      ["PO-9.pdf", "PDF"],
+      ["PO-9.xml", "UBL XML"],
+      ["PO-9.csv", "CSV"],
     ]);
+    // What came in with it is shown first.
+    await vi.waitFor(() => expect((document.querySelector("#po-attachments .attachview iframe") as HTMLIFrameElement | null)?.getAttribute("src")).toBe("/signed/msg"));
+    // Download asks for the file as a download.
+    const clicked: string[] = [];
+    const real = HTMLAnchorElement.prototype.click;
+    HTMLAnchorElement.prototype.click = function () {
+      clicked.push(this.getAttribute("href") ?? "");
+    };
+    try {
+      (document.querySelector("#po-attachments-made [data-made='csv'] .actionlink") as HTMLElement).click();
+      await vi.waitFor(() => expect(clicked).toEqual(["/api/purchase-orders/PO-9/document?format=csv&download=1"]));
+    } finally {
+      HTMLAnchorElement.prototype.click = real;
+    }
   });
 
   it("says so when the document cannot be shown", async () => {
