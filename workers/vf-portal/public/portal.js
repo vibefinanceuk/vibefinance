@@ -457,7 +457,7 @@ export function customerLabel(c) {
 export function conversation(body, inv) {
   const messages = body.messages ?? [];
   const when = (at) => (at ?? "").slice(0, 16).replace("T", " ");
-  const list = messages.map((m) =>
+  const said = messages.map((m) =>
     el("div", { class: `msg ${m.from === "customer" ? "them" : "us"}` }, [
       el("div", { class: "who" }, [
         el("span", {
@@ -472,6 +472,23 @@ export function conversation(body, inv) {
       el("div", { class: "msgbody", text: m.body }),
     ])
   );
+  /**
+   * **What happened, among what was said — decision 0764**: notes the page
+   * passes as `body.notes` (`{ at, text }`), such as *Everything ordered has
+   * been invoiced*, drawn as a dated line between the messages. Dan: "can
+   * this be a system timestamp in the Messages window?" A note without a
+   * time comes last.
+   */
+  const notes = (body.notes ?? []).map((n) => ({
+    at: n.at ?? null,
+    node: el("div", { class: "sysnote", ...(n.id ? { id: n.id } : {}) }, [el("span", { text: n.text }), n.at ? el("span", { class: "sysnotewhen", text: when(n.at) }) : null].filter(Boolean)),
+  }));
+  const list = notes.length
+    ? [...messages.map((m, i) => ({ at: m.at ?? "", node: said[i] })), ...notes]
+        .map((x, i) => ({ ...x, i }))
+        .sort((a, b) => (a.at === null) - (b.at === null) || String(a.at).localeCompare(String(b.at)) || a.i - b.i)
+        .map((x) => x.node)
+    : said;
   const box = el("textarea", { "aria-label": t("network.msg.write"), placeholder: t("network.msg.write") });
   const problem = el("div", { class: "problem", role: "alert" });
   const send = el("button", {

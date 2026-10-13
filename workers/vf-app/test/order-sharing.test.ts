@@ -181,6 +181,9 @@ describe("in the network", () => {
     const toInvoice = async (id: string) => ((await (await get(`/portal/orders/${id}`, token)).json()) as { order: { lines: { toInvoice: number }[] } }).order.lines.map((l) => l.toInvoice);
     const invoiced = ((await (await get("/portal/orders/po1", token)).json()) as { order: { lines: { invoiced: number }[] } }).order.lines.map((l) => l.invoiced);
     expect(invoiced).toEqual([3, 0]);
+    // Decision 0764: when it was last invoiced, for the network's Messages; none for an order never invoiced.
+    await env.DB.prepare("UPDATE invoice_headers SET created_at = '2026-10-04 10:15:00' WHERE id = 'inv-1'").run();
+    expect(((await (await get("/portal/orders/po1", token)).json()) as { order: { invoicedAt: string | null } }).order.invoicedAt).toBe("2026-10-04T10:15:00.000Z");
     // Two-way: what was ordered, less what was invoiced.
     expect(await toInvoice("po1")).toEqual([7, 10]);
     // Three-way: what was received (net of returns), less what was invoiced.
@@ -188,6 +191,7 @@ describe("in the network", () => {
     expect(await toInvoice("po1")).toEqual([5, 4]);
     // An order of an operating unit is invoiced to the company above it, the one the link covers.
     await env.DB.prepare("UPDATE purchase_orders SET status = 'active' WHERE id = 'po3'").run();
+    expect(((await (await get("/portal/orders/po3", token)).json()) as { order: { invoicedAt: string | null } }).order.invoicedAt).toBeNull();
     expect(((await (await get("/portal/orders/po3", token)).json()) as { order: { invoiceCompanyId: string; orgUnitId: string } }).order).toMatchObject({ orgUnitId: "uk-north", invoiceCompanyId: "uk" });
   });
 
@@ -220,7 +224,7 @@ describe("in the network", () => {
     expect((await post("/portal/orders/po9/confirm")).status).toBe(404);
     expect((await SELF.fetch("https://app.example.com/portal/orders/po1/confirm", { method: "POST" })).status).toBe(401);
     const events = await env.DB.prepare("SELECT kind, detail_json FROM purchase_order_events WHERE order_number = 'PO-1'").all<{ kind: string; detail_json: string }>();
-    expect(events.results.map((e) => [e.kind, JSON.parse(e.detail_json)])).toEqual([["supplier_confirmed", { how: "network", kind: "order", by: "jo@lager-nord.example", current: true, agent: null }]]);
+    expect(events.results.map((e: { kind: string; detail_json: string }) => [e.kind, JSON.parse(e.detail_json)])).toEqual([["supplier_confirmed", { how: "network", kind: "order", by: "jo@lager-nord.example", current: true, agent: null }]]);
   });
 
   it("says where an order has got to: hold and close first, then invoicing, then receiving", () => {

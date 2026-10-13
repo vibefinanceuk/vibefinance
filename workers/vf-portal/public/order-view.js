@@ -28,7 +28,10 @@ function pair(label, value) {
 export function invoiceable(o) {
   if (o.status === "order_closed") return { ok: false, why: "closed" };
   if (o.status === "order_on_hold") return { ok: false, why: "onhold" };
-  if (!(o.lines ?? []).some((l) => typeof l.toInvoice === "number" && l.toInvoice > 0)) return { ok: false, why: o.receiptingRequired && !(o.lines ?? []).some((l) => l.received > (l.invoiced ?? 0)) ? "nothingreceived" : "allinvoiced" };
+  const lines = o.lines ?? [];
+  // Decision 0764: everything ordered invoiced says so, whether or not the customer receipts goods.
+  const allInvoiced = lines.length > 0 && lines.every((l) => (l.invoiced ?? 0) >= (l.ordered ?? 0));
+  if (!lines.some((l) => typeof l.toInvoice === "number" && l.toInvoice > 0)) return { ok: false, why: !allInvoiced && o.receiptingRequired && !lines.some((l) => l.received > (l.invoiced ?? 0)) ? "nothingreceived" : "allinvoiced" };
   return { ok: true, why: null };
 }
 
@@ -43,6 +46,15 @@ export function orderPage(o, { statusChip, money, back, conversation, invoice, d
   const confirmation = o.confirmation ?? null;
   const confirmed = confirmation?.confirmed ?? null;
   const confirmProblem = el("p", { class: "problem", id: "net-confirm-problem", role: "alert" });
+  const doConfirm = async (e) => {
+    const button = e.currentTarget;
+    button.disabled = true;
+    confirmProblem.textContent = "";
+    if (!(await confirm())) {
+      button.disabled = false;
+      confirmProblem.textContent = t("network.order.confirmfailed");
+    }
+  };
   const confirmButton =
     confirm && confirmation && !confirmed
       ? el(
@@ -52,24 +64,40 @@ export function orderPage(o, { statusChip, money, back, conversation, invoice, d
             type: "button",
             id: "net-confirm",
             title: t("network.order.confirmtitle", { customer: o.customer ?? "" }),
-            onclick: async (e) => {
-              const button = e.currentTarget;
-              button.disabled = true;
-              confirmProblem.textContent = "";
-              if (!(await confirm())) {
-                button.disabled = false;
-                confirmProblem.textContent = t("network.order.confirmfailed");
-              }
-            },
+            onclick: doConfirm,
           },
           [icon("tick"), el("span", { text: t("network.order.confirm") })]
         )
       : null;
-  const confirmLine = confirmation
-    ? confirmed
-      ? el("p", { class: "muted sm", id: "net-confirmed-line", text: t(`network.order.confirmedline.${confirmed.kind ?? "order"}`, { date: new Date(confirmed.at).toLocaleDateString() }) })
-      : el("p", { class: "muted sm", id: "net-toconfirm-line", text: t(`network.order.toconfirm.${confirmation.kind ?? "order"}`, { customer: o.customer ?? "" }) })
-    : null;
+  /**
+   * **Waiting to be confirmed, as an alert — decision 0764**, as the
+   * application's *Here because* line (0528): amber, with its icon, and
+   * the way to confirm in it. Dan: "Can … be an alert, such as attached
+   * Here because message."
+   */
+  const alertIcon = icon("systemalert");
+  alertIcon.setAttribute("aria-hidden", "true");
+  const confirmAlert =
+    confirmation && !confirmed
+      ? el("div", { class: "panel reasonline", id: "net-toconfirm", role: "status" }, [
+          el("div", { class: "reasonline-row" }, [
+            el("span", { class: "reasonline-icon" }, [alertIcon]),
+            el("span", { class: "reasonline-label", text: t("network.order.todo") }),
+            el("b", { text: t(`network.order.toconfirm.${confirmation.kind ?? "order"}`, { customer: o.customer ?? "" }) }),
+            confirm ? el("button", { type: "button", class: "linky", id: "net-confirm-alert", onclick: doConfirm, text: t("network.order.confirm") }) : null,
+          ].filter(Boolean)),
+        ])
+      : null;
+  /**
+   * **What happened, in Messages — decision 0764**: that the supplier
+   * confirmed, and why the order cannot be invoiced (everything has been,
+   * at the time of the last invoice), as dated lines among the messages
+   * rather than above the order.
+   */
+  const notes = [
+    confirmed ? { id: "net-confirmed-note", at: confirmed.at, text: t(`network.order.confirmednote.${confirmed.kind ?? "order"}`) } : null,
+    invoice && !can.ok ? { id: "net-invoiceorder-why", at: can.why === "allinvoiced" ? o.invoicedAt ?? null : null, text: t(`network.invoiceorder.why.${can.why}`) } : null,
+  ].filter(Boolean);
   // Decision 0755: Invoice this order, beside Back; why not, where it cannot be.
   const invoiceButton = invoice
     ? el(
@@ -93,7 +121,7 @@ export function orderPage(o, { statusChip, money, back, conversation, invoice, d
   const lines = o.lines ?? [];
   const cell = (v, cls = "num") => el("td", { class: cls }, [typeof v === "string" || typeof v === "number" ? String(v) : v]);
   const price = (n) => (typeof n === "number" ? money(n, o.currency) : "—");
-  const chat = conversation ? conversation(o) : null;
+  const chat = conversation ? conversation({ ...o, notes }) : null;
   chat?.classList.add("panel", "netviewchat");
   /**
    * **Messages and Document, as tabs — decision 0760**: the conversation
@@ -128,10 +156,8 @@ export function orderPage(o, { statusChip, money, back, conversation, invoice, d
   }
   return el("div", { class: "netinvoiceview netorderview" }, [
     title,
-    el("p", { class: "muted sm", text: t("network.order.note", { customer: o.customer ?? "" }) }),
-    confirmLine,
+    confirmAlert,
     confirmProblem,
-    invoice && !can.ok ? el("p", { class: "muted sm", id: "net-invoiceorder-why", text: t(`network.invoiceorder.why.${can.why}`) }) : null,
     el("div", { class: "netview netcreate" }, [
       el("div", { class: "netviewmain" }, [
         el("div", { class: "panel" }, [

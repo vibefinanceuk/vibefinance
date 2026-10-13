@@ -409,7 +409,7 @@ describe("the network's words", () => {
     // Decision 0762: confirming receipt, said of the version confirmed.
     for (const k of ["order", "change", "cancellation"]) {
       used.add(`network.confirm.done.${k}`);
-      used.add(`network.order.confirmedline.${k}`);
+      used.add(`network.order.confirmednote.${k}`);
       used.add(`network.order.toconfirm.${k}`);
     }
     used.add("network.create.accountnote");

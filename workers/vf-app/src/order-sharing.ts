@@ -7,6 +7,8 @@ import { orderFigures, receiptStateJoin } from "./goods-receipts.js";
 import { getOrgMatchingConfig } from "./po-matching.js";
 import { portalView, type MessageRow } from "./supplier-messages.js";
 import { orderConfirmation } from "./order-confirm.js";
+import { poOfSql } from "./credit-notes.js";
+import { toIso } from "./timeline-time.js";
 
 /**
  * **Purchase orders, shared with suppliers in the network — decision
@@ -253,7 +255,14 @@ export async function getPortalOrder(db: D1Database, claims: PortalAccessClaims,
   const invoiceCompanyId = row.org_unit_id ? await coveringUnit(db, row.org_unit_id, claims.orgUnitIds) : null;
   // Decision 0762: whether the supplier has confirmed it has the order, as it stands.
   const confirmation = await orderConfirmation(db, row.order_number);
-  return { status: 200, body: { order: { ...orderSummary(row), lines, messages, receiptingRequired: receipting, invoiceCompanyId, confirmation } } };
+  /**
+   * **When it was last invoiced — decision 0764**, so the supplier
+   * network's Messages can say *Everything ordered has been invoiced* at
+   * the time it happened, among the conversation.
+   */
+  const lastInvoice = await db.prepare(`SELECT max(h.created_at) AS at FROM invoice_headers h WHERE ${poOfSql("h")} = ?`).bind(row.order_number).first<{ at: string | null }>();
+  const invoicedAt = toIso(lastInvoice?.at ?? null);
+  return { status: 200, body: { order: { ...orderSummary(row), lines, messages, receiptingRequired: receipting, invoiceCompanyId, confirmation, invoicedAt } } };
 }
 
 /** The first of `units` at or above `unitId`, walking up the organisation. */

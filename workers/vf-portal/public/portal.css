@@ -75,6 +75,10 @@ main#confirm #confirm-problem:empty { display: none; }
 .msg .muted { color: var(--text-muted); }
 .msg .msgbody { white-space: pre-line; }
 .msg .who { font-weight: 700; display: flex; justify-content: space-between; gap: 10px; }
+/* Decision 0764: what happened, as a dated line among the messages. */
+.sysnote { display: flex; align-items: center; gap: 10px; margin: 12px 0; font-size: var(--text-sm); color: var(--text-muted); text-align: center; }
+.sysnote::before, .sysnote::after { content: ""; flex: 1 1 24px; border-top: 0.5px solid var(--border); }
+.sysnote .sysnotewhen { white-space: nowrap; }
 .reply textarea { width: 100%; min-height: 80px; font: inherit; font-size: var(--text-sm); padding: 8px 10px; border-radius: var(--radius); border: 0.5px solid var(--border-strong); background: var(--surface-1); color: var(--text-primary); resize: vertical; box-sizing: border-box; }
 .replybar { display: flex; justify-content: space-between; align-items: center; margin-top: 8px; gap: 10px; }
 .replybar .problem { margin: 0; }

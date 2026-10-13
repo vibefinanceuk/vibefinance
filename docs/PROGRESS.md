@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 13 October 2026 (decision 0763). A living document: what
+Last updated 13 October 2026 (decision 0764). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,15 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### The supplier network's order: an alert to confirm, and notes in Messages (0764)
+
+In the supplier network, an order waiting to be confirmed shows an amber *To do* alert with
+*Confirm receipt*, as the application's *Here because* line. What happened (*Everything ordered has
+been invoiced*, *You confirmed receipt*) is a dated line among the messages, not text above the
+order.
+
+Full reasoning is in decision 0764.
 
 ### An order's PDF, UBL XML and CSV on its Attachments tab (0763)
 
