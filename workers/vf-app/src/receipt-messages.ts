@@ -13,6 +13,7 @@ import {
   type MessageRow,
 } from "./supplier-messages.js";
 import { portalMayReadReceipt, receiptsSharedWith } from "./receipt-sharing.js";
+import { SUPPLIER_IS_SELLER } from "./order-supplier.js";
 
 /**
  * **The conversation with a supplier about a goods receipt — decision
@@ -43,9 +44,6 @@ interface ReceiptRow {
   supplier_name: string | null;
 }
 
-const BARE_SQL = (col: string) =>
-  `(CASE WHEN upper(replace(replace(${col}, ' ', ''), '.', '')) GLOB '[A-Z][A-Z][0-9]*' THEN substr(upper(replace(replace(${col}, ' ', ''), '.', '')), 3) ELSE upper(replace(replace(${col}, ' ', ''), '.', '')) END)`;
-
 /**
  * The receipt, its company and its supplier, from the first order it
  * names: the supplier record whose VAT number (however written) or ERP
@@ -64,7 +62,7 @@ async function receiptOf(db: D1Database, receiptId: string): Promise<ReceiptRow 
        LEFT JOIN suppliers s ON s.id = (
          SELECT x.id FROM suppliers x
          WHERE po.seller_party_id IS NOT NULL
-           AND ((x.vat_id IS NOT NULL AND ${BARE_SQL("x.vat_id")} = ${BARE_SQL("po.seller_party_id")}) OR x.erp_identifier = po.seller_party_id)
+           AND ${SUPPLIER_IS_SELLER("x", "po.seller_party_id")}
          ORDER BY x.status = 'active' DESC, x.name LIMIT 1)
        WHERE r.id = ?`
     )

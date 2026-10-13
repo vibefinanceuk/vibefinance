@@ -1,6 +1,7 @@
 import type { PortalAccessClaims } from "@vibefinance/shared";
 import type { RouteResult } from "./org-route.js";
-import { BARE_SQL, bareVat, loadReceiptSharingConfig } from "./receipt-sharing.js";
+import { loadReceiptSharingConfig } from "./receipt-sharing.js";
+import { SUPPLIER_IS_SELLER } from "./order-supplier.js";
 import { EFFECTIVE_STATUS_CASE, INVOICED_AMOUNTS_JOIN } from "./purchase-order-route.js";
 import { orderFigures, receiptStateJoin } from "./goods-receipts.js";
 import { getOrgMatchingConfig } from "./po-matching.js";
@@ -88,16 +89,14 @@ async function orderScope(db: D1Database, claims: PortalAccessClaims): Promise<{
   if (!sharing.shared || claims.orgUnitIds.length === 0) return null;
   const supplier = await db.prepare("SELECT vat_id, erp_identifier FROM suppliers WHERE id = ?").bind(claims.supplierId).first<{ vat_id: string | null; erp_identifier: string | null }>();
   if (!supplier || (!supplier.vat_id && !supplier.erp_identifier)) return null;
-  const sellers: string[] = [];
-  const binds: unknown[] = [];
-  if (supplier.vat_id && bareVat(supplier.vat_id)) {
-    sellers.push(`${BARE_SQL("po.seller_party_id")} = ?`);
-    binds.push(bareVat(supplier.vat_id));
-  }
-  if (supplier.erp_identifier) {
-    sellers.push("po.seller_party_id = ?");
-    binds.push(supplier.erp_identifier);
-  }
+  /**
+   * **Decision 0757: the one rule every lookup of an order's supplier
+   * shares (0756)** — the VAT number however written, its country prefix
+   * dropped only where one side leaves it off (GB1 is never DE1), or the
+   * ERP number exactly.
+   */
+  const sellers = [`EXISTS (SELECT 1 FROM suppliers me WHERE me.id = ? AND ${SUPPLIER_IS_SELLER("me", "po.seller_party_id")})`];
+  const binds: unknown[] = [claims.supplierId];
   return {
     sql: `(${sellers.join(" OR ")})
       ${sharing.from ? "AND po.issue_date >= ?" : ""}

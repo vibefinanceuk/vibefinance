@@ -3,7 +3,7 @@ import type { RouteResult } from "./org-route.js";
 import type { LicenceLink } from "./invitations-route.js";
 import { MAX_BODY, portalView, readLines, recipientsFor, send, unitAndAbove, view, type MessageEmail, type MessageRow } from "./supplier-messages.js";
 import { openQuery } from "./receipt-messages.js";
-import { BARE_SQL } from "./receipt-sharing.js";
+import { SUPPLIER_IS_SELLER } from "./order-supplier.js";
 import { ordersSharedWith, portalMayReadOrder } from "./order-sharing.js";
 import { orderChatNews } from "./order-timeline.js";
 
@@ -46,7 +46,7 @@ export async function orderOf(db: D1Database, orderNumber: string): Promise<Orde
        LEFT JOIN suppliers s ON s.id = (
          SELECT x.id FROM suppliers x
          WHERE po.seller_party_id IS NOT NULL
-           AND ((x.vat_id IS NOT NULL AND ${BARE_SQL("x.vat_id")} = ${BARE_SQL("po.seller_party_id")}) OR x.erp_identifier = po.seller_party_id)
+           AND ${SUPPLIER_IS_SELLER("x", "po.seller_party_id")}
          ORDER BY x.status = 'active' DESC, x.name LIMIT 1)
        WHERE po.order_number = ?`
     )

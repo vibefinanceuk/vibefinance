@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 13 October 2026 (decision 0756). A living document: what
+Last updated 13 October 2026 (decision 0757). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,14 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### The supplier network shares by the one VAT rule (0757)
+
+Which orders and receipts a supplier sees in the network, and who their conversations are with,
+follow 0756's rule. A British and a German supplier with the same digits are no longer
+confused.
+
+Full reasoning is in decision 0757.
 
 ### An order's supplier, however its seller is written (0756)
 

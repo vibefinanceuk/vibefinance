@@ -144,6 +144,14 @@ describe("receipts in the network's Documents", () => {
     expect(both.invoices.map((i) => i.invoiceNumber)).toEqual(["GR-IE", "GR-1", "LN-1"]);
   });
 
+  /** Decision 0757: a British supplier with the same digits never sees a German supplier's receipts. */
+  it("never another country's supplier with the same digits", async () => {
+    await handlePutNetworkSharingConfig(env.DB, "u1", { shareReceipts: true });
+    await env.DB.prepare("INSERT INTO suppliers (id, name, vat_id) VALUES ('sup-gb', 'Same Digits Ltd', 'GB123456789')").run();
+    expect((await list(await access({ supplierId: "sup-gb" }))).invoices.filter((i) => i.documentType === "goods_receipt")).toEqual([]);
+    expect((await list(await access())).invoices.filter((i) => i.documentType === "goods_receipt").map((i) => i.invoiceNumber)).toEqual(["GR-1"]);
+  });
+
   it("one still being checked, where AP Setup allows it", async () => {
     await handlePutNetworkSharingConfig(env.DB, "u1", { shareReceipts: true, registeredOnly: false });
     const body = await list(await access());

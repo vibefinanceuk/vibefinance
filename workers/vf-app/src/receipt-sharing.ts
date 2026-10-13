@@ -1,6 +1,8 @@
 import type { PortalAccessClaims } from "@vibefinance/shared";
 import type { RouteResult } from "./org-route.js";
 import { portalView, type MessageRow } from "./supplier-messages.js";
+// Decision 0757: who an order's supplier is, by the one rule every lookup shares (0756).
+import { SUPPLIER_IS_SELLER } from "./order-supplier.js";
 
 /**
  * **Goods receipts, shared with suppliers in the network — decision 0738.**
@@ -120,10 +122,6 @@ export async function handlePutSupplierReceiptSharing(db: D1Database, userId: st
 /** What a supplier is told of a receipt: received, with goods sent back, or still being checked. */
 export const PORTAL_RECEIPT_STATUSES = ["goods_received", "goods_returned", "goods_checking"] as const;
 
-// Decision 0756: kept with the order's supplier, which every lookup of it shares; here as before.
-import { bareVat, BARE_SQL } from "./order-supplier.js";
-export { bareVat, BARE_SQL };
-
 /**
  * **Which receipts are this supplier's, for these companies.** A receipt
  * naming an order the supplier is the seller on (by its VAT number, however
@@ -136,16 +134,14 @@ async function receiptScope(db: D1Database, claims: PortalAccessClaims): Promise
   if (!sharing.shared || claims.orgUnitIds.length === 0) return null;
   const supplier = await db.prepare("SELECT vat_id, erp_identifier FROM suppliers WHERE id = ?").bind(claims.supplierId).first<{ vat_id: string | null; erp_identifier: string | null }>();
   if (!supplier || (!supplier.vat_id && !supplier.erp_identifier)) return null;
-  const sellers: string[] = [];
-  const binds: unknown[] = [];
-  if (supplier.vat_id && bareVat(supplier.vat_id)) {
-    sellers.push(`${BARE_SQL("spo.seller_party_id")} = ?`);
-    binds.push(bareVat(supplier.vat_id));
-  }
-  if (supplier.erp_identifier) {
-    sellers.push("spo.seller_party_id = ?");
-    binds.push(supplier.erp_identifier);
-  }
+  /**
+   * **Decision 0757: the one rule every lookup of an order's supplier
+   * shares (0756)** — the VAT number however written, its country prefix
+   * dropped only where one side leaves it off (GB1 is never DE1), or the
+   * ERP number exactly.
+   */
+  const sellers = [`EXISTS (SELECT 1 FROM suppliers me WHERE me.id = ? AND ${SUPPLIER_IS_SELLER("me", "spo.seller_party_id")})`];
+  const binds: unknown[] = [claims.supplierId];
   return {
     sql: `r.cancelled_at IS NULL AND r.status ${sharing.registeredOnly ? "= 'registered'" : "IN ('registered', 'pending')"}
       AND EXISTS (

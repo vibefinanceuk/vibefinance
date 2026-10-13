@@ -1,6 +1,7 @@
 import { env, SELF } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
 import { applyTestSchema } from "./setup.js";
+import { orderOf } from "../src/order-messages.js";
 import { signPortalToken, PORTAL_ACCESS_TTL_SECONDS, type PortalAccessClaims } from "@vibefinance/shared";
 import { handleGetNetworkSharingConfig, handlePutNetworkSharingConfig } from "../src/receipt-sharing.js";
 import { handleGetSupplierOrderSharing, handlePutSupplierOrderSharing, ordersSharedWith, portalOrderStatus } from "../src/order-sharing.js";
@@ -103,6 +104,24 @@ describe("in the network", () => {
     expect(ordersIn(await list(await access({ orgUnitIds: ["ie"] }))).map((o) => o.invoiceNumber)).toEqual(["PO-2"]);
     // Another supplier sees its own, never Lager Nord's.
     expect(ordersIn(await list(await access({ supplierId: "sup-x" }))).map((o) => o.invoiceNumber)).toEqual(["PO-9"]);
+  });
+
+  /**
+   * **Decision 0757: the one rule every lookup of an order's supplier
+   * shares (0756).** An order without its country prefix is still Lager
+   * Nord's; a British supplier whose number has the same digits never sees
+   * it, nor Lager Nord's own, nor its conversation.
+   */
+  it("matches the country prefix only where one side leaves it off: GB123456789 never sees DE123456789's orders", async () => {
+    await handlePutNetworkSharingConfig(env.DB, "u1", { shareOrders: true });
+    await env.DB.prepare("INSERT INTO suppliers (id, name, vat_id) VALUES ('sup-gb', 'Same Digits Ltd', 'GB123456789')").run();
+    await env.DB.prepare("INSERT INTO purchase_orders (id, order_number, issue_date, currency, payable_amount, seller_party_id, org_unit_id, status) VALUES ('po4', 'PO-4', '2026-10-04', 'EUR', 20, '123 456 789', 'uk', 'active'), ('po5', 'PO-5', '2026-10-05', 'GBP', 30, 'GB 123-456-789', 'uk', 'active')").run();
+    expect(ordersIn(await list(await access())).map((o) => o.invoiceNumber)).toEqual(["PO-4", "PO-1", "PO-3"]);
+    expect(ordersIn(await list(await access({ supplierId: "sup-gb" }))).map((o) => o.invoiceNumber)).toEqual(["PO-5", "PO-4"]);
+    expect((await get("/portal/orders/po1", await access({ supplierId: "sup-gb" }))).status).toBe(404);
+    // Who the customer's order is with, for its conversation: an active supplier of that very number, never the other country's.
+    expect((await orderOf(env.DB, "PO-1"))?.supplier_id).toBe("sup-ln");
+    expect((await orderOf(env.DB, "PO-5"))?.supplier_id).toBe("sup-gb");
   });
 
   it("only those issued on or after AP Setup's date; searched by number or item; filtered by status", async () => {
