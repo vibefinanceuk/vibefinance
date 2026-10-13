@@ -1,6 +1,6 @@
 # 0767: The order's PDF fits its panel
 
-**Status: built.**
+**Status: live.**
 
 - vf-ui: `app.css` (copied to vf-portal).
 
