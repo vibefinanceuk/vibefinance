@@ -774,3 +774,60 @@ export async function handleStartOrdersOut(db: D1Database, instanceId: string, n
   await db.prepare("UPDATE route_instances SET started_at = ?, status = 'active' WHERE id = ?").bind(now.toISOString(), instanceId).run();
   return { status: 200, body: { started: true, status: "active" } };
 }
+
+/**
+ * **The order's parties and totals, for the supplier network's cards —
+ * decision 0765**: the supplier as the customer keeps it (Seller), the
+ * company that placed the order and who to talk to there (Buyer, as the
+ * PDF's buyer block, 0761), the net, the VAT and the requisition. Null
+ * where there is no such order.
+ */
+export async function orderCards(db: D1Database, orderNumber: string): Promise<{
+  parties: {
+    seller: { name: string | null; reference: string | null; vatId: string | null; addressLine: string | null; city: string | null; postalCode: string | null; country: string | null; email: string | null };
+    buyer: { name: string | null; vatId: string | null; addressLine: string | null; city: string | null; postalCode: string | null; country: string | null; contact: string | null; email: string | null; phone: string | null };
+  };
+  net: number | null;
+  vat: number | null;
+  requisition: string | null;
+} | null> {
+  const doc = await orderDocument(db, orderNumber);
+  if (!doc) return null;
+  const s = doc.supplier;
+  const c = doc.company;
+  const o = doc.order;
+  const instance = doc.buyer?.email ? null : await ordersOutInstance(db);
+  const replyTo = instance ? settingsOf(instance.settings_json).replyTo : null;
+  // As the PDF's totals (0761): the tax between what excludes it and what includes it.
+  const excl = o.tax_exclusive_amount ?? o.line_extension_amount;
+  const incl = o.tax_inclusive_amount ?? o.payable_amount;
+  const vat = typeof excl === "number" && typeof incl === "number" ? Math.round((incl - excl) * 100) / 100 : null;
+  return {
+    parties: {
+      seller: {
+        name: s?.name ?? null,
+        reference: s?.erp_identifier ?? null,
+        vatId: s?.vat_id ?? o.seller_party_id,
+        addressLine: s?.address_line ?? null,
+        city: s?.city ?? null,
+        postalCode: s?.postal_code ?? null,
+        country: s?.country ?? null,
+        email: o.supplier_email ?? addresses(s?.orders_email)[0] ?? s?.email ?? null,
+      },
+      buyer: {
+        name: c.name,
+        vatId: c.vatId,
+        addressLine: c.addressLine,
+        city: c.city,
+        postalCode: c.postalCode,
+        country: c.country,
+        contact: doc.buyer?.name ?? null,
+        email: doc.buyer?.email ?? replyTo ?? c.email,
+        phone: c.phone,
+      },
+    },
+    net: o.line_extension_amount,
+    vat,
+    requisition: o.originator_reference,
+  };
+}

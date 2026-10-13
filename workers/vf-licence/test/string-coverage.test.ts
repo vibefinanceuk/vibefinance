@@ -3806,6 +3806,16 @@ const KEYS_THE_INTERFACE_USES = [
   "purchaseorders.conv.order",
   // A purchase order opened as a page (decision 0753).
   "purchaseorders.supplierchat.none",
+  // The supplier network's order as an invoice is laid out (decision 0765).
+  "network.order.header",
+  "network.order.linestitle",
+  "network.order.number",
+  "network.order.requisition",
+  "network.order.email",
+  "network.order.contact",
+  "network.order.progress",
+  "network.order.confirmedfield",
+  "network.order.notyet",
   // The supplier network's order: an alert to confirm, and notes in Messages (decision 0764).
   "network.order.todo",
   "network.order.confirmednote.order",

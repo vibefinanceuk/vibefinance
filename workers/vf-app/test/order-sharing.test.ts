@@ -207,6 +207,24 @@ describe("in the network", () => {
     expect((await get("/portal/orders/po9/document", token)).status).toBe(404);
   });
 
+  /** Decision 0765: Seller, Buyer, and the header's net, VAT and requisition, for the network's cards. */
+  it("gives the order's seller, buyer and totals for its cards", async () => {
+    await handlePutNetworkSharingConfig(env.DB, "u1", { shareOrders: true });
+    await env.DB.prepare("UPDATE suppliers SET address_line = 'Hafenstr. 1', city = 'Hamburg', postal_code = '20457', country = 'DE', orders_email = 'orders@lager-nord.example', erp_identifier = 'LN-01' WHERE id = 'sup-ln'").run();
+    await env.DB.prepare("UPDATE org_units SET kind = 'legal_entity', vat_id = 'GB999888777', address_line = '1 Handover Street', city = 'London', postal_code = 'EC1A 1AA', country = 'GB', phone = '020 7946 0100', email = 'ap@acme.example' WHERE id = 'uk'").run();
+    await env.DB.prepare("UPDATE purchase_orders SET line_extension_amount = 450, tax_exclusive_amount = 450, tax_inclusive_amount = 540, payable_amount = 540, originator_reference = 'REQ-9' WHERE id = 'po1'").run();
+    const order = ((await (await get("/portal/orders/po1", await access())).json()) as { order: Record<string, unknown> }).order;
+    expect(order).toMatchObject({
+      net: 450,
+      vat: 90,
+      requisition: "REQ-9",
+      parties: {
+        seller: { name: "Lager Nord GmbH", reference: "LN-01", vatId: "DE 123 456 789", addressLine: "Hafenstr. 1", city: "Hamburg", postalCode: "20457", country: "DE", email: "orders@lager-nord.example" },
+        buyer: { name: "Acme UK Ltd", vatId: "GB999888777", addressLine: "1 Handover Street", city: "London", postalCode: "EC1A 1AA", country: "GB", contact: null, email: "ap@acme.example", phone: "020 7946 0100" },
+      },
+    });
+  });
+
   /** Decision 0762: a supplier who never saw the email confirms on the order in the network. */
   it("confirms receipt on a shared order, once, as the person signed in; not on one not shared with them", async () => {
     await handlePutNetworkSharingConfig(env.DB, "u1", { shareOrders: true });

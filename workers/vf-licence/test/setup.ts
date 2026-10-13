@@ -346,6 +346,7 @@ import orderDocumentStringsSql from "../migrations/0355_order_document_strings.s
 import orderConfirmationStringsSql from "../migrations/0356_order_confirmation_strings.sql?raw";
 import orderAttachmentsStringsSql from "../migrations/0357_order_attachments_strings.sql?raw";
 import networkOrderNotesStringsSql from "../migrations/0358_network_order_notes_strings.sql?raw";
+import networkOrderCardsStringsSql from "../migrations/0359_network_order_cards_strings.sql?raw";
 
 function stripSqlComments(sql: string): string {
   return sql
@@ -725,5 +726,6 @@ export async function applyTestSchema(): Promise<void> {
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(orderConfirmationStringsSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(orderAttachmentsStringsSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(networkOrderNotesStringsSql)));
+  await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(networkOrderCardsStringsSql)));
 
 }

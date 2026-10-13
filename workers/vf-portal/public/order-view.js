@@ -15,8 +15,10 @@ const qty = (n) => (typeof n === "number" ? (Number.isInteger(n) ? String(n) : n
 // Nothing yet is quieter than a zero.
 const quiet = (n) => (n ? qty(n) : el("span", { class: "muted", text: "—" }));
 
+/** A label and its value; several values (an address, a contact) each on its own line, as the invoice's (0765). */
 function pair(label, value) {
-  return el("div", { class: "sfield" }, [el("span", { class: "slabel", text: label }), value ? el("span", { text: String(value) }) : el("span", { class: "muted", text: "—" })]);
+  const lines = (Array.isArray(value) ? value : [value]).filter((v) => v !== null && v !== undefined && v !== "");
+  return el("div", { class: "sfield" }, [el("span", { class: "slabel", text: label }), lines.length ? el("span", {}, lines.map((l) => el("div", { text: String(l) }))) : el("span", { class: "muted", text: "—" })]);
 }
 
 /**
@@ -133,10 +135,11 @@ export function orderPage(o, { statusChip, money, back, conversation, invoice, d
   // Decision 0763: its downloads, as the application lists files.
   const files = attachmentsTab ? attachmentsTab(o) : null;
   if (doc) {
+    // Decision 0765: Document, Attachments, then Messages; the Document open first.
     const panes = [
-      { key: "messages", label: t("network.order.messagestab"), pane: chat ?? el("div", {}) },
       { key: "document", label: t("orderdoc.tab"), pane: doc.content, onSelect: doc.open },
       ...(files ? [{ key: "attachments", label: t("network.order.attachtab"), pane: files.content }] : []),
+      { key: "messages", label: t("network.order.messagestab"), pane: chat ?? el("div", {}) },
     ];
     for (const p of panes) {
       p.pane.classList.remove("panel", "netviewchat");
@@ -151,27 +154,73 @@ export function orderPage(o, { statusChip, money, back, conversation, invoice, d
       panes.find((p) => p.key === which)?.onSelect?.();
     };
     for (const p of panes) p.button = el("button", { type: "button", role: "tab", class: "doctab", id: `net-tab-${p.key}`, onclick: () => select(p.key) }, [el("span", { text: p.label })]);
-    select("messages");
+    select("document");
     side = el("div", { class: "panel netviewchat netsidetabs" }, [el("div", { class: "doctabs receipttabs", role: "tablist" }, panes.map((p) => p.button)), ...panes.map((p) => p.pane)]);
   }
+  /**
+   * **Laid out as an invoice is — decision 0765**: Seller, Buyer and
+   * Progress, then the order's header, beside the Document; the lines
+   * below, across the page. The alert sits over the cards, not the page.
+   */
+  const parties = o.parties ?? {};
+  const seller = parties.seller ?? {};
+  const buyer = parties.buyer ?? {};
+  const address = (p) => [p.addressLine, [p.postalCode, p.city].filter(Boolean).join(" "), p.country];
+  const field = (label, value, cls = "") => el("div", { class: "kf" }, [el("label", { text: label }), el("div", { class: `readonly ${cls}`.trim(), text: dash(value) })]);
+  const m = (n) => (typeof n === "number" ? money(n, o.currency) : null);
+  const sum = (k) => lines.reduce((acc, l) => acc + (typeof l[k] === "number" ? l[k] : 0), 0);
+  const toDeliver = lines.some((l) => typeof l.outstanding === "number") ? sum("outstanding") : null;
   return el("div", { class: "netinvoiceview netorderview" }, [
     title,
-    confirmAlert,
-    confirmProblem,
     el("div", { class: "netview netcreate" }, [
       el("div", { class: "netviewmain" }, [
-        el("div", { class: "panel" }, [
-          el("div", { class: "cardhead" }, [el("h3", { text: t("network.order.title") })]),
-          el("div", { class: "sellergrid receiptgrid" }, [
-            pair(t("network.col.customer"), o.customer),
-            pair(t("network.col.company"), o.company),
-            pair(t("network.order.date"), o.issueDate),
-            pair(t("network.order.currency"), o.currency),
-            pair(t("network.order.total"), typeof o.total === "number" ? money(o.total, o.currency) : null),
+        confirmAlert,
+        confirmProblem,
+        el("div", { class: "row3" }, [
+          el("div", { class: "panel", id: "net-order-seller" }, [
+            el("div", { class: "cardhead" }, [el("h3", { text: t("network.create.seller") })]),
+            seller.reference ? el("div", { class: "sub", text: seller.reference }) : null,
+            el("div", { class: "sellergrid" }, [
+              pair(t("network.create.name"), seller.name ?? o.supplier),
+              pair(t("network.create.vat"), seller.vatId),
+              pair(t("network.create.address"), address(seller)),
+              pair(t("network.order.email"), seller.email),
+            ]),
+          ]),
+          el("div", { class: "panel", id: "net-order-buyer" }, [
+            el("div", { class: "cardhead" }, [el("h3", { text: t("network.create.buyer") })]),
+            el("div", { class: "sub", text: o.customer ?? "" }),
+            el("div", { class: "sellergrid" }, [
+              pair(t("network.create.name"), buyer.name ?? o.company),
+              pair(t("network.create.vat"), buyer.vatId),
+              pair(t("network.create.address"), address(buyer)),
+              pair(t("network.order.contact"), [buyer.contact, buyer.email, buyer.phone]),
+            ]),
+          ]),
+          el("div", { class: "panel", id: "net-order-progress" }, [
+            el("div", { class: "cardhead" }, [el("h3", { text: t("network.order.progress") })]),
+            el("div", { class: "sellergrid" }, [
+              el("div", { class: "sfield" }, [el("span", { class: "slabel", text: t("network.view.status") }), el("span", {}, [statusChip(o.status)])]),
+              pair(t("network.order.confirmedfield"), confirmed ? new Date(confirmed.at).toLocaleDateString() : confirmation ? t("network.order.notyet") : null),
+              pair(t("network.order.outstanding"), toDeliver === null ? null : qty(toDeliver)),
+              pair(t("network.order.toinvoice"), qty(sum("toInvoice"))),
+            ]),
           ]),
         ]),
-        el("div", { class: "panel netviewlines" }, [
-          el("div", { class: "cardhead" }, [el("h3", { text: t("network.order.lines") })]),
+        el("div", { class: "panel netviewheader", id: "net-order-header" }, [
+          el("div", { class: "cardhead" }, [el("h3", { text: t("network.order.header") })]),
+          el("div", { class: "headersummary" }, [
+            el("div", { class: "hscolumn" }, [field(t("network.order.number"), o.invoiceNumber), field(t("network.create.currency"), o.currency)]),
+            el("div", { class: "hscolumn" }, [field(t("network.order.date"), o.issueDate), field(t("network.order.requisition"), o.requisition)]),
+            el("div", { class: "hscolumn" }, [field(t("network.create.net"), m(o.net), "money"), field(t("network.create.vatamount"), m(o.vat), "money")]),
+            el("div", { class: "hscolumn" }, [field(t("network.order.total"), m(o.total), "money"), field(t("network.col.company"), o.company)]),
+          ]),
+        ]),
+      ].filter(Boolean)),
+      side,
+    ].filter(Boolean)),
+    el("div", { class: "panel netviewlines", id: "net-order-lines" }, [
+          el("div", { class: "cardhead" }, [el("h3", { text: t("network.order.linestitle") })]),
           lines.length
             ? el("table", { class: "linetable orderlines" }, [
                 el("thead", {}, [
@@ -211,9 +260,14 @@ export function orderPage(o, { statusChip, money, back, conversation, invoice, d
                 ),
               ])
             : el("p", { class: "muted", text: t("network.order.nolines") }),
-        ]),
+      el("div", { class: "netfoot" }, [
+        el("div"),
+        el("div", { class: "nettotals" }, [
+          el("div", {}, [el("span", { text: t("network.create.linesnet") }), el("span", { text: m(o.net ?? sum("amount")) ?? "—" })]),
+          typeof o.vat === "number" ? el("div", {}, [el("span", { text: t("network.create.vatamount") }), el("span", { text: m(o.vat) })]) : null,
+          el("div", { class: "grand" }, [el("span", { text: t("network.order.total") }), el("span", { text: m(o.total) ?? "—" })]),
+        ].filter(Boolean)),
       ]),
-      side,
-    ].filter(Boolean)),
+    ]),
   ]);
 }

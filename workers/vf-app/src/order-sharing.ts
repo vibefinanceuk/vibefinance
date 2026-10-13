@@ -7,6 +7,7 @@ import { orderFigures, receiptStateJoin } from "./goods-receipts.js";
 import { getOrgMatchingConfig } from "./po-matching.js";
 import { portalView, type MessageRow } from "./supplier-messages.js";
 import { orderConfirmation } from "./order-confirm.js";
+import { orderCards } from "./orders-out.js";
 import { poOfSql } from "./credit-notes.js";
 import { toIso } from "./timeline-time.js";
 
@@ -262,7 +263,9 @@ export async function getPortalOrder(db: D1Database, claims: PortalAccessClaims,
    */
   const lastInvoice = await db.prepare(`SELECT max(h.created_at) AS at FROM invoice_headers h WHERE ${poOfSql("h")} = ?`).bind(row.order_number).first<{ at: string | null }>();
   const invoicedAt = toIso(lastInvoice?.at ?? null);
-  return { status: 200, body: { order: { ...orderSummary(row), lines, messages, receiptingRequired: receipting, invoiceCompanyId, confirmation, invoicedAt } } };
+  // Decision 0765: Seller, Buyer, and the header's net, VAT and requisition, for the network's cards.
+  const cards = await orderCards(db, row.order_number);
+  return { status: 200, body: { order: { ...orderSummary(row), lines, messages, receiptingRequired: receipting, invoiceCompanyId, confirmation, invoicedAt, ...(cards ?? {}) } } };
 }
 
 /** The first of `units` at or above `unitId`, walking up the organisation. */
