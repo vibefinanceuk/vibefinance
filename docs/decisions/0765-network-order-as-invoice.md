@@ -1,6 +1,6 @@
 # 0765: The supplier network's order, laid out as an invoice is
 
-**Status: built.**
+**Status: live.**
 
 - vf-app: `orders-out.ts` (`orderCards`), `order-sharing.ts`.
 - vf-portal: `order-view.js`.
