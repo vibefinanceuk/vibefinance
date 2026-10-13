@@ -19,12 +19,34 @@ function pair(label, value) {
   return el("div", { class: "sfield" }, [el("span", { class: "slabel", text: label }), value ? el("span", { text: String(value) }) : el("span", { class: "muted", text: "—" })]);
 }
 
-/** The page. `deps` carries what portal.js owns: the status chip, money, back to Documents, and the conversation (0752). */
-export function orderPage(o, { statusChip, money, back, conversation }, handlers) {
+/**
+ * **Whether the order can be invoiced now — decision 0755**, and if not,
+ * why: not while it is closed or on hold, nor once nothing is left to
+ * invoice (where the customer receipts the goods, nothing received and
+ * not yet invoiced). Exported for its test.
+ */
+export function invoiceable(o) {
+  if (o.status === "order_closed") return { ok: false, why: "closed" };
+  if (o.status === "order_on_hold") return { ok: false, why: "onhold" };
+  if (!(o.lines ?? []).some((l) => typeof l.toInvoice === "number" && l.toInvoice > 0)) return { ok: false, why: o.receiptingRequired && !(o.lines ?? []).some((l) => l.received > (l.invoiced ?? 0)) ? "nothingreceived" : "allinvoiced" };
+  return { ok: true, why: null };
+}
+
+/** The page. `deps` carries what portal.js owns: the status chip, money, back to Documents, the conversation (0752), and invoicing it (0755). */
+export function orderPage(o, { statusChip, money, back, conversation, invoice }, handlers) {
+  const can = invoiceable(o);
+  // Decision 0755: Invoice this order, beside Back; why not, where it cannot be.
+  const invoiceButton = invoice
+    ? el(
+        "button",
+        { class: "actionlink", type: "button", id: "net-invoiceorder", title: can.ok ? t("network.invoiceorder.title") : t(`network.invoiceorder.why.${can.why}`), onclick: can.ok ? invoice : null, disabled: can.ok ? null : true },
+        [icon("create"), el("span", { text: t("network.invoiceorder") })]
+      )
+    : null;
   const title = topbar(
     o.invoiceNumber ?? "—",
     t("network.order.subtitle", { customer: o.customer ?? "", company: o.company ?? "", date: o.issueDate ?? "" }),
-    [el("button", { class: "actionlink", type: "button", title: t("network.view.backtitle"), onclick: back }, [icon("back"), el("span", { text: t("network.view.back") })])],
+    [invoiceButton, el("button", { class: "actionlink", type: "button", title: t("network.view.backtitle"), onclick: back }, [icon("back"), el("span", { text: t("network.view.back") })])].filter(Boolean),
     handlers
   );
   const h2 = title.querySelector("h2");
@@ -39,6 +61,7 @@ export function orderPage(o, { statusChip, money, back, conversation }, handlers
   return el("div", { class: "netinvoiceview netorderview" }, [
     title,
     el("p", { class: "muted sm", text: t("network.order.note", { customer: o.customer ?? "" }) }),
+    invoice && !can.ok ? el("p", { class: "muted sm", id: "net-invoiceorder-why", text: t(`network.invoiceorder.why.${can.why}`) }) : null,
     el("div", { class: "netview netcreate" }, [
       el("div", { class: "netviewmain" }, [
         el("div", { class: "panel" }, [
@@ -67,6 +90,8 @@ export function orderPage(o, { statusChip, money, back, conversation }, handlers
                     el("th", { class: "num", text: t("network.order.received") }),
                     el("th", { class: "num", text: t("network.order.invoiced") }),
                     el("th", { class: "num", text: t("network.order.outstanding") }),
+                    // Decision 0755: what Invoice this order fills in.
+                    el("th", { class: "num", text: t("network.order.toinvoice") }),
                   ]),
                 ]),
                 el(
@@ -84,6 +109,7 @@ export function orderPage(o, { statusChip, money, back, conversation }, handlers
                       cell(quiet(l.received)),
                       cell(quiet(l.invoiced)),
                       cell(typeof l.outstanding === "number" ? qty(l.outstanding) : el("span", { class: "muted", text: "—" })),
+                      cell(quiet(l.toInvoice)),
                     ])
                   )
                 ),

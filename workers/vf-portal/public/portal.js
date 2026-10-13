@@ -1,7 +1,7 @@
 import { loadStrings, t, fill, el } from "/strings.js";
 import { frame, setBadge, topbar } from "/shell.js";
 import { icon } from "/icons.js";
-import { createPage, startCreditNote } from "/create.js";
+import { createPage, startCreditNote, startFromOrder } from "/create.js";
 import { viewPage } from "/view.js";
 import { receiptPage } from "/receipt-view.js";
 import { orderPage } from "/order-view.js";
@@ -97,7 +97,21 @@ export async function render() {
           go("documents");
         })
       : current === "order" && opened
-        ? orderPage(opened.body, { statusChip, money, back: () => go("documents"), conversation: (body) => conversation(body, opened.inv) }, handlers)
+        ? orderPage(
+            opened.body,
+            {
+              statusChip,
+              money,
+              back: () => go("documents"),
+              conversation: (body) => conversation(body, opened.inv),
+              // Decision 0755: Invoice this order, in Create.
+              invoice: () => {
+                startFromOrder(opened.body, opened.inv.linkId);
+                go("create");
+              },
+            },
+            handlers
+          )
       : current === "receipt" && opened
         ? receiptPage(opened.body, { statusChip, back: () => go("documents"), conversation: (body) => conversation(body, opened.inv) }, handlers)
         : current === "invoice" && opened

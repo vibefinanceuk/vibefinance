@@ -3806,6 +3806,16 @@ const KEYS_THE_INTERFACE_USES = [
   "purchaseorders.conv.order",
   // A purchase order opened as a page (decision 0753).
   "purchaseorders.supplierchat.none",
+  // Invoice this order, in the supplier network (decision 0755).
+  "network.invoiceorder",
+  "network.invoiceorder.title",
+  "network.invoiceorder.why.closed",
+  "network.invoiceorder.why.onhold",
+  "network.invoiceorder.why.nothingreceived",
+  "network.invoiceorder.why.allinvoiced",
+  "network.invoiceorder.filled",
+  "network.invoiceorder.notaccepting",
+  "network.order.toinvoice",
   // An order's Timeline and Chat, and its Attachments (decision 0754).
   "timeline.label.order_loaded",
   "timeline.label.order_released",

@@ -217,8 +217,16 @@ export async function getPortalOrder(db: D1Database, claims: PortalAccessClaims,
       .then((r) => r.results),
   ]);
   const byLine = new Map((figures?.lines ?? []).map((l) => [l.lineNumber, l]));
+  const receipting = figures?.receiptingRequired ?? false;
   const lines = poLines.map((l) => {
     const f = byLine.get(l.line_number);
+    /**
+     * **Still to invoice — decision 0755**, for *Invoice this order*: what
+     * has been received and not yet invoiced where the customer receipts
+     * this order's goods, what was ordered and not yet invoiced otherwise.
+     */
+    const basis = receipting ? (f ? f.net : 0) : (l.quantity ?? 0);
+    const toInvoice = Math.max(0, Math.round((basis - (f ? f.invoiced : 0)) * 1e6) / 1e6);
     return {
       lineNumber: l.line_number,
       item: l.item_name ?? l.item_description ?? null,
@@ -230,13 +238,36 @@ export async function getPortalOrder(db: D1Database, claims: PortalAccessClaims,
       received: f ? f.net : 0,
       invoiced: f ? f.invoiced : 0,
       outstanding: f?.outstanding ?? null,
+      toInvoice,
     };
   });
   const messages = portalView(
     (await db.prepare("SELECT * FROM purchase_order_messages WHERE order_number = ? ORDER BY created_at, rowid").bind(row.order_number).all<MessageRow>()).results
   );
   // The conversation in place of the list's counts, as a receipt's (0740).
-  return { status: 200, body: { order: { ...orderSummary(row), lines, messages } } };
+  /**
+   * **Decision 0755: the company it is invoiced to** — the one this
+   * person's link covers the order by (its own unit, or the company above
+   * it), as Create lists the companies.
+   */
+  const invoiceCompanyId = row.org_unit_id ? await coveringUnit(db, row.org_unit_id, claims.orgUnitIds) : null;
+  return { status: 200, body: { order: { ...orderSummary(row), lines, messages, receiptingRequired: receipting, invoiceCompanyId } } };
+}
+
+/** The first of `units` at or above `unitId`, walking up the organisation. */
+async function coveringUnit(db: D1Database, unitId: string, units: string[]): Promise<string | null> {
+  const chain = (
+    await db
+      .prepare(
+        `WITH RECURSIVE up(id, parent_unit_id, depth) AS (
+           SELECT id, parent_unit_id, 0 FROM org_units WHERE id = ?
+           UNION ALL SELECT u.id, u.parent_unit_id, up.depth + 1 FROM org_units u JOIN up ON u.id = up.parent_unit_id WHERE up.depth < 20
+         ) SELECT id FROM up ORDER BY depth`
+      )
+      .bind(unitId)
+      .all<{ id: string }>()
+  ).results;
+  return chain.find((u) => units.includes(u.id))?.id ?? null;
 }
 
 /** Decision 0752: the order's number when this order is one the token's person may see (shared, theirs, their companies), else null. */

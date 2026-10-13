@@ -127,9 +127,11 @@ describe("in the network", () => {
     const body = (await res.json()) as { order: Record<string, unknown> & { lines: Record<string, unknown>[] } };
     expect(body.order).toMatchObject({ documentType: "purchase_order", invoiceNumber: "PO-1", issueDate: "2026-10-01", currency: "EUR", total: 450, company: "Acme UK Ltd", status: "order_part_received" });
     expect(body.order.lines).toEqual([
-      { lineNumber: 1, item: "Office chair", sellersItemId: "LN-CH", ordered: 10, unitCode: "EA", price: 30, amount: 300, received: 8, invoiced: 0, outstanding: 2 },
-      { lineNumber: 2, item: "Footrest", sellersItemId: "LN-FR", ordered: 10, unitCode: "EA", price: 15, amount: 150, received: 4, invoiced: 0, outstanding: 6 },
+      { lineNumber: 1, item: "Office chair", sellersItemId: "LN-CH", ordered: 10, unitCode: "EA", price: 30, amount: 300, received: 8, invoiced: 0, outstanding: 2, toInvoice: 10 },
+      { lineNumber: 2, item: "Footrest", sellersItemId: "LN-FR", ordered: 10, unitCode: "EA", price: 15, amount: 150, received: 4, invoiced: 0, outstanding: 6, toInvoice: 10 },
     ]);
+    // Decision 0755: invoiced to the company the link covers it by.
+    expect(body.order).toMatchObject({ receiptingRequired: false, invoiceCompanyId: "uk" });
     const held = JSON.stringify(await (await get("/portal/orders/po3", token)).json());
     expect(held).toContain("order_on_hold");
     expect(held).not.toContain("Budget review");
@@ -139,6 +141,35 @@ describe("in the network", () => {
     expect((await get("/portal/orders/po9", token)).status).toBe(404);
     expect((await get("/portal/orders/po2", token)).status).toBe(404);
     expect(await (await get("/portal/orders/po9", token)).json()).toEqual(await none.json());
+  });
+
+  /**
+   * **Invoice this order — decision 0755**: what is still to invoice, line
+   * by line — received and not yet invoiced where the supplier's goods are
+   * receipted (three-way), ordered and not yet invoiced otherwise — and the
+   * company it is invoiced to, the one above an operating unit.
+   */
+  it("says what is still to invoice on each line, and the company it is invoiced to", async () => {
+    await handlePutNetworkSharingConfig(env.DB, "u1", { shareOrders: true });
+    await env.DB.prepare("INSERT INTO goods_receipts (id, receipt_number, receipt_date, source, created_at, status) VALUES ('gr1', 'GR-1', '2026-10-03', 'screen', '2026-10-03T09:00:00Z', 'registered')").run();
+    await env.DB.prepare(
+      "INSERT INTO goods_receipt_lines (id, receipt_id, line_number, order_number, order_line_number, movement, quantity, return_reason_id, created_at) VALUES ('g1', 'gr1', 1, 'PO-1', 1, 'received', 10, NULL, '2026-10-03'), ('g2', 'gr1', 2, 'PO-1', 1, 'returned', 2, 'damaged', '2026-10-03'), ('g3', 'gr1', 3, 'PO-1', 2, 'received', 4, NULL, '2026-10-03')"
+    ).run();
+    // 3 chairs already invoiced.
+    await env.DB.prepare("INSERT INTO invoice_headers (id, facts_json, org_unit_id) VALUES ('inv-1', json_object('BT-1', 'LN-77', 'BT-13', 'PO-1'), 'uk')").run();
+    await env.DB.prepare("INSERT INTO invoice_lines (invoice_id, line_number, facts_json) VALUES ('inv-1', 1, json_object('BT-129', 3, 'BT-132', '1', 'BT-146', 30))").run();
+    const token = await access();
+    const toInvoice = async (id: string) => ((await (await get(`/portal/orders/${id}`, token)).json()) as { order: { lines: { toInvoice: number }[] } }).order.lines.map((l) => l.toInvoice);
+    const invoiced = ((await (await get("/portal/orders/po1", token)).json()) as { order: { lines: { invoiced: number }[] } }).order.lines.map((l) => l.invoiced);
+    expect(invoiced).toEqual([3, 0]);
+    // Two-way: what was ordered, less what was invoiced.
+    expect(await toInvoice("po1")).toEqual([7, 10]);
+    // Three-way: what was received (net of returns), less what was invoiced.
+    await env.DB.prepare("UPDATE suppliers SET match_option = 'three_way', vat_id = 'DE123456789' WHERE id = 'sup-ln'").run();
+    expect(await toInvoice("po1")).toEqual([5, 4]);
+    // An order of an operating unit is invoiced to the company above it, the one the link covers.
+    await env.DB.prepare("UPDATE purchase_orders SET status = 'active' WHERE id = 'po3'").run();
+    expect(((await (await get("/portal/orders/po3", token)).json()) as { order: { invoiceCompanyId: string; orgUnitId: string } }).order).toMatchObject({ orgUnitId: "uk-north", invoiceCompanyId: "uk" });
   });
 
   it("says where an order has got to: hold and close first, then invoicing, then receiving", () => {

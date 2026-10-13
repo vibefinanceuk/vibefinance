@@ -132,6 +132,37 @@ export function startCreditNote(inv, linkId, customer) {
   choice = { linkId, orgUnitId: inv.orgUnitId };
 }
 
+/**
+ * **Invoice this order — decision 0755.** The form, as an invoice against
+ * one of the customer's purchase orders shared with this supplier (0751):
+ * to the company it was placed by, in its currency, with its number
+ * (BT-13), and a line for each order line still to invoice — what was
+ * received and not yet invoiced where the customer receipts the goods,
+ * what was ordered and not yet invoiced otherwise — at the order's price,
+ * each naming its order line (BT-132). Everything stays editable but the
+ * company; the supplier adds their number, dates and VAT.
+ */
+export function startFromOrder(order, linkId) {
+  const lines = (order.lines ?? [])
+    .filter((l) => typeof l.toInvoice === "number" && l.toInvoice > 0)
+    .map((l) => ({
+      description: l.item ?? "",
+      poLine: String(l.lineNumber ?? ""),
+      quantity: l.toInvoice,
+      unitCode: UNITS.includes(l.unitCode) ? l.unitCode : "C62",
+      unitPrice: typeof l.price === "number" ? l.price : "",
+      vatCategory: "S",
+      vatRate: 20,
+    }));
+  model = {
+    ...freshModel(),
+    currency: order.currency || "GBP",
+    purchaseOrder: order.invoiceNumber ?? order.purchaseOrder ?? "",
+    lines: lines.length ? lines : [blankLine()],
+    fromOrder: { number: order.invoiceNumber ?? order.purchaseOrder ?? "", customer: order.customer ?? "", company: order.company ?? "" },
+  };
+  choice = { linkId, orgUnitId: order.invoiceCompanyId ?? order.orgUnitId };
+}
 
 const money = (n) => {
   try {
@@ -176,9 +207,15 @@ export async function createPage(deps, handlers, onSent) {
     : topbar(t("network.create.title"), t("network.create.subtitle"), [fromPo], handlers);
   title.querySelector("h2")?.append(el("span", { class: "bisbadge", text: "Peppol BIS Billing 3.0" }));
 
-  if (!customers.length || (credit && !customers.some((c) => c.linkId === choice?.linkId && c.companies.some((u) => u.id === choice.orgUnitId)))) {
+  const fromOrder = model?.fromOrder;
+  if (!customers.length || ((credit || fromOrder) && !customers.some((c) => c.linkId === choice?.linkId && c.companies.some((u) => u.id === choice.orgUnitId)))) {
     if (credit) {
       root.append(title, el("div", { class: "panel" }, [el("p", { class: "muted", text: t("network.credit.notaccepting", { customer: credit.customer ?? "" }) })]));
+      return root;
+    }
+    // Decision 0755: the customer does not take invoices through the network for that company.
+    if (fromOrder) {
+      root.append(title, el("div", { class: "panel" }, [el("p", { class: "muted", id: "nc-ordernotaccepting", text: t("network.invoiceorder.notaccepting", { customer: fromOrder.customer, company: fromOrder.company }) })]));
       return root;
     }
     root.append(title, el("div", { class: "panel" }, [el("p", { class: "muted", text: t("network.create.none") })]));
@@ -224,6 +261,8 @@ function draw(body) {
   picker.value = `${choice.linkId}|${choice.orgUnitId}`;
   // Decision 0732: a credit note goes to the company its invoice went to.
   if (model.credit) picker.disabled = true;
+  // Decision 0755: an order is invoiced to the company that placed it.
+  if (model.fromOrder) picker.disabled = true;
   picker.addEventListener("change", async () => {
     const [linkId, orgUnitId] = picker.value.split("|");
     choice = { linkId, orgUnitId };
@@ -237,7 +276,10 @@ function draw(body) {
   const L = (invoiceKey, creditKey, values) => t(credit ? creditKey : invoiceKey, values);
 
   body.replaceChildren(
-    credit ? creditPanel(credit) : null,
+    // replaceChildren writes a null as the word "null": only what there is.
+    ...(credit ? [creditPanel(credit)] : []),
+    // Decision 0755: which order this invoices, and what was filled in.
+    ...(model.fromOrder ? [el("div", { class: "notice", id: "nc-fromorder", text: t("network.invoiceorder.filled", { order: model.fromOrder.number }) })] : []),
     el("div", { class: "row3" }, [
       el("div", { class: "panel" }, [
         el("div", { class: "cardhead" }, [el("h3", { text: t("network.create.seller") })]),
