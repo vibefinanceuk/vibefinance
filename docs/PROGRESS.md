@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 13 October 2026 (decision 0752). A living document: what
+Last updated 13 October 2026 (decision 0753). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,13 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### A purchase order opened as a page (0753)
+
+An order opens as a goods receipt does: a page in the frame, its actions beside Back, the order
+on the left and the conversation with the supplier on the right.
+
+Full reasoning is in decision 0753.
 
 ### The conversation with a supplier about a purchase order (0752)
 

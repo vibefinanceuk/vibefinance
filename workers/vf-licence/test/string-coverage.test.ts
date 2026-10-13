@@ -3804,6 +3804,8 @@ const KEYS_THE_INTERFACE_USES = [
   "purchaseorders.supplierchat",
   "purchaseorders.asksupplier.note",
   "purchaseorders.conv.order",
+  // A purchase order opened as a page (decision 0753).
+  "purchaseorders.supplierchat.none",
   // Purchase orders shared with suppliers (decision 0751).
   "apsetup.network.orders",
   "apsetup.network.orders.none",

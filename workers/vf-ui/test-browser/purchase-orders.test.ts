@@ -18,6 +18,11 @@ const STRINGS = {
   strings: {
     // The conversation about an order (decision 0752).
     "purchaseorders.supplierchat": "The conversation with the supplier",
+    // A purchase order opened as a page (decision 0753).
+    "purchaseorders.supplierchat.none": "No conversation with the supplier yet.",
+    "viewer.back": "Back",
+    "viewer.suppliertab": "Supplier",
+    "doctype.purchase_order": "Purchase order",
     "supplierchat.banner": "Asked {supplier} on {when} ({who}), awaiting their reply",
     "supplierchat.to": "To {people}",
     // Orders held at Checking (decision 0750).
@@ -378,98 +383,77 @@ describe("the chosen org narrows the list — decision 0374", () => {
   });
 });
 
-describe("the detail pop-out — 'all PO and PO Line information'", () => {
-  it("opens on a row click and shows every header field", async () => {
+describe("a purchase order opened, a page of its own — decisions 0372 and 0753", () => {
+  const openRow = async () => {
     stubFetch({
       "/api/purchase-orders": { body: ONE_ORDER },
       "/api/purchase-orders/PO-500": { body: PO_500_DETAIL },
     });
     await openScreen();
+    (document.querySelector("#shell tbody tr") as HTMLElement)?.click();
+    await vi.waitFor(() => expect(document.querySelector("#viewer .poview")).not.toBeNull());
+    return document.querySelector("#viewer .poview") as HTMLElement;
+  };
 
-    (document.querySelector("tbody tr") as HTMLElement)?.click();
-    await new Promise((r) => setTimeout(r, 0));
-
-    const popout = document.querySelector(".popout");
-    expect(popout).not.toBeNull();
-    expect(popout?.textContent).toContain("PO-500");
-    expect(popout?.textContent).toContain("220"); // order type code
-    expect(popout?.textContent).toContain("EUR");
-    expect(popout?.textContent).toContain("REQ-100"); // originator reference
-    expect(popout?.textContent).toContain("864"); // payable amount
-    expect(popout?.textContent).toContain("Acme UK"); // resolved legal entity
+  it("opens on a row click in the frame, over the list, and shows every header field", async () => {
+    const page = await openRow();
+    expect(document.getElementById("viewer")?.hidden).toBe(false);
+    expect(document.getElementById("shell")?.hidden).toBe(true);
+    expect(document.querySelector(".popout")).toBeNull();
+    expect(document.querySelector(".backdrop")).toBeNull();
+    expect(page.querySelector("h2")?.textContent).toContain("PO-500");
+    expect(page.textContent).toContain("Purchase order");
+    const main = page.querySelector(".receiptmain") as HTMLElement;
+    expect(main.textContent).toContain("220"); // order type code
+    expect(main.textContent).toContain("EUR");
+    expect(main.textContent).toContain("REQ-100"); // originator reference
+    expect(main.textContent).toContain("864"); // payable amount
+    expect(main.textContent).toContain("Acme UK"); // resolved legal entity
   });
 
   it("shows every line, with every field a line carries", async () => {
-    stubFetch({
-      "/api/purchase-orders": { body: ONE_ORDER },
-      "/api/purchase-orders/PO-500": { body: PO_500_DETAIL },
-    });
-    await openScreen();
-
-    (document.querySelector("tbody tr") as HTMLElement)?.click();
-    await new Promise((r) => setTimeout(r, 0));
-
-    const popout = document.querySelector(".popout") as HTMLElement;
-    expect(popout.textContent).toContain("Pallet handling");
-    expect(popout.textContent).toContain("NW-PAL-01");
-    expect(popout.textContent).toContain("Warehouse storage");
-    expect(popout.textContent).toContain("Monthly pallet storage");
-    expect(popout.textContent).toContain("NW-STO-02");
+    const main = (await openRow()).querySelector(".receiptmain") as HTMLElement;
+    expect(main.textContent).toContain("Pallet handling");
+    expect(main.textContent).toContain("NW-PAL-01");
+    expect(main.textContent).toContain("Warehouse storage");
+    expect(main.textContent).toContain("Monthly pallet storage");
+    expect(main.textContent).toContain("NW-STO-02");
     // Both lines' own quantities and units, not just the first.
-    expect(popout.textContent).toContain("15");
-    expect(popout.textContent).toContain("MON");
+    expect(main.textContent).toContain("15");
+    expect(main.textContent).toContain("MON");
   });
 
-  it("is the wide variant, since the line table needs more room than the default popout width", async () => {
-    stubFetch({
-      "/api/purchase-orders": { body: ONE_ORDER },
-      "/api/purchase-orders/PO-500": { body: PO_500_DETAIL },
-    });
-    await openScreen();
-
-    (document.querySelector("tbody tr") as HTMLElement)?.click();
-    await new Promise((r) => setTimeout(r, 0));
-
-    expect(document.querySelector(".popout")?.className).toContain("wide");
+  it("has the conversation panel on the right, saying why there is none yet", async () => {
+    const page = await openRow();
+    const side = page.querySelector(".receiptpage > .receiptsidepanel") as HTMLElement;
+    expect(side).not.toBeNull();
+    expect(side.querySelector("#po-tab-supplier")?.textContent).toBe("Supplier");
+    expect(side.querySelector("#po-supplier-none")?.textContent).toBe("No conversation with the supplier yet.");
   });
 
-  it("closes on the Close button", async () => {
-    stubFetch({
-      "/api/purchase-orders": { body: ONE_ORDER },
-      "/api/purchase-orders/PO-500": { body: PO_500_DETAIL },
-    });
-    await openScreen();
-
-    (document.querySelector("tbody tr") as HTMLElement)?.click();
-    await new Promise((r) => setTimeout(r, 0));
-    expect(document.querySelector(".popout")).not.toBeNull();
-
-    const close = [...document.querySelectorAll(".popout button")].find((b) => b.textContent === "Close");
-    close?.dispatchEvent(new MouseEvent("click"));
-
-    expect(document.querySelector(".backdrop")).toBeNull();
+  it("goes back to the list on Back", async () => {
+    await openRow();
+    (document.getElementById("po-back") as HTMLElement).click();
+    expect(document.getElementById("viewer")?.hidden).toBe(true);
+    expect(document.getElementById("viewer")?.childNodes.length).toBe(0);
+    expect(document.getElementById("shell")?.hidden).toBe(false);
+    expect(document.querySelector("#shell tbody tr")).not.toBeNull();
   });
 
-  it("closes on a click outside the box, not on a click inside it", async () => {
-    stubFetch({
-      "/api/purchase-orders": { body: ONE_ORDER },
-      "/api/purchase-orders/PO-500": { body: PO_500_DETAIL },
-    });
-    await openScreen();
-
-    (document.querySelector("tbody tr") as HTMLElement)?.click();
-    await new Promise((r) => setTimeout(r, 0));
-
-    const backdrop = document.querySelector(".backdrop") as HTMLElement;
-    const popout = document.querySelector(".popout") as HTMLElement;
-    popout.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    expect(document.querySelector(".backdrop")).not.toBeNull();
-
-    backdrop.dispatchEvent(new MouseEvent("click"));
-    expect(document.querySelector(".backdrop")).toBeNull();
+  it("returns to whatever the viewer showed before, when opened over it", async () => {
+    stubFetch({ "/api/purchase-orders/PO-500": { body: PO_500_DETAIL } });
+    const viewer = document.getElementById("viewer") as HTMLElement;
+    viewer.replaceChildren(Object.assign(document.createElement("div"), { id: "earlier", textContent: "earlier page" }));
+    viewer.hidden = false;
+    const { openPurchaseOrder } = await import("/purchase-orders.js");
+    await openPurchaseOrder({ order_number: "PO-500" });
+    expect(document.getElementById("earlier")).toBeNull();
+    (document.getElementById("po-back") as HTMLElement).click();
+    expect(document.getElementById("earlier")?.textContent).toBe("earlier page");
+    expect(viewer.hidden).toBe(false);
   });
 
-  it("reports a failed detail fetch rather than an empty or stuck pop-out", async () => {
+  it("reports a failed detail fetch rather than an empty or stuck page", async () => {
     stubFetch({
       "/api/purchase-orders": { body: ONE_ORDER },
       "/api/purchase-orders/PO-500": { ok: false, body: { error: "nope" } },
@@ -477,9 +461,8 @@ describe("the detail pop-out — 'all PO and PO Line information'", () => {
     await openScreen();
 
     (document.querySelector("tbody tr") as HTMLElement)?.click();
-    await new Promise((r) => setTimeout(r, 0));
-
-    expect(document.body.textContent).toContain("This purchase order could not be loaded");
+    await vi.waitFor(() => expect(document.body.textContent).toContain("This purchase order could not be loaded"));
+    expect(document.getElementById("viewer")?.hidden).toBe(true);
   });
 });
 
@@ -940,7 +923,7 @@ describe("the status chart — decision 0377", () => {
   });
 });
 
-describe("Hold, Release Hold, Close on the detail pop-out — decision 0377", () => {
+describe("Hold, Release Hold, Close on the opened order — decision 0377", () => {
   it("shows Hold and Close Order for an active order", async () => {
     stubFetch({
       "/api/purchase-orders": { body: ONE_ORDER },
@@ -1022,6 +1005,38 @@ describe("Hold, Release Hold, Close on the detail pop-out — decision 0377", ()
     await new Promise((r) => setTimeout(r, 0));
 
     expect(patchBody).toEqual({ status: "on_hold", holdReason: "supplier dispute" });
+  });
+
+  it("opens the order again in place once held, Back still going to the list — decision 0753", async () => {
+    let held = false;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url, init) => {
+        const path = String(url).split("?")[0];
+        if (path === "/api/ui-strings") return { ok: true, json: async () => STRINGS };
+        if (path === "/api/purchase-orders/status-counts") return { ok: true, json: async () => STATUS_COUNTS };
+        if (path === "/api/purchase-orders/PO-500" && init?.method === "PATCH") {
+          held = true;
+          return { ok: true, json: async () => ({}) };
+        }
+        if (path === "/api/purchase-orders/PO-500")
+          return { ok: true, json: async () => (held ? { order: { ...PO_500_DETAIL.order, status: "on_hold", hold_reason: "supplier dispute", effective_status: "on_hold" }, lines: PO_500_DETAIL.lines } : PO_500_DETAIL) };
+        if (path === "/api/purchase-orders") return { ok: true, json: async () => ONE_ORDER };
+        throw new Error(`no stub for ${path}`);
+      })
+    );
+    await openScreen();
+    (document.querySelector("#shell tbody tr") as HTMLElement).click();
+    await vi.waitFor(() => expect(document.getElementById("po-hold")).not.toBeNull());
+    (document.getElementById("po-hold") as HTMLElement).click();
+    (document.querySelector("#po-holdpanel input") as HTMLInputElement).value = "supplier dispute";
+    (document.querySelector("#po-holdpanel button") as HTMLElement).click();
+    await vi.waitFor(() => expect(document.getElementById("po-release")).not.toBeNull());
+    expect(document.querySelectorAll("#viewer .poview").length).toBe(1);
+    expect(document.querySelector("#viewer .receiptmain")?.textContent).toContain("supplier dispute");
+    (document.getElementById("po-back") as HTMLElement).click();
+    expect(document.getElementById("viewer")?.hidden).toBe(true);
+    expect(document.getElementById("shell")?.hidden).toBe(false);
   });
 
   it("closing asks for confirmation before sending the request", async () => {
@@ -1191,9 +1206,9 @@ describe("receipts on Purchase Orders — decision 0646", () => {
     });
     await openScreen();
     (document.querySelector("tbody tr") as HTMLElement).click();
-    await vi.waitFor(() => expect(document.querySelector(".popout h3")?.textContent).toBe("PO-500"));
+    await vi.waitFor(() => expect(document.querySelector("#viewer .poview h2")?.textContent).toContain("PO-500"));
     expect(document.getElementById("po-receipts")).toBeNull();
-    expect(document.querySelector(".popout")?.textContent).not.toContain("null");
+    expect(document.querySelector("#viewer .receiptmain")?.textContent).not.toContain("null");
   });
 
   it("says when a change order meets goods already received", async () => {
@@ -1320,8 +1335,9 @@ describe("the conversation with the supplier about an order — decision 0752", 
     await openScreen();
     (document.querySelector("tbody tr") as HTMLElement)?.click();
     await vi.waitFor(() => expect(document.getElementById("po-supplier")).not.toBeNull());
-    expect(document.querySelector("#po-supplier h4")?.textContent).toBe("The conversation with the supplier");
-    expect(document.querySelector("#po-supplier .suppliertab")?.textContent).toContain("Delivery moves to the 22nd.");
+    // Decision 0753: in the panel on the right, laid out as a receipt's Supplier tab.
+    expect(document.querySelector(".receiptsidepanel #po-supplier.receiptsupplier .suppliertab")?.textContent).toContain("Delivery moves to the 22nd.");
+    expect(document.getElementById("po-supplier-none")).toBeNull();
     expect(document.getElementById("po-supplierquery")?.textContent).toMatch(/^Asked Northwind on .+ \(Pat\), awaiting their reply$/);
     // Ask supplier is for whoever works orders; nobody here holds AP.Purchasing or Admin.Configure.
     expect(document.getElementById("po-ask-supplier")).toBeNull();
@@ -1335,7 +1351,8 @@ describe("the conversation with the supplier about an order — decision 0752", 
     });
     await openScreen();
     (document.querySelector("tbody tr") as HTMLElement)?.click();
-    await vi.waitFor(() => expect(document.querySelector(".popout")?.textContent).toContain("PO-500"));
+    await vi.waitFor(() => expect(document.querySelector("#viewer .poview")?.textContent).toContain("PO-500"));
     expect(document.getElementById("po-supplier")).toBeNull();
+    expect(document.getElementById("po-supplier-none")).not.toBeNull();
   });
 });

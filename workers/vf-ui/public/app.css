@@ -5513,6 +5513,8 @@
 .receiptside .receiptsupplier > .suppliertab { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }
 .receiptside .receiptsupplier .activityfeed { flex: 1 1 auto; min-height: 0; overflow: auto; }
 .receiptside .receiptsupplier .activityinput { flex: none; margin-top: auto; }
+/* Decision 0753: a purchase order opened, no conversation to have yet — the panel says why. */
+.receiptside .posupplierempty { padding: 8px 2px; }
 /* Decision 0659: Attachments and Timeline / Chat as tabs in the receipt's side panel, as in the invoice viewer. */
 .receiptside .receipttabs { align-self: flex-start; margin-bottom: 12px; flex: none; }
 .receiptside .receipttimeline[hidden], .receiptside .attachpane[hidden] { display: none; }

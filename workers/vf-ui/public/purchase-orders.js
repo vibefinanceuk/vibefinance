@@ -564,26 +564,26 @@ function fact(label, value) {
   return [el("div", { class: "muted", text: label }), el("div", { text: value ?? "—" })];
 }
 
-/** The full detail pop-out — decision 0372, on the operator's own request: "all PO and PO Line information." */
-export async function openPurchaseOrder(summary) {
-  const backdrop = el("div", { class: "backdrop" }, [
-    el("div", { class: "panel muted", text: t("purchaseorders.loading") }),
-  ]);
-  const close = () => backdrop.remove();
-  backdrop.onclick = (e) => {
-    if (e.target === backdrop) close();
-  };
-  document.body.append(backdrop);
-
+/**
+ * **A purchase order, opened — decision 0372's detail ("all PO and PO Line
+ * information"), as a page of its own since decision 0753**, laid out as a
+ * goods receipt opened is (0741): in the application's frame, the order's
+ * actions beside Back in the top bar, the order on the left and the
+ * conversation with the supplier (0752) on the right. Drawn where the
+ * invoice viewer draws, over whichever screen opened it; Back returns
+ * there. `onDone` runs after the order changed (Hold, Release, Close) —
+ * the screen that opened it refreshes itself.
+ */
+export async function openPurchaseOrder(summary, { onDone = null } = {}) {
   let response;
   try {
     response = await fetch(`/api/purchase-orders/${encodeURIComponent(summary.order_number)}`);
   } catch {
-    backdrop.replaceChildren(el("div", { class: "popout warn", text: t("purchaseorders.detailfailed") }));
+    note(t("purchaseorders.detailfailed"));
     return;
   }
   if (!response.ok) {
-    backdrop.replaceChildren(el("div", { class: "popout warn", text: t("purchaseorders.detailfailed") }));
+    note(t("purchaseorders.detailfailed"));
     return;
   }
   const { order, lines } = await response.json();
@@ -594,6 +594,25 @@ export async function openPurchaseOrder(summary) {
    */
   const supplierUrl = `/api/purchase-orders/${encodeURIComponent(order.order_number)}/supplier-messages`;
   const supplierChat = await fetchSupplierChat(order.order_number, supplierUrl);
+
+  const viewerPane = document.getElementById("viewer");
+  const shellPane = document.getElementById("shell");
+  const before = viewerPane && !viewerPane.hidden ? [...viewerPane.childNodes] : null;
+  const close = () => {
+    if (!viewerPane) return;
+    if (before) {
+      viewerPane.replaceChildren(...before);
+      return;
+    }
+    viewerPane.replaceChildren();
+    viewerPane.hidden = true;
+    if (shellPane) shellPane.hidden = false;
+  };
+  // Opened again in place, the page it covered still behind it.
+  const reopen = async () => {
+    close();
+    await openPurchaseOrder({ order_number: order.order_number }, { onDone });
+  };
 
   const header = el("div", { class: "editgrid" }, [
     ...fact(t("purchaseorders.ordernumber"), order.order_number),
@@ -643,13 +662,6 @@ export async function openPurchaseOrder(summary) {
     ]),
   ]);
 
-  const reload = async () => {
-    close();
-    await load();
-    await loadStatusCounts();
-    render();
-  };
-
   async function setStatus(body) {
     let response;
     try {
@@ -667,12 +679,15 @@ export async function openPurchaseOrder(summary) {
       note(problem.error ?? t("purchaseorders.statuschangefailed"));
       return;
     }
-    await reload();
+    await reopen();
+    if (onDone) await onDone();
   }
+
+  const main = el("div", { class: "panel receiptmain poviewmain" });
 
   /**
    * **Terminal, unlike Hold/Release** — decision 0377's own rule:
-   * once Closed, nothing on this pop-out may change it again, so the
+   * once Closed, nothing on this page may change it again, so the
    * only buttons a closed order shows at all are none.
    *
    * **A hold needs a reason**, the exact prompt suppliers.js's own
@@ -680,46 +695,6 @@ export async function openPurchaseOrder(summary) {
    * after, the same reasoning that pattern was built on.
    */
   const stateButtons = [];
-  if (order.status !== "closed") {
-    if (order.status === "on_hold") {
-      stateButtons.push(actionLink("releasehold", { onclick: () => setStatus({ status: "active" }) }));
-    } else {
-      stateButtons.push(
-        actionLink("hold", {
-          onclick: () => {
-            const reason = el("input", {
-              type: "text",
-              class: "searchbox",
-              placeholder: t("purchaseorders.holdreasonhint"),
-            });
-            const holdPanel = el("div", { class: "panel" }, [
-              el("div", { text: t("purchaseorders.holdreason") }),
-              reason,
-              el("button", {
-                class: "primary",
-                text: t("purchaseorders.holdconfirm"),
-                onclick: () => setStatus({ status: "on_hold", holdReason: reason.value }),
-              }),
-            ]);
-            backdrop.querySelector(".popout")?.append(holdPanel);
-            reason.focus();
-          },
-        })
-      );
-    }
-    // A different label from the popout's own dismiss button beside
-    // it — "Close" already means "close this pop-out" throughout the
-    // app; this closes the order itself, permanently.
-    stateButtons.push(
-      actionLink("close", {
-        label: t("purchaseorders.closeorder"),
-        onclick: () => {
-          if (window.confirm(t("purchaseorders.closeconfirm"))) setStatus({ status: "closed" });
-        },
-      })
-    );
-  }
-
   // Decision 0752: Ask supplier, for whoever works orders, while someone there is linked.
   if (supplierChat?.canWrite && (hasMyPermission("AP.Purchasing") || hasMyPermission("Admin.Configure"))) {
     const ask = actionLink("ask_supplier", {
@@ -727,38 +702,99 @@ export async function openPurchaseOrder(summary) {
         openAskSupplier(order.order_number, supplierChat, lines.map((l) => Number(l.line_number)), {
           url: supplierUrl,
           noteKey: "purchaseorders.asksupplier.note",
-          onAsked: async () => {
-            close();
-            await openPurchaseOrder({ order_number: order.order_number });
-          },
+          onAsked: reopen,
         }),
     });
     ask.id = "po-ask-supplier";
-    stateButtons.unshift(ask);
+    stateButtons.push(ask);
   }
-  const supplierSection = supplierChat?.available
-    ? el("div", { id: "po-supplier" }, [el("div", { class: "cardhead" }, [el("h4", { text: t("purchaseorders.supplierchat") })]), buildSupplierTab(order.order_number, supplierChat, { url: supplierUrl }).content])
-    : null;
+  if (order.status !== "closed") {
+    if (order.status === "on_hold") {
+      const release = actionLink("releasehold", { onclick: () => setStatus({ status: "active" }) });
+      release.id = "po-release";
+      stateButtons.push(release);
+    } else {
+      const hold = actionLink("hold", {
+        onclick: () => {
+          if (main.querySelector("#po-holdpanel")) return;
+          const reason = el("input", {
+            type: "text",
+            class: "searchbox",
+            placeholder: t("purchaseorders.holdreasonhint"),
+          });
+          const holdPanel = el("div", { class: "panel", id: "po-holdpanel" }, [
+            el("div", { text: t("purchaseorders.holdreason") }),
+            reason,
+            el("button", {
+              class: "primary",
+              text: t("purchaseorders.holdconfirm"),
+              onclick: () => setStatus({ status: "on_hold", holdReason: reason.value }),
+            }),
+          ]);
+          main.prepend(holdPanel);
+          reason.focus();
+        },
+      });
+      hold.id = "po-hold";
+      stateButtons.push(hold);
+    }
+    // "Close order", not "Close": this closes the order itself, permanently; Back leaves the page.
+    const closeOrder = actionLink("close", {
+      label: t("purchaseorders.closeorder"),
+      onclick: () => {
+        if (window.confirm(t("purchaseorders.closeconfirm"))) setStatus({ status: "closed" });
+      },
+    });
+    closeOrder.id = "po-closeorder";
+    stateButtons.push(closeOrder);
+  }
+  const back = el("button", { class: "actionlink", type: "button", id: "po-back", title: t("viewer.back"), onclick: () => close() }, [icon("back"), el("span", { text: t("viewer.back") })]);
 
-  backdrop.replaceChildren(
-    el(
-      "div",
-      { class: "popout wide" },
-      [
-        el("div", { class: "cardhead" }, [
-          el("h3", { text: order.order_number }),
-          el("div", { class: "statebuttons" }, [...stateButtons, actionLink("close", { onclick: close })]),
-        ]),
-        order.status === "on_hold" ? el("div", { class: "warn", text: `${t("purchaseorders.hold")}: ${order.hold_reason}` }) : null,
-        // Decision 0752: the question waiting on the supplier.
-        supplierChat?.query ? el("div", { class: "warn", id: "po-supplierquery", text: supplierQueryText(supplierChat.query) }) : null,
-        header,
-        linesTable,
-        await receiptsSection(order.order_number),
-        supplierSection,
-      ].filter(Boolean)
-    )
+  main.append(
+    ...[
+      order.status === "on_hold" ? el("div", { class: "warn", text: `${t("purchaseorders.hold")}: ${order.hold_reason}` }) : null,
+      // Decision 0752: the question waiting on the supplier.
+      supplierChat?.query ? el("div", { class: "warn", id: "po-supplierquery", text: supplierQueryText(supplierChat.query) }) : null,
+      header,
+      el("h4", { text: t("purchaseorders.lines") }),
+      linesTable,
+      await receiptsSection(order.order_number),
+    ].filter(Boolean)
   );
+
+  /**
+   * **The conversation on the right — decision 0753**, as a receipt's
+   * Supplier tab (0741): laid out as Timeline / Chat's, its box to write
+   * in at the bottom. While there is none to have, the panel says why.
+   */
+  const supplierTab = supplierChat?.available ? buildSupplierTab(order.order_number, supplierChat, { url: supplierUrl }) : null;
+  const tabButton = el("button", { type: "button", role: "tab", class: "doctab on", id: "po-tab-supplier", "aria-selected": "true" }, [
+    el("span", { text: t("viewer.suppliertab") }),
+    supplierTab?.countBadge ?? null,
+  ].filter(Boolean));
+  const side = el("aside", { class: "receiptside" }, [
+    el("div", { class: "doctabs receipttabs", role: "tablist" }, [tabButton]),
+    supplierTab
+      ? el("div", { class: "vtimeline receipttimeline receiptsupplier", id: "po-supplier" }, [supplierTab.content])
+      : el("div", { class: "muted posupplierempty", id: "po-supplier-none", text: t("purchaseorders.supplierchat.none") }),
+  ]);
+
+  const page = frame(
+    el("div", { class: "receiptview poview" }, [
+      topbar(
+        order.order_number,
+        [t("doctype.purchase_order"), order.seller_party_id, order.org_unit_name, statusLabel(order.effective_status)].filter((part) => part && part !== "—").join(" · "),
+        [el("div", { class: "statebuttons receiptactions" }, [...stateButtons, back])]
+      ),
+      el("div", { class: "receiptpage" }, [main, el("div", { class: "panel receiptsidepanel" }, [side])]),
+    ])
+  );
+  if (viewerPane) {
+    viewerPane.replaceChildren(page);
+    viewerPane.hidden = false;
+    if (shellPane) shellPane.hidden = true;
+    window.scrollTo?.(0, 0);
+  }
 }
 
 /**
@@ -809,6 +845,13 @@ async function receiptsSection(orderNumber) {
  * since `render()` rebuilds the whole screen and would otherwise drop
  * focus out of whatever control the person was just using.
  */
+/** After an order opened from this screen changed (decision 0753): its list and counts again, behind the page. */
+async function refreshList() {
+  await load();
+  await loadStatusCounts();
+  render();
+}
+
 async function reload(focusId) {
   await load();
   render();
@@ -934,7 +977,7 @@ function purchaseOrderRows() {
     // The whole row, not a button in it — the same reasoning
     // suppliers.js already gives: a purchase order is one thing, and
     // a person looking at a row is looking at that order.
-    row.onclick = () => openPurchaseOrder(po);
+    row.onclick = () => openPurchaseOrder(po, { onDone: refreshList });
     return row;
   });
 
