@@ -1,6 +1,6 @@
 # 0751: Purchase orders shared with suppliers in the network
 
-**Status: built.**
+**Status: live.**
 
 - vf-app: migration 0168, `order-sharing.ts` (new), `receipt-sharing.ts`, `portal-route.ts`,
   `purchase-order-route.ts`, `index.ts`.
