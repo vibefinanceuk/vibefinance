@@ -1,6 +1,6 @@
 # 0769: Purchase orders on the Documents screen
 
-**Status: built.**
+**Status: live.**
 
 - vf-app: `documents-route.ts`, `index.ts`.
 - vf-ui: `documents.js`, `app.css` (copied to vf-portal).
