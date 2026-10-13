@@ -1,6 +1,7 @@
 import { isCreditNote } from "@vibefinance/shared";
 import type { RouteResult } from "./org-route.js";
 import { hasPermission } from "./enforce.js";
+import { SAME_VAT_SQL } from "./order-supplier.js";
 
 /**
  * **A credit note and the invoice it credits — decision 0731.**
@@ -111,19 +112,19 @@ export async function findCreditedInvoice(db: D1Database, creditNoteId: string, 
    * **The same supplier, however each document wrote it** (found live,
    * 11 October: a credit note from the network says GB111350965 where the
    * invoice read from email said 111350965). Any of: the VAT number
-   * without its country prefix and spaces; the seller's name; the
-   * supplier either is matched to (this one's own, or the one whose VAT
-   * number it carries).
+   * however written (decision 0758: its country prefix dropped only where
+   * one side leaves it off); the seller's name; the supplier either is
+   * matched to (this one's own, or the one whose VAT number it carries).
    */
-  const bareVat = (v: string) => v.toUpperCase().replace(/[^A-Z0-9]/g, "").replace(/^[A-Z]{2}(?=\d)/, "");
-  const BARE_SQL = (col: string) =>
-    `(CASE WHEN upper(replace(replace(${col}, ' ', ''), '.', '')) GLOB '[A-Z][A-Z][0-9]*' THEN substr(upper(replace(replace(${col}, ' ', ''), '.', '')), 3) ELSE upper(replace(replace(${col}, ' ', ''), '.', '')) END)`;
   const own = await db.prepare("SELECT supplier_id FROM invoice_headers WHERE id = ?").bind(creditNoteId).first<{ supplier_id: string | null }>();
   const clauses: string[] = [];
   const binds: unknown[] = [];
   if (vat) {
-    clauses.push(`${BARE_SQL("h.supplier_vat_id")} = ?`, `h.supplier_id IN (SELECT s.id FROM suppliers s WHERE s.vat_id IS NOT NULL AND ${BARE_SQL("s.vat_id")} = ?)`);
-    binds.push(bareVat(vat), bareVat(vat));
+    // Decision 0758: compared by the one rule (0756) — its country prefix dropped only where one side leaves it off, so GB1 is never DE1.
+    const sameAsInvoice = SAME_VAT_SQL("h.supplier_vat_id", "?");
+    const sameAsSupplier = `h.supplier_id IN (SELECT s.id FROM suppliers s WHERE ${SAME_VAT_SQL("s.vat_id", "?")})`;
+    clauses.push(sameAsInvoice, sameAsSupplier);
+    binds.push(...Array(sameAsInvoice.split("?").length - 1).fill(vat), ...Array(sameAsSupplier.split("?").length - 1).fill(vat));
   }
   if (name) {
     clauses.push(`lower(trim(json_extract(h.facts_json, '$."BT-27"'))) = lower(?)`);

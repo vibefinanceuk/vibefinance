@@ -82,6 +82,16 @@ describe("the same supplier, however each wrote its VAT number (Dan, 11 October)
     await doc("cn-bare", { "BT-1": "CN-2", "BT-3": "381", "BT-25": "INV-77", "BT-31": "222333444", "BT-112": 10 });
     expect(await findCreditedInvoice(env.DB, "cn-bare", await facts("cn-bare"))).toMatchObject({ invoice: { id: "inv-gb" } });
   });
+
+  /** Decision 0758: a number that names its country must name the same one. */
+  it("never an invoice of another country's supplier whose number has the same digits", async () => {
+    await doc("inv-de", { "BT-1": "INV-88", "BT-31": "DE333444555", "BT-112": 50 });
+    await doc("cn-gb88", { "BT-1": "CN-3", "BT-3": "381", "BT-25": "INV-88", "BT-31": "GB 333-444-555", "BT-112": 50 });
+    expect(await findCreditedInvoice(env.DB, "cn-gb88", await facts("cn-gb88"))).toMatchObject({ reference: "INV-88", invoice: null });
+    // Without its prefix, it is the German supplier's.
+    await doc("cn-bare88", { "BT-1": "CN-4", "BT-3": "381", "BT-25": "INV-88", "BT-31": "333.444.555", "BT-112": 50 });
+    expect(await findCreditedInvoice(env.DB, "cn-bare88", await facts("cn-bare88"))).toMatchObject({ invoice: { id: "inv-de" } });
+  });
 });
 
 describe("what happens to it, as AP Setup says", () => {

@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 13 October 2026 (decision 0757). A living document: what
+Last updated 13 October 2026 (decision 0758). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,13 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### A credit note finds its invoice by the one VAT rule (0758)
+
+A credit note's seller VAT number is compared with its invoice's by 0756's rule. A British
+supplier's credit note no longer finds a German supplier's invoice of the same digits.
+
+Full reasoning is in decision 0758.
 
 ### The supplier network shares by the one VAT rule (0757)
 
