@@ -1,6 +1,6 @@
 # 0771: No note about what the supplier does not see
 
-**Status: built.**
+**Status: live.**
 
 - vf-portal: `invoice-document.js`.
 

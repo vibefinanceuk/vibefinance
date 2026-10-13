@@ -1,6 +1,6 @@
 # 0770: Suppliers see the invoices and credit notes they sent, in the supplier network
 
-**Status: built.**
+**Status: live.**
 
 - vf-app:
   - migration 0173;

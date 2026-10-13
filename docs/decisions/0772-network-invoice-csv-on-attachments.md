@@ -1,6 +1,6 @@
 # 0772: An invoice's CSV on its Attachments tab, in the supplier network
 
-**Status: built.**
+**Status: live.**
 
 - vf-portal: `view.js`, `invoice-document.js`, `portal.js`, `portal.css`.
 - vf-licence: strings migration 0363.
