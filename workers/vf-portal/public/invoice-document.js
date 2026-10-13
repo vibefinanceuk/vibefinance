@@ -43,7 +43,6 @@ export function buildInvoiceAttachmentsTab(inv, linkId) {
     el("div", { class: "attachlist" }, [
       el("div", { class: "attachgroup" }, [el("div", { class: "attachhead", text: t("network.invoice.attachhead", { customer: inv.customer ?? "" }) }), ...files.map(row)]),
     ]),
-    el("p", { class: "muted sm", text: t("network.invoice.attachnote") }),
   ]);
   return { content };
 }
