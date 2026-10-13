@@ -1,6 +1,6 @@
 # 0759: Orders to suppliers
 
-**Status: built.**
+**Status: live.**
 
 - vf-app:
   - migration 0171;
