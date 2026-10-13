@@ -243,22 +243,26 @@ export async function portalMayReadReceipt(db: D1Database, claims: PortalAccessC
   return Boolean(await db.prepare(`SELECT 1 FROM goods_receipts r WHERE r.id = ? AND ${scope.sql}`).bind(receiptId, ...scope.binds).first());
 }
 
+/** One line of a receipt as a supplier may see it (0738), and as its PDF prints it (0773). */
+export interface SharedReceiptLine {
+  lineNumber: number;
+  orderNumber: string;
+  orderLine: number;
+  item: string | null;
+  ordered: number | null;
+  unitCode: string | null;
+  received: number;
+  rejected: number;
+  returned: number;
+  reason: string | null;
+}
+
 /**
- * `GET /portal/receipts/:id` — one shared receipt, line by line. The same
- * answer for one that does not exist, is not this supplier's, or is not
- * shared with them.
+ * A receipt's lines in the form the supplier sees them: what arrived and
+ * what went back, never a note or a reason for rejecting in checking.
  */
-export async function getPortalReceipt(db: D1Database, claims: PortalAccessClaims, receiptId: string): Promise<RouteResult> {
-  const scope = await receiptScope(db, claims);
-  if (!scope) return { status: 404, body: { error: "not found" } };
-  const row = await db.prepare(`${RECEIPT_SELECT} WHERE r.id = ? AND ${scope.sql}`).bind(claims.linkId, receiptId, ...scope.binds).first<PortalReceiptRow>();
-  if (!row) return { status: 404, body: { error: "not found" } };
-  // Decision 0740: opened, so its messages are read, for this person.
-  await db
-    .prepare("INSERT INTO portal_receipt_reads (link_id, receipt_id, read_at) VALUES (?, ?, ?) ON CONFLICT (link_id, receipt_id) DO UPDATE SET read_at = excluded.read_at")
-    .bind(claims.linkId, receiptId, new Date().toISOString())
-    .run();
-  const lines = (
+export async function receiptLines(db: D1Database, receiptId: string): Promise<SharedReceiptLine[]> {
+  return (
     await db
       .prepare(
         `SELECT l.line_number, l.order_number, l.order_line_number, l.movement, l.quantity, l.unit_code, l.line_status,
@@ -301,6 +305,24 @@ export async function getPortalReceipt(db: D1Database, claims: PortalAccessClaim
       reason: !rejected && l.movement === "returned" ? l.return_reason : null,
     };
   });
+}
+
+/**
+ * `GET /portal/receipts/:id` — one shared receipt, line by line. The same
+ * answer for one that does not exist, is not this supplier's, or is not
+ * shared with them.
+ */
+export async function getPortalReceipt(db: D1Database, claims: PortalAccessClaims, receiptId: string): Promise<RouteResult> {
+  const scope = await receiptScope(db, claims);
+  if (!scope) return { status: 404, body: { error: "not found" } };
+  const row = await db.prepare(`${RECEIPT_SELECT} WHERE r.id = ? AND ${scope.sql}`).bind(claims.linkId, receiptId, ...scope.binds).first<PortalReceiptRow>();
+  if (!row) return { status: 404, body: { error: "not found" } };
+  // Decision 0740: opened, so its messages are read, for this person.
+  await db
+    .prepare("INSERT INTO portal_receipt_reads (link_id, receipt_id, read_at) VALUES (?, ?, ?) ON CONFLICT (link_id, receipt_id) DO UPDATE SET read_at = excluded.read_at")
+    .bind(claims.linkId, receiptId, new Date().toISOString())
+    .run();
+  const lines = await receiptLines(db, receiptId);
   const messages = portalView(
     (await db.prepare("SELECT * FROM supplier_messages WHERE receipt_id = ? ORDER BY created_at, rowid").bind(receiptId).all<MessageRow>()).results
   );

@@ -1,4 +1,4 @@
-import { fromCustomer, invoice, invoices, me, order, receipt, reply, submissionCompanies, submit, type Deps, orderDocument, confirmByLink, confirmOrder, invoiceDocument } from "./network.js";
+import { fromCustomer, invoice, invoices, me, order, receipt, reply, submissionCompanies, submit, type Deps, orderDocument, receiptDocument, confirmByLink, confirmOrder, invoiceDocument } from "./network.js";
 
 /**
  * **vf-portal: the supplier network — decision 0717.**
@@ -132,6 +132,13 @@ export default {
     // Decision 0762: the supplier confirms it has the order, in the network.
     const confirm = url.pathname.match(/^\/api\/orders\/([^/]+)\/([^/]+)\/confirm$/);
     if (confirm && request.method === "POST") return signedOutClears(await confirmOrder(deps, session, decodeURIComponent(confirm[1]), decodeURIComponent(confirm[2])));
+    // Decision 0773: a shared goods receipt as a document — PDF or CSV.
+    const receiptDoc = url.pathname.match(/^\/api\/receipts\/([^/]+)\/([^/]+)\/document$/);
+    if (receiptDoc && request.method === "GET") {
+      const res = await receiptDocument(deps, session, decodeURIComponent(receiptDoc[1]), decodeURIComponent(receiptDoc[2]), url.search);
+      if (res.status === 401) return json({ error: "signed_out" }, 401, { "Set-Cookie": cookie("", 0) });
+      return res;
+    }
     // Decision 0738: a goods receipt the customer shares, read only.
     const oneReceipt = url.pathname.match(/^\/api\/receipts\/([^/]+)\/([^/]+)$/);
     if (oneReceipt && request.method === "GET") return signedOutClears(await receipt(deps, session, decodeURIComponent(oneReceipt[1]), decodeURIComponent(oneReceipt[2])));

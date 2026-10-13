@@ -5,7 +5,7 @@ import { createPage, startCreditNote, startFromOrder } from "/create.js";
 import { viewPage } from "/view.js";
 import { receiptPage } from "/receipt-view.js";
 import { orderPage } from "/order-view.js";
-import { buildOrderAttachmentsTab, buildOrderDocumentTab } from "/order-document.js";
+import { buildOrderAttachmentsTab, buildOrderDocumentTab, buildReceiptAttachmentsTab, buildReceiptDocumentTab } from "/order-document.js";
 import { buildInvoiceAttachmentsTab, buildInvoiceDocumentTab } from "/invoice-document.js";
 
 /**
@@ -126,7 +126,18 @@ export async function render() {
             handlers
           )
       : current === "receipt" && opened
-        ? receiptPage(opened.body, { statusChip, back: () => go("documents"), conversation: (body) => conversation(body, opened.inv) }, handlers)
+        ? receiptPage(
+            opened.body,
+            {
+              statusChip,
+              back: () => go("documents"),
+              conversation: (body) => conversation(body, opened.inv),
+              // Decision 0773: the receipt as a PDF, and its downloads.
+              document: (r) => buildReceiptDocumentTab({ ...r, id: opened.inv.id }, opened.inv.linkId),
+              attachments: (r) => buildReceiptAttachmentsTab({ ...r, id: opened.inv.id }, opened.inv.linkId),
+            },
+            handlers
+          )
         : current === "invoice" && opened
         ? viewPage(
             opened.body,

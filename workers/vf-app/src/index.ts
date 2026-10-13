@@ -167,6 +167,7 @@ import {
 import { getPortalInvoice, listPortalInvoices, portalAuth, replyOnPortalInvoice } from "./portal-route.js";
 import {
   getPortalReceipt,
+  portalMayReadReceipt,
   handleGetNetworkSharingConfig,
   handleGetSupplierReceiptSharing,
   handlePutNetworkSharingConfig,
@@ -354,6 +355,7 @@ import { handleGetOrdersProcess, handleHttpsOrders, handleSetUpOrdersProcess, or
 import { handleGetOrderSupplierMessages, handlePortalOrderReply, handlePostOrderSupplierMessage, markOrderSeen, orderConversationsFor } from "./order-messages.js";
 import { confirmByLink, confirmInNetwork } from "./order-confirm.js";
 import { portalInvoiceDocument } from "./portal-documents.js";
+import { receiptFile, receiptFileResponse, receiptFormat } from "./receipt-document.js";
 import { orderCards, orderFile, type DocumentFormat, handleGetOrderSending, handleGetOrdersOut, handlePutOrdersOut, handleSendOrderToSupplier, handleStartOrdersOut, runOrderSends, type OrdersOutDeps } from "./orders-out.js";
 import { handleAddOrderCollaborator, handleGetOrderTimeline, handleOrderAttachments, handlePostOrderComment, handleRemoveOrderCollaborator, handleSearchOrderPeople, orderAccess, ORDER_TOKEN_PREFIX, partForOrder } from "./order-timeline.js";
 import { continueOrderInstance, handleFixIntake, handleGetIntake, handleIntakeSuppliers, handleListIntake, handleRejectIntake, handleReleaseIntake, isOrderCheckingTask } from "./order-checking.js";
@@ -1246,6 +1248,16 @@ export default {
       return json(result.body, result.status);
     }
 
+    // Decision 0773: a shared receipt as a document — PDF or CSV — for the supplier network's Document tab.
+    const portalReceiptDocMatch = pathname.match(/^\/portal\/receipts\/([^/]+)\/document$/);
+    if (portalReceiptDocMatch && request.method === "GET") {
+      const { db } = resolveTenant(request, env);
+      const auth = await portalAuth(db, request, isPublicKeyJwk(env.LICENCE_SIGNING_PUBLIC_KEY) ? env.LICENCE_SIGNING_PUBLIC_KEY : undefined, env.ENVIRONMENT_ID);
+      if (!auth.ok) return json(auth.body, auth.status);
+      const receiptId = decodeURIComponent(portalReceiptDocMatch[1]);
+      if (!(await portalMayReadReceipt(db, auth.claims, receiptId))) return json({ error: "not found" }, 404);
+      return receiptFileResponse(await receiptFile(db, receiptId, receiptFormat(url.searchParams.get("format"))), url.searchParams.get("download") === "1");
+    }
     // Decision 0738: a goods receipt shared with this supplier, read only.
     const portalReceiptMatch = pathname.match(/^\/portal\/receipts\/([^/]+)(\/messages)?$/);
     if (portalReceiptMatch) {
@@ -6753,6 +6765,18 @@ export default {
         if (!auth.authorized) return forbidden(auth.status);
         const result = await handleRemoveReceiptCollaborator(db, auth.user.id, decodeURIComponent(collaboratorMatch[1]), decodeURIComponent(collaboratorMatch[2]));
         return json(result.body, result.status);
+      }
+      /**
+       * **A receipt as a document — decision 0773**: the PDF its Document
+       * tab shows, and its downloads as PDF and CSV. Whoever may see the receipt.
+       */
+      const receiptDocMatch = pathname.match(/^\/goods-receipts\/([^/]+)\/document$/);
+      if (receiptDocMatch && request.method === "GET") {
+        const auth = await seeOrCollaborate();
+        if (!auth.authorized) return forbidden(auth.status);
+        const receiptId = decodeURIComponent(receiptDocMatch[1]);
+        if (!(await receiptAccess(db, auth.user.id, receiptId))) return json({ error: "no such receipt", reason: "not_found" }, 404);
+        return receiptFileResponse(await receiptFile(db, receiptId, receiptFormat(url.searchParams.get("format"))), url.searchParams.get("download") === "1");
       }
       /**
        * **A receipt's Attachments — decision 0659**: what its route

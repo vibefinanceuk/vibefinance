@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 13 October 2026 (decision 0772). A living document: what
+Last updated 13 October 2026 (decision 0773). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,14 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### A goods receipt as a PDF, and its Document tab (0773)
+
+A goods receipt is drawn as a PDF, the same page for staff and for the supplier, built from what the
+supplier may see of it. It is downloadable as PDF and CSV. In VibeFinance and in the supplier
+network, the receipt opens on a Document tab, with both files on Attachments.
+
+Full reasoning is in decision 0773.
 
 ### An invoice's CSV on its Attachments tab, in the supplier network (0772)
 

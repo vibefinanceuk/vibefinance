@@ -20,7 +20,7 @@ function pair(label, value) {
 }
 
 /** The page. `deps` carries what portal.js owns: the status chip, back to Documents, and the conversation (0740). */
-export function receiptPage(r, { statusChip, back, conversation }, handlers) {
+export function receiptPage(r, { statusChip, back, conversation, document: documentTab, attachments: attachmentsTab }, handlers) {
   const title = topbar(
     r.invoiceNumber ?? "—",
     t("network.receipt.subtitle", { customer: r.customer ?? "", company: r.company ?? "", date: r.issueDate ?? "" }),
@@ -35,10 +35,40 @@ export function receiptPage(r, { statusChip, back, conversation }, handlers) {
   const cell = (v, cls = "num") => el("td", { class: cls }, [typeof v === "string" || typeof v === "number" ? String(v) : v]);
   const chat = conversation ? conversation(r) : null;
   chat?.classList.add("panel", "netviewchat");
+  /**
+   * **Document, Attachments and Messages — decision 0773**, as an order's
+   * (0765) and an invoice's (0770): the receipt as a PDF, the page both
+   * sides see; its PDF and CSV to download; and the conversation. The
+   * Document first.
+   */
+  let side = chat;
+  const doc = documentTab ? documentTab(r) : null;
+  const files = attachmentsTab ? attachmentsTab(r) : null;
+  if (doc && chat) {
+    const panes = [
+      { key: "document", label: t("orderdoc.tab"), pane: doc.content, onSelect: doc.open },
+      ...(files ? [{ key: "attachments", label: t("network.order.attachtab"), pane: files.content }] : []),
+      { key: "messages", label: t("network.order.messagestab"), pane: chat },
+    ];
+    for (const p of panes) {
+      p.pane.classList.remove("panel", "netviewchat");
+      p.pane.classList.add("netsidepane");
+    }
+    const select = (which) => {
+      for (const p of panes) {
+        p.button.className = p.key === which ? "doctab on" : "doctab";
+        p.button.setAttribute("aria-selected", String(p.key === which));
+        p.pane.hidden = p.key !== which;
+      }
+      panes.find((p) => p.key === which)?.onSelect?.();
+    };
+    for (const p of panes) p.button = el("button", { type: "button", role: "tab", class: "doctab", id: `net-tab-${p.key}`, onclick: () => select(p.key) }, [el("span", { text: p.label })]);
+    select("document");
+    side = el("div", { class: "panel netviewchat netsidetabs" }, [el("div", { class: "doctabs receipttabs", role: "tablist" }, panes.map((p) => p.button)), ...panes.map((p) => p.pane)]);
+  }
   return el("div", { class: "netinvoiceview netreceiptview" }, [
     title,
-    el("p", { class: "muted sm", text: t("network.receipt.note", { customer: r.customer ?? "" }) }),
-    el("div", { class: "netview netcreate" }, [el("div", { class: "netviewmain" }, [el("div", { class: "panel" }, [
+    el("div", { class: side !== chat ? "netview netcreate netwide" : "netview netcreate" }, [el("div", { class: "netviewmain" }, [el("div", { class: "panel" }, [
       el("div", { class: "cardhead" }, [el("h3", { text: t("network.receipt.title") })]),
       el("div", { class: "sellergrid receiptgrid" }, [
         pair(t("network.col.customer"), r.customer),
@@ -84,6 +114,6 @@ export function receiptPage(r, { statusChip, back, conversation }, handlers) {
             ),
           ])
         : el("p", { class: "muted", text: t("network.receipt.nolines") }),
-    ])]), chat].filter(Boolean)),
+    ])]), side].filter(Boolean)),
   ]);
 }

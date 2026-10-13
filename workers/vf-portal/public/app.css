@@ -5815,3 +5815,8 @@
 @media (max-width: 1000px) { .podocframe { min-height: 480px; } }
 /* Four tabs on an order's panel: each kept on one line. */
 .poview .receipttabs .doctab { padding: 6px 10px; white-space: nowrap; }
+/* Decision 0773: a goods receipt has four tabs too, and the Document; it splits 3:2, as an order's page does (0760). */
+.receiptview .receipttabs .doctab { padding: 6px 10px; white-space: nowrap; }
+@media (min-width: 901px) {
+  .receiptview .receiptpage { grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); }
+}

@@ -200,6 +200,34 @@ export async function orderDocument(deps: Deps, session: string, linkId: string,
 }
 
 /**
+ * `GET /api/receipts/:linkId/:receiptId/document?format=` — decision 0773:
+ * a shared goods receipt as the customer's instance makes it (PDF or CSV),
+ * passed through as it comes. A Response, not a Result: it is a file.
+ */
+export async function receiptDocument(deps: Deps, session: string, linkId: string, receiptId: string, search: string): Promise<Response> {
+  const pairs = await linksWithAccess(deps, session);
+  const jsonResponse = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
+  if (!pairs) return jsonResponse(401, { error: "signed_out" });
+  const pair = pairs.find((p) => p.link.id === linkId);
+  if (!pair?.access) return jsonResponse(404, { error: "not_found" });
+  const params = new URLSearchParams(search);
+  const query = new URLSearchParams();
+  for (const k of ["format", "download"]) if (params.get(k)) query.set(k, params.get(k)!);
+  try {
+    const res = await deps.instance(`${pair.access.instanceUrl.replace(/\/+$/, "")}/portal/receipts/${encodeURIComponent(receiptId)}/document?${query}`, {
+      headers: bearer(pair.access.token),
+      signal: AbortSignal.timeout(deps.timeoutMs ?? 15000),
+    });
+    if (!res.ok) return jsonResponse(res.status === 404 ? 404 : 502, { error: res.status === 404 ? "not_found" : "refused" });
+    const headers = new Headers({ "Cache-Control": "private, no-store" });
+    for (const h of ["Content-Type", "Content-Disposition"]) if (res.headers.get(h)) headers.set(h, res.headers.get(h)!);
+    return new Response(res.body, { status: 200, headers });
+  } catch {
+    return jsonResponse(502, { error: "unreachable" });
+  }
+}
+
+/**
  * `POST /api/invoices/:linkId/:invoiceId/messages` — the supplier writes, to the customer that link is for (0721);
  * `POST /api/receipts/:linkId/:receiptId/messages` the same about a goods receipt (decision 0740),
  * and `POST /api/orders/:linkId/:orderId/messages` about a purchase order (decision 0752).

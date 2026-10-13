@@ -225,6 +225,8 @@ const PROXIED_TO_INSTANCE: RegExp[] = [
   // Decision 0659: what a receipt came with.
   /^\/goods-receipts\/[^/]+\/attachments$/,
   /^\/goods-receipts\/[^/]+\/attachments\/[^/]+\/\d+\/url$/,
+  // Decision 0773: the receipt as a PDF or CSV.
+  /^\/goods-receipts\/[^/]+\/document$/,
   // Decision 0660: the Conversations section of Tasks.
   /^\/receipt-conversations$/,
   /^\/receipt-conversations\/[^/]+\/done$/,

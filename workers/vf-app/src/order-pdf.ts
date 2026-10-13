@@ -144,22 +144,22 @@ const num = (v: unknown) => (v === null || v === undefined ? "—" : typeof v ==
 
 // ── Layout ─────────────────────────────────────────────────────────────
 
-const A4: [number, number] = [595.28, 841.89];
-const M = 40; // margin
-const INK = rgb(0.07, 0.1, 0.15);
-const MUTED = rgb(0.36, 0.4, 0.46);
-const RULE = rgb(0.78, 0.82, 0.88);
-const TINT = rgb(0.95, 0.96, 0.98);
-const WARN = rgb(0.99, 0.95, 0.88);
-const BAD = rgb(0.99, 0.91, 0.91);
+export const A4: [number, number] = [595.28, 841.89];
+export const M = 40; // margin
+export const INK = rgb(0.07, 0.1, 0.15);
+export const MUTED = rgb(0.36, 0.4, 0.46);
+export const RULE = rgb(0.78, 0.82, 0.88);
+export const TINT = rgb(0.95, 0.96, 0.98);
+export const WARN = rgb(0.99, 0.95, 0.88);
+export const BAD = rgb(0.99, 0.91, 0.91);
 
-interface Fonts {
+export interface Fonts {
   regular: PDFFont;
   bold: PDFFont;
 }
 
 /** Text the standard fonts can write: Windows-1252, with the commonest others in their plain form. */
-function writable(font: PDFFont, s: string): string {
+export function writable(font: PDFFont, s: string): string {
   const plain = s
     .replace(/[→➔⟶]/g, "->")
     .replace(/[←]/g, "<-")
@@ -186,7 +186,7 @@ function writable(font: PDFFont, s: string): string {
 }
 
 /** Words broken into lines no wider than `width`; a word wider than that is broken where it must be. */
-function wrap(font: PDFFont, size: number, text: string, width: number): string[] {
+export function wrap(font: PDFFont, size: number, text: string, width: number): string[] {
   const lines: string[] = [];
   for (const para of writable(font, text).split(/\n/)) {
     let line = "";
@@ -211,7 +211,7 @@ function wrap(font: PDFFont, size: number, text: string, width: number): string[
   return lines.length ? lines : [""];
 }
 
-class Writer {
+export class Writer {
   pages: PDFPage[] = [];
   page!: PDFPage;
   y = 0;
@@ -243,7 +243,7 @@ class Writer {
   }
 }
 
-interface Column {
+export interface Column {
   key: string;
   label: string;
   width: number;

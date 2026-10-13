@@ -1,7 +1,7 @@
 import { env, SELF } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 import worker, { readSession, type Env } from "../src/index.js";
-import { confirmByLink, confirmOrder, invoice, invoiceDocument, invoices, me, order, orderDocument, receipt, reply, submissionCompanies, submit, type Deps } from "../src/network.js";
+import { confirmByLink, confirmOrder, invoice, invoiceDocument, invoices, me, order, orderDocument, receipt, receiptDocument, reply, submissionCompanies, submit, type Deps } from "../src/network.js";
 
 /**
  * **The supplier network — decision 0717.** vf-licence and the customers'
@@ -105,6 +105,20 @@ describe("goods receipts — decision 0738", () => {
     expect((await receipt(deps({}), "good", "pl-someone", "gr1")).status).toBe(404);
     expect((await receipt(deps({ "acme.example": () => new Response("{}", { status: 404 }) }), "good", "pl-acme", "nope")).status).toBe(404);
     expect((await receipt(deps({}), "stale", "pl-acme", "gr1")).status).toBe(401);
+  });
+});
+
+describe("a goods receipt as a document — decision 0773", () => {
+  it("passes the customer's PDF or CSV through, asking only the customer that link is for, and only for a format", async () => {
+    const seen: Seen[] = [];
+    const csv = () => new Response("receipt_number\nGR-1\n", { headers: { "Content-Type": "text/csv; charset=utf-8", "Content-Disposition": 'attachment; filename="GR-1.csv"', "X-Other": "no" } });
+    const res = await receiptDocument(deps({ "acme.example": csv }, seen), "good", "pl-acme", "gr1", "?format=csv&download=1&file=x");
+    expect(res.status).toBe(200);
+    expect([res.headers.get("Content-Type"), res.headers.get("Content-Disposition"), res.headers.get("X-Other"), res.headers.get("Cache-Control")]).toEqual(["text/csv; charset=utf-8", 'attachment; filename="GR-1.csv"', null, "private, no-store"]);
+    expect(seen).toEqual([{ url: "https://acme.example/portal/receipts/gr1/document?format=csv&download=1", auth: "Bearer tok-acme" }]);
+    expect((await receiptDocument(deps({ "acme.example": () => new Response("{}", { status: 404 }) }), "good", "pl-acme", "nope", "")).status).toBe(404);
+    expect((await receiptDocument(deps({}), "good", "pl-someone", "gr1", "")).status).toBe(404);
+    expect((await receiptDocument(deps({}), "stale", "pl-acme", "gr1", "")).status).toBe(401);
   });
 });
 

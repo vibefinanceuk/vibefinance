@@ -6,6 +6,7 @@ import { currentOrgId } from "/orgs.js";
 import { donutChart } from "/charts.js";
 import { buildReceiptTimeline } from "/receipt-timeline.js";
 import { buildAttachmentsTab } from "/attachments.js";
+import { buildOrderDocumentTab } from "/order-document.js";
 import { buildSupplierTab, fetchSupplierChat, openAskSupplier, supplierQueryText } from "/supplier-chat.js";
 
 /**
@@ -679,12 +680,32 @@ export async function openReceipt(id, { onDone = null } = {}) {
    * **Attachments and Timeline / Chat, as tabs — decision 0659**, as the
    * invoice viewer's panel has them (Dan: "'Timeline / Chat <count>' ...
    * in a pillbox and highlighted", and "an Attachments tab next to it").
-   * Timeline / Chat is shown first; Attachments loads when first opened.
+   * Attachments loads when first opened; since 0773 the Document is first.
    */
   function sidePanel() {
     const countBadge = el("span", { class: "activitycount", hidden: "hidden" });
-    const attachments = buildAttachmentsTab(id, { base: `/api/goods-receipts/${encodeURIComponent(id)}`, id: "receipt-attachments", subject: "receipt" });
+    /**
+     * **The receipt as a document — decision 0773**, as an order's (0760,
+     * 0763): the PDF the supplier sees too, first; its PDF and CSV on
+     * Attachments, after what came in with it.
+     */
+    const docBase = `/api/goods-receipts/${encodeURIComponent(id)}/document`;
+    const documentTab = buildOrderDocumentTab(receipt.receiptNumber, { base: docBase, id: "receipt-document", title: t("receiptdoc.title").replace("{receipt}", receipt.receiptNumber) });
+    const safe = String(receipt.receiptNumber).replace(/[^\w.-]+/g, "_");
+    const attachments = buildAttachmentsTab(id, {
+      base: `/api/goods-receipts/${encodeURIComponent(id)}`,
+      id: "receipt-attachments",
+      subject: "receipt",
+      generated: {
+        heading: t("receiptdoc.attachhead"),
+        files: [
+          { key: "pdf", name: `${safe}.pdf`, detail: t("orderdoc.pdf"), url: `${docBase}?format=pdf`, view: "inline" },
+          { key: "csv", name: `${safe}.csv`, detail: t("orderdoc.csv"), url: `${docBase}?format=csv`, view: "download" },
+        ],
+      },
+    });
     const tabs = [
+      { key: "document", label: t("orderdoc.tab"), pane: documentTab.content, onSelect: documentTab.open },
       { key: "attachments", label: t("viewer.attachmentstab"), pane: attachments.content, onSelect: attachments.open },
       { key: "timeline", label: t("activity.timelinetab"), pane: buildReceiptTimeline(id, { countBadge }), badge: countBadge },
     ];
@@ -711,7 +732,8 @@ export async function openReceipt(id, { onDone = null } = {}) {
     for (const tab of tabs) {
       tab.button = el("button", { type: "button", role: "tab", class: "doctab", id: `receipt-tab-${tab.key}`, onclick: () => select(tab.key) }, [el("span", { text: tab.label }), tab.badge ?? null]);
     }
-    select("timeline");
+    // Decision 0773: the Document first, as an order's (0766).
+    select("document");
     return el("aside", { class: "receiptside" }, [
       el("div", { class: "doctabs receipttabs", role: "tablist" }, tabs.map((tab) => tab.button)),
       ...tabs.map((tab) => tab.pane),

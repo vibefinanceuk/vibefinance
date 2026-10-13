@@ -60,3 +60,48 @@ export function buildOrderAttachmentsTab(order, linkId) {
   ]);
   return { content };
 }
+
+/**
+ * **A goods receipt's Document and Attachments, in the supplier network —
+ * decision 0773**: the receipt as a PDF, the page the customer sees too,
+ * and its PDF and CSV to download, as an order's.
+ */
+export function buildReceiptDocumentTab(receipt, linkId) {
+  const base = `/api/receipts/${encodeURIComponent(linkId)}/${encodeURIComponent(receipt.id)}/document`;
+  const frame = el("iframe", { class: "vframe podocframe", id: "net-document-frame", title: t("receiptdoc.title").replace("{receipt}", receipt.invoiceNumber ?? "") });
+  const status = el("div", { class: "muted sm", id: "net-document-status", text: t("orderdoc.loading") });
+  const content = el("div", { class: "podoc", id: "net-document" }, [status, frame]);
+  let loaded = false;
+  async function open() {
+    if (loaded) return;
+    loaded = true;
+    try {
+      const response = await fetch(`${base}?format=pdf`);
+      if (!response.ok) throw new Error(String(response.status));
+      const blob = await response.blob();
+      frame.src = URL.createObjectURL(blob.type === "application/pdf" ? blob : new Blob([blob], { type: "application/pdf" }));
+      status.remove();
+    } catch {
+      loaded = false;
+      status.textContent = t("orderdoc.failed");
+      status.className = "warn sm";
+    }
+  }
+  return { content, open };
+}
+
+export function buildReceiptAttachmentsTab(receipt, linkId) {
+  const base = `/api/receipts/${encodeURIComponent(linkId)}/${encodeURIComponent(receipt.id)}/document`;
+  const number = String(receipt.invoiceNumber ?? "receipt").replace(/[^\w.-]+/g, "_");
+  const row = (format, detail) =>
+    el("div", { class: "attachrow", "data-made": format }, [
+      el("span", { class: "attachpick" }, [el("span", { class: "attachname", text: `${number}.${format}` }), el("span", { class: "attachdetail", text: detail })]),
+      el("a", { class: "actionlink", id: `net-attach-${format}`, href: `${base}?format=${format}&download=1`, download: "", title: t("action.download") }, [icon("download"), el("span", { text: t("action.download") })]),
+    ]);
+  const content = el("div", { class: "attachpane", id: "net-attachments" }, [
+    el("div", { class: "attachlist" }, [
+      el("div", { class: "attachgroup" }, [el("div", { class: "attachhead", text: t("network.receipt.attachhead", { customer: receipt.customer ?? "" }) }), row("pdf", t("orderdoc.pdf")), row("csv", t("orderdoc.csv"))]),
+    ]),
+  ]);
+  return { content };
+}

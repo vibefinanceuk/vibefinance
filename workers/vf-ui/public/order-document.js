@@ -9,8 +9,8 @@ import { el } from "/tasks.js";
  * The supplier network's own copy of this is vf-portal's
  * `order-document.js`.
  */
-export function buildOrderDocumentTab(orderNumber, { base = `/api/purchase-orders/${encodeURIComponent(orderNumber)}/document`, id = "po-document" } = {}) {
-  const frame = el("iframe", { class: "vframe podocframe", id: `${id}-frame`, title: t("orderdoc.title").replace("{order}", orderNumber) });
+export function buildOrderDocumentTab(orderNumber, { base = `/api/purchase-orders/${encodeURIComponent(orderNumber)}/document`, id = "po-document", title = t("orderdoc.title").replace("{order}", orderNumber) } = {}) {
+  const frame = el("iframe", { class: "vframe podocframe", id: `${id}-frame`, title });
   const status = el("div", { class: "muted sm", id: `${id}-status`, text: t("orderdoc.loading") });
   const content = el("div", { class: "podoc", id }, [status, frame]);
   let loaded = false;

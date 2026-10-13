@@ -133,7 +133,7 @@ export interface Recipients {
   supplierSendsOwn: boolean;
 }
 
-async function supplierOfOrder(db: D1Database, sellerPartyId: string | null): Promise<SupplierRow | null> {
+export async function supplierOfOrder(db: D1Database, sellerPartyId: string | null): Promise<SupplierRow | null> {
   if (!sellerPartyId) return null;
   return db
     .prepare(
@@ -182,7 +182,7 @@ interface OrderRow {
   status: string;
 }
 
-interface Company {
+export interface Company {
   name: string | null;
   vatId: string | null;
   endpoint: string | null;
@@ -195,7 +195,7 @@ interface Company {
 }
 
 /** The company that placed the order: its own unit, filled in from the legal entity above it. */
-async function companyOf(db: D1Database, unitId: string | null): Promise<Company> {
+export async function companyOf(db: D1Database, unitId: string | null): Promise<Company> {
   const empty: Company = { name: null, vatId: null, endpoint: null, addressLine: null, city: null, postalCode: null, country: null, email: null, phone: null };
   if (!unitId) return empty;
   const chain = (

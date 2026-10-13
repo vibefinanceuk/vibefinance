@@ -5,6 +5,8 @@ import claimSql from "../../vf-licence/migrations/0299_receipt_claim_and_correct
 import timelineSql from "../../vf-licence/migrations/0300_receipt_timeline_strings.sql?raw";
 import tabSql from "../../vf-licence/migrations/0079_timeline_chat_tab.sql?raw";
 import attachmentsSql from "../../vf-licence/migrations/0221_attachments_strings.sql?raw";
+import orderDocSql from "../../vf-licence/migrations/0355_order_document_strings.sql?raw";
+import receiptDocSql from "../../vf-licence/migrations/0364_receipt_document_strings.sql?raw";
 
 /**
  * **A goods receipt's Timeline and Chat — decision 0658**, in the
@@ -14,7 +16,7 @@ import attachmentsSql from "../../vf-licence/migrations/0221_attachments_strings
  */
 
 const strings: Record<string, string> = { "action.close": "Close", "nav.goodsreceipts": "Goods Receipts" };
-for (const sql of [receiptsSql, matchingSql, claimSql, timelineSql, tabSql, attachmentsSql]) {
+for (const sql of [receiptsSql, matchingSql, claimSql, timelineSql, tabSql, attachmentsSql, orderDocSql, receiptDocSql]) {
   for (const m of sql.matchAll(/\('([^']+)', 'en', '((?:[^']|'')*)'\)/g)) strings[m[1]] = m[2].replace(/''/g, "'");
 }
 
@@ -106,12 +108,27 @@ beforeEach(() => {
 });
 afterEach(() => vi.unstubAllGlobals());
 
+describe("the receipt as a document — decision 0773", () => {
+  it("shows the receipt's PDF first, and lists it as PDF and CSV on Attachments", async () => {
+    const calls = await openPopout(["AP.Receive"], { "GET /api/goods-receipts/wh-1/attachments": [200, { messages: [], files: [] }] });
+    expect(calls.some((c) => c.path === "/api/goods-receipts/wh-1/document" && c.query === "format=pdf")).toBe(true);
+    expect(document.getElementById("receipt-document")?.hidden).toBe(false);
+    expect(document.getElementById("receipt-document-frame")?.getAttribute("title")).toBe("Goods receipt WH-1");
+    (document.getElementById("receipt-tab-attachments") as HTMLButtonElement).click();
+    await vi.waitFor(() => expect(document.querySelectorAll("#receipt-attachments [data-made]").length).toBe(2));
+    expect(document.querySelector("#receipt-attachments-made .attachhead")?.textContent).toBe("The receipt as the supplier sees it");
+    expect([...document.querySelectorAll("#receipt-attachments [data-made] .attachname")].map((n) => n.textContent)).toEqual(["WH-1.pdf", "WH-1.csv"]);
+  });
+});
+
 describe("the receipt's Timeline — decision 0658", () => {
   it("says what happened in words, oldest first, with the conversation among it", async () => {
     await openPopout(["AP.Receive"]);
-    // Decision 0659: a tab row as the invoice viewer's, Timeline / Chat chosen, with its count.
+    // Decision 0659: a tab row as the invoice viewer's, with Timeline / Chat's count; 0773: the Document first, and chosen.
     const tabs = [...document.querySelectorAll(".receiptside .doctabs .doctab")];
-    expect(tabs.map((b) => b.textContent)).toEqual(["Attachments", "Timeline / Chat8"]);
+    expect(tabs.map((b) => b.textContent)).toEqual(["Document", "Attachments", "Timeline / Chat8"]);
+    expect(document.getElementById("receipt-tab-document")?.className).toBe("doctab on");
+    (document.getElementById("receipt-tab-timeline") as HTMLButtonElement).click();
     expect(document.getElementById("receipt-tab-timeline")?.className).toBe("doctab on");
     expect(document.getElementById("receipt-attachments")?.hidden).toBe(true);
     // On the right of the receipt's page, beside the receipt, as the invoice viewer has it (0741).
