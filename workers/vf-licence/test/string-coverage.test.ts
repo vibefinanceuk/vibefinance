@@ -3806,6 +3806,15 @@ const KEYS_THE_INTERFACE_USES = [
   "purchaseorders.conv.order",
   // A purchase order opened as a page (decision 0753).
   "purchaseorders.supplierchat.none",
+  // Purchase orders on the Documents screen (decision 0769).
+  "documents.type.purchase_order",
+  "docstatus.order_open",
+  "docstatus.order_part_received",
+  "docstatus.order_received",
+  "docstatus.order_part_invoiced",
+  "docstatus.order_invoiced",
+  "docstatus.order_on_hold",
+  "docstatus.order_closed",
   // A purchase order in VibeFinance laid out as the supplier network's (decision 0766).
   "purchaseorders.alert.hold",
   "purchaseorders.alert.waiting",

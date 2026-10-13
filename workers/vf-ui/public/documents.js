@@ -147,12 +147,15 @@ let units = [];
 
 /**
  * **Which kind of document — decision 0737.** Empty is every kind;
- * otherwise `invoice`, `credit_note` or `goods_receipt`. Receipts are
- * offered only to someone the server says may see them.
+ * otherwise `invoice`, `credit_note`, `goods_receipt` or (decision 0769)
+ * `purchase_order`. Receipts and orders are offered only to someone the
+ * server says may see them.
  */
 let docType = "";
 let receiptsVisible = false;
-const DOC_TYPES = ["invoice", "credit_note", "goods_receipt"];
+// Decision 0769: purchase orders, for whoever may read them.
+let ordersVisible = false;
+const DOC_TYPES = ["invoice", "credit_note", "goods_receipt", "purchase_order"];
 
 /** A receipt's state, in the pill colour of the invoice state it is most like. */
 const RECEIPT_PILLS = {
@@ -161,6 +164,14 @@ const RECEIPT_PILLS = {
   receipt_rejected: "unreadable",
   receipt_returned: "returned",
   receipt_cancelled: "archived",
+  // Decision 0769: an order's, in the supplier network's words (0751).
+  order_open: "moving",
+  order_part_received: "returned",
+  order_received: "returned",
+  order_part_invoiced: "returned",
+  order_invoiced: "done",
+  order_on_hold: "waiting",
+  order_closed: "archived",
 };
 
 /**
@@ -322,6 +333,7 @@ async function load() {
   const body = await response.json();
   documents = body.documents ?? [];
   receiptsVisible = Boolean(body.receipts);
+  ordersVisible = Boolean(body.orders);
   if (agentFilter && !agentFilter.name && body.agent?.name) agentFilter.name = body.agent.name;
   /**
    * **`total` replaces the old "N of M looked through" honesty
@@ -387,7 +399,7 @@ function cell(doc, key) {
       return el("td", {}, [
         unreadable
           ? el("span", { class: "unread", text: t("documents.notread") })
-          : el("span", { class: doc.kind === "goods_receipt" ? "doctypereceipt" : "", text: typeWords(doc) }),
+          : el("span", { class: doc.kind === "goods_receipt" ? "doctypereceipt" : doc.kind === "purchase_order" ? "doctypeorder" : "", text: typeWords(doc) }),
       ]);
 
     case "status":
@@ -467,6 +479,7 @@ function cell(doc, key) {
  */
 function typeWords(doc) {
   if (doc.kind === "goods_receipt") return t("doctype.goods_receipt");
+  if (doc.kind === "purchase_order") return t("doctype.purchase_order");
   if (doc.kind === "credit_note") return t("doctype.381");
   return t(doc.typeCode === "389" ? "doctype.389" : "doctype.380");
 }
@@ -484,6 +497,12 @@ async function expand(doc) {
   if (doc.kind === "goods_receipt") {
     const { openReceipt } = await import("/goods-receipts.js");
     await openReceipt(doc.id, { onDone: () => reload() });
+    return;
+  }
+  // Decision 0769: an order opens on its own page (0753), as from Purchase Orders.
+  if (doc.kind === "purchase_order") {
+    const { openPurchaseOrder } = await import("/purchase-orders.js");
+    await openPurchaseOrder({ order_number: doc.number }, { onDone: () => reload() });
     return;
   }
   const { openViewer } = await import("/viewer.js");
@@ -702,7 +721,7 @@ function render() {
   const drilled = Boolean(alertFilter || stageFilter || supplierFilter || agingFilter || personFilter || teamFilter || openForFilter || handledFilter || idsFilter || exceptionsFilter || agentFilter);
   const typePicker = el("select", { class: "typepicker", id: "doctype", "aria-label": t("documents.type.label") }, [
     el("option", { value: "", text: t("documents.type.all") }),
-    ...DOC_TYPES.filter((k) => k !== "goods_receipt" || (receiptsVisible && !drilled)).map((k) => el("option", { value: k, text: t(`documents.type.${k}`) })),
+    ...DOC_TYPES.filter((k) => (k === "goods_receipt" ? receiptsVisible && !drilled : k === "purchase_order" ? ordersVisible && !drilled : true)).map((k) => el("option", { value: k, text: t(`documents.type.${k}`) })),
   ]);
   typePicker.value = docType;
   typePicker.onchange = async () => {

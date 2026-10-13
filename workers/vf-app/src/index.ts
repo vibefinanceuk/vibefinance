@@ -5218,7 +5218,20 @@ export default {
           ? { units: await scopedToChosenOrg(db, receiptScope, url.searchParams.get("org")) }
           : null;
 
-      const result = await handleListDocuments(db, url.searchParams, scopedToOrg, auth.user.id, receipts);
+      /**
+       * **Purchase orders beside them — decision 0769**, for whoever may
+       * read orders (AP.Validate, as the Purchase Orders screen, or
+       * AP.Purchasing, as 0752 lets open them), where they hold it.
+       */
+      const [orderValidate, orderPurchasing] = await Promise.all([
+        unitsWherePermitted(db, auth.user.id, "AP.Validate"),
+        unitsWherePermitted(db, auth.user.id, "AP.Purchasing"),
+      ]);
+      const orderScope = orderValidate === null || orderPurchasing === null ? null : [...new Set([...orderValidate, ...orderPurchasing])];
+      const orders =
+        orderScope === null || orderScope.length > 0 ? { units: await scopedToChosenOrg(db, orderScope, url.searchParams.get("org")) } : null;
+
+      const result = await handleListDocuments(db, url.searchParams, scopedToOrg, auth.user.id, receipts, orders);
       return json(result.body, result.status);
     }
 

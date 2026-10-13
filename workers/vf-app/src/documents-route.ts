@@ -5,6 +5,10 @@ import type { RouteResult } from "./examples-route.js";
 import { mondayOfThisWeek } from "./dates.js";
 import { POSSIBLE_DUPLICATE_THRESHOLD } from "./invoice-history.js";
 import { ORDER_SUPPLIER_ID, ORDER_SUPPLIER_SQL } from "./order-supplier.js";
+import { EFFECTIVE_STATUS_CASE, INVOICED_AMOUNTS_JOIN } from "./purchase-order-route.js";
+import { receiptStateJoin } from "./goods-receipts.js";
+import { getOrgMatchingConfig } from "./po-matching.js";
+import { portalOrderStatus } from "./order-sharing.js";
 
 /**
  * Every document that has arrived — decision 0164.
@@ -151,7 +155,13 @@ export async function handleListDocuments(
    * the units they may see receipts in (`receiptViewScope`, narrowed to
    * the chosen org): `units: null` everywhere.
    */
-  receipts: { units: string[] | null } | null = null
+  receipts: { units: string[] | null } | null = null,
+  /**
+   * **Purchase orders as rows — decision 0769**, as receipts are: `null`,
+   * none here; otherwise the units this person may read orders in
+   * (AP.Validate or AP.Purchasing, narrowed to the chosen org).
+   */
+  orders: { units: string[] | null } | null = null
 ): Promise<RouteResult> {
   /**
    * **Filtered in SQL now too — decision 0448.** No longer lower-cased
@@ -612,7 +622,8 @@ export async function handleListDocuments(
    * `invoice_headers.document_kind` (0730), bound as `?31`.
    */
   const typeParam = params.get("type");
-  const docType = typeParam === "invoice" || typeParam === "credit_note" || typeParam === "goods_receipt" ? typeParam : null;
+  const docType =
+    typeParam === "invoice" || typeParam === "credit_note" || typeParam === "goods_receipt" || typeParam === "purchase_order" ? typeParam : null;
   const filterBinds = [
     doneBy, team, openFor, openStage, openTeam, handledBy, handledStage, handledDays,
     ids, exceptionsSince, exceptionSupplierId, exceptionUser, exceptionType,
@@ -634,16 +645,22 @@ export async function handleListDocuments(
   );
   const withReceipts =
     paginating && receipts !== null && (receipts.units === null || receipts.units.length > 0) && !drillThrough && (docType === null || docType === "goods_receipt");
-  const withInvoices = docType !== "goods_receipt";
-  // Decision 0737: whether this person may see receipts here, for the screen's own Type filter.
-  const receiptsFlag = paginating ? { receipts: receipts !== null } : {};
-  if (!withInvoices && !withReceipts) {
+  // Decision 0769: purchase orders, on the same terms as receipts.
+  const withOrders =
+    paginating && orders !== null && (orders.units === null || orders.units.length > 0) && !drillThrough && (docType === null || docType === "purchase_order");
+  const withInvoices = docType !== "goods_receipt" && docType !== "purchase_order";
+  // Decisions 0737 and 0769: whether this person may see receipts and orders here, for the screen's own Type filter.
+  const receiptsFlag = paginating ? { receipts: receipts !== null, orders: orders !== null } : {};
+  if (!withInvoices && !withReceipts && !withOrders) {
     return { status: 200, body: { documents: [], searched: 0, ...receiptsFlag, ...(paginating ? { total: 0, page, pageSize } : {}) } };
   }
-  if (withReceipts) {
+  if (withReceipts || withOrders) {
     return listWithReceipts(db, {
       joins, whereClause, whereBinds, filterBinds, withInvoices, offset, page, pageSize,
-      receiptUnits: receipts!.units,
+      receiptUnits: withReceipts ? receipts!.units : null,
+      withReceipts,
+      orderUnits: withOrders ? orders!.units : null,
+      withOrders,
       receiptsFlag,
     });
   }
@@ -807,6 +824,75 @@ const RECEIPT_WHERE = `WHERE (?32 = 0 OR EXISTS (
 const INVOICE_AT = "datetime(h.created_at)";
 const RECEIPT_AT = "r.receipt_date || substr(datetime(r.created_at), 11)";
 
+/**
+ * **Which purchase orders — decision 0769.** The Purchase Orders screen's
+ * rule (`unitClause` on `po.org_unit_id`): `?34` says whether the person
+ * is limited at all, `?35` to which units. The unit chosen on the screen
+ * (`?1`), `since` (`?14`) and the search (`?16`: the order number, the
+ * requisition, or the supplier's name) read as they do for invoices.
+ */
+const ORDER_WHERE = `WHERE (?34 = 0 OR po.org_unit_id IN (SELECT value FROM json_each(?35)))
+         AND (?1 IS NULL OR po.org_unit_id = ?1)
+         AND (?14 IS NULL OR po.created_at >= ?14)
+         AND (
+           ?16 IS NULL
+           OR po.order_number LIKE json_extract(?16, '$.text') ESCAPE '\\'
+           OR po.originator_reference LIKE json_extract(?16, '$.text') ESCAPE '\\'
+           OR EXISTS (
+             SELECT 1 FROM suppliers qs WHERE qs.id = ${ORDER_SUPPLIER_ID("po.seller_party_id")}
+               AND qs.name LIKE json_extract(?16, '$.text') ESCAPE '\\'
+           )
+         )`;
+
+/** An order by when it was loaded, as an invoice by when it arrived. */
+const ORDER_AT = "datetime(po.created_at)";
+
+interface OrderRow {
+  id: string;
+  order_number: string;
+  issue_date: string | null;
+  created_at: string;
+  currency: string | null;
+  payable_amount: number | null;
+  seller_party_id: string | null;
+  org_unit_id: string | null;
+  org_unit_name: string | null;
+  supplier: string | null;
+  effective_status: string;
+  receipt_state: string | null;
+}
+
+/**
+ * **One purchase order, as a row of the list — decision 0769**: its
+ * number, supplier, amount and dates, and where it has got to in the
+ * supplier network's own words (0751's `portalOrderStatus`), so the two
+ * lists say the same of the same order.
+ */
+function orderDocument(r: OrderRow) {
+  return {
+    id: r.id,
+    kind: "purchase_order",
+    number: r.order_number,
+    typeCode: null,
+    supplier: r.supplier,
+    amount: r.payable_amount,
+    currency: r.currency,
+    issueDate: r.issue_date,
+    dueDate: null,
+    receivedAt: r.created_at,
+    sender: null,
+    recipient: null,
+    orgUnitId: r.org_unit_id,
+    orgUnitName: r.org_unit_name,
+    stageId: null,
+    stageName: null,
+    stageSequence: null,
+    status: portalOrderStatus(r.effective_status, r.receipt_state),
+    hands: 0,
+    po: r.order_number,
+  };
+}
+
 interface ReceiptRow {
   id: string;
   receipt_number: string;
@@ -879,7 +965,10 @@ async function listWithReceipts(
     page: number;
     pageSize: number;
     receiptUnits: string[] | null;
-    receiptsFlag: { receipts?: boolean };
+    withReceipts: boolean;
+    orderUnits: string[] | null;
+    withOrders: boolean;
+    receiptsFlag: { receipts?: boolean; orders?: boolean };
   }
 ): Promise<RouteResult> {
   const binds = [
@@ -888,26 +977,32 @@ async function listWithReceipts(
     ...q.filterBinds,
     q.receiptUnits === null ? 0 : 1,
     JSON.stringify(q.receiptUnits ?? []),
+    // Decision 0769: ?34 and ?35, the units orders are read in.
+    q.orderUnits === null ? 0 : 1,
+    JSON.stringify(q.orderUnits ?? []),
   ];
   const invoiceBinds = binds.slice(0, 31);
+  // D1 takes exactly as many as the highest `?N` a query names: receipts stop at ?33, orders at ?35.
+  const receiptBinds = binds.slice(0, 33);
 
-  const receiptTotal = (await db.prepare(`SELECT count(*) AS n FROM goods_receipts r ${RECEIPT_WHERE}`).bind(...binds).first<{ n: number }>())?.n ?? 0;
+  const receiptTotal = q.withReceipts ? (await db.prepare(`SELECT count(*) AS n FROM goods_receipts r ${RECEIPT_WHERE}`).bind(...receiptBinds).first<{ n: number }>())?.n ?? 0 : 0;
+  const orderTotal = q.withOrders ? (await db.prepare(`SELECT count(*) AS n FROM purchase_orders po ${ORDER_WHERE}`).bind(...binds).first<{ n: number }>())?.n ?? 0 : 0;
   const invoiceTotal = q.withInvoices
     ? (await db.prepare(`SELECT count(*) AS n ${q.joins} ${q.whereClause}`).bind(...invoiceBinds).first<{ n: number }>())?.n ?? 0
     : 0;
 
-  const pageSql = q.withInvoices
-    ? `SELECT id, kind FROM (
-         SELECT h.id AS id, ${INVOICE_AT} AS at, 'invoice' AS kind ${q.joins} ${q.whereClause}
-         UNION ALL
-         SELECT r.id, ${RECEIPT_AT}, 'goods_receipt' FROM goods_receipts r ${RECEIPT_WHERE}
-       ) ORDER BY at DESC, kind DESC, id DESC LIMIT ?2 OFFSET ?17`
-    : `SELECT r.id AS id, 'goods_receipt' AS kind FROM goods_receipts r ${RECEIPT_WHERE}
-       ORDER BY ${RECEIPT_AT} DESC, r.id DESC LIMIT ?2 OFFSET ?17`;
-  const chosen = (await db.prepare(pageSql).bind(...binds).all<{ id: string; kind: string }>()).results;
+  // One page across every kind asked for, newest first.
+  const parts = [
+    q.withInvoices ? `SELECT h.id AS id, ${INVOICE_AT} AS at, 'invoice' AS kind ${q.joins} ${q.whereClause}` : null,
+    q.withReceipts ? `SELECT r.id AS id, ${RECEIPT_AT} AS at, 'goods_receipt' AS kind FROM goods_receipts r ${RECEIPT_WHERE}` : null,
+    q.withOrders ? `SELECT po.id AS id, ${ORDER_AT} AS at, 'purchase_order' AS kind FROM purchase_orders po ${ORDER_WHERE}` : null,
+  ].filter(Boolean);
+  const pageSql = `SELECT id, kind FROM (${parts.join(" UNION ALL ")}) ORDER BY at DESC, kind DESC, id DESC LIMIT ?2 OFFSET ?17`;
+  const chosen = (await db.prepare(pageSql).bind(...(q.withOrders ? binds : q.withReceipts ? receiptBinds : invoiceBinds)).all<{ id: string; kind: string }>()).results;
 
   const invoiceIds = chosen.filter((c) => c.kind === "invoice").map((c) => c.id);
   const receiptIds = chosen.filter((c) => c.kind === "goods_receipt").map((c) => c.id);
+  const orderIds = chosen.filter((c) => c.kind === "purchase_order").map((c) => c.id);
   const read = new Map<string, unknown>();
 
   if (invoiceIds.length) {
@@ -948,6 +1043,26 @@ async function listWithReceipts(
     ).results;
     for (const row of rows) read.set(`goods_receipt:${row.id}`, receiptDocument(row));
   }
+  if (orderIds.length) {
+    const tolerance = (await getOrgMatchingConfig(db)).quantityTolerancePct ?? 0;
+    const rows = (
+      await db
+        .prepare(
+          `SELECT po.id, po.order_number, po.issue_date, po.created_at, po.currency, po.payable_amount, po.seller_party_id,
+                  po.org_unit_id, ou.name AS org_unit_name,
+                  COALESCE(${ORDER_SUPPLIER_SQL("name", "po.seller_party_id", "sp")}, po.seller_party_id) AS supplier,
+                  (${EFFECTIVE_STATUS_CASE}) AS effective_status, rs.state AS receipt_state
+           FROM purchase_orders po
+           LEFT JOIN org_units ou ON ou.id = po.org_unit_id
+           ${INVOICED_AMOUNTS_JOIN}
+           ${receiptStateJoin(tolerance)}
+           WHERE po.id IN (SELECT value FROM json_each(?1))`
+        )
+        .bind(JSON.stringify(orderIds))
+        .all<OrderRow>()
+    ).results;
+    for (const row of rows) read.set(`purchase_order:${row.id}`, orderDocument(row));
+  }
 
   const documents = chosen.map((c) => read.get(`${c.kind}:${c.id}`)).filter(Boolean);
   return {
@@ -956,7 +1071,7 @@ async function listWithReceipts(
       documents,
       searched: documents.length,
       ...q.receiptsFlag,
-      total: invoiceTotal + receiptTotal,
+      total: invoiceTotal + receiptTotal + orderTotal,
       page: q.page,
       pageSize: q.pageSize,
     },

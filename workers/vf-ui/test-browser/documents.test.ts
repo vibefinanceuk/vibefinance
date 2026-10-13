@@ -97,6 +97,11 @@ const STRINGS = {
     "documents.type.invoice": "Invoices",
     "documents.type.credit_note": "Credit notes",
     "documents.type.goods_receipt": "Goods receipts",
+    // Decision 0769.
+    "documents.type.purchase_order": "Purchase orders",
+    "doctype.purchase_order": "Purchase order",
+    "docstatus.order_on_hold": "On hold",
+    "docstatus.order_invoiced": "Invoiced",
     "doctype.unknown": "Unknown",
     "viewer.title": "Invoice",
     "viewer.reflabel": "Unique Ref:",
@@ -793,6 +798,72 @@ describe("goods receipts among the documents — decision 0737", () => {
     await until(() => asked.some((u) => u.startsWith("/api/goods-receipts/gr-1")));
     expect(asked.some((u) => u.startsWith("/api/goods-receipts/gr-1"))).toBe(true);
     expect(document.getElementById("viewer")?.hidden).toBe(true);
+  });
+});
+
+describe("purchase orders among the documents — decision 0769", () => {
+  const ORDER = {
+    id: "po-1",
+    kind: "purchase_order",
+    number: "690000314",
+    typeCode: null,
+    supplier: "The Thornbury Deli Limited",
+    amount: 479.04,
+    currency: "GBP",
+    dueDate: null,
+    receivedAt: "2026-10-13 15:43:51",
+    sender: null,
+    orgUnitName: "Acme Group",
+    status: "order_on_hold",
+    hands: 0,
+    po: "690000314",
+  };
+
+  it("says an order is one, its state in a pill, among invoices and receipts in All", async () => {
+    stubDocumentsRecordingUrl({ documents: [{ ...DOC, kind: "invoice" }, ORDER], total: 2, page: 1, pageSize: 50, receipts: true, orders: true });
+    await openScreen();
+    const rows = [...document.querySelectorAll("tbody tr")];
+    expect(rows.map((r) => r.querySelector("td")?.textContent)).toEqual(["Invoice", "Purchase order"]);
+    expect(rows[1].querySelector("td span")?.className).toBe("doctypeorder");
+    const pill = rows[1].querySelector(".statuspill") as HTMLElement;
+    expect(pill.textContent).toBe("On hold");
+    expect(pill.classList.contains("waiting")).toBe(true);
+    expect(rows[1].textContent).toContain("690000314");
+  });
+
+  it("filters to orders, offered only to someone who may read them", async () => {
+    const requestedUrl = stubDocumentsRecordingUrl({ documents: [ORDER], total: 1, page: 1, pageSize: 50, receipts: true, orders: true });
+    await openScreen();
+    const picker = document.getElementById("doctype") as HTMLSelectElement;
+    expect([...picker.options].map((o) => o.textContent)).toEqual(["All types", "Invoices", "Credit notes", "Goods receipts", "Purchase orders"]);
+    picker.value = "purchase_order";
+    picker.dispatchEvent(new Event("change"));
+    await until(() => requestedUrl().includes("type=purchase_order"));
+    expect(requestedUrl()).toContain("type=purchase_order");
+  });
+
+  it("offers no orders to someone who may not read them", async () => {
+    stubDocumentsRecordingUrl({ documents: [DOC], total: 1, page: 1, pageSize: 50, receipts: true, orders: false });
+    await openScreen();
+    expect([...(document.getElementById("doctype") as HTMLSelectElement).options].map((o) => o.value)).toEqual(["", "invoice", "credit_note", "goods_receipt"]);
+  });
+
+  it("opens an order on its own page, as from Purchase Orders", async () => {
+    stubDocumentsRecordingUrl({ documents: [ORDER], total: 1, page: 1, pageSize: 50, orders: true });
+    await openScreen();
+    const asked: string[] = [];
+    const before = globalThis.fetch;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        asked.push(String(url));
+        if (String(url) === "/api/purchase-orders/690000314") return { ok: false, status: 404, json: async () => ({}) } as Response;
+        return before(url, init);
+      })
+    );
+    (document.querySelector("tbody tr") as HTMLElement).click();
+    await until(() => asked.includes("/api/purchase-orders/690000314"));
+    expect(asked).toContain("/api/purchase-orders/690000314");
   });
 });
 
