@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 13 October 2026 (decision 0766). A living document: what
+Last updated 13 October 2026 (decision 0767). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,13 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### The order's PDF fits its panel (0767)
+
+The order's PDF fills the panel beside its cards and no longer spills out of the bottom, in
+VibeFinance and in the supplier network.
+
+Full reasoning is in decision 0767.
 
 ### The order's page in VibeFinance, laid out as the supplier network's (0766)
 

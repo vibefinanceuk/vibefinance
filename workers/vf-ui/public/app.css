@@ -5803,6 +5803,13 @@
 /* Decision 0760: a purchase order's Document tab — the PDF, with its downloads above it. */
 .podoc { display: flex; flex-direction: column; gap: 8px; flex: 1 1 auto; min-height: 0; }
 .podoc[hidden] { display: none; }
-.podocframe { flex: 1 1 auto; width: 100%; min-height: 480px; border: 0.5px solid var(--border); border-radius: var(--radius); background: var(--surface-2); }
+/*
+  Decision 0767: the frame fills the height its panel has and no more.
+  Beside the order's cards (0765, 0766) the panel ends with the header card,
+  and a 480px floor spilled the PDF out of its bottom. The floor stays where
+  the page stacks and the panel has no height of its own.
+*/
+.podocframe { flex: 1 1 auto; width: 100%; min-height: 0; border: 0.5px solid var(--border); border-radius: var(--radius); background: var(--surface-2); }
+@media (max-width: 1000px) { .podocframe { min-height: 480px; } }
 /* Four tabs on an order's panel: each kept on one line. */
 .poview .receipttabs .doctab { padding: 6px 10px; white-space: nowrap; }
