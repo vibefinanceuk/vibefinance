@@ -503,6 +503,8 @@ const PROXIED_TO_INSTANCE: RegExp[] = [
   /^\/purchase-orders\/[^/]+\/(timeline|comments|people|collaborators(\/[^/]+)?|attachments(\/[^/]+\/\d+\/url)?)$/,
   // Decision 0759: Send to supplier.
   /^\/purchase-orders\/[^/]+\/send-to-supplier$/,
+  // Decision 0760: the order as a PDF, UBL or CSV.
+  /^\/purchase-orders\/[^/]+\/document$/,
   // Finding one of our own units, and re-routing (decision 0224).
   /^\/org\/units\/search$/,
   /^\/invoices\/[^/]+\/org$/,

@@ -164,6 +164,7 @@ export default defineConfig({
       "/receipt-timeline.js": resolve(__dirname, "public/receipt-timeline.js"),
       "/order-timeline.js": resolve(__dirname, "public/order-timeline.js"),
       "/orders-out.js": resolve(__dirname, "public/orders-out.js"),
+      "/order-document.js": resolve(__dirname, "public/order-document.js"),
       // Conversations on Tasks — decision 0660.
       "/receipt-conversations.js": resolve(__dirname, "public/receipt-conversations.js"),
       "/agent-notes.js": resolve(__dirname, "public/agent-notes.js"),

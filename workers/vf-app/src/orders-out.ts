@@ -4,7 +4,8 @@ import { sendEmailViaResend } from "./resend-client.js";
 import { addRouteEvent, finishRouteMessage, openOutboundMessage, routePartKey, storeRoutePart } from "./route-messages.js";
 import { coveredUnits, covers, unitIdsOf } from "./destination-units.js";
 import { ORDER_SUPPLIER_ID } from "./order-supplier.js";
-import { orderEvent } from "./order-history.js";
+import { orderEvent, type OrderDiff } from "./order-history.js";
+import { orderCsv, orderPdf } from "./order-pdf.js";
 
 /**
  * **Orders to suppliers — decision 0759**, slice 4a of purchase orders.
@@ -43,9 +44,11 @@ export interface OrdersOutSettings {
   replyTo: string | null;
   ccBuyer: boolean;
   attachUbl: boolean;
+  /** Decision 0760: the order as a PDF, for people to read. */
+  attachPdf: boolean;
 }
 
-export const DEFAULT_ORDERS_OUT: OrdersOutSettings = { sendOnRelease: true, replyTo: null, ccBuyer: true, attachUbl: true };
+export const DEFAULT_ORDERS_OUT: OrdersOutSettings = { sendOnRelease: true, replyTo: null, ccBuyer: true, attachUbl: true, attachPdf: true };
 
 export interface OrdersOutDeps {
   email: { apiKey: string; from: string } | null;
@@ -74,6 +77,7 @@ export function settingsOf(json: string | null | undefined): OrdersOutSettings {
     replyTo: typeof s.replyTo === "string" && addresses(s.replyTo).length ? addresses(s.replyTo)[0] : null,
     ccBuyer: typeof s.ccBuyer === "boolean" ? s.ccBuyer : DEFAULT_ORDERS_OUT.ccBuyer,
     attachUbl: typeof s.attachUbl === "boolean" ? s.attachUbl : DEFAULT_ORDERS_OUT.attachUbl,
+    attachPdf: typeof s.attachPdf === "boolean" ? s.attachPdf : DEFAULT_ORDERS_OUT.attachPdf,
   };
 }
 
@@ -298,6 +302,7 @@ const WORDS: Record<Locale, Record<string, string>> = {
     "lead.change": "{company} has changed purchase order {number}. This replaces the order sent before.",
     "lead.cancellation": "{company} has cancelled purchase order {number}. Please do not deliver or invoice it.",
     ubl: "The order is attached as a Peppol BIS order (UBL), for your system to read.",
+    pdf: "The order is attached as a PDF.",
     reply: "Reply to this email to reach {who}.",
     number: "Order number",
     date: "Order date",
@@ -322,6 +327,7 @@ const WORDS: Record<Locale, Record<string, string>> = {
     "lead.change": "{company} hat die Bestellung {number} geändert. Sie ersetzt die zuvor gesendete Bestellung.",
     "lead.cancellation": "{company} hat die Bestellung {number} storniert. Bitte weder liefern noch fakturieren.",
     ubl: "Die Bestellung ist als Peppol-BIS-Bestellung (UBL) beigefügt, zum Einlesen in Ihr System.",
+    pdf: "Die Bestellung ist als PDF beigefügt.",
     reply: "Antworten Sie auf diese E-Mail, um {who} zu erreichen.",
     number: "Bestellnummer",
     date: "Bestelldatum",
@@ -354,7 +360,7 @@ function money(n: number | null | undefined, currency: string | null, locale: Lo
 const qty = (n: number | null) => (typeof n === "number" ? (Number.isInteger(n) ? String(n) : String(Math.round(n * 1e6) / 1e6)) : "—");
 
 /** The email for one order, in the supplier's language. Exported for its test. */
-export function orderEmail(doc: OrderDocument, kind: OrderKind, opts: { replyTo: string | null; attachUbl: boolean }): { subject: string; text: string; html: string; locale: Locale } {
+export function orderEmail(doc: OrderDocument, kind: OrderKind, opts: { replyTo: string | null; attachUbl: boolean; attachPdf?: boolean }): { subject: string; text: string; html: string; locale: Locale } {
   const locale: Locale = GERMAN.has((doc.supplier?.country ?? "").toUpperCase()) ? "de" : "en";
   const w = WORDS[locale];
   const company = doc.company.name ?? "";
@@ -388,6 +394,7 @@ export function orderEmail(doc: OrderDocument, kind: OrderKind, opts: { replyTo:
     ...facts.map(([k, val]) => `${k}: ${val}`),
     "",
     ...(kind === "cancellation" ? [] : [cols.join(" | "), ...rows.map((r) => r.join(" | ")), ""]),
+    ...(opts.attachPdf ? [w.pdf, ""] : []),
     ...(opts.attachUbl ? [w.ubl, ""] : []),
     ...(replyLine ? [replyLine, ""] : []),
     fill(w.footer, v),
@@ -404,6 +411,7 @@ ${
         .map((r) => `<tr>${r.map((c, i) => cell(c, i >= 3 && i !== 4)).join("")}</tr>`)
         .join("")}</table>`
 }
+${opts.attachPdf ? `<p style="margin:0 0 12px;color:#5b6675">${esc(w.pdf)}</p>` : ""}
 ${opts.attachUbl ? `<p style="margin:0 0 12px;color:#5b6675">${esc(w.ubl)}</p>` : ""}
 ${replyLine ? `<p style="margin:0 0 12px">${esc(replyLine)}</p>` : ""}
 <p style="margin:16px 0 0;color:#5b6675;font-size:12px">${esc(fill(w.footer, v))}</p></div>`;
@@ -412,12 +420,62 @@ ${replyLine ? `<p style="margin:0 0 12px">${esc(replyLine)}</p>` : ""}
 
 // ── Sending ────────────────────────────────────────────────────────────
 
-const toBase64 = (s: string) => {
-  const bytes = new TextEncoder().encode(s);
+const bytesToBase64 = (bytes: Uint8Array) => {
   let bin = "";
-  for (const b of bytes) bin += String.fromCharCode(b);
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
   return btoa(bin);
 };
+const toBase64 = (s: string) => bytesToBase64(new TextEncoder().encode(s));
+
+/** What a version of an order is called as a file: `PO-7.pdf`, `PO-7-change.pdf`, `PO-7-cancellation.pdf`. */
+export const documentFilename = (orderNumber: string, kind: OrderKind, ext: string) => `${orderNumber}${kind === "order" ? "" : `-${kind}`}.${ext}`.replace(/[^\w.-]+/g, "_");
+
+/**
+ * **Which version of an order, and what it changed — decision 0760**: the
+ * release named (or the latest), its kind, note and change reference, and
+ * for a change what 0754 recorded it changed.
+ */
+export async function orderVersion(
+  db: D1Database,
+  orderNumber: string,
+  intakeId: string | null = null
+): Promise<{ id: string | null; kind: OrderKind; note: string | null; changeReference: string | null; changes: OrderDiff | null }> {
+  const row = intakeId
+    ? await db.prepare("SELECT id, kind, note, change_reference FROM purchase_order_intake WHERE id = ?").bind(intakeId).first<{ id: string; kind: OrderKind; note: string | null; change_reference: string | null }>()
+    : await db
+        .prepare("SELECT id, kind, note, change_reference FROM purchase_order_intake WHERE order_number = ? AND status = 'released' ORDER BY released_at DESC, rowid DESC LIMIT 1")
+        .bind(orderNumber)
+        .first<{ id: string; kind: OrderKind; note: string | null; change_reference: string | null }>();
+  if (!row) return { id: null, kind: "order", note: null, changeReference: null, changes: null };
+  let changes: OrderDiff | null = null;
+  if (row.kind === "change") {
+    const event = await db.prepare("SELECT detail_json FROM purchase_order_events WHERE intake_id = ? AND kind = 'changed' ORDER BY at DESC LIMIT 1").bind(row.id).first<{ detail_json: string | null }>();
+    try {
+      changes = event?.detail_json ? (JSON.parse(event.detail_json) as OrderDiff) : null;
+    } catch {
+      changes = null;
+    }
+  }
+  return { id: row.id, kind: row.kind, note: row.note, changeReference: row.change_reference, changes };
+}
+
+export type DocumentFormat = "pdf" | "ubl" | "csv";
+
+/**
+ * **The order as a document — decision 0760**, for the Document tab in
+ * VibeFinance and the supplier network: the order as it stands, as the
+ * latest version released (a change's changes marked), as a PDF, its UBL,
+ * or Purchase Orders' own CSV. Null where there is no such order.
+ */
+export async function orderFile(db: D1Database, orderNumber: string, format: DocumentFormat): Promise<{ bytes: Uint8Array; contentType: string; filename: string } | null> {
+  const version = await orderVersion(db, orderNumber);
+  const doc = await orderDocument(db, orderNumber, version.note);
+  if (!doc) return null;
+  if (format === "ubl") return { bytes: new TextEncoder().encode(doc.ubl), contentType: "application/xml; charset=utf-8", filename: documentFilename(orderNumber, version.kind, "xml") };
+  if (format === "csv") return { bytes: new TextEncoder().encode(orderCsv(doc)), contentType: "text/csv; charset=utf-8", filename: documentFilename(orderNumber, version.kind, "csv") };
+  const pdf = await orderPdf(doc, { kind: version.kind, changes: version.changes, note: version.note, changeReference: version.changeReference });
+  return { bytes: pdf, contentType: "application/pdf", filename: documentFilename(orderNumber, version.kind, "pdf") };
+}
 
 export interface SendOutcome {
   status: "sent" | "failed" | "no_address" | "not_sent";
@@ -468,7 +526,7 @@ export async function sendOrder(
         params.orderNumber,
         outcome.status === "sent" ? "sent_to_supplier" : outcome.status === "failed" ? "send_failed" : "not_sent",
         params.by,
-        { kind: params.kind, how: params.how, to: outcome.to, from: outcome.from, error: outcome.error, reason: outcome.status === "sent" || outcome.status === "failed" ? null : outcome.status, ubl: settings.attachUbl, intakeId: params.intakeId },
+        { kind: params.kind, how: params.how, to: outcome.to, from: outcome.from, error: outcome.error, reason: outcome.status === "sent" || outcome.status === "failed" ? null : outcome.status, ubl: settings.attachUbl, pdf: settings.attachPdf, intakeId: params.intakeId },
         at
       ),
     ]);
@@ -484,15 +542,24 @@ export async function sendOrder(
   if (params.how === "on_release" && recipients?.supplierSendsOwn) return record({ status: "not_sent", to: [], from: null, messageId: null, error: null });
   if (!to.length) return record({ status: "no_address", to: [], from: null, messageId: null, error: null });
 
-  const mail = orderEmail(doc, params.kind, { replyTo: settings.replyTo, attachUbl: settings.attachUbl });
+  const mail = orderEmail(doc, params.kind, { replyTo: settings.replyTo, attachUbl: settings.attachUbl, attachPdf: settings.attachPdf });
   const filename = `${doc.order.order_number}.xml`.replace(/[^\w.-]+/g, "_");
-  const messageId = await openOutboundMessage(db, { destinationId: params.instance.id, recipient: to.join(", "), subject: mail.subject, bytes: mail.html.length + (settings.attachUbl ? doc.ubl.length : 0), receivedAt: at, actor: params.by ?? undefined, event: "sending" });
+  // Decision 0760: the order as a PDF, as this version says it (a change's changes marked).
+  const version = settings.attachPdf ? await orderVersion(db, params.orderNumber, params.intakeId) : null;
+  const pdf = settings.attachPdf ? await orderPdf(doc, { kind: params.kind, changes: version?.changes ?? null, note: params.note ?? version?.note ?? null, changeReference: version?.changeReference ?? null }) : null;
+  const pdfName = documentFilename(doc.order.order_number, params.kind, "pdf");
+  const messageId = await openOutboundMessage(db, { destinationId: params.instance.id, recipient: to.join(", "), subject: mail.subject, bytes: mail.html.length + (settings.attachUbl ? doc.ubl.length : 0) + (pdf?.length ?? 0), receivedAt: at, actor: params.by ?? undefined, event: "sending" });
   if (messageId && deps.bucket && deps.customerId) {
-    const parts: [string, string, string][] = [["email.html", "text/html", mail.html], ...(settings.attachUbl ? ([[filename, "application/xml", doc.ubl]] as [string, string, string][]) : [])];
+    const enc = (t: string) => new TextEncoder().encode(t);
+    const parts: [string, string, Uint8Array][] = [
+      ["email.html", "text/html", enc(mail.html)],
+      ...(pdf ? ([[pdfName, "application/pdf", pdf]] as [string, string, Uint8Array][]) : []),
+      ...(settings.attachUbl ? ([[filename, "application/xml", enc(doc.ubl)]] as [string, string, Uint8Array][]) : []),
+    ];
     let seq = 0;
     for (const [name, type, body] of parts) {
       seq++;
-      await storeRoutePart(deps.bucket, db, { messageId, seq, role: "sent", filename: name, contentType: type, bytes: new TextEncoder().encode(body), key: routePartKey(deps.customerId, params.instance.id, messageId, at, seq, name) });
+      await storeRoutePart(deps.bucket, db, { messageId, seq, role: "sent", filename: name, contentType: type, bytes: body, key: routePartKey(deps.customerId, params.instance.id, messageId, at, seq, name) });
     }
   }
   if (!deps.email) {
@@ -510,7 +577,14 @@ export async function sendOrder(
     subject: mail.subject,
     text: mail.text,
     html: mail.html,
-    ...(settings.attachUbl ? { attachments: [{ filename, content: toBase64(doc.ubl) }] } : {}),
+    ...(settings.attachUbl || pdf
+      ? {
+          attachments: [
+            ...(pdf ? [{ filename: pdfName, content: bytesToBase64(pdf) }] : []),
+            ...(settings.attachUbl ? [{ filename, content: toBase64(doc.ubl) }] : []),
+          ],
+        }
+      : {}),
   });
   if (!result.ok) {
     if (messageId) await finishRouteMessage(db, messageId, { status: "failed", failedPart: "delivery", errorCode: "email_refused", errorText: result.error });
@@ -652,6 +726,7 @@ export async function handlePutOrdersOut(db: D1Database, instanceId: string, bod
     sendOnRelease: typeof body.sendOnRelease === "boolean" ? body.sendOnRelease : now.sendOnRelease,
     ccBuyer: typeof body.ccBuyer === "boolean" ? body.ccBuyer : now.ccBuyer,
     attachUbl: typeof body.attachUbl === "boolean" ? body.attachUbl : now.attachUbl,
+    attachPdf: typeof body.attachPdf === "boolean" ? body.attachPdf : now.attachPdf,
     replyTo: "replyTo" in body ? (typeof body.replyTo === "string" && body.replyTo.trim() ? addresses(body.replyTo)[0] : null) : now.replyTo,
   };
   await db.prepare("UPDATE route_instances SET settings_json = ? WHERE id = ?").bind(JSON.stringify(next), instanceId).run();

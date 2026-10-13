@@ -3806,6 +3806,17 @@ const KEYS_THE_INTERFACE_USES = [
   "purchaseorders.conv.order",
   // A purchase order opened as a page (decision 0753).
   "purchaseorders.supplierchat.none",
+  // A purchase order as a PDF, and its Document tab (decision 0760).
+  "orderdoc.tab",
+  "orderdoc.title",
+  "orderdoc.loading",
+  "orderdoc.failed",
+  "orderdoc.pdf",
+  "orderdoc.ubl",
+  "orderdoc.csv",
+  "network.order.messagestab",
+  "ordersout.attachpdf",
+  "purchaseorders.tl.sent.pdf",
   // Orders to suppliers (decision 0759).
   "connector.orders-email-out.name",
   "connector.orders-email-out.description",

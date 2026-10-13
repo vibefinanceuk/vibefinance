@@ -8,6 +8,7 @@ import { statePill, figuresTable } from "/goods-receipts.js";
 import { buildSupplierTab, fetchSupplierChat, openAskSupplier, supplierQueryText } from "/supplier-chat.js";
 import { buildAttachmentsTab } from "/attachments.js";
 import { buildOrderTimeline } from "/order-timeline.js";
+import { buildOrderDocumentTab } from "/order-document.js";
 
 /**
  * Loading, and now browsing, purchase orders — decisions 0371 and 0372.
@@ -791,7 +792,10 @@ export async function openPurchaseOrder(summary, { onDone = null } = {}) {
   const supplierTab = supplierChat?.available ? buildSupplierTab(order.order_number, supplierChat, { url: supplierUrl }) : null;
   const countBadge = el("span", { class: "activitycount", hidden: "hidden" });
   const attachments = buildAttachmentsTab(order.order_number, { base: `/api/purchase-orders/${encodeURIComponent(order.order_number)}`, id: "po-attachments", subject: "order" });
+  // Decision 0760: the order as the supplier gets it, as a PDF, with its downloads.
+  const documentTab = buildOrderDocumentTab(order.order_number);
   const tabs = [
+    { key: "document", label: t("orderdoc.tab"), pane: documentTab.content, onSelect: documentTab.open },
     { key: "attachments", label: t("viewer.attachmentstab"), pane: attachments.content, onSelect: attachments.open },
     { key: "timeline", label: t("activity.timelinetab"), pane: buildOrderTimeline(order.order_number, { countBadge }), badge: countBadge },
     {

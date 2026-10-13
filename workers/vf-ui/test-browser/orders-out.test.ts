@@ -98,7 +98,7 @@ describe("the Destination's panel on Process routes", () => {
     (document.getElementById("oo-ccbuyer") as HTMLInputElement).checked = false;
     document.getElementById("oo-save")!.click();
     await vi.waitFor(() => expect(calls.some((c) => c.method === "PUT")).toBe(true));
-    expect(calls.find((c) => c.method === "PUT")).toEqual({ method: "PUT", path: "/api/route-instances/dest-1/orders-out", body: { sendOnRelease: true, ccBuyer: false, attachUbl: true, replyTo: "purchasing@acme.example" } });
+    expect(calls.find((c) => c.method === "PUT")).toEqual({ method: "PUT", path: "/api/route-instances/dest-1/orders-out", body: { sendOnRelease: true, ccBuyer: false, attachPdf: true, attachUbl: true, replyTo: "purchasing@acme.example" } });
   });
 });
 
@@ -142,9 +142,9 @@ describe("the order's Timeline", () => {
   it("says what was sent, to whom, by which address, and how", async () => {
     await start([]);
     const { describeOrderItem, orderSubs } = await import("/order-timeline.js");
-    const item = { kind: "sent_to_supplier", at: "2026-10-12T09:00:00Z", by: "Pat Lee", detail: { kind: "change", how: "by_hand", to: ["orders@kingsway.example"], from: "orders_email", ubl: true } };
+    const item = { kind: "sent_to_supplier", at: "2026-10-12T09:00:00Z", by: "Pat Lee", detail: { kind: "change", how: "by_hand", to: ["orders@kingsway.example"], from: "orders_email", ubl: true, pdf: true } };
     expect(describeOrderItem(item)).toBe("The change sent to the supplier: orders@kingsway.example.");
-    expect(orderSubs(item)).toEqual(["The supplier's orders address", "Sent by hand by Pat Lee.", "With the order as a Peppol BIS order (UBL)."]);
+    expect(orderSubs(item)).toEqual(["The supplier's orders address", "Sent by hand by Pat Lee.", "With the order as a PDF.", "With the order as a Peppol BIS order (UBL)."]);
     expect(describeOrderItem({ kind: "not_sent", at: "", by: null, detail: { reason: "no_address" } })).toBe("Not sent to the supplier: there is no address to send it to.");
     expect(describeOrderItem({ kind: "send_failed", at: "", by: null, detail: { to: ["x@y.example"], error: "refused" } })).toBe("Not sent to x@y.example: refused");
   });

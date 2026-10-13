@@ -54,13 +54,15 @@ export function ordersOutSection(destination, onChanged) {
     const onRelease = el("input", { type: "checkbox", id: "oo-onrelease", ...(s.sendOnRelease ? { checked: "checked" } : {}) });
     const ccBuyer = el("input", { type: "checkbox", id: "oo-ccbuyer", ...(s.ccBuyer ? { checked: "checked" } : {}) });
     const attachUbl = el("input", { type: "checkbox", id: "oo-ubl", ...(s.attachUbl ? { checked: "checked" } : {}) });
+    // Decision 0760.
+    const attachPdf = el("input", { type: "checkbox", id: "oo-pdf", ...(s.attachPdf !== false ? { checked: "checked" } : {}) });
     const replyTo = el("input", { type: "email", id: "oo-replyto", value: s.replyTo ?? "", placeholder: t("ordersout.replytohint") });
     const check = (input, label, hint) => el("label", { class: "oocheck" }, [input, el("span", {}, [el("span", { text: label }), hint ? el("div", { class: "muted sm", text: hint }) : null].filter(Boolean))]);
     const save = actionLink("save", {
       primary: true,
       onclick: async () => {
         problem.textContent = "";
-        const r = await call(base, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sendOnRelease: onRelease.checked, ccBuyer: ccBuyer.checked, attachUbl: attachUbl.checked, replyTo: replyTo.value.trim() || null }) });
+        const r = await call(base, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sendOnRelease: onRelease.checked, ccBuyer: ccBuyer.checked, attachPdf: attachPdf.checked, attachUbl: attachUbl.checked, replyTo: replyTo.value.trim() || null }) });
         if (!r.ok) {
           problem.textContent = r.body?.reason === "bad_address" ? t("ordersout.badaddress") : r.body?.error ?? t("ordersout.failed");
           return;
@@ -104,6 +106,7 @@ export function ordersOutSection(destination, onChanged) {
         state.started ? null : el("p", { class: "warn sm", id: "oo-notstarted", text: t("ordersout.notstarted") }),
         check(onRelease, t("ordersout.onrelease"), t("ordersout.onreleasehint")),
         check(ccBuyer, t("ordersout.ccbuyer"), null),
+        check(attachPdf, t("ordersout.attachpdf"), null),
         check(attachUbl, t("ordersout.attachubl"), t("ordersout.attachublhint")),
         el("div", { class: "dofield" }, [el("label", { for: "oo-replyto", text: t("ordersout.replyto") }), replyTo, el("div", { class: "muted sm", text: t("ordersout.replytonote") })]),
         problem,

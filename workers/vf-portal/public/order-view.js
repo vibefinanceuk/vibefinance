@@ -33,7 +33,7 @@ export function invoiceable(o) {
 }
 
 /** The page. `deps` carries what portal.js owns: the status chip, money, back to Documents, the conversation (0752), and invoicing it (0755). */
-export function orderPage(o, { statusChip, money, back, conversation, invoice }, handlers) {
+export function orderPage(o, { statusChip, money, back, conversation, invoice, document: documentTab }, handlers) {
   const can = invoiceable(o);
   // Decision 0755: Invoice this order, beside Back; why not, where it cannot be.
   const invoiceButton = invoice
@@ -58,6 +58,34 @@ export function orderPage(o, { statusChip, money, back, conversation, invoice },
   const price = (n) => (typeof n === "number" ? money(n, o.currency) : "—");
   const chat = conversation ? conversation(o) : null;
   chat?.classList.add("panel", "netviewchat");
+  /**
+   * **Messages and Document, as tabs — decision 0760**: the conversation
+   * (0752) and the order as the customer sends it, a PDF with its downloads.
+   * Messages first, as the conversation was alone before.
+   */
+  let side = chat;
+  const doc = documentTab ? documentTab(o) : null;
+  if (doc) {
+    const panes = [
+      { key: "messages", label: t("network.order.messagestab"), pane: chat ?? el("div", {}) },
+      { key: "document", label: t("orderdoc.tab"), pane: doc.content, onSelect: doc.open },
+    ];
+    for (const p of panes) {
+      p.pane.classList.remove("panel", "netviewchat");
+      p.pane.classList.add("netsidepane");
+    }
+    const select = (which) => {
+      for (const p of panes) {
+        p.button.className = p.key === which ? "doctab on" : "doctab";
+        p.button.setAttribute("aria-selected", String(p.key === which));
+        p.pane.hidden = p.key !== which;
+      }
+      panes.find((p) => p.key === which)?.onSelect?.();
+    };
+    for (const p of panes) p.button = el("button", { type: "button", role: "tab", class: "doctab", id: `net-tab-${p.key}`, onclick: () => select(p.key) }, [el("span", { text: p.label })]);
+    select("messages");
+    side = el("div", { class: "panel netviewchat netsidetabs" }, [el("div", { class: "doctabs receipttabs", role: "tablist" }, panes.map((p) => p.button)), ...panes.map((p) => p.pane)]);
+  }
   return el("div", { class: "netinvoiceview netorderview" }, [
     title,
     el("p", { class: "muted sm", text: t("network.order.note", { customer: o.customer ?? "" }) }),
@@ -117,7 +145,7 @@ export function orderPage(o, { statusChip, money, back, conversation, invoice },
             : el("p", { class: "muted", text: t("network.order.nolines") }),
         ]),
       ]),
-      chat,
+      side,
     ].filter(Boolean)),
   ]);
 }

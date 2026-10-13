@@ -5506,6 +5506,16 @@
 .receiptview .receiptactions { display: flex; align-items: center; gap: 4px; }
 .receiptmain .receiptcorrected { white-space: normal; max-width: 11em; margin-left: auto; }
 .receiptmain td.nowrap { white-space: nowrap; }
+/**
+ * **An order's page splits 3:2, as the invoice viewer does — decision
+ * 0760.** Asked for directly once the order gained a Document tab: "give
+ * the document viewer equal width as that which we have configured in the
+ * invoice viewer" (`#viewer .columns`, decision 0390). Goods receipts keep
+ * their narrower side panel; only `.poview` is widened.
+ */
+@media (min-width: 901px) {
+  .poview .receiptpage { grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); }
+}
 @media (max-width: 900px) {
   .receiptpage { grid-template-columns: minmax(0, 1fr); }
   .receiptpage > .receiptsidepanel { position: static; height: 70vh; }
@@ -5762,3 +5772,11 @@
 .oocheck input { margin-top: 3px; }
 .oowho { margin: 4px 0 8px 18px; padding: 0; }
 .oowho li { margin: 2px 0; }
+
+/* Decision 0760: a purchase order's Document tab — the PDF, with its downloads above it. */
+.podoc { display: flex; flex-direction: column; gap: 8px; flex: 1 1 auto; min-height: 0; }
+.podoc[hidden] { display: none; }
+.podocbar { display: flex; flex-wrap: wrap; gap: 4px 12px; flex: none; }
+.podocframe { flex: 1 1 auto; width: 100%; min-height: 480px; border: 0.5px solid var(--border); border-radius: var(--radius); background: var(--surface-2); }
+/* Four tabs on an order's panel: each kept on one line. */
+.poview .receipttabs .doctab { padding: 6px 10px; white-space: nowrap; }

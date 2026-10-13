@@ -1,7 +1,7 @@
 import { env, SELF } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 import worker, { readSession, type Env } from "../src/index.js";
-import { invoice, invoices, me, order, receipt, reply, submissionCompanies, submit, type Deps } from "../src/network.js";
+import { invoice, invoices, me, order, orderDocument, receipt, reply, submissionCompanies, submit, type Deps } from "../src/network.js";
 
 /**
  * **The supplier network — decision 0717.** vf-licence and the customers'
@@ -108,13 +108,28 @@ describe("goods receipts — decision 0738", () => {
   });
 });
 
+describe("an order as a document — decision 0760", () => {
+  it("passes the customer's PDF through as it comes, asking only the customer that link is for, and only for a format", async () => {
+    const seen: Seen[] = [];
+    const pdf = () => new Response(new Uint8Array([37, 80, 68, 70, 45]), { headers: { "Content-Type": "application/pdf", "Content-Disposition": 'inline; filename="PO-7.pdf"', "X-Other": "no" } });
+    const res = await orderDocument(deps({ "acme.example": pdf }, seen), "good", "pl-acme", "po1", "?format=pdf&download=1&other=x");
+    expect(res.status).toBe(200);
+    expect([res.headers.get("Content-Type"), res.headers.get("Content-Disposition"), res.headers.get("X-Other"), res.headers.get("Cache-Control")]).toEqual(["application/pdf", 'inline; filename="PO-7.pdf"', null, "private, no-store"]);
+    expect(new TextDecoder().decode(await res.arrayBuffer())).toBe("%PDF-");
+    expect(seen).toEqual([{ url: "https://acme.example/portal/orders/po1/document?format=pdf&download=1", auth: "Bearer tok-acme" }]);
+    expect((await orderDocument(deps({ "acme.example": () => new Response("{}", { status: 404 }) }), "good", "pl-acme", "po9", "")).status).toBe(404);
+    expect((await orderDocument(deps({}), "good", "pl-someone", "po1", "")).status).toBe(404);
+    expect((await orderDocument(deps({}), "stale", "pl-acme", "po1", "")).status).toBe(401);
+  });
+});
+
 describe("the Worker", () => {
   const withLicence = (licence: (path: string, init: RequestInit) => Response | Promise<Response>) =>
     ({ ...(env as unknown as Env), LICENCE_SERVICE: { fetch: (u: string, init: RequestInit) => licence(new URL(u).pathname, init) } as unknown as Fetcher }) as Env;
   const call = (e: Env, path: string, init: RequestInit = {}) => worker.fetch(new Request(`https://network.example${path}`, init), e);
 
   it("serves the pages", async () => {
-    for (const page of ["/", "/welcome.html", "/portal.js", "/welcome.js", "/shell.js", "/icons.js", "/create.js", "/view.js", "/bis3.js", "/portal.css", "/tokens.css", "/app.css", "/img/logo.png", "/img/logo-light.png", "/img/logo-mark.png"]) {
+    for (const page of ["/", "/welcome.html", "/portal.js", "/welcome.js", "/shell.js", "/icons.js", "/create.js", "/view.js", "/order-view.js", "/order-document.js", "/bis3.js", "/portal.css", "/tokens.css", "/app.css", "/img/logo.png", "/img/logo-light.png", "/img/logo-mark.png"]) {
       expect((await SELF.fetch(`https://network.example${page}`)).status, page).toBe(200);
     }
   });
@@ -312,6 +327,7 @@ describe("the network's words", () => {
       (await import("../public/view.js?raw")).default,
       (await import("../public/receipt-view.js?raw")).default,
       (await import("../public/order-view.js?raw")).default,
+      (await import("../public/order-document.js?raw")).default,
       (await import("../public/welcome.js?raw")).default,
     ] as string[];
     const used = new Set<string>();

@@ -149,6 +149,11 @@ main#welcome .field + .field { margin-top: var(--gap-loose); }
 .netviewchat .reply { margin-top: 8px; }
 .netinvoiceview .topbar h2 .status { margin-left: 10px; vertical-align: middle; font-size: var(--text-sm); }
 .netviewlines table { width: 100%; }
+/* An order's page splits 3:2, as the buyer's invoice viewer does, now its
+   right side holds the order's Document — decision 0760. */
+@media (min-width: 1001px) {
+  .netorderview .netview { grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); }
+}
 @media (max-width: 1000px) {
   .netview { grid-template-columns: 1fr; }
   .netview .netviewchat { contain: none; }
@@ -184,3 +189,8 @@ main#welcome .field + .field { margin-top: var(--gap-loose); }
 .netlist-controls .range { white-space: nowrap; font-size: var(--text-sm); color: var(--text-muted); min-width: 7em; text-align: center; }
 .netlist-capped { font-size: var(--text-sm); color: var(--text-muted); margin-top: 8px; }
 .columnpicker summary svg { width: 16px; height: 16px; }
+
+/* Decision 0760: an order's Messages and Document, as tabs on the right. */
+.netsidetabs .receipttabs { align-self: flex-start; margin-bottom: 10px; flex: none; }
+.netsidetabs .netsidepane { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }
+.netsidetabs .netsidepane[hidden] { display: none; }

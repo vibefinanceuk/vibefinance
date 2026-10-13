@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 13 October 2026 (decision 0759). A living document: what
+Last updated 13 October 2026 (decision 0760). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,18 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### A purchase order as a PDF, and its Document tab (0760)
+
+An order, change or cancellation is drawn as a PDF by pdf-lib inside vf-app, in the supplier's
+language, with a change's lines marked. The *Orders to suppliers* email attaches it before the UBL.
+
+The order's page has a Document tab, in VibeFinance and in the supplier network, showing the PDF
+with downloads as PDF, UBL XML and CSV. Both order pages now split 3:2, as the invoice viewer does.
+
+Slice 4b; receipt confirmation (4c) follows.
+
+Full reasoning is in decision 0760.
 
 ### Orders to suppliers (0759)
 

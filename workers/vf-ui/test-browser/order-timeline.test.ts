@@ -98,10 +98,10 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("the order's panel — decision 0754", () => {
-  it("has Attachments, Timeline / Chat and Supplier, as a receipt's, Timeline / Chat first", async () => {
+  it("has Document (0760), Attachments, Timeline / Chat and Supplier, as a receipt's, Timeline / Chat first", async () => {
     await openOrder();
     const tabs = [...document.querySelectorAll(".poview .receiptside .doctabs .doctab")];
-    expect(tabs.map((b) => b.textContent)).toEqual(["Attachments", `Timeline / Chat${TIMELINE.items.length}`, "Supplier"]);
+    expect(tabs.map((b) => b.textContent)).toEqual(["Document", "Attachments", `Timeline / Chat${TIMELINE.items.length}`, "Supplier"]);
     expect(document.getElementById("po-tab-timeline")?.className).toBe("doctab on");
     expect(document.getElementById("po-attachments")?.hidden).toBe(true);
     expect(document.getElementById("po-supplier-none")?.hidden).toBe(true);
@@ -110,6 +110,31 @@ describe("the order's panel — decision 0754", () => {
     expect(calls).not.toContain("/api/purchase-orders/PO-9/attachments");
     (document.getElementById("po-tab-attachments") as HTMLElement).click();
     await vi.waitFor(() => expect(document.getElementById("po-attachments")?.textContent).toContain("Nothing was received with this order"));
+  });
+});
+
+describe("the order's Document tab — decision 0760", () => {
+  it("shows the PDF when first opened, with downloads as PDF, UBL XML and CSV", async () => {
+    const pdf = new Blob(["%PDF-1.7"], { type: "application/pdf" });
+    const calls = await openOrder({ "GET /api/purchase-orders/PO-9/document": [200, null] });
+    const fetched = () => calls.filter((c) => c.path === "/api/purchase-orders/PO-9/document");
+    expect(fetched()).toEqual([]);
+    // The stub answers a blob for the PDF.
+    (globalThis.fetch as unknown as { mockImplementationOnce: (f: () => Promise<Response>) => void }).mockImplementationOnce(async () => ({ ok: true, status: 200, blob: async () => pdf }) as unknown as Response);
+    (document.getElementById("po-tab-document") as HTMLElement).click();
+    await vi.waitFor(() => expect((document.getElementById("po-document-frame") as HTMLIFrameElement).src).toMatch(/^blob:/));
+    expect(document.getElementById("po-document-status")).toBeNull();
+    expect([...document.querySelectorAll("#po-document .podocbar a")].map((a) => [a.textContent, a.getAttribute("href")])).toEqual([
+      ["PDF", "/api/purchase-orders/PO-9/document?format=pdf&download=1"],
+      ["UBL XML", "/api/purchase-orders/PO-9/document?format=ubl&download=1"],
+      ["CSV", "/api/purchase-orders/PO-9/document?format=csv&download=1"],
+    ]);
+  });
+
+  it("says so when the document cannot be shown", async () => {
+    await openOrder({ "GET /api/purchase-orders/PO-9/document": [500, {}] });
+    (document.getElementById("po-tab-document") as HTMLElement).click();
+    await vi.waitFor(() => expect(document.getElementById("po-document-status")?.textContent).toBe("The document could not be shown."));
   });
 });
 

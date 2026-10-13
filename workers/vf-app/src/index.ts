@@ -172,7 +172,7 @@ import {
   handlePutNetworkSharingConfig,
   handlePutSupplierReceiptSharing,
 } from "./receipt-sharing.js";
-import { getPortalOrder, handleGetSupplierOrderSharing, handlePutSupplierOrderSharing } from "./order-sharing.js";
+import { getPortalOrder, handleGetSupplierOrderSharing, handlePutSupplierOrderSharing, portalMayReadOrder } from "./order-sharing.js";
 import { handleInvoiceParties, handlePortalPurchaseOrders, handlePortalSubmission, handleSubmissionCompanies } from "./network-submission.js";
 import { DEFAULT_NETWORK_URL, handleGetSupplierMessages, handlePostSupplierMessage, type MessageEmail } from "./supplier-messages.js";
 import { handleGetReceiptSupplierMessages, handlePortalReceiptReply, handlePostReceiptSupplierMessage } from "./receipt-messages.js";
@@ -352,7 +352,7 @@ import {
 import { handleHttpsReceipts, receiptsReport, receiptsSource, receiptsUploadSource, receiveReceipts, RECEIPTS_FILE_ROUTE } from "./receipts-in-route.js";
 import { handleGetOrdersProcess, handleHttpsOrders, handleSetUpOrdersProcess, ordersReport, ordersSource, ordersUploadSource, settleOrderInstance, uploadOrders } from "./purchase-orders-in.js";
 import { handleGetOrderSupplierMessages, handlePortalOrderReply, handlePostOrderSupplierMessage, markOrderSeen, orderConversationsFor } from "./order-messages.js";
-import { handleGetOrderSending, handleGetOrdersOut, handlePutOrdersOut, handleSendOrderToSupplier, handleStartOrdersOut, runOrderSends, type OrdersOutDeps } from "./orders-out.js";
+import { orderFile, type DocumentFormat, handleGetOrderSending, handleGetOrdersOut, handlePutOrdersOut, handleSendOrderToSupplier, handleStartOrdersOut, runOrderSends, type OrdersOutDeps } from "./orders-out.js";
 import { handleAddOrderCollaborator, handleGetOrderTimeline, handleOrderAttachments, handlePostOrderComment, handleRemoveOrderCollaborator, handleSearchOrderPeople, orderAccess, ORDER_TOKEN_PREFIX, partForOrder } from "./order-timeline.js";
 import { continueOrderInstance, handleFixIntake, handleGetIntake, handleIntakeSuppliers, handleListIntake, handleRejectIntake, handleReleaseIntake, isOrderCheckingTask } from "./order-checking.js";
 import {
@@ -1075,6 +1075,24 @@ function messageEmail(env: Env): MessageEmail {
  * origin) for the links in an email; the documents bucket, which keeps
  * each copy sent under `agents/`.
  */
+/** Decision 0760: a format asked for, PDF where it is none of the three. */
+function documentFormat(value: string | null): DocumentFormat {
+  return value === "ubl" || value === "xml" ? "ubl" : value === "csv" ? "csv" : "pdf";
+}
+
+/** Decision 0760: an order's document, shown (a PDF in the viewer) or downloaded. */
+function documentResponse(file: { bytes: Uint8Array; contentType: string; filename: string } | null, download: boolean): Response {
+  if (!file) return json({ error: "no such purchase order" }, 404);
+  return new Response(file.bytes as unknown as BodyInit, {
+    status: 200,
+    headers: {
+      "Content-Type": file.contentType,
+      "Content-Disposition": `${download || !file.contentType.startsWith("application/pdf") ? "attachment" : "inline"}; filename="${file.filename}"`,
+      "Cache-Control": "private, no-store",
+    },
+  });
+}
+
 /** Decision 0759: what Orders to suppliers sends with — Resend, and where the sent email and UBL are kept. */
 function ordersOutDeps(env: Env): OrdersOutDeps {
   return {
@@ -1181,6 +1199,16 @@ export default {
 
     // Decision 0751: a purchase order shared with this supplier, read only.
     // Decision 0752: and the supplier writes about one.
+    // Decision 0760: a shared order as a document — PDF, UBL or CSV — for the supplier network's Document tab.
+    const portalOrderDocMatch = pathname.match(/^\/portal\/orders\/([^/]+)\/document$/);
+    if (portalOrderDocMatch && request.method === "GET") {
+      const { db } = resolveTenant(request, env);
+      const auth = await portalAuth(db, request, isPublicKeyJwk(env.LICENCE_SIGNING_PUBLIC_KEY) ? env.LICENCE_SIGNING_PUBLIC_KEY : undefined, env.ENVIRONMENT_ID);
+      if (!auth.ok) return json(auth.body, auth.status);
+      const orderNumber = await portalMayReadOrder(db, auth.claims, decodeURIComponent(portalOrderDocMatch[1]));
+      if (!orderNumber) return json({ error: "not found" }, 404);
+      return documentResponse(await orderFile(db, orderNumber, documentFormat(url.searchParams.get("format"))), url.searchParams.get("download") === "1");
+    }
     const portalOrderMatch = pathname.match(/^\/portal\/orders\/([^/]+)(\/messages)?$/);
     if (portalOrderMatch && (portalOrderMatch[2] ? request.method === "POST" : request.method === "GET")) {
       const { db } = resolveTenant(request, env);
@@ -6832,6 +6860,19 @@ export default {
      * what was sent, for whoever reads orders; sending by hand for
      * whoever works them.
      */
+    /**
+     * **An order as a document — decision 0760**: the PDF the Document tab
+     * shows, and its downloads as PDF, UBL and CSV. Whoever may open the order.
+     */
+    const docMatch = pathname.match(/^\/purchase-orders\/([^/]+)\/document$/);
+    if (docMatch && docMatch[1] !== "intake" && request.method === "GET") {
+      const { db } = resolveTenant(request, env);
+      const auth = await requireAnyPermission(db, request, ["AP.Validate", "AP.Purchasing", "Admin.Configure", "AP.Receive", "Warehouse.Collaborate"], sessionContext(env));
+      if (!auth.authorized) return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
+      const orderNumber = decodeURIComponent(docMatch[1]);
+      if (!(await orderAccess(db, auth.user.id, orderNumber))) return json({ error: `no purchase order ${orderNumber}` }, 404);
+      return documentResponse(await orderFile(db, orderNumber, documentFormat(url.searchParams.get("format"))), url.searchParams.get("download") === "1");
+    }
     const sendMatch = pathname.match(/^\/purchase-orders\/([^/]+)\/send-to-supplier$/);
     if (sendMatch && sendMatch[1] !== "intake") {
       const { db } = resolveTenant(request, env);

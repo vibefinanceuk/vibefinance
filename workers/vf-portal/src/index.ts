@@ -1,4 +1,4 @@
-import { fromCustomer, invoice, invoices, me, order, receipt, reply, submissionCompanies, submit, type Deps } from "./network.js";
+import { fromCustomer, invoice, invoices, me, order, receipt, reply, submissionCompanies, submit, type Deps, orderDocument } from "./network.js";
 
 /**
  * **vf-portal: the supplier network — decision 0717.**
@@ -101,6 +101,13 @@ export default {
     if (url.pathname === "/api/invoices" && request.method === "GET") return signedOutClears(await invoices(deps, session, url.searchParams));
     const one = url.pathname.match(/^\/api\/invoices\/([^/]+)\/([^/]+)$/);
     if (one && request.method === "GET") return signedOutClears(await invoice(deps, session, decodeURIComponent(one[1]), decodeURIComponent(one[2])));
+    // Decision 0760: a shared order as a document — PDF, UBL or CSV.
+    const orderDoc = url.pathname.match(/^\/api\/orders\/([^/]+)\/([^/]+)\/document$/);
+    if (orderDoc && request.method === "GET") {
+      const res = await orderDocument(deps, session, decodeURIComponent(orderDoc[1]), decodeURIComponent(orderDoc[2]), url.search);
+      if (res.status === 401) return json({ error: "signed_out" }, 401, { "Set-Cookie": cookie("", 0) });
+      return res;
+    }
     // Decision 0751: a purchase order the customer shares, read only.
     const oneOrder = url.pathname.match(/^\/api\/orders\/([^/]+)\/([^/]+)$/);
     if (oneOrder && request.method === "GET") return signedOutClears(await order(deps, session, decodeURIComponent(oneOrder[1]), decodeURIComponent(oneOrder[2])));

@@ -120,7 +120,7 @@ describe("the Destination", () => {
     expect((await handleCreateDestination(env.DB, "u-ada", "ap", { name: "Orders", connectorId: "orders-email-out" })).body).toMatchObject({ reason: "process_not_orders" });
     expect((await handleCreateDestination(env.DB, "u-ada", "purchase-orders", { name: "Web", connectorId: "https-out" })).body).toMatchObject({ reason: "process_orders_only" });
     const id = await destination(false);
-    expect((await handleGetOrdersOut(env.DB, id)).body).toMatchObject({ started: false, status: "paused", settings: { sendOnRelease: true, ccBuyer: true, attachUbl: true, replyTo: null } });
+    expect((await handleGetOrdersOut(env.DB, id)).body).toMatchObject({ started: false, status: "paused", settings: { sendOnRelease: true, ccBuyer: true, attachUbl: true, attachPdf: true, replyTo: null } });
     await release(ORDER);
     expect(await runOrderSends(env.DB, deps())).toBe(0);
     expect((await handleCreateDestination(env.DB, "u-ada", "purchase-orders", { name: "Again", connectorId: "orders-email-out" })).body).toMatchObject({ reason: "one_per_process" });
@@ -142,15 +142,18 @@ describe("sending on release", () => {
     expect(mail.text).toContain("Acme UK Ltd has placed purchase order PO-7 with you.");
     expect(mail.text).toContain("1 | Office chair | KI-CH | 10 | EA | £125.00 | £1,250.00");
     expect(mail.text).toContain("Reply to this email to reach Bea Buyer.");
-    expect(mail.attachments?.map((a) => a.filename)).toEqual(["PO-7.xml"]);
-    const ubl = new TextDecoder().decode(Uint8Array.from(atob(mail.attachments![0].content), (c) => c.charCodeAt(0)));
+    // Decision 0760: the PDF first, for people, then the UBL, for systems.
+    expect(mail.attachments?.map((a) => a.filename)).toEqual(["PO-7.pdf", "PO-7.xml"]);
+    expect(atob(mail.attachments![0].content).slice(0, 5)).toBe("%PDF-");
+    expect(mail.text).toContain("The order is attached as a PDF.");
+    const ubl = new TextDecoder().decode(Uint8Array.from(atob(mail.attachments![1].content), (c) => c.charCodeAt(0)));
     expect(parseUblOrder(ubl)).toMatchObject({ orderNumber: "PO-7", currency: "GBP", buyerPartyId: "GB907856452", lines: [{ lineNumber: 1, quantity: 10 }, { lineNumber: 2 }] });
     expect(ubl).toContain("<cbc:RegistrationName>Acme UK Ltd</cbc:RegistrationName>");
     // On the order: its Timeline, its Attachments, and what was sent.
     const items = ((await handleGetOrderTimeline(env.DB, "u-pat", "PO-7")).body as { items: { kind: string; detail?: Record<string, unknown> }[] }).items;
     expect(items.find((i) => i.kind === "sent_to_supplier")?.detail).toMatchObject({ kind: "order", how: "on_release", to: ["orders@kingsway.example", "sales@kingsway.example"], from: "orders_email", ubl: true });
     const files = ((await handleOrderAttachments(env.DB, "u-pat", "PO-7")).body as { files: { filename: string; role: string }[] }).files;
-    expect(files.map((f) => [f.filename, f.role])).toEqual([["email.html", "sent"], ["PO-7.xml", "sent"]]);
+    expect(files.map((f) => [f.filename, f.role])).toEqual([["email.html", "sent"], ["PO-7.pdf", "sent"], ["PO-7.xml", "sent"]]);
     expect((await handleGetOrderSending(env.DB, "PO-7")).body).toMatchObject({ available: true, sends: [{ status: "sent", how: "on_release", kind: "order" }] });
     expect((await handleGetOrdersOut(env.DB, id)).body).toMatchObject({ sends: [{ orderNumber: "PO-7", status: "sent" }] });
     // The Route monitor has it, delivered.
@@ -170,8 +173,10 @@ describe("sending on release", () => {
       "Änderung der Bestellung PO-7 von Acme UK Ltd",
       "Stornierung der Bestellung PO-7 von Acme UK Ltd",
     ]);
-    const ubl = new TextDecoder().decode(Uint8Array.from(atob(sent[2].attachments![0].content), (c) => c.charCodeAt(0)));
+    const ubl = new TextDecoder().decode(Uint8Array.from(atob(sent[2].attachments![1].content), (c) => c.charCodeAt(0)));
     expect(ubl).toContain("<cbc:Note>Project stopped</cbc:Note>");
+    // Decision 0760: each version's PDF is named for what it is.
+    expect(sent.map((m) => m.attachments![0].filename)).toEqual(["PO-7.pdf", "PO-7-change.pdf", "PO-7-cancellation.pdf"]);
   });
 
   it("nothing for a supplier whose orders the customer's own system sends; by hand still sends", async () => {

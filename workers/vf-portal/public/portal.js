@@ -5,6 +5,7 @@ import { createPage, startCreditNote, startFromOrder } from "/create.js";
 import { viewPage } from "/view.js";
 import { receiptPage } from "/receipt-view.js";
 import { orderPage } from "/order-view.js";
+import { buildOrderDocumentTab } from "/order-document.js";
 
 /**
  * **The supplier network's pages — decisions 0717 and 0725.** Sign in;
@@ -109,6 +110,8 @@ export async function render() {
                 startFromOrder(opened.body, opened.inv.linkId);
                 go("create");
               },
+              // Decision 0760: the order as the customer sends it, a PDF with its downloads.
+              document: (o) => buildOrderDocumentTab(o, opened.inv.linkId),
             },
             handlers
           )

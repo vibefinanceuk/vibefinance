@@ -140,7 +140,7 @@ export function orderSubs(item) {
       return [d.pending ? t("purchaseorders.tl.receipt.pending") : null, d.cancelled ? t("purchaseorders.tl.receipt.cancelled") : null];
     // Decision 0759: which address, and how it went.
     case "sent_to_supplier":
-      return [t(`ordersout.from.${d.from}`), d.how === "by_hand" ? t("purchaseorders.tl.sent.byhand").replace("{by}", item.by ?? "") : t("purchaseorders.tl.sent.onrelease"), d.ubl ? t("purchaseorders.tl.sent.ubl") : null];
+      return [t(`ordersout.from.${d.from}`), d.how === "by_hand" ? t("purchaseorders.tl.sent.byhand").replace("{by}", item.by ?? "") : t("purchaseorders.tl.sent.onrelease"), d.pdf ? t("purchaseorders.tl.sent.pdf") : null, d.ubl ? t("purchaseorders.tl.sent.ubl") : null];
     default:
       return [];
   }

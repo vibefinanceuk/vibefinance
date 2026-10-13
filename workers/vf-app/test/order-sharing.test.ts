@@ -191,6 +191,18 @@ describe("in the network", () => {
     expect(((await (await get("/portal/orders/po3", token)).json()) as { order: { invoiceCompanyId: string; orgUnitId: string } }).order).toMatchObject({ orgUnitId: "uk-north", invoiceCompanyId: "uk" });
   });
 
+  /** Decision 0760: the order as the customer sends it, for the network's Document tab. */
+  it("gives a shared order as a PDF, UBL or CSV, and the same 404 as none for one not shared with them", async () => {
+    await handlePutNetworkSharingConfig(env.DB, "u1", { shareOrders: true });
+    const token = await access();
+    const pdf = await get("/portal/orders/po1/document", token);
+    expect([pdf.status, pdf.headers.get("Content-Type"), pdf.headers.get("Content-Disposition")]).toEqual([200, "application/pdf", 'inline; filename="PO-1.pdf"']);
+    expect(new TextDecoder().decode((await pdf.arrayBuffer()).slice(0, 5))).toBe("%PDF-");
+    expect((await get("/portal/orders/po1/document?format=csv&download=1", token)).headers.get("Content-Disposition")).toBe('attachment; filename="PO-1.csv"');
+    expect((await get("/portal/orders/po1/document?format=ubl", token)).headers.get("Content-Type")).toBe("application/xml; charset=utf-8");
+    expect((await get("/portal/orders/po9/document", token)).status).toBe(404);
+  });
+
   it("says where an order has got to: hold and close first, then invoicing, then receiving", () => {
     expect(portalOrderStatus("closed", "fully_received")).toBe("order_closed");
     expect(portalOrderStatus("on_hold", null)).toBe("order_on_hold");
