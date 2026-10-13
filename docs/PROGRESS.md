@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 13 October 2026 (decision 0755). A living document: what
+Last updated 13 October 2026 (decision 0756). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,15 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### An order's supplier, however its seller is written (0756)
+
+Every lookup of a purchase order's supplier matches the VAT number however it is written, or the
+ERP number. Three-way suppliers' orders are no longer treated as two-way when the number is
+spaced differently. The supplier's name now shows on GRNI, receipts, agents, Documents, Tasks
+and the PO match panel.
+
+Full reasoning is in decision 0756.
 
 ### Invoice this order, in the supplier network (0755)
 

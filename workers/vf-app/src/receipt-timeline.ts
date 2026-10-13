@@ -5,6 +5,7 @@ import { receiptViewScope, receiptScopeClause } from "./goods-receipts.js";
 import { isReceiptCollaborator, receiptEvent } from "./receipt-collaborators.js";
 import { sendEmailViaResend } from "./resend-client.js";
 import { viewFor, type ReceivedFile, type ReceivedMessage } from "./received-files.js";
+import { ORDER_SUPPLIER_ID } from "./order-supplier.js";
 
 /**
  * **A goods receipt's Timeline and Chat — decision 0658.** Dan, 7
@@ -488,7 +489,7 @@ export async function receiptContext(db: D1Database, receiptId: string): Promise
       .prepare(
         `SELECT DISTINCT l.order_number, po.org_unit_id, s.name AS supplier
          FROM goods_receipt_lines l LEFT JOIN purchase_orders po ON po.order_number = l.order_number
-         LEFT JOIN suppliers s ON s.vat_id = po.seller_party_id AND s.status = 'active'
+         LEFT JOIN suppliers s ON s.id = ${ORDER_SUPPLIER_ID("po.seller_party_id")} AND s.status = 'active'
          WHERE l.receipt_id = ? AND l.line_status = 'active' ORDER BY l.order_number`
       )
       .bind(receiptId)

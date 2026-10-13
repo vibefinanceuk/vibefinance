@@ -4,6 +4,7 @@ import { FIELD_CODE_LISTS } from "@vibefinance/shared";
 import { visitCurrentStage } from "./workflow-engine.js";
 import { heldByLine } from "./goods-receipts.js";
 import { poOfSql } from "./credit-notes.js";
+import { SUPPLIER_IS_SELLER } from "./order-supplier.js";
 
 /**
  * **Checking, in the Purchase Orders process — decision 0750**, slice 2
@@ -83,17 +84,15 @@ export interface IntakeRow {
   purchase_order_id: string | null;
 }
 
-const BARE = (col: string) =>
-  `(CASE WHEN upper(replace(replace(${col}, ' ', ''), '.', '')) GLOB '[A-Z][A-Z][0-9]*' THEN substr(upper(replace(replace(${col}, ' ', ''), '.', '')), 3) ELSE upper(replace(replace(${col}, ' ', ''), '.', '')) END)`;
-
 /** The supplier an order names, by VAT number however written or ERP number, an active one first. */
 export async function supplierOfParty(db: D1Database, partyId: string | undefined | null): Promise<{ id: string; name: string; status: string } | null> {
   if (!partyId?.trim()) return null;
   return db
     .prepare(
-      `SELECT id, name, status FROM suppliers
-       WHERE (vat_id IS NOT NULL AND ${BARE("vat_id")} = ${BARE("?1")}) OR erp_identifier = ?1
-       ORDER BY status = 'active' DESC, name LIMIT 1`
+      // Decision 0756: the one rule every lookup of an order's supplier shares.
+      `SELECT s.id, s.name, s.status FROM suppliers s
+       WHERE ${SUPPLIER_IS_SELLER("s", "?1")}
+       ORDER BY s.status = 'active' DESC, s.name LIMIT 1`
     )
     .bind(partyId.trim())
     .first<{ id: string; name: string; status: string }>();

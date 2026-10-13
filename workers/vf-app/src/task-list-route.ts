@@ -5,6 +5,7 @@ import type { RouteResult } from "./org-route.js";
 import { nextStageInSequence } from "./workflow-engine.js";
 import { stageAllowsDiscard } from "./stage-actions-route.js";
 import { loadApprovalConfig } from "./approval-hierarchy.js";
+import { SUPPLIER_IS_SELLER } from "./order-supplier.js";
 
 /**
  * Listing a person's tasks — decision 0103.
@@ -719,11 +720,11 @@ export async function handleListMyTasks(
          h.org_unit_id, COALESCE(h.created_at, gr.created_at, poi.created_at) AS received_at,
          COALESCE(gr.receipt_number, poi.order_number) AS receipt_number,
          (SELECT sp.name FROM suppliers sp
-          WHERE poi.id IS NOT NULL AND (sp.vat_id = json_extract(poi.order_json, '$.sellerPartyId') OR sp.erp_identifier = json_extract(poi.order_json, '$.sellerPartyId'))
+          WHERE poi.id IS NOT NULL AND ${SUPPLIER_IS_SELLER("sp", "json_extract(poi.order_json, '$.sellerPartyId')")}
           ORDER BY sp.status = 'active' DESC LIMIT 1) AS order_supplier,
          json_extract(poi.order_json, '$.sellerPartyId') AS order_seller,
          (SELECT s2.name FROM goods_receipt_lines gl2 JOIN purchase_orders po2 ON po2.order_number = gl2.order_number
-            JOIN suppliers s2 ON s2.vat_id = po2.seller_party_id
+            JOIN suppliers s2 ON ${SUPPLIER_IS_SELLER("s2", "po2.seller_party_id")}
           WHERE gl2.receipt_id = gr.id ORDER BY gl2.line_number, s2.status = 'active' DESC LIMIT 1) AS receipt_supplier
        ${joins}
        ${baseWhereClause}${ownershipClause}

@@ -19,6 +19,7 @@ import { unitsWherePermitted, isWithinScope, unitClause } from "./enforce.js";
 import { handleKeyInvoiceFields } from "./key-fields-route.js";
 import { activePairings, loadPairings } from "./po-pairings.js";
 import { bestSuggestion, type SuggestInvoiceLine, type SuggestPoLine } from "./po-suggest.js";
+import { ORDER_SUPPLIER_SQL, SAME_VAT_SQL, sameVat } from "./order-supplier.js";
 
 /**
  * The Matching stage's PO matching panel, phase 1 — decision 0530.
@@ -141,7 +142,7 @@ const PO_SELECT = `
   SELECT po.id, po.order_number, po.issue_date, po.currency, po.seller_party_id,
          po.payable_amount, po.status, po.hold_reason, po.org_unit_id,
          b.name AS buyer_name,
-         (SELECT s.name FROM suppliers s WHERE s.vat_id = po.seller_party_id LIMIT 1) AS supplier_name
+         ${ORDER_SUPPLIER_SQL("name", "po.seller_party_id", "s")} AS supplier_name
   FROM purchase_orders po
   LEFT JOIN org_users b ON b.id = po.buyer_user_id`;
 
@@ -551,8 +552,10 @@ export async function handlePoCandidates(
   }
   if (params.supplierOnly) {
     // No seller VAT on the invoice means nothing can be "this supplier".
-    where.push(sellerVat ? "po.seller_party_id = ?" : "1 = 0");
-    if (sellerVat) binds.push(sellerVat);
+    // Decision 0756: the same VAT number however either side writes it.
+    const same = SAME_VAT_SQL("po.seller_party_id", "?");
+    where.push(sellerVat ? same : "1 = 0");
+    if (sellerVat) binds.push(...Array(same.split("?").length - 1).fill(sellerVat));
   }
   if (params.activeOnly) where.push("po.status = 'active'");
 
@@ -595,7 +598,7 @@ export async function handlePoCandidates(
       status: poStatus(po, used),
       current: po.order_number === current,
       reasons: {
-        sameSupplier: !!sellerVat && po.seller_party_id === sellerVat,
+        sameSupplier: sameVat(po.seller_party_id, sellerVat),
         coversInvoice,
         sameCurrency: !!currency && po.currency === currency,
         linesAlike: 0,

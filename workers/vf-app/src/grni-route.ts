@@ -1,6 +1,7 @@
 import type { RouteResult } from "./org-route.js";
 import { loadPoConsumption } from "./po-matching.js";
 import { scopedToChosenOrg, unitClause, unitsWherePermitted } from "./enforce.js";
+import { ORDER_SUPPLIER_SQL } from "./order-supplier.js";
 
 /**
  * **Goods received not invoiced — decision 0650**, slice 1 of the
@@ -100,8 +101,8 @@ export async function grniReport(db: D1Database, userId: string | undefined, org
     const order = await db
       .prepare(
         `SELECT po.id, po.currency, u.name AS org_name,
-                (SELECT s.name FROM suppliers s WHERE s.vat_id = po.seller_party_id ORDER BY s.status = 'active' DESC, s.name LIMIT 1) AS supplier,
-                (SELECT s.erp_identifier FROM suppliers s WHERE s.vat_id = po.seller_party_id ORDER BY s.status = 'active' DESC, s.name LIMIT 1) AS supplier_erp_id
+                ${ORDER_SUPPLIER_SQL("name", "po.seller_party_id", "s")} AS supplier,
+                ${ORDER_SUPPLIER_SQL("erp_identifier", "po.seller_party_id", "s")} AS supplier_erp_id
          FROM purchase_orders po LEFT JOIN org_units u ON u.id = po.org_unit_id
          WHERE po.order_number = ?`
       )

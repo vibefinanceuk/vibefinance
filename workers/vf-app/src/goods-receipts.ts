@@ -1,4 +1,5 @@
 import type { RouteResult } from "./org-route.js";
+import { ORDER_SUPPLIER_ID, ORDER_SUPPLIER_SQL, SUPPLIER_IS_SELLER } from "./order-supplier.js";
 import { parseCsv } from "./load-suppliers.js";
 import { getOrgMatchingConfig, loadPoConsumption } from "./po-matching.js";
 import { hasPermission, isWithinScope, scopedToChosenOrg, unitClause, unitsWherePermitted } from "./enforce.js";
@@ -106,8 +107,9 @@ async function supplierOf(db: D1Database, sellerPartyId: string | null) {
   if (!sellerPartyId) return null;
   return db
     .prepare(
-      `SELECT id, name, match_option, quantity_tolerance_pct FROM suppliers
-       WHERE vat_id = ? ORDER BY status = 'active' DESC, name LIMIT 1`
+      // Decision 0756: the VAT number however written, or the ERP number.
+      `SELECT s.id, s.name, s.match_option, s.quantity_tolerance_pct FROM suppliers s
+       WHERE ${SUPPLIER_IS_SELLER("s", "?1")} ORDER BY s.status = 'active' DESC, s.name LIMIT 1`
     )
     .bind(sellerPartyId)
     .first<{ id: string; name: string; match_option: string | null; quantity_tolerance_pct: number | null }>();
@@ -810,7 +812,7 @@ export async function handleListGoodsReceipts(
       SELECT 1 FROM goods_receipt_lines ql
       LEFT JOIN purchase_orders qpo ON qpo.order_number = ql.order_number
       LEFT JOIN purchase_order_lines qpl ON qpl.purchase_order_id = qpo.id AND qpl.line_number = ql.order_line_number
-      LEFT JOIN suppliers qs ON qs.vat_id = qpo.seller_party_id
+      LEFT JOIN suppliers qs ON qs.id = ${ORDER_SUPPLIER_ID("qpo.seller_party_id")}
       WHERE ql.receipt_id = r.id AND (ql.order_number LIKE ? ESCAPE '\\' OR qpl.item_name LIKE ? ESCAPE '\\' OR qs.name LIKE ? ESCAPE '\\')))`;
     binds.push(p, p, p, p, p);
   }
@@ -899,7 +901,7 @@ export async function handleListGoodsReceipts(
 export function receiptStateJoin(tolerancePct: number, alias = "rs"): string {
   const tol = Number.isFinite(tolerancePct) ? Number(tolerancePct) : 0;
   const supplier = (col: string) =>
-    `(SELECT s.${col} FROM suppliers s WHERE s.vat_id = o.seller_party_id ORDER BY s.status = 'active' DESC, s.name LIMIT 1)`;
+    ORDER_SUPPLIER_SQL(col, "o.seller_party_id", "s");
   return `LEFT JOIN (
     SELECT x.order_number,
            CASE WHEN MAX(x.st) = 0 THEN 'not_received'

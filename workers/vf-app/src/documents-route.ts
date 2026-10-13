@@ -4,6 +4,7 @@ import { windowDays } from "./workload-handling-time-route.js";
 import type { RouteResult } from "./examples-route.js";
 import { mondayOfThisWeek } from "./dates.js";
 import { POSSIBLE_DUPLICATE_THRESHOLD } from "./invoice-history.js";
+import { ORDER_SUPPLIER_ID, ORDER_SUPPLIER_SQL } from "./order-supplier.js";
 
 /**
  * Every document that has arrived — decision 0164.
@@ -790,7 +791,7 @@ const RECEIPT_WHERE = `WHERE (?32 = 0 OR EXISTS (
            OR EXISTS (
              SELECT 1 FROM goods_receipt_lines ql
              LEFT JOIN purchase_orders qpo ON qpo.order_number = ql.order_number
-             LEFT JOIN suppliers qs ON qs.vat_id = qpo.seller_party_id
+             LEFT JOIN suppliers qs ON qs.id = ${ORDER_SUPPLIER_ID("qpo.seller_party_id")}
              WHERE ql.receipt_id = r.id
                AND (ql.order_number LIKE json_extract(?16, '$.text') ESCAPE '\\' OR qs.name LIKE json_extract(?16, '$.text') ESCAPE '\\')
            )
@@ -925,7 +926,7 @@ async function listWithReceipts(
                   (SELECT group_concat(DISTINCT o.order_number) FROM goods_receipt_lines o WHERE o.receipt_id = r.id) AS orders,
                   po.org_unit_id, ou.name AS org_unit_name,
                   COALESCE(
-                    (SELECT sp.name FROM suppliers sp WHERE sp.vat_id = po.seller_party_id ORDER BY sp.status = 'active' DESC, sp.name LIMIT 1),
+                    ${ORDER_SUPPLIER_SQL("name", "po.seller_party_id", "sp")},
                     po.seller_party_id
                   ) AS supplier,
                   i.current_stage_id, ps.name AS stage_name, ps.sequence AS stage_sequence,

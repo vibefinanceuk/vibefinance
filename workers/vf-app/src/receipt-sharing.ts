@@ -120,10 +120,9 @@ export async function handlePutSupplierReceiptSharing(db: D1Database, userId: st
 /** What a supplier is told of a receipt: received, with goods sent back, or still being checked. */
 export const PORTAL_RECEIPT_STATUSES = ["goods_received", "goods_returned", "goods_checking"] as const;
 
-/** A VAT number without its country prefix, spaces or dots — as credit notes match a supplier (0731). */
-export const bareVat = (v: string) => v.toUpperCase().replace(/[^A-Z0-9]/g, "").replace(/^[A-Z]{2}(?=\d)/, "");
-export const BARE_SQL = (col: string) =>
-  `(CASE WHEN upper(replace(replace(${col}, ' ', ''), '.', '')) GLOB '[A-Z][A-Z][0-9]*' THEN substr(upper(replace(replace(${col}, ' ', ''), '.', '')), 3) ELSE upper(replace(replace(${col}, ' ', ''), '.', '')) END)`;
+// Decision 0756: kept with the order's supplier, which every lookup of it shares; here as before.
+import { bareVat, BARE_SQL } from "./order-supplier.js";
+export { bareVat, BARE_SQL };
 
 /**
  * **Which receipts are this supplier's, for these companies.** A receipt

@@ -165,7 +165,7 @@ describe("in the network", () => {
     // Two-way: what was ordered, less what was invoiced.
     expect(await toInvoice("po1")).toEqual([7, 10]);
     // Three-way: what was received (net of returns), less what was invoiced.
-    await env.DB.prepare("UPDATE suppliers SET match_option = 'three_way', vat_id = 'DE123456789' WHERE id = 'sup-ln'").run();
+    await env.DB.prepare("UPDATE suppliers SET match_option = 'three_way' WHERE id = 'sup-ln'").run();
     expect(await toInvoice("po1")).toEqual([5, 4]);
     // An order of an operating unit is invoiced to the company above it, the one the link covers.
     await env.DB.prepare("UPDATE purchase_orders SET status = 'active' WHERE id = 'po3'").run();

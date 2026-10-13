@@ -6,6 +6,7 @@ import {
 } from "./enforce.js";
 import type { Permission } from "./permissions.js";
 import { readLicenceState } from "./licence-cache.js";
+import { ORDER_SUPPLIER_SQL } from "./order-supplier.js";
 
 /**
  * **Agents: asking the data — decision 0633 (the query layer, slice 1).**
@@ -105,7 +106,7 @@ const PO_LINE_RECEIPT_STATE = `(SELECT CASE
        FROM goods_receipt_lines gl JOIN goods_receipts gr ON gr.id = gl.receipt_id
        WHERE gl.order_number = po.order_number AND gl.order_line_number = pl.line_number
          AND gr.status = 'registered' AND gr.cancelled_at IS NULL AND gl.line_status = 'active' AND gl.waiting_since IS NULL) AS net,
-      COALESCE((SELECT s3.quantity_tolerance_pct FROM suppliers s3 WHERE s3.vat_id = po.seller_party_id ORDER BY s3.status = 'active' DESC LIMIT 1),
+      COALESCE(${ORDER_SUPPLIER_SQL("quantity_tolerance_pct", "po.seller_party_id", "s3")},
                (SELECT quantity_tolerance_pct FROM org_matching_config WHERE id = 1), 0) AS tol) x)`;
 
 /**
@@ -423,7 +424,7 @@ export const QUERY_DATASETS: QueryDataset[] = [
     fields: [
       { key: "order", words: "the order number", kind: "text", sql: "po.order_number", label: "agents.col.ponumber", group: true },
       { key: "ordered", words: "the order date", kind: "date", sql: "po.issue_date", label: "agents.col.ordered" },
-      { key: "supplier", words: "the order's supplier", kind: "text", sql: "(SELECT s2.name FROM suppliers s2 WHERE s2.vat_id = po.seller_party_id LIMIT 1)", label: "agents.col.supplier", group: true },
+      { key: "supplier", words: "the order's supplier", kind: "text", sql: ORDER_SUPPLIER_SQL("name", "po.seller_party_id", "s2"), label: "agents.col.supplier", group: true },
       { key: "orderStatus", words: "active, on_hold or closed", kind: "enum", sql: "po.status", label: "agents.col.status", group: true, values: ["active", "on_hold", "closed"], enumKey: "agents.qpostatus" },
       { key: "item", words: "the item ordered", kind: "text", sql: "COALESCE(pl.item_name, pl.item_description)", label: "agents.col.item", group: true },
       { key: "amount", words: "the line's net amount", kind: "money", sql: "pl.line_extension_amount", label: "agents.col.amount" },
@@ -476,7 +477,7 @@ export const QUERY_DATASETS: QueryDataset[] = [
       { key: "receiptDate", words: "when the goods arrived or went back", kind: "date", sql: "r.receipt_date", label: "agents.col.receiptdate" },
       { key: "daysSinceReceipt", words: "days since the receipt date", kind: "days", sql: daysSince("r.receipt_date"), label: "agents.col.dayssincereceipt" },
       { key: "order", words: "the purchase order number", kind: "text", sql: "rl.order_number", label: "agents.col.ponumber", group: true },
-      { key: "supplier", words: "the order's supplier", kind: "text", sql: "(SELECT s2.name FROM suppliers s2 WHERE s2.vat_id = po.seller_party_id ORDER BY s2.status = 'active' DESC LIMIT 1)", label: "agents.col.supplier", group: true },
+      { key: "supplier", words: "the order's supplier", kind: "text", sql: ORDER_SUPPLIER_SQL("name", "po.seller_party_id", "s2"), label: "agents.col.supplier", group: true },
       { key: "item", words: "the item on the order line", kind: "text", sql: "COALESCE(pl.item_name, pl.item_description)", label: "agents.col.item", group: true },
       {
         key: "movement",
