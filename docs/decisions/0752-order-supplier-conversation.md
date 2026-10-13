@@ -1,6 +1,6 @@
 # 0752: The conversation with a supplier about a purchase order
 
-**Status: built.**
+**Status: live.**
 
 - vf-app: migration 0169, `order-messages.ts` (new), `order-sharing.ts`, `purchase-order-route.ts`,
   `index.ts`.

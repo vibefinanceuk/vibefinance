@@ -1,6 +1,6 @@
 # 0753: A purchase order opened as a page, the conversation on the right
 
-**Status: built.**
+**Status: live.**
 
 - vf-ui: `purchase-orders.js`, `app.css` (copied to vf-portal).
 - vf-licence: strings migration 0351.

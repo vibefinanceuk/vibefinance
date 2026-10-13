@@ -1,6 +1,6 @@
 # 0754: A purchase order's Timeline and Chat, and its Attachments
 
-**Status: built.**
+**Status: live.**
 
 - vf-app:
   - migration 0170;
