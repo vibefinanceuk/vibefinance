@@ -1,6 +1,6 @@
 # 0773: A goods receipt as a PDF, and its Document tab
 
-**Status: built.**
+**Status: live.**
 
 - vf-app:
   - `receipt-pdf.ts` (new): the PDF and the CSV;
