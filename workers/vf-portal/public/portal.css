@@ -39,6 +39,13 @@ main#welcome .field + .field { margin-top: var(--gap-loose); }
 .status.order_received, .status.order_invoiced { background: var(--bg-success); border-color: var(--border-success); color: var(--text-success); font-weight: 600; }
 .status.order_on_hold { background: var(--bg-warning); border-color: var(--border-warning); color: var(--text-warning); font-weight: 600; }
 .status.order_closed { opacity: 0.7; }
+/* Decision 0762: the supplier confirmed it has the order. */
+.status.order_confirmed { background: var(--bg-success); border-color: var(--border-success); color: var(--text-success); font-weight: 600; }
+#net-confirm-problem:empty { display: none; }
+/* The confirm page (0762): its button below what it says. */
+main#confirm button { margin-top: var(--gap-loose); }
+main#confirm #confirm-more { margin-top: 0; }
+main#confirm #confirm-problem:empty { display: none; }
 
 /* An invoice, opened (0717). */
 .popout .head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 4px; }

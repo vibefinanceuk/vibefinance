@@ -6,6 +6,7 @@ import { coveredUnits, covers, unitIdsOf } from "./destination-units.js";
 import { ORDER_SUPPLIER_ID } from "./order-supplier.js";
 import { orderEvent, type OrderDiff } from "./order-history.js";
 import { orderCsv, orderPdf } from "./order-pdf.js";
+import { confirmUrl, newConfirmToken, orderConfirmation } from "./order-confirm.js";
 
 /**
  * **Orders to suppliers — decision 0759**, slice 4a of purchase orders.
@@ -56,6 +57,13 @@ export interface OrdersOutDeps {
   customerId?: string | null;
   send?: typeof sendEmailViaResend;
   now?: () => Date;
+  /**
+   * Decision 0762: where the email's *Confirm receipt* link goes — the
+   * supplier network's confirm page, and which instance this is. Without
+   * it the email has no link, and the order is confirmed in the supplier
+   * network only.
+   */
+  confirm?: { networkUrl: string; environmentId: string } | null;
 }
 
 const EMAIL = /^[^\s@,;<>]+@[^\s@,;<>]+\.[^\s@,;<>]+$/;
@@ -317,6 +325,10 @@ const WORDS: Record<Locale, Record<string, string>> = {
     amount: "Amount",
     footer: "Sent for {company} by VibeFinance.",
     buyer: "the buyer",
+    "confirm.order": "Please confirm you have received this order:",
+    "confirm.change": "Please confirm you have received this change:",
+    "confirm.cancellation": "Please confirm you have received this cancellation:",
+    confirmbutton: "Confirm receipt",
   },
   de: {
     "subject.order": "Bestellung {number} von {company}",
@@ -342,6 +354,10 @@ const WORDS: Record<Locale, Record<string, string>> = {
     amount: "Betrag",
     footer: "Für {company} von VibeFinance gesendet.",
     buyer: "den Besteller",
+    "confirm.order": "Bitte bestätigen Sie den Empfang dieser Bestellung:",
+    "confirm.change": "Bitte bestätigen Sie den Empfang dieser Änderung:",
+    "confirm.cancellation": "Bitte bestätigen Sie den Empfang dieser Stornierung:",
+    confirmbutton: "Empfang bestätigen",
   },
 };
 
@@ -360,7 +376,7 @@ function money(n: number | null | undefined, currency: string | null, locale: Lo
 const qty = (n: number | null) => (typeof n === "number" ? (Number.isInteger(n) ? String(n) : String(Math.round(n * 1e6) / 1e6)) : "—");
 
 /** The email for one order, in the supplier's language. Exported for its test. */
-export function orderEmail(doc: OrderDocument, kind: OrderKind, opts: { replyTo: string | null; attachUbl: boolean; attachPdf?: boolean }): { subject: string; text: string; html: string; locale: Locale } {
+export function orderEmail(doc: OrderDocument, kind: OrderKind, opts: { replyTo: string | null; attachUbl: boolean; attachPdf?: boolean; confirmUrl?: string | null }): { subject: string; text: string; html: string; locale: Locale } {
   const locale: Locale = GERMAN.has((doc.supplier?.country ?? "").toUpperCase()) ? "de" : "en";
   const w = WORDS[locale];
   const company = doc.company.name ?? "";
@@ -394,6 +410,8 @@ export function orderEmail(doc: OrderDocument, kind: OrderKind, opts: { replyTo:
     ...facts.map(([k, val]) => `${k}: ${val}`),
     "",
     ...(kind === "cancellation" ? [] : [cols.join(" | "), ...rows.map((r) => r.join(" | ")), ""]),
+    // Decision 0762: one click confirms it.
+    ...(opts.confirmUrl ? [w[`confirm.${kind}`], opts.confirmUrl, ""] : []),
     ...(opts.attachPdf ? [w.pdf, ""] : []),
     ...(opts.attachUbl ? [w.ubl, ""] : []),
     ...(replyLine ? [replyLine, ""] : []),
@@ -410,6 +428,11 @@ ${
     : `<table style="border-collapse:collapse;margin:0 0 16px;font-size:13px"><tr>${cols.map((c, i) => `<th style="padding:4px 8px;text-align:${i >= 3 && i !== 4 ? "right" : "left"};color:#5b6675;border-bottom:1px solid #c7d2e0">${esc(c)}</th>`).join("")}</tr>${rows
         .map((r) => `<tr>${r.map((c, i) => cell(c, i >= 3 && i !== 4)).join("")}</tr>`)
         .join("")}</table>`
+}
+${
+  opts.confirmUrl
+    ? `<p style="margin:0 0 8px">${esc(w[`confirm.${kind}`])}</p><p style="margin:0 0 16px"><a href="${esc(opts.confirmUrl)}" style="display:inline-block;padding:8px 16px;background:#1f5fbf;color:#ffffff;text-decoration:none;border-radius:6px;font-weight:600">${esc(w.confirmbutton)}</a></p>`
+    : ""
 }
 ${opts.attachPdf ? `<p style="margin:0 0 12px;color:#5b6675">${esc(w.pdf)}</p>` : ""}
 ${opts.attachUbl ? `<p style="margin:0 0 12px;color:#5b6675">${esc(w.ubl)}</p>` : ""}
@@ -500,12 +523,14 @@ export async function sendOrder(
   const now = (deps.now ?? (() => new Date()))();
   const at = now.toISOString();
   const settings = settingsOf(params.instance.settings_json);
+  // Decision 0762: the link's secret, made now; only its hash is kept, and only once the email has gone.
+  const confirm = deps.confirm ? await newConfirmToken() : null;
   const record = async (outcome: SendOutcome) => {
     await db.batch([
       db
         .prepare(
-          `INSERT INTO purchase_order_sends (id, instance_id, order_number, intake_id, kind, how, status, recipients_json, address_from, message_id, error, sent_by, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+          `INSERT INTO purchase_order_sends (id, instance_id, order_number, intake_id, kind, how, status, recipients_json, address_from, message_id, error, sent_by, created_at, confirm_token_hash)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
         )
         .bind(
           crypto.randomUUID(),
@@ -520,7 +545,8 @@ export async function sendOrder(
           outcome.messageId,
           outcome.error,
           params.by,
-          at
+          at,
+          outcome.status === "sent" && confirm ? confirm.hash : null
         ),
       // On the order's Timeline (0754).
       orderEvent(
@@ -544,7 +570,8 @@ export async function sendOrder(
   if (params.how === "on_release" && recipients?.supplierSendsOwn) return record({ status: "not_sent", to: [], from: null, messageId: null, error: null });
   if (!to.length) return record({ status: "no_address", to: [], from: null, messageId: null, error: null });
 
-  const mail = orderEmail(doc, params.kind, { replyTo: settings.replyTo, attachUbl: settings.attachUbl, attachPdf: settings.attachPdf });
+  const link = confirm && deps.confirm ? confirmUrl(deps.confirm.networkUrl, deps.confirm.environmentId, confirm.token) : null;
+  const mail = orderEmail(doc, params.kind, { replyTo: settings.replyTo, attachUbl: settings.attachUbl, attachPdf: settings.attachPdf, confirmUrl: link });
   const filename = `${doc.order.order_number}.xml`.replace(/[^\w.-]+/g, "_");
   // Decision 0760: the order as a PDF, as this version says it (a change's changes marked).
   const version = settings.attachPdf ? await orderVersion(db, params.orderNumber, params.intakeId) : null;
@@ -554,7 +581,8 @@ export async function sendOrder(
   if (messageId && deps.bucket && deps.customerId) {
     const enc = (t: string) => new TextEncoder().encode(t);
     const parts: [string, string, Uint8Array][] = [
-      ["email.html", "text/html", enc(mail.html)],
+      // The link's secret is the supplier's alone: the copy kept here leaves it out.
+      ["email.html", "text/html", enc(confirm ? mail.html.split(confirm.token).join("…") : mail.html)],
       ...(pdf ? ([[pdfName, "application/pdf", pdf]] as [string, string, Uint8Array][]) : []),
       ...(settings.attachUbl ? ([[filename, "application/xml", enc(doc.ubl)]] as [string, string, Uint8Array][]) : []),
     ];
@@ -679,6 +707,8 @@ export async function handleGetOrderSending(db: D1Database, orderNumber: string)
       supplier: recipients.supplier ? { id: recipients.supplier.id, name: recipients.supplier.name } : null,
       supplierSendsOwn: recipients.supplierSendsOwn,
       sends: sends.map(sendView),
+      // Decision 0762: whether the supplier has confirmed it has the order as it stands.
+      confirmation: await orderConfirmation(db, orderNumber),
     },
   };
 }

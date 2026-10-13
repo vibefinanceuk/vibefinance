@@ -100,6 +100,8 @@ export function ordersOutSection(destination, onChanged) {
         el("h4", { text: t("ordersout.who") }),
         el("ol", { class: "sm oowho" }, ["ordersout.who.order", "ordersout.who.orders", "ordersout.who.email", "ordersout.who.none"].map((k) => el("li", { text: t(k) }))),
         el("p", { class: "muted sm", text: t("ordersout.who.own") }),
+        // Decision 0762.
+        el("p", { class: "muted sm", id: "oo-confirmnote", text: t("ordersout.confirmnote") }),
       ]),
       el("div", { class: "docard", id: "oo-settings" }, [
         el("div", { class: "cardhead" }, [el("h4", { text: t("ordersout.settings") }), el("div", { class: "statebuttons" }, [start, save].filter(Boolean))]),

@@ -343,6 +343,7 @@ import orderTimelineStringsSql from "../migrations/0352_order_timeline_strings.s
 import invoiceOrderSql from "../migrations/0353_invoice_order_strings.sql?raw";
 import ordersOutStringsSql from "../migrations/0354_orders_to_suppliers_strings.sql?raw";
 import orderDocumentStringsSql from "../migrations/0355_order_document_strings.sql?raw";
+import orderConfirmationStringsSql from "../migrations/0356_order_confirmation_strings.sql?raw";
 
 function stripSqlComments(sql: string): string {
   return sql
@@ -719,5 +720,6 @@ export async function applyTestSchema(): Promise<void> {
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(invoiceOrderSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(ordersOutStringsSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(orderDocumentStringsSql)));
+  await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(orderConfirmationStringsSql)));
 
 }

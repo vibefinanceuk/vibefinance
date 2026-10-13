@@ -774,6 +774,8 @@ export async function openPurchaseOrder(summary, { onDone = null } = {}) {
       supplierChat?.query ? el("div", { class: "warn", id: "po-supplierquery", text: supplierQueryText(supplierChat.query) }) : null,
       // Decision 0759: the last time it was sent to the supplier, or why not.
       sending?.sends?.length ? sentLine(sending.sends[0]) : null,
+      // Decision 0762: whether the supplier has confirmed it has the order as it stands.
+      confirmedLine(sending),
       header,
       el("h4", { text: t("purchaseorders.lines") }),
       linesTable,
@@ -845,6 +847,25 @@ export async function openPurchaseOrder(summary, { onDone = null } = {}) {
  * figures and state, and every receipt and return behind them. Left out
  * when it cannot be read; said plainly when nothing has been received.
  */
+/**
+ * **Whether the supplier has confirmed it — decision 0762**: when, and
+ * how (the email's link, or in the supplier network, by whom). Said to
+ * wait only once the order has gone to the supplier.
+ */
+function confirmedLine(sending) {
+  const c = sending?.confirmation;
+  if (!c) return null;
+  if (c.confirmed) {
+    const when = new Date(c.confirmed.at).toLocaleString();
+    return el("div", { class: "muted sm", id: "po-confirmedline" }, [
+      el("span", { class: "rmpill ok", text: t("purchaseorders.confirmed") }),
+      " ",
+      el("span", { text: t(`purchaseorders.confirmed.${c.confirmed.how}`).replace("{when}", when).replace("{by}", c.confirmed.by ?? "") }),
+    ]);
+  }
+  return sending.sends?.[0]?.status === "sent" ? el("div", { class: "muted sm", id: "po-confirmedline", text: t("purchaseorders.confirmed.waiting") }) : null;
+}
+
 /** Decision 0759: the order's latest send, in a line above its details. */
 function sentLine(last) {
   const words = t(`ordersout.line.${last.status}`)

@@ -6,6 +6,7 @@ import { EFFECTIVE_STATUS_CASE, INVOICED_AMOUNTS_JOIN } from "./purchase-order-r
 import { orderFigures, receiptStateJoin } from "./goods-receipts.js";
 import { getOrgMatchingConfig } from "./po-matching.js";
 import { portalView, type MessageRow } from "./supplier-messages.js";
+import { orderConfirmation } from "./order-confirm.js";
 
 /**
  * **Purchase orders, shared with suppliers in the network — decision
@@ -250,7 +251,9 @@ export async function getPortalOrder(db: D1Database, claims: PortalAccessClaims,
    * it), as Create lists the companies.
    */
   const invoiceCompanyId = row.org_unit_id ? await coveringUnit(db, row.org_unit_id, claims.orgUnitIds) : null;
-  return { status: 200, body: { order: { ...orderSummary(row), lines, messages, receiptingRequired: receipting, invoiceCompanyId } } };
+  // Decision 0762: whether the supplier has confirmed it has the order, as it stands.
+  const confirmation = await orderConfirmation(db, row.order_number);
+  return { status: 200, body: { order: { ...orderSummary(row), lines, messages, receiptingRequired: receipting, invoiceCompanyId, confirmation } } };
 }
 
 /** The first of `units` at or above `unitId`, walking up the organisation. */

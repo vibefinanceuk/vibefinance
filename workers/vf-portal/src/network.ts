@@ -90,7 +90,8 @@ export async function me(deps: Deps, session: string): Promise<Result> {
     status: 200,
     body: {
       email: body.email,
-      customers: ((body.links ?? []) as Link[]).map((l) => ({ linkId: l.id, customer: l.customerName, supplier: l.supplierName, companies: l.orgUnits.map((u) => u.name) })),
+      // Decision 0762: which instance each is, for a confirm link to open its order.
+      customers: ((body.links ?? []) as Link[]).map((l) => ({ linkId: l.id, environmentId: l.environmentId, customer: l.customerName, supplier: l.supplierName, companies: l.orgUnits.map((u) => u.name) })),
     },
   };
 }
@@ -273,4 +274,59 @@ export async function fromCustomer(deps: Deps, session: string, linkId: string, 
   const answer = await ask(deps, pair.access, `/portal/${what}?orgUnitId=${encodeURIComponent(orgUnitId)}`);
   if (!answer.ok) return { status: answer.status === 403 ? 403 : 502, body: { error: answer.reason, customer: pair.link.customerName } };
   return { status: 200, body: answer.body };
+}
+
+/**
+ * `POST /api/order-confirm` `{ environmentId, token }` — decision 0762:
+ * the email's *Confirm receipt* link, posted by the confirm page once it
+ * has loaded in a browser. No sign-in: the link is the proof. vf-licence
+ * says where that customer's instance is; the instance checks the link
+ * and confirms. The answer names the order, for the page to open it.
+ */
+export async function confirmByLink(deps: Deps, body: unknown, agent: string | null): Promise<Result> {
+  const b = (body ?? {}) as { environmentId?: unknown; token?: unknown };
+  const environmentId = typeof b.environmentId === "string" ? b.environmentId : "";
+  const token = typeof b.token === "string" ? b.token : "";
+  if (!/^[\w-]{1,100}$/.test(environmentId) || !/^[A-Za-z0-9_-]{20,100}$/.test(token)) return { status: 404, body: { error: "unknown_link" } };
+  const where = await deps.licence(`/portal/environments/${encodeURIComponent(environmentId)}`);
+  if (where.status === 404) return { status: 404, body: { error: "unknown_link" } };
+  const instanceUrl = (await asJson(where)).instanceUrl;
+  if (!where.ok || typeof instanceUrl !== "string") return { status: 502, body: { error: "unreachable" } };
+  try {
+    const res = await deps.instance(`${instanceUrl.replace(/\/+$/, "")}/portal/order-confirm`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token, agent }),
+      signal: AbortSignal.timeout(deps.timeoutMs ?? 8000),
+    });
+    const answer = await asJson(res);
+    if (res.status === 404) return { status: 404, body: { error: "unknown_link" } };
+    if (!res.ok) return { status: 502, body: { error: "refused" } };
+    return { status: 200, body: { ...answer, environmentId } };
+  } catch {
+    return { status: 502, body: { error: "unreachable" } };
+  }
+}
+
+/**
+ * `POST /api/orders/:linkId/:orderId/confirm` — decision 0762: the
+ * supplier confirms on the order in the supplier network, for a supplier
+ * who never saw the email.
+ */
+export async function confirmOrder(deps: Deps, session: string, linkId: string, orderId: string): Promise<Result> {
+  const pairs = await linksWithAccess(deps, session);
+  if (!pairs) return { status: 401, body: { error: "signed_out" } };
+  const pair = pairs.find((p) => p.link.id === linkId);
+  if (!pair?.access) return { status: 404, body: { error: "not_found" } };
+  try {
+    const res = await deps.instance(`${pair.access.instanceUrl.replace(/\/+$/, "")}/portal/orders/${encodeURIComponent(orderId)}/confirm`, {
+      method: "POST",
+      headers: { ...bearer(pair.access.token), "Content-Type": "application/json" },
+      body: "{}",
+      signal: AbortSignal.timeout(deps.timeoutMs ?? 8000),
+    });
+    return { status: res.status, body: await asJson(res) };
+  } catch {
+    return { status: 502, body: { error: "unreachable", customer: pair.link.customerName } };
+  }
 }

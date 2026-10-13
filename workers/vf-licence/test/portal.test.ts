@@ -223,6 +223,14 @@ describe("through the router", () => {
     expect((await call("POST", `/environments/acme-prod/portal-links/${linkId}/end`, "env-key-acme", { endedBy: "ap@acme.example" })).status).toBe(200);
   });
 
+  it("says where an instance is, signed in or not, for the supplier network's confirm page — decision 0762", async () => {
+    const found = await call("GET", "/portal/environments/acme-prod", null);
+    expect(found.status).toBe(200);
+    expect(await found.json()).toEqual({ instanceUrl: "https://acme.vibefinance.example" });
+    expect((await call("GET", "/portal/environments/nobody", null)).status).toBe(404);
+    expect((await call("GET", "/portal/environments/acme-prod", null)).headers.get("Content-Type")).toContain("application/json");
+  });
+
   it("a supplier signs in, lists their customers, gets access, and ends their own link; nothing without a portal session", async () => {
     await inviteAndAccept("jo@lager-nord.example", "first passphrase");
     expect((await call("GET", "/portal/links", null)).status).toBe(401);

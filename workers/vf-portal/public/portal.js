@@ -112,6 +112,13 @@ export async function render() {
               },
               // Decision 0760: the order as the customer sends it, a PDF with its downloads.
               document: (o) => buildOrderDocumentTab(o, opened.inv.linkId),
+              // Decision 0762: confirming receipt, for a supplier who never saw the email.
+              confirm: async () => {
+                const { res } = await api(`/orders/${encodeURIComponent(opened.inv.linkId)}/${encodeURIComponent(opened.inv.id)}/confirm`, { method: "POST" });
+                if (!res.ok) return false;
+                await openInvoice(opened.inv);
+                return true;
+              },
             },
             handlers
           )
@@ -496,10 +503,32 @@ export function conversation(body, inv) {
   ]);
 }
 
+/**
+ * **An order named in the address — decision 0762**: `#order=<environment>/<order id>`,
+ * where the confirm page sends a supplier once the email's link has confirmed it.
+ * Opened once this person's customers are known (after signing in, if they had to);
+ * left alone if none of them is that customer. Exported for its test.
+ */
+export function orderFromHash(hash, customers) {
+  const m = /^#order=([^/]+)\/(.+)$/.exec(hash ?? "");
+  if (!m) return null;
+  const environmentId = decodeURIComponent(m[1]);
+  const id = decodeURIComponent(m[2]);
+  const customer = customers.find((c) => c.environmentId === environmentId);
+  return customer ? { documentType: "purchase_order", linkId: customer.linkId, id, messages: { unread: 0 } } : null;
+}
+
 async function showList() {
   const { res, body } = await api("/me");
   if (!res.ok) return;
   me = { email: body.email ?? "", customers: body.customers ?? [] };
+  const named = orderFromHash(location.hash, me.customers);
+  if (location.hash.startsWith("#order=")) history.replaceState?.(null, "", location.pathname);
+  if (named) {
+    await openInvoice(named);
+    // Back to Documents loads the list.
+    if (current === "order") return;
+  }
   await render();
   await loadInvoices();
 }

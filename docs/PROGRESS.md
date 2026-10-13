@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 13 October 2026 (decision 0761). A living document: what
+Last updated 13 October 2026 (decision 0762). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,18 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### The supplier confirms it has the order (0762)
+
+Each order email has a *Confirm receipt* button. Opening its link in a browser confirms that
+version of the order and goes on to the order in the supplier network, marked *Confirmed*. The
+link's secret is after the `#`, so mail scanners that only fetch links confirm nothing. A supplier
+who never saw the email confirms on the order in the supplier network.
+
+A change needs confirming again. The order's page and Timeline in VibeFinance say when, how and by
+whom.
+
+Slice 4c. Full reasoning is in decision 0762.
 
 ### The order PDF shows its tax and who to talk to (0761)
 

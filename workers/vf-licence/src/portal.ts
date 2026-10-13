@@ -527,3 +527,16 @@ export async function issuePortalAccess(db: D1Database, session: PortalSessionCl
 export function endMyLink(db: D1Database, session: PortalSessionClaims, linkId: string, now = new Date()): Promise<RouteResult> {
   return endLink(db, { linkId, email: session.email }, `portal:${session.email}`, now);
 }
+
+/**
+ * `GET /portal/environments/:id` — decision 0762: where a customer's
+ * instance is, for the supplier network's confirm page. Public, as the
+ * email's link that names the environment is: an instance's address is
+ * no secret, and an environment id cannot be guessed.
+ */
+export async function portalEnvironment(db: D1Database, environmentId: string): Promise<RouteResult> {
+  if (!/^[\w-]{1,100}$/.test(environmentId)) return { status: 404, body: { error: "not found" } };
+  const row = await db.prepare("SELECT instance_url FROM environments WHERE id = ?").bind(environmentId).first<{ instance_url: string }>();
+  if (!row?.instance_url) return { status: 404, body: { error: "not found" } };
+  return { status: 200, body: { instanceUrl: row.instance_url } };
+}

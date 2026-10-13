@@ -1,7 +1,7 @@
 import { env, SELF } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 import worker, { readSession, type Env } from "../src/index.js";
-import { invoice, invoices, me, order, orderDocument, receipt, reply, submissionCompanies, submit, type Deps } from "../src/network.js";
+import { confirmByLink, confirmOrder, invoice, invoices, me, order, orderDocument, receipt, reply, submissionCompanies, submit, type Deps } from "../src/network.js";
 
 /**
  * **The supplier network — decision 0717.** vf-licence and the customers'
@@ -71,8 +71,8 @@ describe("the list across customers", () => {
     expect((await me(deps({}), "good")).body).toEqual({
       email: "jo@lager-nord.example",
       customers: [
-        { linkId: "pl-acme", customer: "Acme Ltd", supplier: "Lager Nord GmbH", companies: ["Acme UK Ltd"] },
-        { linkId: "pl-globex", customer: "Globex plc", supplier: "Lager Nord GmbH", companies: ["Globex"] },
+        { linkId: "pl-acme", environmentId: "acme-prod", customer: "Acme Ltd", supplier: "Lager Nord GmbH", companies: ["Acme UK Ltd"] },
+        { linkId: "pl-globex", environmentId: "globex-prod", customer: "Globex plc", supplier: "Lager Nord GmbH", companies: ["Globex"] },
       ],
     });
   });
@@ -123,13 +123,66 @@ describe("an order as a document — decision 0760", () => {
   });
 });
 
+describe("confirming receipt of an order — decision 0762", () => {
+  const TOKEN = "Abc_def-0123456789xyzABCDEFGHIJ";
+  /** vf-licence says where the instance is, signed in or not; the instance confirms. */
+  function linkDeps(answer: (body: Record<string, unknown>) => Response, seen: { url: string; body: Record<string, unknown> }[] = []): Deps {
+    return {
+      licence: async (path) => (path === "/portal/environments/acme-prod" ? Response.json({ instanceUrl: "https://acme.example/" }) : new Response("{}", { status: 404 })),
+      instance: async (url, init) => {
+        const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+        seen.push({ url, body });
+        return answer(body);
+      },
+      timeoutMs: 200,
+    };
+  }
+
+  it("by the email's link: finds the instance, which confirms, and says which order, from which customer", async () => {
+    const seen: { url: string; body: Record<string, unknown> }[] = [];
+    const d = linkDeps(() => Response.json({ confirmed: true, already: false, current: true, orderNumber: "PO-7", orderId: "po7", company: "Acme UK Ltd", kind: "order" }), seen);
+    const r = await confirmByLink(d, { environmentId: "acme-prod", token: TOKEN }, "Mozilla/5.0");
+    expect(r).toEqual({ status: 200, body: { confirmed: true, already: false, current: true, orderNumber: "PO-7", orderId: "po7", company: "Acme UK Ltd", kind: "order", environmentId: "acme-prod" } });
+    expect(seen).toEqual([{ url: "https://acme.example/portal/order-confirm", body: { token: TOKEN, agent: "Mozilla/5.0" } }]);
+  });
+
+  it("a link the instance does not know, an unknown customer or a malformed link is not recognised; an instance that does not answer is said so", async () => {
+    expect((await confirmByLink(linkDeps(() => Response.json({ error: "unknown_link" }, { status: 404 })), { environmentId: "acme-prod", token: TOKEN }, null)).status).toBe(404);
+    const never: { url: string; body: Record<string, unknown> }[] = [];
+    expect((await confirmByLink(linkDeps(() => Response.json({}), never), { environmentId: "globex-prod", token: TOKEN }, null)).status).toBe(404);
+    expect((await confirmByLink(linkDeps(() => Response.json({}), never), { environmentId: "acme-prod", token: "short" }, null)).status).toBe(404);
+    expect((await confirmByLink(linkDeps(() => Response.json({}), never), { environmentId: "../x", token: TOKEN }, null)).status).toBe(404);
+    expect(never).toEqual([]);
+    expect((await confirmByLink(linkDeps(() => Response.json({}, { status: 500 })), { environmentId: "acme-prod", token: TOKEN }, null)).status).toBe(502);
+    const down: Deps = { ...linkDeps(() => Response.json({})), instance: async () => Promise.reject(new Error("down")) };
+    expect((await confirmByLink(down, { environmentId: "acme-prod", token: TOKEN }, null)).body).toEqual({ error: "unreachable" });
+  });
+
+  it("in the network: to the customer that link is for, with its own token", async () => {
+    const seen: Seen[] = [];
+    const r = await confirmOrder(deps({ "acme.example": () => Response.json({ already: false, confirmation: { kind: "order", confirmed: { how: "network" } } }) }, seen), "good", "pl-acme", "po7");
+    expect(r).toMatchObject({ status: 200, body: { already: false } });
+    expect(seen).toEqual([{ url: "https://acme.example/portal/orders/po7/confirm", auth: "Bearer tok-acme" }]);
+    expect((await confirmOrder(deps({}), "good", "pl-someone", "po7")).status).toBe(404);
+    expect((await confirmOrder(deps({}), "stale", "pl-acme", "po7")).status).toBe(401);
+  });
+
+  it("the Worker takes the link without a session, but only from this site", async () => {
+    const e = { ...(env as unknown as Env), LICENCE_SERVICE: { fetch: async () => new Response("{}", { status: 404 }) } as unknown as Fetcher } as Env;
+    const post = (origin?: string) =>
+      worker.fetch(new Request("https://network.example/api/order-confirm", { method: "POST", headers: { "Content-Type": "application/json", ...(origin ? { Origin: origin } : {}) }, body: JSON.stringify({ environmentId: "nobody", token: TOKEN }) }), e);
+    expect((await post()).status).toBe(404);
+    expect((await post("https://evil.example")).status).toBe(403);
+  });
+});
+
 describe("the Worker", () => {
   const withLicence = (licence: (path: string, init: RequestInit) => Response | Promise<Response>) =>
     ({ ...(env as unknown as Env), LICENCE_SERVICE: { fetch: (u: string, init: RequestInit) => licence(new URL(u).pathname, init) } as unknown as Fetcher }) as Env;
   const call = (e: Env, path: string, init: RequestInit = {}) => worker.fetch(new Request(`https://network.example${path}`, init), e);
 
   it("serves the pages", async () => {
-    for (const page of ["/", "/welcome.html", "/portal.js", "/welcome.js", "/shell.js", "/icons.js", "/create.js", "/view.js", "/order-view.js", "/order-document.js", "/bis3.js", "/portal.css", "/tokens.css", "/app.css", "/img/logo.png", "/img/logo-light.png", "/img/logo-mark.png"]) {
+    for (const page of ["/", "/welcome.html", "/portal.js", "/welcome.js", "/shell.js", "/icons.js", "/create.js", "/view.js", "/order-view.js", "/order-document.js", "/confirm", "/confirm.js", "/bis3.js", "/portal.css", "/tokens.css", "/app.css", "/img/logo.png", "/img/logo-light.png", "/img/logo-mark.png"]) {
       expect((await SELF.fetch(`https://network.example${page}`)).status, page).toBe(200);
     }
   });
@@ -329,6 +382,7 @@ describe("the network's words", () => {
       (await import("../public/order-view.js?raw")).default,
       (await import("../public/order-document.js?raw")).default,
       (await import("../public/welcome.js?raw")).default,
+      (await import("../public/confirm.js?raw")).default,
     ] as string[];
     const used = new Set<string>();
     for (const src of pages) for (const m of src.matchAll(/t\("(network\.[a-z0-9._]+)"/g)) used.add(m[1]);
@@ -351,6 +405,12 @@ describe("the network's words", () => {
     for (const s of ["credited", "goods_received", "goods_returned", "goods_checking", "order_open", "order_part_received", "order_received", "order_part_invoiced", "order_invoiced", "order_on_hold", "order_closed"]) {
       used.add(`network.status.${s}`);
       used.add(`network.help.status.${s}`);
+    }
+    // Decision 0762: confirming receipt, said of the version confirmed.
+    for (const k of ["order", "change", "cancellation"]) {
+      used.add(`network.confirm.done.${k}`);
+      used.add(`network.order.confirmedline.${k}`);
+      used.add(`network.order.toconfirm.${k}`);
     }
     used.add("network.create.accountnote");
     used.add("network.create.noaccount");

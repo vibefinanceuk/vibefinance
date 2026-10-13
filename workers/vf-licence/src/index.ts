@@ -63,6 +63,7 @@ import {
   issuePortalAccess,
   listPortalPeople,
   myPortalLinks,
+  portalEnvironment,
   portalLogin,
   portalSessionOf,
   viewPortalInvitation,
@@ -365,6 +366,8 @@ export default {
       if (url.pathname === "/portal/invitations/view" && request.method === "POST") result = await viewPortalInvitation(env.CONTROL_DB, body);
       else if (url.pathname === "/portal/invitations/accept" && request.method === "POST") result = await acceptPortalInvitation(env.CONTROL_DB, body);
       else if (url.pathname === "/portal/login" && request.method === "POST") result = await portalLogin(env.CONTROL_DB, body, key, request.headers.get("CF-Connecting-IP"));
+      // Decision 0762: where an instance is, for the supplier network's confirm page.
+      else if (/^\/portal\/environments\/[^/]+$/.test(url.pathname) && request.method === "GET") result = await portalEnvironment(env.CONTROL_DB, decodeURIComponent(url.pathname.split("/")[3]));
       else {
         const session = await portalSessionOf(extractBearerToken(request), key);
         if (!session) return json({ error: "unauthorized" }, 401);

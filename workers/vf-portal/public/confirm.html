@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<meta name="robots" content="noindex">
+<title>VibeFinance supplier network</title>
+<!--
+  Confirming receipt of a purchase order — decision 0762. The link's
+  secret is in the fragment (#environment.secret), which a browser never
+  sends to a server: a mail scanner that only fetches the link sees this
+  page and nothing more. The page confirms once it has loaded in a browser.
+-->
+<script src="/mood.js"></script>
+<link rel="stylesheet" href="/tokens.css">
+<link rel="stylesheet" href="/app.css">
+<link rel="stylesheet" href="/portal.css">
+</head>
+<body>
+<main id="confirm">
+  <div class="mark"></div>
+  <h1 data-t="network.confirm.title"></h1>
+  <p class="sub" id="confirm-status" role="status"></p>
+  <p class="sub" id="confirm-more" hidden></p>
+  <div class="problem" id="confirm-problem" role="alert"></div>
+  <button type="button" id="confirm-open" hidden></button>
+  <button type="button" id="confirm-again" hidden></button>
+</main>
+<script type="module" src="/confirm.js"></script>
+</body>
+</html>

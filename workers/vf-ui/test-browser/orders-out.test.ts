@@ -25,6 +25,7 @@ const SENDING = {
   supplier: { id: "kw", name: "Kingsway" },
   supplierSendsOwn: false,
   sends: [{ status: "sent", kind: "order", how: "on_release", to: ["orders@kingsway.example"], from: "orders_email", error: null, by: null, at: "2026-10-12T09:00:00Z" }],
+  confirmation: { kind: "order", confirmed: null },
 };
 const SETTINGS = {
   settings: { sendOnRelease: true, replyTo: null, ccBuyer: true, attachUbl: true },
@@ -88,6 +89,7 @@ describe("the Destination's panel on Process routes", () => {
       "Else the supplier's general email.",
       "Else it is not sent. The order's Timelin",
     ]);
+    expect(document.getElementById("oo-confirmnote")?.textContent).toBe("Each email has a Confirm receipt button. A supplier who never sees the email can confirm on the order in the supplier network.");
     expect(document.getElementById("oo-start")?.textContent).toBe("Start sending");
     expect(document.getElementById("oo-notstarted")).not.toBeNull();
     expect([...document.querySelectorAll("#oo-sends tbody tr")].map((r) => [...r.querySelectorAll("td")].slice(0, 4).map((c) => c.textContent))).toEqual([
@@ -110,6 +112,8 @@ describe("Send to supplier, on the order", () => {
     await vi.waitFor(() => expect(document.getElementById("po-send")).not.toBeNull());
     // The last send, above the order's details.
     expect(document.getElementById("po-sentline")?.textContent).toMatch(/^Order sent to the supplier on .+: orders@kingsway\.example\.$/);
+    // Decision 0762: sent and not yet confirmed.
+    expect(document.getElementById("po-confirmedline")?.textContent).toBe("The supplier has not yet confirmed receipt.");
     document.getElementById("po-send")!.click();
     expect(document.querySelector("#po-send-recipients strong")?.textContent).toBe("orders@kingsway.example, sales@kingsway.example");
     expect(document.querySelector("#po-send-recipients .muted")?.textContent).toBe("The supplier's orders address");
@@ -135,6 +139,38 @@ describe("Send to supplier, on the order", () => {
     await again.openPurchaseOrder({ order_number: "PO-9" });
     await vi.waitFor(() => expect(document.querySelector("#viewer .poview")).not.toBeNull());
     expect(document.getElementById("po-send")).toBeNull();
+  });
+});
+
+describe("the supplier's confirmation — decision 0762", () => {
+  it("says when and how the supplier confirmed, above the order's details", async () => {
+    await start(["AP.Purchasing"], {
+      "GET /api/purchase-orders/PO-9/send-to-supplier": [200, { ...SENDING, confirmation: { kind: "order", confirmed: { at: "2026-10-13T08:30:00Z", how: "network", by: "jo@kingsway.example", kind: "order" } } }],
+    });
+    const { openPurchaseOrder } = await import("/purchase-orders.js");
+    await openPurchaseOrder({ order_number: "PO-9" });
+    await vi.waitFor(() => expect(document.getElementById("po-confirmedline")).not.toBeNull());
+    expect(document.querySelector("#po-confirmedline .rmpill")?.textContent).toBe("Confirmed");
+    expect(document.getElementById("po-confirmedline")?.textContent).toMatch(/^Confirmed by the supplier on .+, in the supplier network \(jo@kingsway\.example\)\.$/);
+  });
+
+  it("says nothing of confirming an order never sent", async () => {
+    await start(["AP.Purchasing"], { "GET /api/purchase-orders/PO-9/send-to-supplier": [200, { ...SENDING, sends: [] }] });
+    const { openPurchaseOrder } = await import("/purchase-orders.js");
+    await openPurchaseOrder({ order_number: "PO-9" });
+    await vi.waitFor(() => expect(document.getElementById("po-send")).not.toBeNull());
+    expect(document.getElementById("po-confirmedline")).toBeNull();
+  });
+
+  it("the Timeline says who confirmed, how, and of which version; an earlier email's link says so", async () => {
+    await start([]);
+    const { describeOrderItem, orderSubs } = await import("/order-timeline.js");
+    const link = { kind: "supplier_confirmed", at: "2026-10-13T08:30:00Z", by: null, detail: { how: "link", kind: "order", by: null, current: false, agent: "Mozilla/5.0 Safari" } };
+    expect(describeOrderItem(link)).toBe("The supplier confirmed receipt with the link in the email.");
+    expect(orderSubs(link)).toEqual(["Of the order.", "That email was an earlier version: a newer one has been sent since, and still waits to be confirmed.", "Opened in: Mozilla/5.0 Safari"]);
+    const net = { kind: "supplier_confirmed", at: "2026-10-13T08:30:00Z", by: null, detail: { how: "network", kind: "change", by: "jo@kingsway.example", current: true, agent: null } };
+    expect(describeOrderItem(net)).toBe("jo@kingsway.example confirmed receipt in the supplier network.");
+    expect(orderSubs(net)).toEqual(["Of the change.", null, null]);
   });
 });
 

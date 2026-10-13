@@ -33,8 +33,43 @@ export function invoiceable(o) {
 }
 
 /** The page. `deps` carries what portal.js owns: the status chip, money, back to Documents, the conversation (0752), and invoicing it (0755). */
-export function orderPage(o, { statusChip, money, back, conversation, invoice, document: documentTab }, handlers) {
+export function orderPage(o, { statusChip, money, back, conversation, invoice, document: documentTab, confirm }, handlers) {
   const can = invoiceable(o);
+  /**
+   * **Confirming receipt — decision 0762**, for a supplier who never saw
+   * the email's link: the version they have now, once. Confirmed, the
+   * order says so beside its status, and when.
+   */
+  const confirmation = o.confirmation ?? null;
+  const confirmed = confirmation?.confirmed ?? null;
+  const confirmProblem = el("p", { class: "problem", id: "net-confirm-problem", role: "alert" });
+  const confirmButton =
+    confirm && confirmation && !confirmed
+      ? el(
+          "button",
+          {
+            class: "actionlink primary",
+            type: "button",
+            id: "net-confirm",
+            title: t("network.order.confirmtitle", { customer: o.customer ?? "" }),
+            onclick: async (e) => {
+              const button = e.currentTarget;
+              button.disabled = true;
+              confirmProblem.textContent = "";
+              if (!(await confirm())) {
+                button.disabled = false;
+                confirmProblem.textContent = t("network.order.confirmfailed");
+              }
+            },
+          },
+          [icon("tick"), el("span", { text: t("network.order.confirm") })]
+        )
+      : null;
+  const confirmLine = confirmation
+    ? confirmed
+      ? el("p", { class: "muted sm", id: "net-confirmed-line", text: t(`network.order.confirmedline.${confirmed.kind ?? "order"}`, { date: new Date(confirmed.at).toLocaleDateString() }) })
+      : el("p", { class: "muted sm", id: "net-toconfirm-line", text: t(`network.order.toconfirm.${confirmation.kind ?? "order"}`, { customer: o.customer ?? "" }) })
+    : null;
   // Decision 0755: Invoice this order, beside Back; why not, where it cannot be.
   const invoiceButton = invoice
     ? el(
@@ -46,12 +81,14 @@ export function orderPage(o, { statusChip, money, back, conversation, invoice, d
   const title = topbar(
     o.invoiceNumber ?? "—",
     t("network.order.subtitle", { customer: o.customer ?? "", company: o.company ?? "", date: o.issueDate ?? "" }),
-    [invoiceButton, el("button", { class: "actionlink", type: "button", title: t("network.view.backtitle"), onclick: back }, [icon("back"), el("span", { text: t("network.view.back") })])].filter(Boolean),
+    [confirmButton, invoiceButton, el("button", { class: "actionlink", type: "button", title: t("network.view.backtitle"), onclick: back }, [icon("back"), el("span", { text: t("network.view.back") })])].filter(Boolean),
     handlers
   );
   const h2 = title.querySelector("h2");
   h2?.append(el("span", { class: "bisbadge", text: t("network.types.purchase_order") }));
   h2?.append(statusChip(o.status));
+  // Decision 0762: confirmed, beside its status.
+  if (confirmed) h2?.append(el("span", { class: "status order_confirmed", id: "net-confirmed", text: t("network.order.confirmed") }));
 
   const lines = o.lines ?? [];
   const cell = (v, cls = "num") => el("td", { class: cls }, [typeof v === "string" || typeof v === "number" ? String(v) : v]);
@@ -89,6 +126,8 @@ export function orderPage(o, { statusChip, money, back, conversation, invoice, d
   return el("div", { class: "netinvoiceview netorderview" }, [
     title,
     el("p", { class: "muted sm", text: t("network.order.note", { customer: o.customer ?? "" }) }),
+    confirmLine,
+    confirmProblem,
     invoice && !can.ok ? el("p", { class: "muted sm", id: "net-invoiceorder-why", text: t(`network.invoiceorder.why.${can.why}`) }) : null,
     el("div", { class: "netview netcreate" }, [
       el("div", { class: "netviewmain" }, [

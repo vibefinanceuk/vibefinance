@@ -1,4 +1,4 @@
-import { fromCustomer, invoice, invoices, me, order, receipt, reply, submissionCompanies, submit, type Deps, orderDocument } from "./network.js";
+import { fromCustomer, invoice, invoices, me, order, receipt, reply, submissionCompanies, submit, type Deps, orderDocument, confirmByLink, confirmOrder } from "./network.js";
 
 /**
  * **vf-portal: the supplier network — decision 0717.**
@@ -92,6 +92,17 @@ export default {
     if (url.pathname === "/api/sign-in" && request.method === "POST") return signedIn(await post("/portal/login"));
     if (url.pathname === "/api/sign-out" && request.method === "POST") return json({ signedOut: true }, 200, { "Set-Cookie": cookie("", 0) });
 
+    /**
+     * Decision 0762: the email's Confirm receipt link, posted by the confirm
+     * page once it has loaded in a browser. Signed in or not: the link is
+     * the proof.
+     */
+    if (url.pathname === "/api/order-confirm" && request.method === "POST") {
+      const body = await request.json().catch(() => ({}));
+      const result = await confirmByLink({ licence, instance: (u, init) => fetch(u, init) }, body, request.headers.get("User-Agent"));
+      return json(result.body, result.status);
+    }
+
     const session = readSession(request);
     if (!session) return json({ error: "signed_out" }, 401);
     const deps: Deps = { licence, instance: (u, init) => fetch(u, init) };
@@ -111,6 +122,9 @@ export default {
     // Decision 0751: a purchase order the customer shares, read only.
     const oneOrder = url.pathname.match(/^\/api\/orders\/([^/]+)\/([^/]+)$/);
     if (oneOrder && request.method === "GET") return signedOutClears(await order(deps, session, decodeURIComponent(oneOrder[1]), decodeURIComponent(oneOrder[2])));
+    // Decision 0762: the supplier confirms it has the order, in the network.
+    const confirm = url.pathname.match(/^\/api\/orders\/([^/]+)\/([^/]+)\/confirm$/);
+    if (confirm && request.method === "POST") return signedOutClears(await confirmOrder(deps, session, decodeURIComponent(confirm[1]), decodeURIComponent(confirm[2])));
     // Decision 0738: a goods receipt the customer shares, read only.
     const oneReceipt = url.pathname.match(/^\/api\/receipts\/([^/]+)\/([^/]+)$/);
     if (oneReceipt && request.method === "GET") return signedOutClears(await receipt(deps, session, decodeURIComponent(oneReceipt[1]), decodeURIComponent(oneReceipt[2])));

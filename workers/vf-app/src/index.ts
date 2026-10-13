@@ -352,6 +352,7 @@ import {
 import { handleHttpsReceipts, receiptsReport, receiptsSource, receiptsUploadSource, receiveReceipts, RECEIPTS_FILE_ROUTE } from "./receipts-in-route.js";
 import { handleGetOrdersProcess, handleHttpsOrders, handleSetUpOrdersProcess, ordersReport, ordersSource, ordersUploadSource, settleOrderInstance, uploadOrders } from "./purchase-orders-in.js";
 import { handleGetOrderSupplierMessages, handlePortalOrderReply, handlePostOrderSupplierMessage, markOrderSeen, orderConversationsFor } from "./order-messages.js";
+import { confirmByLink, confirmInNetwork } from "./order-confirm.js";
 import { orderFile, type DocumentFormat, handleGetOrderSending, handleGetOrdersOut, handlePutOrdersOut, handleSendOrderToSupplier, handleStartOrdersOut, runOrderSends, type OrdersOutDeps } from "./orders-out.js";
 import { handleAddOrderCollaborator, handleGetOrderTimeline, handleOrderAttachments, handlePostOrderComment, handleRemoveOrderCollaborator, handleSearchOrderPeople, orderAccess, ORDER_TOKEN_PREFIX, partForOrder } from "./order-timeline.js";
 import { continueOrderInstance, handleFixIntake, handleGetIntake, handleIntakeSuppliers, handleListIntake, handleRejectIntake, handleReleaseIntake, isOrderCheckingTask } from "./order-checking.js";
@@ -1099,6 +1100,8 @@ function ordersOutDeps(env: Env): OrdersOutDeps {
     email: env.RESEND_API_KEY && env.RESEND_FROM_ADDRESS ? { apiKey: env.RESEND_API_KEY, from: env.RESEND_FROM_ADDRESS } : null,
     bucket: env.DOCUMENTS ?? null,
     customerId: env.CUSTOMER_ID ?? null,
+    // Decision 0762: the email's Confirm receipt link, to the supplier network.
+    confirm: env.ENVIRONMENT_ID ? { networkUrl: env.NETWORK_URL ?? DEFAULT_NETWORK_URL, environmentId: env.ENVIRONMENT_ID } : null,
   };
 }
 
@@ -1208,6 +1211,25 @@ export default {
       const orderNumber = await portalMayReadOrder(db, auth.claims, decodeURIComponent(portalOrderDocMatch[1]));
       if (!orderNumber) return json({ error: "not found" }, 404);
       return documentResponse(await orderFile(db, orderNumber, documentFormat(url.searchParams.get("format"))), url.searchParams.get("download") === "1");
+    }
+    /**
+     * Decision 0762: the supplier confirms it has the order. By the email's
+     * link, posted by the supplier network's confirm page — no sign-in, the
+     * link is the proof — or on the order in the supplier network.
+     */
+    if (pathname === "/portal/order-confirm" && request.method === "POST") {
+      const { db } = resolveTenant(request, env);
+      const body = ((await request.json().catch(() => ({}))) ?? {}) as Record<string, unknown>;
+      const result = await confirmByLink(db, body, typeof body.agent === "string" ? body.agent : request.headers.get("User-Agent"));
+      return json(result.body, result.status);
+    }
+    const portalConfirmMatch = pathname.match(/^\/portal\/orders\/([^/]+)\/confirm$/);
+    if (portalConfirmMatch && request.method === "POST") {
+      const { db } = resolveTenant(request, env);
+      const auth = await portalAuth(db, request, isPublicKeyJwk(env.LICENCE_SIGNING_PUBLIC_KEY) ? env.LICENCE_SIGNING_PUBLIC_KEY : undefined, env.ENVIRONMENT_ID);
+      if (!auth.ok) return json(auth.body, auth.status);
+      const result = await confirmInNetwork(db, auth.claims, decodeURIComponent(portalConfirmMatch[1]));
+      return json(result.body, result.status);
     }
     const portalOrderMatch = pathname.match(/^\/portal\/orders\/([^/]+)(\/messages)?$/);
     if (portalOrderMatch && (portalOrderMatch[2] ? request.method === "POST" : request.method === "GET")) {

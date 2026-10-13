@@ -203,6 +203,26 @@ describe("in the network", () => {
     expect((await get("/portal/orders/po9/document", token)).status).toBe(404);
   });
 
+  /** Decision 0762: a supplier who never saw the email confirms on the order in the network. */
+  it("confirms receipt on a shared order, once, as the person signed in; not on one not shared with them", async () => {
+    await handlePutNetworkSharingConfig(env.DB, "u1", { shareOrders: true });
+    const token = await access();
+    const post = (path: string) => SELF.fetch(`https://app.example.com${path}`, { method: "POST", headers: { Authorization: `Bearer ${token}` } });
+    const before = ((await (await get("/portal/orders/po1", token)).json()) as { order: { confirmation: unknown } }).order.confirmation;
+    expect(before).toEqual({ kind: "order", confirmed: null });
+    const res = await post("/portal/orders/po1/confirm");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { already: boolean; confirmation: { confirmed: { at: string } } };
+    expect(body).toMatchObject({ already: false, confirmation: { kind: "order", confirmed: { how: "network", by: "jo@lager-nord.example", kind: "order" } } });
+    const after = ((await (await get("/portal/orders/po1", token)).json()) as { order: { confirmation: unknown } }).order.confirmation;
+    expect(after).toEqual({ kind: "order", confirmed: { at: body.confirmation.confirmed.at, how: "network", by: "jo@lager-nord.example", kind: "order" } });
+    expect(await (await post("/portal/orders/po1/confirm")).json()).toMatchObject({ already: true });
+    expect((await post("/portal/orders/po9/confirm")).status).toBe(404);
+    expect((await SELF.fetch("https://app.example.com/portal/orders/po1/confirm", { method: "POST" })).status).toBe(401);
+    const events = await env.DB.prepare("SELECT kind, detail_json FROM purchase_order_events WHERE order_number = 'PO-1'").all<{ kind: string; detail_json: string }>();
+    expect(events.results.map((e) => [e.kind, JSON.parse(e.detail_json)])).toEqual([["supplier_confirmed", { how: "network", kind: "order", by: "jo@lager-nord.example", current: true, agent: null }]]);
+  });
+
   it("says where an order has got to: hold and close first, then invoicing, then receiving", () => {
     expect(portalOrderStatus("closed", "fully_received")).toBe("order_closed");
     expect(portalOrderStatus("on_hold", null)).toBe("order_on_hold");

@@ -89,6 +89,8 @@ export const EVENTS = {
   sent_to_supplier: { tone: "ok", icon: "post" },
   send_failed: { tone: "bad", icon: "alertcircle" },
   not_sent: { tone: "warn", icon: "systemalert" },
+  // Decision 0762 — the supplier confirmed it has the order.
+  supplier_confirmed: { tone: "ok", icon: "tick" },
 };
 
 /** The date part of a shown moment, so a card can leave it off when the one before had the same day. */

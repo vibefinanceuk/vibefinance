@@ -102,6 +102,9 @@ export function describeOrderItem(item) {
       return fill(`purchaseorders.tl.sent.${d.kind ?? "order"}`, { to: (d.to ?? []).join(", "), by });
     case "send_failed":
       return fill("purchaseorders.tl.sendfailed", { to: (d.to ?? []).join(", "), error: d.error });
+    // Decision 0762: the supplier confirmed it has the order.
+    case "supplier_confirmed":
+      return d.how === "network" ? fill("purchaseorders.tl.confirmed.network", { by: d.by ?? "" }) : t("purchaseorders.tl.confirmed.link");
     case "not_sent":
       return t(d.reason === "no_address" ? "purchaseorders.tl.notsent.noaddress" : "purchaseorders.tl.notsent.own");
     case "supplier_asked":
@@ -141,6 +144,13 @@ export function orderSubs(item) {
     // Decision 0759: which address, and how it went.
     case "sent_to_supplier":
       return [t(`ordersout.from.${d.from}`), d.how === "by_hand" ? t("purchaseorders.tl.sent.byhand").replace("{by}", item.by ?? "") : t("purchaseorders.tl.sent.onrelease"), d.pdf ? t("purchaseorders.tl.sent.pdf") : null, d.ubl ? t("purchaseorders.tl.sent.ubl") : null];
+    // Decision 0762: which version, whether it is still the latest, and the browser that opened the link.
+    case "supplier_confirmed":
+      return [
+        t(`purchaseorders.tl.confirmed.kind.${d.kind ?? "order"}`),
+        d.current === false ? t("purchaseorders.tl.confirmed.older") : null,
+        d.agent ? fill("purchaseorders.tl.confirmed.agent", { agent: d.agent }) : null,
+      ];
     default:
       return [];
   }

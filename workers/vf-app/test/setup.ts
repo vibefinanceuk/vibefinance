@@ -175,6 +175,7 @@ import orderSharingSql from "../../../migrations/0168_order_sharing.sql?raw";
 import orderMessagesSql from "../../../migrations/0169_order_supplier_messages.sql?raw";
 import orderTimelineSql from "../../../migrations/0170_order_timeline.sql?raw";
 import ordersOutSql from "../../../migrations/0171_orders_to_suppliers.sql?raw";
+import orderConfirmationsSql from "../../../migrations/0172_order_confirmations.sql?raw";
 
 // Another known divergence from production, on top of the one below:
 // D1's exec() splits its input by newline and executes each non-empty
@@ -221,6 +222,7 @@ function toOneStatementPerLine(sql: string): string {
 // does not reset.
 const TABLES_IN_DROP_ORDER = [
   // Decision 0759: an order's sends reference route instances, messages, orders on their way in and people.
+  "purchase_order_confirmations",
   "purchase_order_sends",
   // Decision 0754: an order's Timeline and Chat reference people, teams and orders on their way in.
   "purchase_order_collaborators", "purchase_order_comments", "purchase_order_events",
@@ -564,6 +566,7 @@ export async function applyTestSchema(): Promise<void> {
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(orderMessagesSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(orderTimelineSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(ordersOutSql)));
+  await env.DB.exec(toOneStatementPerLine(stripSqlComments(orderConfirmationsSql)));
 }
 
 /**
