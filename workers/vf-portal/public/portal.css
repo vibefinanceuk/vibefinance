@@ -163,7 +163,7 @@ main#confirm #confirm-problem:empty { display: none; }
 /* An order's page splits 3:2, as the buyer's invoice viewer does, now its
    right side holds the order's Document — decision 0760. */
 @media (min-width: 1001px) {
-  .netorderview .netview { grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); }
+  .netorderview .netview, .netview.netwide { grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); }
 }
 @media (max-width: 1000px) {
   .netview { grid-template-columns: 1fr; }

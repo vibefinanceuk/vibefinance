@@ -330,3 +330,35 @@ export async function confirmOrder(deps: Deps, session: string, linkId: string, 
     return { status: 502, body: { error: "unreachable", customer: pair.link.customerName } };
   }
 }
+
+/**
+ * `GET /api/invoices/:linkId/:invoiceId/document?file=&download=` —
+ * decision 0770: an invoice's or credit note's own document, as the
+ * customer's instance gives it to the supplier it belongs to, passed
+ * through as it comes. Only `file` and `download` are forwarded; a page
+ * keeps the instance's policy that it may run nothing.
+ */
+export async function invoiceDocument(deps: Deps, session: string, linkId: string, invoiceId: string, search: string): Promise<Response> {
+  const pairs = await linksWithAccess(deps, session);
+  const jsonResponse = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
+  if (!pairs) return jsonResponse(401, { error: "signed_out" });
+  const pair = pairs.find((p) => p.link.id === linkId);
+  if (!pair?.access) return jsonResponse(404, { error: "not_found" });
+  const params = new URLSearchParams(search);
+  const query = new URLSearchParams();
+  for (const k of ["file", "download"]) if (params.get(k)) query.set(k, params.get(k)!);
+  try {
+    const res = await deps.instance(`${pair.access.instanceUrl.replace(/\/+$/, "")}/portal/invoices/${encodeURIComponent(invoiceId)}/document?${query}`, {
+      headers: bearer(pair.access.token),
+      signal: AbortSignal.timeout(deps.timeoutMs ?? 15000),
+    });
+    if (!res.ok) return jsonResponse(res.status === 404 ? 404 : 502, { error: res.status === 404 ? "not_found" : "refused" });
+    const headers = new Headers({ "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff" });
+    for (const h of ["Content-Type", "Content-Disposition", "Content-Security-Policy"]) if (res.headers.get(h)) headers.set(h, res.headers.get(h)!);
+    // A page with no policy of its own is given one: nothing it holds runs here.
+    if ((headers.get("Content-Type") ?? "").includes("html") && !headers.get("Content-Security-Policy")) headers.set("Content-Security-Policy", "sandbox; default-src 'none'; style-src 'unsafe-inline'; img-src data:");
+    return new Response(res.body, { status: 200, headers });
+  } catch {
+    return jsonResponse(502, { error: "unreachable" });
+  }
+}

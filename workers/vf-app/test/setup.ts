@@ -176,6 +176,7 @@ import orderMessagesSql from "../../../migrations/0169_order_supplier_messages.s
 import orderTimelineSql from "../../../migrations/0170_order_timeline.sql?raw";
 import ordersOutSql from "../../../migrations/0171_orders_to_suppliers.sql?raw";
 import orderConfirmationsSql from "../../../migrations/0172_order_confirmations.sql?raw";
+import networkDocumentSharingSql from "../../../migrations/0173_network_document_sharing.sql?raw";
 
 // Another known divergence from production, on top of the one below:
 // D1's exec() splits its input by newline and executes each non-empty
@@ -567,6 +568,7 @@ export async function applyTestSchema(): Promise<void> {
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(orderTimelineSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(ordersOutSql)));
   await env.DB.exec(toOneStatementPerLine(stripSqlComments(orderConfirmationsSql)));
+  await env.DB.exec(toOneStatementPerLine(stripSqlComments(networkDocumentSharingSql)));
 }
 
 /**

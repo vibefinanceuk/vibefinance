@@ -353,6 +353,7 @@ import { handleHttpsReceipts, receiptsReport, receiptsSource, receiptsUploadSour
 import { handleGetOrdersProcess, handleHttpsOrders, handleSetUpOrdersProcess, ordersReport, ordersSource, ordersUploadSource, settleOrderInstance, uploadOrders } from "./purchase-orders-in.js";
 import { handleGetOrderSupplierMessages, handlePortalOrderReply, handlePostOrderSupplierMessage, markOrderSeen, orderConversationsFor } from "./order-messages.js";
 import { confirmByLink, confirmInNetwork } from "./order-confirm.js";
+import { portalInvoiceDocument } from "./portal-documents.js";
 import { orderCards, orderFile, type DocumentFormat, handleGetOrderSending, handleGetOrdersOut, handlePutOrdersOut, handleSendOrderToSupplier, handleStartOrdersOut, runOrderSends, type OrdersOutDeps } from "./orders-out.js";
 import { handleAddOrderCollaborator, handleGetOrderTimeline, handleOrderAttachments, handlePostOrderComment, handleRemoveOrderCollaborator, handleSearchOrderPeople, orderAccess, ORDER_TOKEN_PREFIX, partForOrder } from "./order-timeline.js";
 import { continueOrderInstance, handleFixIntake, handleGetIntake, handleIntakeSuppliers, handleListIntake, handleRejectIntake, handleReleaseIntake, isOrderCheckingTask } from "./order-checking.js";
@@ -1264,6 +1265,14 @@ export default {
       return json(result.body, result.status);
     }
 
+    // Decision 0770: an invoice's or credit note's own document, for the supplier it belongs to.
+    const portalInvoiceDocMatch = pathname.match(/^\/portal\/invoices\/([^/]+)\/document$/);
+    if (portalInvoiceDocMatch && request.method === "GET") {
+      const { db, documents } = resolveTenant(request, env);
+      const auth = await portalAuth(db, request, isPublicKeyJwk(env.LICENCE_SIGNING_PUBLIC_KEY) ? env.LICENCE_SIGNING_PUBLIC_KEY : undefined, env.ENVIRONMENT_ID);
+      if (!auth.ok) return json(auth.body, auth.status);
+      return portalInvoiceDocument(db, documents, auth.claims, decodeURIComponent(portalInvoiceDocMatch[1]), url.searchParams);
+    }
     if (pathname === "/portal/invoices" || pathname.startsWith("/portal/invoices/")) {
       const reply = pathname.match(/^\/portal\/invoices\/([^/]+)\/messages$/);
       if (request.method !== "GET" && !(reply && request.method === "POST")) return json({ error: "not found" }, 404);

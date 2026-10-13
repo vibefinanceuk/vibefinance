@@ -1,4 +1,4 @@
-import { fromCustomer, invoice, invoices, me, order, receipt, reply, submissionCompanies, submit, type Deps, orderDocument, confirmByLink, confirmOrder } from "./network.js";
+import { fromCustomer, invoice, invoices, me, order, receipt, reply, submissionCompanies, submit, type Deps, orderDocument, confirmByLink, confirmOrder, invoiceDocument } from "./network.js";
 
 /**
  * **vf-portal: the supplier network — decision 0717.**
@@ -110,6 +110,13 @@ export default {
 
     if (url.pathname === "/api/me" && request.method === "GET") return signedOutClears(await me(deps, session));
     if (url.pathname === "/api/invoices" && request.method === "GET") return signedOutClears(await invoices(deps, session, url.searchParams));
+    // Decision 0770: an invoice's or credit note's own document — the page, or a file.
+    const invoiceDoc = url.pathname.match(/^\/api\/invoices\/([^/]+)\/([^/]+)\/document$/);
+    if (invoiceDoc && request.method === "GET") {
+      const res = await invoiceDocument(deps, session, decodeURIComponent(invoiceDoc[1]), decodeURIComponent(invoiceDoc[2]), url.search);
+      if (res.status === 401) return json({ error: "signed_out" }, 401, { "Set-Cookie": cookie("", 0) });
+      return res;
+    }
     const one = url.pathname.match(/^\/api\/invoices\/([^/]+)\/([^/]+)$/);
     if (one && request.method === "GET") return signedOutClears(await invoice(deps, session, decodeURIComponent(one[1]), decodeURIComponent(one[2])));
     // Decision 0760: a shared order as a document — PDF, UBL or CSV.

@@ -3806,6 +3806,17 @@ const KEYS_THE_INTERFACE_USES = [
   "purchaseorders.conv.order",
   // A purchase order opened as a page (decision 0753).
   "purchaseorders.supplierchat.none",
+  // An invoice's own document in the supplier network (decision 0770).
+  "network.invoice.file.generated_rendering",
+  "network.invoice.file.pdf",
+  "network.invoice.file.xml",
+  "network.invoice.file.embedded_xml",
+  "network.invoice.file.other",
+  "apsetup.network.documents",
+  "apsetup.network.documents.share",
+  "apsetup.network.documents.help",
+  "network.invoice.attachhead",
+  "network.invoice.attachnote",
   // Purchase orders on the Documents screen (decision 0769).
   "documents.type.purchase_order",
   "docstatus.order_open",

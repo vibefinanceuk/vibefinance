@@ -55,6 +55,8 @@ export function supplierNetworkTab(rerender) {
   const ordersFrom = el("input", { type: "date", id: "network-ordersfrom", value: draft.ordersFrom ?? "" });
   ordersFrom.addEventListener("change", () => (draft.ordersFrom = ordersFrom.value || null));
   registered.addEventListener("change", () => (draft.registeredOnly = registered.checked));
+  const documents = el("input", { type: "checkbox", id: "network-sharedocuments", ...(draft.shareDocuments !== false ? { checked: "checked" } : {}) });
+  documents.addEventListener("change", () => (draft.shareDocuments = documents.checked));
 
   const save = compactLink("save", {
     primary: true,
@@ -97,6 +99,14 @@ export function supplierNetworkTab(rerender) {
         ordersFrom,
       ]),
       setup.suppliersWithOwnOrders > 0 ? el("p", { class: "muted sm networkown", text: t("apsetup.network.ownorders").replace("{n}", String(setup.suppliersWithOwnOrders)) }) : null,
+    ]),
+    // Decision 0770: their own invoices and credit notes, as documents. On unless turned off.
+    el("div", { class: "creditq", id: "network-documents" }, [
+      el("b", { class: "creditqtitle", text: t("apsetup.network.documents") }),
+      el("label", { class: "radiochoice", for: "network-sharedocuments" }, [
+        documents,
+        el("span", {}, [el("b", { text: t("apsetup.network.documents.share") }), el("span", { class: "muted sm", text: t("apsetup.network.documents.help") })]),
+      ]),
     ]),
     problem,
   ]);

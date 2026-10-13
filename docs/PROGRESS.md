@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 13 October 2026 (decision 0769). A living document: what
+Last updated 13 October 2026 (decision 0770). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,15 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Suppliers see the invoices and credit notes they sent (0770)
+
+In the supplier network, an invoice or credit note has Document, Attachments and Messages. The
+Document is the file the customer received (the supplier's PDF, or the page drawn from their
+e-invoice), and Attachments lists it to download. The email it came in and anything else sent with
+it are never shown. AP Setup can turn it off.
+
+Full reasoning is in decision 0770.
 
 ### Purchase orders on the Documents screen (0769)
 

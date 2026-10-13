@@ -1,3 +1,4 @@
+import { portalDocumentFiles } from "./portal-documents.js";
 import { verifyPortalAccess, type PortalAccessClaims } from "@vibefinance/shared";
 import { readLicenceState } from "./licence-cache.js";
 import type { RouteResult } from "./org-route.js";
@@ -293,7 +294,24 @@ export async function getPortalInvoice(db: D1Database, claims: PortalAccessClaim
     (summarised.status === "returned" || summarised.status === "rejected") &&
     (await loadCreditNoteConfig(db)).networkAllowed &&
     !(await db.prepare("SELECT 1 FROM credit_notes WHERE invoice_id = ?").bind(invoiceId).first());
-  return { status: 200, body: { invoice: { ...summarised, ...details, parties, lines, messages, mayCredit } } };
+  // Decision 0770: the document the customer received, where AP Setup shares it.
+  const documentFiles = await portalDocumentFiles(db, invoiceId, summarised.invoiceNumber ?? null);
+  return { status: 200, body: { invoice: { ...summarised, ...details, parties, lines, messages, mayCredit, documentFiles } } };
+}
+
+/**
+ * **Whether this supplier may read this invoice or credit note — decision
+ * 0770**, by the same scope the list and the page use: their supplier
+ * record, in the companies their link covers. Its number where they may;
+ * null otherwise, the same as none.
+ */
+export async function portalMayReadInvoice(db: D1Database, claims: PortalAccessClaims, invoiceId: string): Promise<{ number: string | null } | null> {
+  const { sql, binds } = scope(claims);
+  const row = await db
+    .prepare(`SELECT json_extract(h.facts_json, '$."BT-1"') AS number FROM invoice_headers h WHERE h.id = ? AND ${sql}`)
+    .bind(invoiceId, ...binds)
+    .first<{ number: string | null }>();
+  return row ? { number: row.number } : null;
 }
 
 /** Decision 0728: this person has seen the invoice's messages now. */

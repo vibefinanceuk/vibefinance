@@ -1,7 +1,7 @@
 import { env, SELF } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 import worker, { readSession, type Env } from "../src/index.js";
-import { confirmByLink, confirmOrder, invoice, invoices, me, order, orderDocument, receipt, reply, submissionCompanies, submit, type Deps } from "../src/network.js";
+import { confirmByLink, confirmOrder, invoice, invoiceDocument, invoices, me, order, orderDocument, receipt, reply, submissionCompanies, submit, type Deps } from "../src/network.js";
 
 /**
  * **The supplier network — decision 0717.** vf-licence and the customers'
@@ -176,13 +176,30 @@ describe("confirming receipt of an order — decision 0762", () => {
   });
 });
 
+describe("an invoice's own document — decision 0770", () => {
+  it("passes the customer's file through with its policy, asking only the customer that link is for, and only for a file", async () => {
+    const seen: Seen[] = [];
+    const page = () => new Response("<html><body>Commercial invoice</body></html>", { headers: { "Content-Type": "text/html; charset=utf-8", "Content-Disposition": "inline", "Content-Security-Policy": "sandbox; default-src 'none'", "Set-Cookie": "x=1" } });
+    const res = await invoiceDocument(deps({ "acme.example": page }, seen), "good", "pl-acme", "inv-1", "?file=original&download=1&other=x");
+    expect(res.status).toBe(200);
+    expect([res.headers.get("Content-Type"), res.headers.get("Content-Security-Policy"), res.headers.get("Set-Cookie"), res.headers.get("Cache-Control")]).toEqual(["text/html; charset=utf-8", "sandbox; default-src 'none'", null, "private, no-store"]);
+    expect(seen).toEqual([{ url: "https://acme.example/portal/invoices/inv-1/document?file=original&download=1", auth: "Bearer tok-acme" }]);
+    // A page that came without a policy is given one.
+    const bare = await invoiceDocument(deps({ "acme.example": () => new Response("<p>x</p>", { headers: { "Content-Type": "text/html" } }) }), "good", "pl-acme", "inv-1", "");
+    expect(bare.headers.get("Content-Security-Policy")).toContain("sandbox");
+    expect((await invoiceDocument(deps({ "acme.example": () => new Response("{}", { status: 404 }) }), "good", "pl-acme", "inv-9", "")).status).toBe(404);
+    expect((await invoiceDocument(deps({}), "good", "pl-someone", "inv-1", "")).status).toBe(404);
+    expect((await invoiceDocument(deps({}), "stale", "pl-acme", "inv-1", "")).status).toBe(401);
+  });
+});
+
 describe("the Worker", () => {
   const withLicence = (licence: (path: string, init: RequestInit) => Response | Promise<Response>) =>
     ({ ...(env as unknown as Env), LICENCE_SERVICE: { fetch: (u: string, init: RequestInit) => licence(new URL(u).pathname, init) } as unknown as Fetcher }) as Env;
   const call = (e: Env, path: string, init: RequestInit = {}) => worker.fetch(new Request(`https://network.example${path}`, init), e);
 
   it("serves the pages", async () => {
-    for (const page of ["/", "/welcome.html", "/portal.js", "/welcome.js", "/shell.js", "/icons.js", "/create.js", "/view.js", "/order-view.js", "/order-document.js", "/confirm", "/confirm.js", "/bis3.js", "/portal.css", "/tokens.css", "/app.css", "/img/logo.png", "/img/logo-light.png", "/img/logo-mark.png"]) {
+    for (const page of ["/", "/welcome.html", "/portal.js", "/welcome.js", "/shell.js", "/icons.js", "/create.js", "/view.js", "/order-view.js", "/order-document.js", "/invoice-document.js", "/confirm", "/confirm.js", "/bis3.js", "/portal.css", "/tokens.css", "/app.css", "/img/logo.png", "/img/logo-light.png", "/img/logo-mark.png"]) {
       expect((await SELF.fetch(`https://network.example${page}`)).status, page).toBe(200);
     }
   });
@@ -383,6 +400,7 @@ describe("the network's words", () => {
       (await import("../public/order-document.js?raw")).default,
       (await import("../public/welcome.js?raw")).default,
       (await import("../public/confirm.js?raw")).default,
+      (await import("../public/invoice-document.js?raw")).default,
     ] as string[];
     const used = new Set<string>();
     for (const src of pages) for (const m of src.matchAll(/t\("(network\.[a-z0-9._]+)"/g)) used.add(m[1]);
@@ -406,6 +424,8 @@ describe("the network's words", () => {
       used.add(`network.status.${s}`);
       used.add(`network.help.status.${s}`);
     }
+    // Decision 0770: what each of an invoice's files is.
+    for (const k of ["generated_rendering", "pdf", "xml", "embedded_xml", "other"]) used.add(`network.invoice.file.${k}`);
     // Decision 0762: confirming receipt, said of the version confirmed.
     for (const k of ["order", "change", "cancellation"]) {
       used.add(`network.confirm.done.${k}`);

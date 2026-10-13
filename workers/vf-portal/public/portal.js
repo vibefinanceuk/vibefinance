@@ -6,6 +6,7 @@ import { viewPage } from "/view.js";
 import { receiptPage } from "/receipt-view.js";
 import { orderPage } from "/order-view.js";
 import { buildOrderAttachmentsTab, buildOrderDocumentTab } from "/order-document.js";
+import { buildInvoiceAttachmentsTab, buildInvoiceDocumentTab } from "/invoice-document.js";
 
 /**
  * **The supplier network's pages — decisions 0717 and 0725.** Sign in;
@@ -134,6 +135,9 @@ export async function render() {
               statusChip,
               conversation: (body) => conversation(body, opened.inv),
               back: () => go("documents"),
+              // Decision 0770: the file the customer received, and its downloads.
+              document: (i) => buildInvoiceDocumentTab({ ...i, id: opened.inv.id }, opened.inv.linkId),
+              attachments: (i) => buildInvoiceAttachmentsTab({ ...i, id: opened.inv.id }, opened.inv.linkId),
               // Decision 0732: a credit note against this invoice, in Create.
               credit: () => {
                 startCreditNote({ ...opened.body, id: opened.inv.id }, opened.inv.linkId, opened.body.customer);

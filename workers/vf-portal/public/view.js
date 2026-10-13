@@ -63,7 +63,7 @@ function download(inv) {
  * The page. `deps` carries what portal.js owns: money, the status chip and
  * the conversation (with what to do once a message is sent), and back.
  */
-export function viewPage(inv, { money, statusChip, conversation, back, credit }, handlers) {
+export function viewPage(inv, { money, statusChip, conversation, back, credit, document: documentTab, attachments: attachmentsTab }, handlers) {
   // Decision 0732: a credit note reads as one, and an invoice may be credited.
   const cn = inv.documentType === "credit_note";
   const L = (invoiceKey, creditKey) => t(cn ? creditKey : invoiceKey);
@@ -88,13 +88,45 @@ export function viewPage(inv, { money, statusChip, conversation, back, credit },
 
   const chat = conversation(inv);
   chat.classList.add("panel", "netviewchat");
+  /**
+   * **Document, Attachments and Messages — decision 0770**, as an order's
+   * (0765): the file the customer received, its downloads, and the
+   * conversation, the Document first. Only where there is a document to
+   * show and the customer shares it; otherwise the conversation alone.
+   */
+  let side = chat;
+  const hasDocument = (inv.documentFiles ?? []).length > 0;
+  const doc = documentTab && hasDocument ? documentTab(inv) : null;
+  const files = attachmentsTab && hasDocument ? attachmentsTab(inv) : null;
+  if (doc) {
+    const panes = [
+      { key: "document", label: t("orderdoc.tab"), pane: doc.content, onSelect: doc.open },
+      ...(files ? [{ key: "attachments", label: t("network.order.attachtab"), pane: files.content }] : []),
+      { key: "messages", label: t("network.order.messagestab"), pane: chat },
+    ];
+    for (const p of panes) {
+      p.pane.classList.remove("panel", "netviewchat");
+      p.pane.classList.add("netsidepane");
+    }
+    const select = (which) => {
+      for (const p of panes) {
+        p.button.className = p.key === which ? "doctab on" : "doctab";
+        p.button.setAttribute("aria-selected", String(p.key === which));
+        p.pane.hidden = p.key !== which;
+      }
+      panes.find((p) => p.key === which)?.onSelect?.();
+    };
+    for (const p of panes) p.button = el("button", { type: "button", role: "tab", class: "doctab", id: `net-tab-${p.key}`, onclick: () => select(p.key) }, [el("span", { text: p.label })]);
+    select("document");
+    side = el("div", { class: "panel netviewchat netsidetabs" }, [el("div", { class: "doctabs receipttabs", role: "tablist" }, panes.map((p) => p.button)), ...panes.map((p) => p.pane)]);
+  }
 
   const lines = inv.lines ?? [];
   const net = typeof inv.net === "number" ? inv.net : lines.reduce((s, l) => s + (typeof l.netAmount === "number" ? l.netAmount : 0), 0);
 
   const page = el("div", { class: "netinvoiceview" }, [
     title,
-    el("div", { class: "netview netcreate" }, [
+    el("div", { class: doc ? "netview netcreate netwide" : "netview netcreate" }, [
       el("div", { class: "netviewmain" }, [
         cn && inv.creditedInvoice ? el("div", { class: "sentnotice", text: t("network.credit.credits.line", { invoice: inv.creditedInvoice }) }) : null,
         inv.comment ? el("div", { class: "comment" }, [el("div", { class: "sm", text: t("network.comment", { customer: inv.customer }) }), el("div", { text: inv.comment })]) : null,
@@ -138,7 +170,7 @@ export function viewPage(inv, { money, statusChip, conversation, back, credit },
           ]),
         ]),
       ]),
-      chat,
+      side,
     ]),
     el("div", { class: "panel netviewlines" }, [
       el("div", { class: "cardhead" }, [el("h3", { text: L("network.create.lines", "network.credit.lines") })]),

@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import stringsSql from "../../vf-licence/migrations/0339_receipt_sharing_strings.sql?raw";
 import updatesSql from "../../vf-licence/migrations/0340_supplier_network_card_strings.sql?raw";
 import ordersSql from "../../vf-licence/migrations/0349_order_sharing_strings.sql?raw";
+import documentsSql from "../../vf-licence/migrations/0362_network_invoice_document_strings.sql?raw";
 
 /**
  * **Goods receipts shared with suppliers — decision 0738**: AP Setup ›
@@ -10,7 +11,7 @@ import ordersSql from "../../vf-licence/migrations/0349_order_sharing_strings.sq
  */
 
 const strings: Record<string, string> = {};
-for (const sql of [stringsSql, ordersSql]) for (const m of sql.matchAll(/\('([^']+)', 'en', '((?:[^']|'')*)'\)/g)) strings[m[1]] = m[2].replace(/''/g, "'");
+for (const sql of [stringsSql, ordersSql, documentsSql]) for (const m of sql.matchAll(/\('([^']+)', 'en', '((?:[^']|'')*)'\)/g)) strings[m[1]] = m[2].replace(/''/g, "'");
 // Decision 0739: the words changed since.
 for (const m of updatesSql.matchAll(/SET value = '((?:[^']|'')*)' WHERE key = '([^']+)' AND locale = 'en'/g)) strings[m[2]] = m[1].replace(/''/g, "'");
 
@@ -105,6 +106,28 @@ describe("a supplier's own choice", () => {
     await vi.waitFor(() => expect(block.hidden).toBe(false));
     expect([...block.querySelectorAll("input")].every((i) => (i as HTMLInputElement).disabled)).toBe(true);
     expect((block.querySelector("#receiptsharing-sup-1-none") as HTMLInputElement).checked).toBe(true);
+  });
+});
+
+describe("invoices and credit notes as documents — decision 0770", () => {
+  it("AP Setup shows suppliers the documents they sent unless turned off, and saves it", async () => {
+    const calls = stub({
+      "GET /api/network-sharing-config": () => ({ status: 200, body: { config: { shareReceipts: false, registeredOnly: true, shareOrders: false, ordersFrom: null, shareDocuments: true }, suppliersWithOwn: 0, suppliersWithOwnOrders: 0 } }),
+      "PUT /api/network-sharing-config": (b) => ({ status: 200, body: { config: b, suppliersWithOwn: 0, suppliersWithOwnOrders: 0 } }),
+    });
+    const m = await load();
+    await m.loadNetworkSharingSetup();
+    const rerender = vi.fn();
+    const tab = m.supplierNetworkTab(rerender);
+    document.body.append(tab);
+    const box = tab.querySelector("#network-sharedocuments") as HTMLInputElement;
+    expect(tab.querySelector("#network-documents .creditqtitle")?.textContent).toBe("Invoices and credit notes");
+    expect(box.checked).toBe(true);
+    expect(tab.querySelector("#network-documents")?.textContent).toContain("Never the email it came in");
+    box.click();
+    (tab.querySelector(".cardhead .actionlink") as HTMLButtonElement).click();
+    await vi.waitFor(() => expect(rerender).toHaveBeenCalled());
+    expect(calls.find((c) => c.method === "PUT")?.body).toMatchObject({ shareDocuments: false });
   });
 });
 

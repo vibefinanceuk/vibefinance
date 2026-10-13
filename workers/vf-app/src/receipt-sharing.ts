@@ -27,16 +27,18 @@ export interface ReceiptSharingConfig {
   /** Decision 0751: purchase orders shared too, and only those issued on or after `ordersFrom`. */
   shareOrders: boolean;
   ordersFrom: string | null;
+  /** Decision 0770: suppliers see the invoices and credit notes they sent as documents. On unless turned off. */
+  shareDocuments: boolean;
 }
 
-const DEFAULTS: ReceiptSharingConfig = { shareReceipts: false, registeredOnly: true, shareOrders: false, ordersFrom: null };
+const DEFAULTS: ReceiptSharingConfig = { shareReceipts: false, registeredOnly: true, shareOrders: false, ordersFrom: null, shareDocuments: true };
 
 export async function loadReceiptSharingConfig(db: D1Database): Promise<ReceiptSharingConfig> {
   const row = await db
-    .prepare("SELECT share_receipts, registered_only, share_orders, orders_from FROM network_sharing_config WHERE id = 'default'")
-    .first<{ share_receipts: number; registered_only: number; share_orders: number; orders_from: string | null }>();
+    .prepare("SELECT share_receipts, registered_only, share_orders, orders_from, share_documents FROM network_sharing_config WHERE id = 'default'")
+    .first<{ share_receipts: number; registered_only: number; share_orders: number; orders_from: string | null; share_documents: number }>();
   if (!row) return DEFAULTS;
-  return { shareReceipts: row.share_receipts === 1, registeredOnly: row.registered_only !== 0, shareOrders: row.share_orders === 1, ordersFrom: row.orders_from };
+  return { shareReceipts: row.share_receipts === 1, registeredOnly: row.registered_only !== 0, shareOrders: row.share_orders === 1, ordersFrom: row.orders_from, shareDocuments: row.share_documents !== 0 };
 }
 
 /** `GET /network-sharing-config` — AP Setup › Supplier Network, and how many suppliers say otherwise (for receipts, and for orders, 0751). */
@@ -58,16 +60,17 @@ export async function handlePutNetworkSharingConfig(db: D1Database, userId: stri
     registeredOnly: typeof body.registeredOnly === "boolean" ? body.registeredOnly : now.registeredOnly,
     shareOrders: typeof body.shareOrders === "boolean" ? body.shareOrders : now.shareOrders,
     ordersFrom: body.ordersFrom === undefined ? now.ordersFrom : body.ordersFrom ? String(body.ordersFrom) : null,
+    shareDocuments: typeof body.shareDocuments === "boolean" ? body.shareDocuments : now.shareDocuments,
   };
   await db
     .prepare(
-      `INSERT INTO network_sharing_config (id, share_receipts, registered_only, share_orders, orders_from, updated_by, updated_at)
-       VALUES ('default', ?, ?, ?, ?, ?, ?)
+      `INSERT INTO network_sharing_config (id, share_receipts, registered_only, share_orders, orders_from, share_documents, updated_by, updated_at)
+       VALUES ('default', ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT (id) DO UPDATE SET share_receipts = excluded.share_receipts, registered_only = excluded.registered_only,
-         share_orders = excluded.share_orders, orders_from = excluded.orders_from,
+         share_orders = excluded.share_orders, orders_from = excluded.orders_from, share_documents = excluded.share_documents,
          updated_by = excluded.updated_by, updated_at = excluded.updated_at`
     )
-    .bind(next.shareReceipts ? 1 : 0, next.registeredOnly ? 1 : 0, next.shareOrders ? 1 : 0, next.ordersFrom, userId, new Date().toISOString())
+    .bind(next.shareReceipts ? 1 : 0, next.registeredOnly ? 1 : 0, next.shareOrders ? 1 : 0, next.ordersFrom, next.shareDocuments ? 1 : 0, userId, new Date().toISOString())
     .run();
   return handleGetNetworkSharingConfig(db);
 }
