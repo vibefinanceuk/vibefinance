@@ -1,6 +1,6 @@
 # 0766: The order's page in VibeFinance, laid out as the supplier network's
 
-**Status: built.**
+**Status: live.**
 
 - vf-app: `index.ts`: the order's cards (`orderCards`, 0765) with the order itself.
 - vf-ui: `purchase-orders.js`, `app.css` (copied to vf-portal).
