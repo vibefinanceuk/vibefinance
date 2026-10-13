@@ -42,11 +42,13 @@ const change = (c) => fill("purchaseorders.tl.diff.field", { field: fieldName(c.
 
 /** What a load, change or release changed, a line each. Exported for its test. */
 export function changeLines(changes) {
-  if (!changes) return [];
+  if (!changes || typeof changes !== "object") return [];
   const out = [];
-  if (changes.status && changes.status.from !== changes.status.to) out.push(fill("purchaseorders.tl.diff.field", { field: t("purchaseorders.statuslabel"), from: status(changes.status.from), to: status(changes.status.to) }));
-  for (const c of changes.header ?? []) out.push(change(c));
-  for (const l of changes.lines ?? []) {
+  // Decision 0768: only what is a list is read as one (a first load's summary says `lines: 4`).
+  const list = (v) => (Array.isArray(v) ? v : []);
+  if (changes.status && typeof changes.status === "object" && changes.status.from !== changes.status.to) out.push(fill("purchaseorders.tl.diff.field", { field: t("purchaseorders.statuslabel"), from: status(changes.status.from), to: status(changes.status.to) }));
+  for (const c of list(changes.header)) out.push(change(c));
+  for (const l of list(changes.lines)) {
     if (l.change === "added") {
       const f = Object.fromEntries((l.fields ?? []).map((x) => [x.field, x.to]));
       out.push(fill("purchaseorders.tl.diff.added", { line: l.line, item: l.item, quantity: num(f.quantity), unit: f.unit ?? "", price: num(f.price) }).replace(/\s+,/g, ",").replace(/\s{2,}/g, " "));
@@ -56,7 +58,7 @@ export function changeLines(changes) {
       out.push(fill("purchaseorders.tl.diff.line", { line: l.line, item: l.item, changes: (l.fields ?? []).map(change).join("; ") }));
     }
   }
-  for (const w of changes.receiptWarnings ?? []) {
+  for (const w of list(changes.receiptWarnings)) {
     out.push(fill(`purchaseorders.receiptwarn.${w.kind}`, { order: w.orderNumber, line: w.line, net: num(w.net), ordered: num(w.ordered) }));
   }
   return out;

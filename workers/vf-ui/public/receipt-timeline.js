@@ -212,7 +212,21 @@ export function buildReceiptTimeline(
   // Decision 0675: drawn the shared way, as the Document viewer's.
   function row(item, index, all) {
     if (item.kind === "comment") return chatBubble({ name: item.by, body: item.body, at: item.at, mine: item.mine === true });
-    return systemCard(cardKey(item), { text: describeItem(item), subs: subsOf(item), at: item.at, prevAt: index > 0 ? all[index - 1].at : null, kind: item.kind });
+    /**
+     * **One entry it cannot describe is drawn plainly — decision 0768**,
+     * not left to stop the whole feed at "Loading…" as 690000314's did:
+     * its kind's label, with no words beneath.
+     */
+    let text;
+    let subs;
+    try {
+      text = describeItem(item);
+      subs = subsOf(item);
+    } catch {
+      text = t(`timeline.label.${cardKey(item)}`);
+      subs = [];
+    }
+    return systemCard(cardKey(item), { text, subs, at: item.at, prevAt: index > 0 ? all[index - 1].at : null, kind: item.kind });
   }
 
   function render() {

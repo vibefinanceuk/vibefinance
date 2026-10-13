@@ -164,6 +164,30 @@ describe("the order's Document tab — decision 0760", () => {
   });
 });
 
+describe("an order released for the first time — decision 0768", () => {
+  it("draws, though its release carries what was loaded (`lines: 4`) rather than what changed, as 690000314's did", async () => {
+    const { changeLines } = await import("/order-timeline.js");
+    expect(changeLines({ lines: 4, status: "active" })).toEqual([]);
+    const live = {
+      ...TIMELINE,
+      items: [
+        { kind: "order_arrived", at: at(1), by: "erp@acme.example", detail: { orderKind: "order", source: "Sandbox Orders Email", sender: "erp@acme.example", lines: 4, uploaded: false } },
+        { kind: "order_released", at: at(1), by: null, detail: { orderKind: "order", first: true, override: false, changes: { lines: 4, status: "active" } } },
+        { kind: "supplier_confirmed", at: at(2), by: null, detail: { how: "network", kind: "order", by: "jo@kingsway.example", current: true, agent: null } },
+      ],
+    };
+    await openOrder({ "GET /api/purchase-orders/PO-9/timeline": [200, live] });
+    expect(words()).toEqual(["The order came in by Sandbox Orders Email from erp@acme.example: 4 lines.", "Released to Purchase Orders.", "jo@kingsway.example confirmed receipt in the supplier network."]);
+  });
+
+  it("an entry it cannot describe is drawn plainly, and the rest still are", async () => {
+    const odd = { ...TIMELINE, items: [{ kind: "order_released", at: at(1), by: null, detail: { orderKind: "change", changes: { lines: [{ line: 1, change: "changed", fields: null }], header: [null] } } }, { kind: "comment", at: at(2), by: "Pat Lee", body: "Still here", mine: true }] };
+    await openOrder({ "GET /api/purchase-orders/PO-9/timeline": [200, odd] });
+    expect(cards()).toHaveLength(2);
+    expect(words().at(-1)).toBe("Still here");
+  });
+});
+
 describe("the order's Timeline — decision 0754", () => {
   it("says its history in words, oldest first, with the conversation among it", async () => {
     await openOrder();

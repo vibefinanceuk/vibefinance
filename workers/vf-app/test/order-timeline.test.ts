@@ -133,6 +133,8 @@ describe("the order's history", () => {
     expect(kinds(items)).toEqual(["order_arrived", "order_released", "order_arrived", "order_released", "order_arrived", "order_rejected"]);
     expect(items[0]).toMatchObject({ by: "erp@acme.example", detail: { orderKind: "order", sender: "erp@acme.example", messageId: "m1", lines: 2 } });
     expect(items[1]).toMatchObject({ detail: { orderKind: "order", first: true } });
+    // Decision 0768: a first release carries no changes; its load's summary (`lines: 2`) is no diff.
+    expect(items[1].detail).not.toHaveProperty("changes");
     expect(items[3]).toMatchObject({ by: "Pat Lee", detail: { orderKind: "change", override: true, changes: { header: [{ field: "payable", from: 1450, to: 1610 }] } } });
     expect((items[3].detail!.changes as { lines: unknown[] }).lines).toHaveLength(3);
     expect(items[5]).toMatchObject({ by: "Pat Lee", detail: { orderKind: "change", reason: "Sent twice" } });

@@ -233,7 +233,8 @@ export async function handleGetOrderTimeline(db: D1Database, userId: string, ord
     items.push(...(await taskItems(db, i.id)));
     if (i.released_at) {
       const event = byIntake.get(i.id);
-      let changes = event ? parse<Record<string, unknown>>(event.detail_json) : null;
+      // Decision 0768: what a release changed, never a first load's summary of what was loaded (`lines: 4`), which is no diff.
+      let changes = event && event.kind !== "loaded" ? parse<Record<string, unknown>>(event.detail_json) : null;
       // Released before this decision: what changed, from the version released before it.
       if (!event && i.kind === "change" && previous && parsed) changes = { ...diffOrders(snapshotOfParsed(previous), snapshotOfParsed(parsed)), reconstructed: true };
       items.push({
