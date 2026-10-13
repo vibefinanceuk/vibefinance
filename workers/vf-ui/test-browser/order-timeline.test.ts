@@ -65,7 +65,7 @@ function stub(routes: Record<string, [number, unknown]> = {}) {
       const path = String(url).split("?")[0];
       const method = init?.method ?? "GET";
       calls.push({ method, path, body: init?.body ? JSON.parse(String(init.body)) : null });
-      const reply = (status: number, b: unknown) => ({ ok: status < 400, status, json: async () => b }) as Response;
+      const reply = (status: number, b: unknown) => ({ ok: status < 400, status, json: async () => b, blob: async () => new Blob(["%PDF-1.7"], { type: "application/pdf" }) }) as unknown as Response;
       const own = routes[`${method} ${path}`];
       if (own) return reply(...own);
       if (path === "/api/ui-strings") return reply(200, { locale: "en", strings });
@@ -98,11 +98,12 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("the order's panel — decision 0754", () => {
-  it("has Document (0760), Attachments, Timeline / Chat and Supplier, as a receipt's, Timeline / Chat first", async () => {
+  it("has Document (0760), Attachments, Timeline / Chat and Supplier, as a receipt's, the Document first (0766)", async () => {
     await openOrder();
     const tabs = [...document.querySelectorAll(".poview .receiptside .doctabs .doctab")];
     expect(tabs.map((b) => b.textContent)).toEqual(["Document", "Attachments", `Timeline / Chat${TIMELINE.items.length}`, "Supplier"]);
-    expect(document.getElementById("po-tab-timeline")?.className).toBe("doctab on");
+    expect(document.getElementById("po-tab-document")?.className).toBe("doctab on");
+    expect(document.getElementById("po-timeline")?.hidden).toBe(true);
     expect(document.getElementById("po-attachments")?.hidden).toBe(true);
     expect(document.getElementById("po-supplier-none")?.hidden).toBe(true);
     // Attachments load when first opened, from the order's own address.
@@ -116,14 +117,9 @@ describe("the order's panel — decision 0754", () => {
 });
 
 describe("the order's Document tab — decision 0760", () => {
-  it("shows the PDF when first opened, and nothing else: its downloads are on Attachments (0763)", async () => {
-    const pdf = new Blob(["%PDF-1.7"], { type: "application/pdf" });
+  it("shows the PDF as the order opens (0766), and nothing else: its downloads are on Attachments (0763)", async () => {
     const calls = await openOrder({ "GET /api/purchase-orders/PO-9/document": [200, null] });
-    const fetched = () => calls.filter((c) => c.path === "/api/purchase-orders/PO-9/document");
-    expect(fetched()).toEqual([]);
-    // The stub answers a blob for the PDF.
-    (globalThis.fetch as unknown as { mockImplementationOnce: (f: () => Promise<Response>) => void }).mockImplementationOnce(async () => ({ ok: true, status: 200, blob: async () => pdf }) as unknown as Response);
-    (document.getElementById("po-tab-document") as HTMLElement).click();
+    expect(calls.filter((c) => c.path === "/api/purchase-orders/PO-9/document")).toHaveLength(1);
     await vi.waitFor(() => expect((document.getElementById("po-document-frame") as HTMLIFrameElement).src).toMatch(/^blob:/));
     expect(document.getElementById("po-document-status")).toBeNull();
     expect(document.querySelectorAll("#po-document a")).toHaveLength(0);

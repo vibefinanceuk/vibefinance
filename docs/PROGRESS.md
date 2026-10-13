@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 13 October 2026 (decision 0765). A living document: what
+Last updated 13 October 2026 (decision 0766). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,14 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### The order's page in VibeFinance, laid out as the supplier network's (0766)
+
+A purchase order in VibeFinance has the supplier network's cards: Seller, Buyer and Progress, a
+Purchase order header, and the lines and receipts across the page. On hold and Waiting are amber
+alerts. The right panel ends level with the header card, and the Document tab opens first.
+
+Full reasoning is in decision 0766.
 
 ### The supplier network's order, laid out as an invoice is (0765)
 

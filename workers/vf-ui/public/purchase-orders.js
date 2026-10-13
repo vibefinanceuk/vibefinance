@@ -589,7 +589,7 @@ export async function openPurchaseOrder(summary, { onDone = null } = {}) {
     note(t("purchaseorders.detailfailed"));
     return;
   }
-  const { order, lines } = await response.json();
+  const { order, lines, cards } = await response.json();
   /**
    * **The conversation with the supplier — decision 0752**, as a goods
    * receipt's (0740, 0748): offered while the order is shared with its
@@ -617,20 +617,46 @@ export async function openPurchaseOrder(summary, { onDone = null } = {}) {
     await openPurchaseOrder({ order_number: order.order_number }, { onDone });
   };
 
-  const header = el("div", { class: "editgrid" }, [
-    ...fact(t("purchaseorders.ordernumber"), order.order_number),
-    ...fact(t("purchaseorders.issuedate"), order.issue_date),
-    ...fact(t("purchaseorders.ordertype"), order.order_type_code),
-    ...fact(t("purchaseorders.currency"), order.currency),
-    ...fact(t("purchaseorders.seller"), order.seller_party_id),
-    ...fact(t("purchaseorders.buyer"), order.buyer_party_id),
-    ...fact(t("purchaseorders.org"), order.org_unit_name),
-    ...fact(t("purchaseorders.statuslabel"), statusLabel(order.effective_status)),
-    ...fact(t("purchaseorders.netamount"), formatCurrency(order.line_extension_amount, order.currency)),
-    ...fact(t("purchaseorders.taxexclusive"), formatCurrency(order.tax_exclusive_amount, order.currency)),
-    ...fact(t("purchaseorders.taxinclusive"), formatCurrency(order.tax_inclusive_amount, order.currency)),
-    ...fact(t("purchaseorders.payable"), formatCurrency(order.payable_amount, order.currency)),
-    ...fact(t("purchaseorders.requisition"), order.originator_reference),
+  /**
+   * **Laid out as the supplier network's order is — decision 0766**
+   * (0765): Seller, Buyer and Progress, then the order's header as
+   * read-only fields; the lines and the receipts below, across the page.
+   */
+  const money = (n) => (typeof n === "number" ? formatCurrency(n, order.currency) : null);
+  const seller = cards?.parties?.seller ?? {};
+  const buyer = cards?.parties?.buyer ?? {};
+  const pair = (label, value) => {
+    const values = (Array.isArray(value) ? value : [value]).filter((v) => v !== null && v !== undefined && v !== "");
+    return el("div", { class: "sfield" }, [el("span", { class: "slabel", text: label }), values.length ? el("span", {}, values.map((v) => (typeof v === "string" || typeof v === "number" ? el("div", { text: String(v) }) : v))) : el("span", { class: "muted", text: "—" })]);
+  };
+  const address = (p) => [p.addressLine, [p.postalCode, p.city].filter(Boolean).join(" "), p.country];
+  const card = (id, title, children) => el("div", { class: "panel pocard", id }, [el("div", { class: "cardhead" }, [el("h3", { text: title })]), ...children]);
+  const field = (label, value) => el("div", { class: "kf" }, [el("label", { text: label }), el("div", { class: "readonly", text: value ?? "—" })]);
+  const sellerCard = card("po-card-seller", t("purchaseorders.card.seller"), [
+    seller.reference ? el("div", { class: "sub", text: seller.reference }) : null,
+    el("div", { class: "sellergrid" }, [
+      pair(t("purchaseorders.card.name"), seller.name ?? order.seller_party_id),
+      pair(t("purchaseorders.card.vat"), seller.vatId),
+      pair(t("purchaseorders.card.address"), address(seller)),
+      pair(t("purchaseorders.card.email"), seller.email),
+    ]),
+  ].filter(Boolean));
+  const buyerCard = card("po-card-buyer", t("purchaseorders.card.buyer"), [
+    el("div", { class: "sellergrid" }, [
+      pair(t("purchaseorders.card.name"), buyer.name ?? order.org_unit_name),
+      pair(t("purchaseorders.card.vat"), buyer.vatId ?? order.buyer_party_id),
+      pair(t("purchaseorders.card.address"), address(buyer)),
+      pair(t("purchaseorders.card.contact"), [buyer.contact, buyer.email, buyer.phone]),
+    ]),
+  ]);
+  const header = card("po-card-header", t("purchaseorders.card.header"), [
+    el("div", { class: "headersummary" }, [
+      el("div", { class: "hscolumn" }, [field(t("purchaseorders.ordernumber"), order.order_number), field(t("purchaseorders.currency"), order.currency)]),
+      el("div", { class: "hscolumn" }, [field(t("purchaseorders.issuedate"), order.issue_date), field(t("purchaseorders.ordertype"), order.order_type_code)]),
+      el("div", { class: "hscolumn" }, [field(t("purchaseorders.requisition"), order.originator_reference), field(t("purchaseorders.org"), order.org_unit_name)]),
+      el("div", { class: "hscolumn" }, [field(t("purchaseorders.card.net"), money(order.line_extension_amount)), field(t("purchaseorders.card.vatamount"), money(cards?.vat))]),
+      el("div", { class: "hscolumn" }, [field(t("purchaseorders.card.total"), money(order.payable_amount)), field(t("purchaseorders.statuslabel"), statusLabel(order.effective_status))]),
+    ]),
   ]);
 
   const lineRows = lines.map((l) =>
@@ -686,7 +712,7 @@ export async function openPurchaseOrder(summary, { onDone = null } = {}) {
     if (onDone) await onDone();
   }
 
-  const main = el("div", { class: "panel receiptmain poviewmain" });
+  const main = el("div", { class: "receiptmain poviewmain pocards" });
 
   /**
    * **Terminal, unlike Hold/Release** — decision 0377's own rule:
@@ -767,21 +793,48 @@ export async function openPurchaseOrder(summary, { onDone = null } = {}) {
   }
   const back = el("button", { class: "actionlink", type: "button", id: "po-back", title: t("viewer.back"), onclick: () => close() }, [icon("back"), el("span", { text: t("viewer.back") })]);
 
+  // Decision 0766: the receipt picture once, for the Progress card and the receipts below.
+  const receipting = await fetch(`/api/goods-receipts/order/${encodeURIComponent(order.order_number)}`)
+    .then((r) => (r.ok ? r.json() : null))
+    .catch(() => null);
+  const figures = receipting?.order?.lines ?? [];
+  const total = (f) => figures.reduce((acc, l) => acc + Math.max(0, f(l) ?? 0), 0);
+  const toDeliver = figures.length ? total((l) => l.outstanding) : null;
+  const toInvoice = figures.length ? total((l) => (receipting.order.receiptingRequired ? l.net : l.ordered) - (l.invoiced ?? 0)) : null;
+  const progressCard = card("po-card-progress", t("purchaseorders.card.progress"), [
+    el("div", { class: "sellergrid" }, [
+      pair(t("purchaseorders.statuslabel"), statusLabel(order.effective_status)),
+      pair(t("purchaseorders.card.todeliver"), toDeliver === null ? null : String(Math.round(toDeliver * 1e6) / 1e6)),
+      pair(t("purchaseorders.card.toinvoice"), toInvoice === null ? null : String(Math.round(toInvoice * 1e6) / 1e6)),
+    ]),
+    // Decision 0759: the last time it was sent to the supplier, or why not.
+    sending?.sends?.length ? sentLine(sending.sends[0]) : null,
+    // Decision 0762: whether the supplier has confirmed it has the order as it stands.
+    confirmedLine(sending),
+  ].filter(Boolean));
+
   main.append(
     ...[
-      order.status === "on_hold" ? el("div", { class: "warn", text: `${t("purchaseorders.hold")}: ${order.hold_reason}` }) : null,
-      // Decision 0752: the question waiting on the supplier.
-      supplierChat?.query ? el("div", { class: "warn", id: "po-supplierquery", text: supplierQueryText(supplierChat.query) }) : null,
-      // Decision 0759: the last time it was sent to the supplier, or why not.
-      sending?.sends?.length ? sentLine(sending.sends[0]) : null,
-      // Decision 0762: whether the supplier has confirmed it has the order as it stands.
-      confirmedLine(sending),
+      // Decision 0766: on hold, and the question waiting on the supplier (0752), as alerts, as the network's To do (0764).
+      order.status === "on_hold" ? alertLine("po-holdline", t("purchaseorders.alert.hold"), order.hold_reason) : null,
+      supplierChat?.query ? alertLine("po-supplierquery", t("purchaseorders.alert.waiting"), supplierQueryText(supplierChat.query)) : null,
+      el("div", { class: "porow3" }, [sellerCard, buyerCard, progressCard]),
       header,
-      el("h4", { text: t("purchaseorders.lines") }),
-      linesTable,
-      await receiptsSection(order.order_number),
     ].filter(Boolean)
   );
+  const receipts = receiptsSection(order.order_number, receipting);
+  const below = [
+    el("div", { class: "panel pocard", id: "po-card-lines" }, [
+      el("div", { class: "cardhead" }, [el("h3", { text: t("purchaseorders.card.lines") })]),
+      linesTable,
+      el("div", { class: "pototals" }, [
+        el("div", {}, [el("span", { text: t("purchaseorders.card.net") }), el("span", { text: money(order.line_extension_amount) ?? "—" })]),
+        typeof cards?.vat === "number" ? el("div", {}, [el("span", { text: t("purchaseorders.card.vatamount") }), el("span", { text: money(cards.vat) })]) : null,
+        el("div", { class: "grand" }, [el("span", { text: t("purchaseorders.card.total") }), el("span", { text: money(order.payable_amount) ?? "—" })]),
+      ].filter(Boolean)),
+    ]),
+    receipts,
+  ].filter(Boolean);
 
   /**
    * **The panel on the right — decisions 0753 and 0754**, as a goods
@@ -821,7 +874,8 @@ export async function openPurchaseOrder(summary, { onDone = null } = {}) {
   for (const tab of tabs) {
     tab.button = el("button", { type: "button", role: "tab", class: "doctab", id: `po-tab-${tab.key}`, onclick: () => select(tab.key) }, [el("span", { text: tab.label }), tab.badge].filter(Boolean));
   }
-  select("timeline");
+  // Decision 0766: the Document first, as the supplier network's order (0765).
+  select("document");
   const side = el("aside", { class: "receiptside" }, [el("div", { class: "doctabs receipttabs", role: "tablist" }, tabs.map((tab) => tab.button)), ...tabs.map((tab) => tab.pane)]);
 
   const page = frame(
@@ -832,6 +886,7 @@ export async function openPurchaseOrder(summary, { onDone = null } = {}) {
         [el("div", { class: "statebuttons receiptactions" }, [...stateButtons, back])]
       ),
       el("div", { class: "receiptpage" }, [main, el("div", { class: "panel receiptsidepanel" }, [side])]),
+      ...below,
     ])
   );
   if (viewerPane) {
@@ -865,6 +920,15 @@ function confirmedLine(sending) {
     ]);
   }
   return sending.sends?.[0]?.status === "sent" ? el("div", { class: "muted sm", id: "po-confirmedline", text: t("purchaseorders.confirmed.waiting") }) : null;
+}
+
+/** **An alert over the order's cards — decision 0766**, drawn as the invoice's *Here because* line (0528). */
+function alertLine(id, label, text) {
+  const mark = icon("systemalert");
+  mark.setAttribute("aria-hidden", "true");
+  return el("div", { class: "panel reasonline", id, role: "status" }, [
+    el("div", { class: "reasonline-row" }, [el("span", { class: "reasonline-icon" }, [mark]), el("span", { class: "reasonline-label", text: label }), el("b", { class: "reasonline-text", text })]),
+  ]);
 }
 
 /** Decision 0759: the order's latest send, in a line above its details. */
@@ -928,15 +992,8 @@ function openSendToSupplier(orderNumber, sending, onSent) {
   document.body.append(backdrop);
 }
 
-async function receiptsSection(orderNumber) {
-  let body;
-  try {
-    const response = await fetch(`/api/goods-receipts/order/${encodeURIComponent(orderNumber)}`);
-    if (!response.ok) return null;
-    body = await response.json();
-  } catch {
-    return null;
-  }
+function receiptsSection(orderNumber, body) {
+  if (!body?.order) return null;
   const { order, movements } = body;
   const concerned = order.receiptingRequired || movements.length > 0;
   if (!concerned) return null;
@@ -955,8 +1012,8 @@ async function receiptsSection(orderNumber) {
       m.cancelled ? el("span", { class: "muted", text: ` · ${t("receipts.cancelled")}` }) : "",
     ])
   );
-  return el("div", { id: "po-receipts" }, [
-    el("div", { class: "cardhead" }, [el("h4", { text: t("purchaseorders.receipts") }), statePill(order.state)]),
+  return el("div", { class: "panel pocard", id: "po-receipts" }, [
+    el("div", { class: "cardhead" }, [el("h3", { text: t("purchaseorders.receipts") }), statePill(order.state)]),
     figuresTable(order),
     movements.length > 0 ? el("div", { class: "pomovements" }, history) : el("p", { class: "muted", text: t("purchaseorders.receipts.none") }),
   ]);

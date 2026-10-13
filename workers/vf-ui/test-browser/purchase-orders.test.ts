@@ -16,6 +16,9 @@ function mountShell() {
 const STRINGS = {
   locale: "en",
   strings: {
+    // The order's alerts (decision 0766).
+    "purchaseorders.alert.waiting": "Waiting:",
+    "purchaseorders.alert.hold": "On hold:",
     // The conversation about an order (decision 0752).
     "purchaseorders.supplierchat": "The conversation with the supplier",
     // A purchase order opened as a page (decision 0753).
@@ -412,7 +415,8 @@ describe("a purchase order opened, a page of its own — decisions 0372 and 0753
   });
 
   it("shows every line, with every field a line carries", async () => {
-    const main = (await openRow()).querySelector(".receiptmain") as HTMLElement;
+    // Decision 0766: the lines are a card across the page, below the order's cards.
+    const main = (await openRow()).querySelector("#po-card-lines") as HTMLElement;
     expect(main.textContent).toContain("Pallet handling");
     expect(main.textContent).toContain("NW-PAL-01");
     expect(main.textContent).toContain("Warehouse storage");
@@ -1190,7 +1194,7 @@ describe("receipts on Purchase Orders — decision 0646", () => {
     (document.querySelector("tbody tr") as HTMLElement).click();
     await vi.waitFor(() => expect(document.getElementById("po-receipts")).not.toBeNull());
     const section = document.getElementById("po-receipts")!;
-    expect(section.querySelector("h4")?.textContent).toBe("Receipts and returns");
+    expect(section.querySelector("h3")?.textContent).toBe("Receipts and returns");
     expect(section.querySelector('[data-line="1"]')?.textContent).toContain("Credit expected 2");
     expect([...section.querySelectorAll(".pomovement")].map((m) => m.textContent)).toEqual([
       "2026-09-29 · GR-1: Receipt 10 on line 1 · by Sam",
@@ -1338,7 +1342,9 @@ describe("the conversation with the supplier about an order — decision 0752", 
     // Decision 0753: in the panel on the right, laid out as a receipt's Supplier tab.
     expect(document.querySelector(".receiptsidepanel #po-supplier.receiptsupplier .suppliertab")?.textContent).toContain("Delivery moves to the 22nd.");
     expect(document.getElementById("po-supplier-none")).toBeNull();
-    expect(document.getElementById("po-supplierquery")?.textContent).toMatch(/^Asked Northwind on .+ \(Pat\), awaiting their reply$/);
+    // Decision 0766: an alert, as the invoice's Here because.
+    expect(document.querySelector("#po-supplierquery.reasonline .reasonline-label")?.textContent).toBe("Waiting:");
+    expect(document.querySelector("#po-supplierquery .reasonline-text")?.textContent).toMatch(/^Asked Northwind on .+ \(Pat\), awaiting their reply$/);
     // Ask supplier is for whoever works orders; nobody here holds AP.Purchasing or Admin.Configure.
     expect(document.getElementById("po-ask-supplier")).toBeNull();
   });

@@ -5516,6 +5516,33 @@
 @media (min-width: 901px) {
   .poview .receiptpage { grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); }
 }
+/**
+ * **An order laid out as the supplier network's is — decision 0766**
+ * (0765): Seller, Buyer and Progress in a row, the header as read-only
+ * fields beneath, and the lines and receipts as cards across the page.
+ */
+.poview .pocards { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.poview .pocards > .panel, .poview .pocard { margin-bottom: 0; }
+.poview .porow3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; align-items: stretch; }
+.poview .pocard .cardhead h3 { margin: 0; }
+.poview .pocard > .sub { margin: 0 0 6px; }
+.poview .pocard #po-receipts .cardhead { align-items: center; }
+.poview .pocard #po-sentline, .poview .pocard #po-confirmedline { margin-top: 10px; }
+.poview > .pocard { margin-top: 16px; }
+.poview .pototals { margin: 10px 0 0 auto; width: 320px; font-size: var(--text-sm); }
+.poview .pototals div { display: flex; justify-content: space-between; padding: 3px 0; }
+.poview .pototals .grand { font-weight: 700; border-top: 0.5px solid var(--border); margin-top: 4px; padding-top: 6px; font-size: var(--text-base); }
+@media (max-width: 1200px) { .poview .porow3 { grid-template-columns: minmax(0, 1fr); } }
+/*
+  The right panel ends where the Purchase order header ends (Dan, 13 October
+  2026): it stretches to the cards' height and, with `contain: size`, adds
+  none of its own, so a long Timeline scrolls inside it rather than growing
+  the row.
+*/
+@media (min-width: 901px) {
+  .poview .receiptpage { align-items: stretch; }
+  .poview .receiptpage > .receiptsidepanel { position: static; height: auto; min-height: 420px; contain: size; }
+}
 @media (max-width: 900px) {
   .receiptpage { grid-template-columns: minmax(0, 1fr); }
   .receiptpage > .receiptsidepanel { position: static; height: 70vh; }

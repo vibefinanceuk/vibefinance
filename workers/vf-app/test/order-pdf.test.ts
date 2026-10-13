@@ -160,6 +160,23 @@ describe("the CSV and UBL", () => {
 });
 
 describe("through the router", () => {
+  /** Decision 0766: the order's page in VibeFinance gets the network's cards (0765) with the order. */
+  it("gives the order's seller, buyer, VAT and requisition with the order itself", async () => {
+    await storeOrder(env.DB, { ...ORDER, taxExclusiveAmount: 1450, taxInclusiveAmount: 1740 }, "acme-uk");
+    const k = generateApiKey();
+    await env.DB.prepare("UPDATE org_users SET api_key_hash = ? WHERE id = 'u-pat'").bind(await hashApiKey(k)).run();
+    const res = await SELF.fetch("https://app.example.com/purchase-orders/PO-7", { headers: { Authorization: `Bearer ${k}` } });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { order: { order_number: string }; cards: unknown };
+    expect(body.order.order_number).toBe("PO-7");
+    expect(body.cards).toMatchObject({
+      net: 1450,
+      vat: 290,
+      requisition: "REQ-4410",
+      parties: { seller: { name: "Kingsway Interiors", vatId: "GB111", addressLine: "12 High Street", city: "Thornbury" }, buyer: { name: "Acme UK Ltd", vatId: "GB907856452", city: "London" } },
+    });
+  });
+
   it("shows the PDF inline, downloads each, and gives none to whoever may not open the order", async () => {
     await storeOrder(env.DB, ORDER, "acme-uk");
     const key = async (id: string) => {

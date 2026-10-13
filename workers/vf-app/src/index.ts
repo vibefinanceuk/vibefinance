@@ -353,7 +353,7 @@ import { handleHttpsReceipts, receiptsReport, receiptsSource, receiptsUploadSour
 import { handleGetOrdersProcess, handleHttpsOrders, handleSetUpOrdersProcess, ordersReport, ordersSource, ordersUploadSource, settleOrderInstance, uploadOrders } from "./purchase-orders-in.js";
 import { handleGetOrderSupplierMessages, handlePortalOrderReply, handlePostOrderSupplierMessage, markOrderSeen, orderConversationsFor } from "./order-messages.js";
 import { confirmByLink, confirmInNetwork } from "./order-confirm.js";
-import { orderFile, type DocumentFormat, handleGetOrderSending, handleGetOrdersOut, handlePutOrdersOut, handleSendOrderToSupplier, handleStartOrdersOut, runOrderSends, type OrdersOutDeps } from "./orders-out.js";
+import { orderCards, orderFile, type DocumentFormat, handleGetOrderSending, handleGetOrdersOut, handlePutOrdersOut, handleSendOrderToSupplier, handleStartOrdersOut, runOrderSends, type OrdersOutDeps } from "./orders-out.js";
 import { handleAddOrderCollaborator, handleGetOrderTimeline, handleOrderAttachments, handlePostOrderComment, handleRemoveOrderCollaborator, handleSearchOrderPeople, orderAccess, ORDER_TOKEN_PREFIX, partForOrder } from "./order-timeline.js";
 import { continueOrderInstance, handleFixIntake, handleGetIntake, handleIntakeSuppliers, handleListIntake, handleRejectIntake, handleReleaseIntake, isOrderCheckingTask } from "./order-checking.js";
 import {
@@ -7082,6 +7082,11 @@ export default {
         return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
       }
       const result = await handleGetPurchaseOrder(db, decodeURIComponent(poMatch[1]), auth.user.id);
+      // Decision 0766: Seller, Buyer and the header's net, VAT and requisition, as the supplier network's cards (0765).
+      if (result.status === 200) {
+        const cards = await orderCards(db, decodeURIComponent(poMatch[1]));
+        return json({ ...(result.body as Record<string, unknown>), cards }, 200);
+      }
       return json(result.body, result.status);
     }
 

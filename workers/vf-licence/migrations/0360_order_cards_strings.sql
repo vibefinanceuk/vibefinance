@@ -1,0 +1,40 @@
+-- 0360_order_cards_strings.sql
+-- Decision 0766 — a purchase order in VibeFinance laid out as the supplier network's is: Seller, Buyer, Progress, its header and its lines.
+
+INSERT INTO ui_strings (key, locale, value) VALUES
+ ('purchaseorders.alert.hold', 'en', 'On hold:'),
+ ('purchaseorders.alert.hold', 'de', 'Angehalten:'),
+ ('purchaseorders.alert.waiting', 'en', 'Waiting:'),
+ ('purchaseorders.alert.waiting', 'de', 'Wartet:'),
+ ('purchaseorders.card.seller', 'en', 'Seller'),
+ ('purchaseorders.card.seller', 'de', 'Verkäufer'),
+ ('purchaseorders.card.buyer', 'en', 'Buyer'),
+ ('purchaseorders.card.buyer', 'de', 'Käufer'),
+ ('purchaseorders.card.progress', 'en', 'Progress'),
+ ('purchaseorders.card.progress', 'de', 'Stand'),
+ ('purchaseorders.card.header', 'en', 'Purchase order header'),
+ ('purchaseorders.card.header', 'de', 'Bestellkopf'),
+ ('purchaseorders.card.lines', 'en', 'Purchase order lines'),
+ ('purchaseorders.card.lines', 'de', 'Bestellpositionen'),
+ ('purchaseorders.card.name', 'en', 'Name'),
+ ('purchaseorders.card.name', 'de', 'Name'),
+ ('purchaseorders.card.vat', 'en', 'VAT no'),
+ ('purchaseorders.card.vat', 'de', 'USt-IdNr.'),
+ ('purchaseorders.card.address', 'en', 'Address'),
+ ('purchaseorders.card.address', 'de', 'Adresse'),
+ ('purchaseorders.card.email', 'en', 'Orders email'),
+ ('purchaseorders.card.email', 'de', 'E-Mail für Bestellungen'),
+ ('purchaseorders.card.contact', 'en', 'Contact'),
+ ('purchaseorders.card.contact', 'de', 'Ansprechpartner'),
+ ('purchaseorders.card.net', 'en', 'Net'),
+ ('purchaseorders.card.net', 'de', 'Netto'),
+ ('purchaseorders.card.vatamount', 'en', 'VAT'),
+ ('purchaseorders.card.vatamount', 'de', 'MwSt.'),
+ ('purchaseorders.card.total', 'en', 'Total'),
+ ('purchaseorders.card.total', 'de', 'Summe'),
+ ('purchaseorders.card.todeliver', 'en', 'Still to deliver'),
+ ('purchaseorders.card.todeliver', 'de', 'Noch zu liefern'),
+ ('purchaseorders.card.toinvoice', 'en', 'Still to invoice'),
+ ('purchaseorders.card.toinvoice', 'de', 'Noch zu fakturieren');
+
+-- ASSERT: SELECT count(*) FROM ui_strings WHERE key IN ('purchaseorders.alert.hold', 'purchaseorders.alert.waiting', 'purchaseorders.card.seller', 'purchaseorders.card.buyer', 'purchaseorders.card.progress', 'purchaseorders.card.header', 'purchaseorders.card.lines', 'purchaseorders.card.name', 'purchaseorders.card.vat', 'purchaseorders.card.address', 'purchaseorders.card.email', 'purchaseorders.card.contact', 'purchaseorders.card.net', 'purchaseorders.card.vatamount', 'purchaseorders.card.total', 'purchaseorders.card.todeliver', 'purchaseorders.card.toinvoice') == 34
