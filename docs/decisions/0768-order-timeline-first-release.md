@@ -1,6 +1,6 @@
 # 0768: An order's Timeline loads after its first release
 
-**Status: built.**
+**Status: live.**
 
 - vf-app: `order-timeline.ts`.
 - vf-ui: `order-timeline.js`, `receipt-timeline.js`.
