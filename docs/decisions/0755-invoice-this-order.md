@@ -1,6 +1,6 @@
 # 0755: Invoice this order, in the supplier network
 
-**Status: built.**
+**Status: live.**
 
 - vf-app: `order-sharing.ts`.
 - vf-portal: `public/order-view.js`, `public/create.js`, `public/portal.js`.
