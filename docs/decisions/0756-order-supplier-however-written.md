@@ -1,6 +1,6 @@
 # 0756: An order's supplier, however its seller is written
 
-**Status: built.**
+**Status: live.**
 
 - vf-app:
   - `order-supplier.ts` (new);
