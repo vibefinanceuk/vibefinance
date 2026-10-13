@@ -1,6 +1,6 @@
 # 0758: A credit note finds its invoice by the one VAT rule
 
-**Status: built.**
+**Status: live.**
 
 - vf-app: `credit-notes.ts`.
 
