@@ -65,7 +65,8 @@ const post = (key: string, body: string, type: string, reference?: string) =>
 
 describe("the routes, the process and its sources", () => {
   it("are standard routes for purchase orders; the process has its stages and upload source, and takes HTTPS and email sources only", async () => {
-    const routes = (await env.DB.prepare("SELECT route_id, status, receiving_gateway, semantic_model FROM route_versions WHERE route_id LIKE 'orders-%' ORDER BY route_id").all()).results;
+    // Decision 0759: Orders to suppliers is the destination among them; these are the sources.
+    const routes = (await env.DB.prepare("SELECT route_id, status, receiving_gateway, semantic_model FROM route_versions WHERE route_id LIKE 'orders-%' AND route_id != 'orders-email-out' ORDER BY route_id").all()).results;
     expect(routes).toEqual([
       { route_id: "orders-email", status: "live", receiving_gateway: "email", semantic_model: "purchase_order" },
       { route_id: "orders-file", status: "live", receiving_gateway: "file_import", semantic_model: "purchase_order" },

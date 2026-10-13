@@ -252,6 +252,8 @@ export function readOrdersJson(body: unknown): ReadOrders {
       orderTypeCode: text(o.orderTypeCode),
       currency: text(o.documentCurrencyCode) ?? text(o.currency),
       sellerPartyId: partyId(o.sellerSupplierParty),
+      // Decision 0759: who at the supplier it is for.
+      sellerContactEmail: text((o.sellerSupplierParty as { contact?: { electronicMail?: unknown } } | undefined)?.contact?.electronicMail) ?? text(o.supplierEmail),
       buyerPartyId: partyId(o.buyerCustomerParty),
       lineExtensionAmount: number(totals.lineExtensionAmount),
       taxExclusiveAmount: number(totals.taxExclusiveAmount),
@@ -338,6 +340,7 @@ async function inForceOrder(db: D1Database, orderNumber: string): Promise<Parsed
     orderTypeCode: u<string>(po.order_type_code),
     currency: u<string>(po.currency),
     sellerPartyId: u<string>(po.seller_party_id),
+    sellerContactEmail: u<string>(po.supplier_email),
     buyerPartyId: u<string>(po.buyer_party_id),
     lineExtensionAmount: u<number>(po.line_extension_amount),
     taxExclusiveAmount: u<number>(po.tax_exclusive_amount),

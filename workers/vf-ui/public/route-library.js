@@ -125,7 +125,9 @@ async function openInProcess(c, processId, instanceId) {
 function openAdd(c) {
   const name = nameOf(c);
   const problem = el("div", { class: "warn", id: "lib-problem" });
-  const process = el("select", { id: "lib-process" }, library.processes.map((p) => el("option", { value: p.id, text: p.name })));
+  // Decision 0759: the processes that move what it carries — invoices, or (Orders to suppliers) purchase orders.
+  const subject = c.subject ?? "invoice";
+  const process = el("select", { id: "lib-process" }, library.processes.filter((p) => (p.subjectType ?? "invoice") === subject).map((p) => el("option", { value: p.id, text: p.name })));
   const nameInput = el("input", { type: "text", id: "lib-name", value: name });
   const close = () => backdrop.remove();
   const add = actionLink("create", {

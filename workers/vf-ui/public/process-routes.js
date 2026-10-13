@@ -3,6 +3,7 @@ import { el, frame, topbar, setCurrentScreen } from "/tasks.js";
 import { actionLink, compactLink } from "/viewer.js";
 import { httpsSection } from "/https-keys.js";
 import { erpDeliveriesSection, httpsOutSection, sftpOutSection, unitsField, unitsSummary } from "/destinations.js";
+import { ordersOutSection } from "/orders-out.js";
 import { sftpInSection } from "/sftp-settings.js";
 import { networkSection } from "/network-source.js";
 import {
@@ -173,8 +174,8 @@ function flow() {
       d.status === "retired"
         ? // Decision 0597: retired, and nothing more.
           [pill("q", t("processroutes.status.retired"))]
-        : d.routeId === "https-out" || d.routeId === "sftp-out"
-        ? // Decision 0585 (and 0620, SFTP out): an HTTPS out Destination says whether it is sending, what failed and what waits.
+        : d.routeId === "https-out" || d.routeId === "sftp-out" || d.routeId === "orders-email-out"
+        ? // Decision 0585 (and 0620, SFTP out; 0759, Orders to suppliers): an HTTPS out Destination says whether it is sending, what failed and what waits.
           [
             !d.started
               ? pill("warn", t("httpsout.notstarted"))
@@ -490,7 +491,9 @@ function openDeleteDestination(d) {
 
 function destinationPanel(d) {
   // Decision 0620: SFTP out sends on the same engine, started, paused and deleted the same way.
-  const httpsOut = d.routeId === "https-out" || d.routeId === "sftp-out";
+  // Decision 0759: and Orders to suppliers is started, paused and deleted as they are.
+  const ordersOut = d.routeId === "orders-email-out";
+  const httpsOut = d.routeId === "https-out" || d.routeId === "sftp-out" || ordersOut;
   // Decision 0597: a retired Destination is only looked at.
   if (d.status === "retired") {
     return el("div", { class: "panel prdetail" }, [
@@ -557,7 +560,13 @@ function destinationPanel(d) {
           : pill(d.status === "active" ? "ok" : "warn", t(`processroutes.status.${d.status}`)),
       ]),
     ]),
-    httpsOut
+    ordersOut
+      ? // Decision 0759: who it writes to, its settings, starting it, and what it sent.
+        ordersOutSection(d, async () => {
+          await load();
+          render();
+        })
+      : httpsOut
       ? // Decision 0585: where it sends, how it signs in, a test, and what it has delivered.
         (d.routeId === "sftp-out" ? sftpOutSection : httpsOutSection)(d, async () => {
           await load();
@@ -574,11 +583,14 @@ function openAddDestination() {
   const problem = el("div", { class: "warn" });
   const nameInput = el("input", { type: "text", id: "dest-name", placeholder: t("httpsout.nameexample") });
   // Decision 0589: the destination connectors the library has ready, HTTPS out first.
-  const connector = el("select", { id: "dest-connector" }, [el("option", { value: "https-out", text: t("httpsout.connector") })]);
-  fetch("/api/connector-library")
+  // Decision 0759: a purchase order process takes Orders to suppliers, and only that.
+  const orders = data.process?.subjectType === "purchase_order";
+  const connector = el("select", { id: "dest-connector" }, orders ? [el("option", { value: "orders-email-out", text: t("connector.orders-email-out.name") })] : [el("option", { value: "https-out", text: t("httpsout.connector") })]);
+  if (orders) nameInput.value = t("connector.orders-email-out.name");
+  if (!orders) fetch("/api/connector-library")
     .then((r) => (r.ok ? r.json() : null))
     .then((lib) => {
-      const ready = (lib?.connectors ?? []).filter((c) => c.direction === "destination" && c.status === "available" && c.id !== "https-out" && (c.multiple || !c.inUse.some((u) => u.processId === processId)));
+      const ready = (lib?.connectors ?? []).filter((c) => c.direction === "destination" && c.status === "available" && c.id !== "https-out" && (c.subject ?? "invoice") === "invoice" && (c.multiple || !c.inUse.some((u) => u.processId === processId)));
       for (const c of ready) connector.append(el("option", { value: c.id, text: c.name ?? t(`connector.${c.id}.name`) }));
     })
     .catch(() => {});
@@ -825,6 +837,8 @@ function render() {
                 el("span", { class: "pill", id: "pr-subject", text: t(`processroutes.subject.${subject}`) }),
                 // Decision 0655: Receipts in, a warehouse system's source.
                 actionLink("addcard", { label: t("processroutes.addsource"), onclick: openAddSource }),
+                // Decision 0759: a purchase order process sends orders to suppliers.
+                ...(orders ? [actionLink("addcard", { label: t("httpsout.adddestination"), onclick: openAddDestination })] : []),
               ])
             : el("div", { class: "statebuttons" }, [
                 actionLink("addcard", { label: t("processroutes.addsource"), onclick: openAddSource }),

@@ -352,6 +352,7 @@ import {
 import { handleHttpsReceipts, receiptsReport, receiptsSource, receiptsUploadSource, receiveReceipts, RECEIPTS_FILE_ROUTE } from "./receipts-in-route.js";
 import { handleGetOrdersProcess, handleHttpsOrders, handleSetUpOrdersProcess, ordersReport, ordersSource, ordersUploadSource, settleOrderInstance, uploadOrders } from "./purchase-orders-in.js";
 import { handleGetOrderSupplierMessages, handlePortalOrderReply, handlePostOrderSupplierMessage, markOrderSeen, orderConversationsFor } from "./order-messages.js";
+import { handleGetOrderSending, handleGetOrdersOut, handlePutOrdersOut, handleSendOrderToSupplier, handleStartOrdersOut, runOrderSends, type OrdersOutDeps } from "./orders-out.js";
 import { handleAddOrderCollaborator, handleGetOrderTimeline, handleOrderAttachments, handlePostOrderComment, handleRemoveOrderCollaborator, handleSearchOrderPeople, orderAccess, ORDER_TOKEN_PREFIX, partForOrder } from "./order-timeline.js";
 import { continueOrderInstance, handleFixIntake, handleGetIntake, handleIntakeSuppliers, handleListIntake, handleRejectIntake, handleReleaseIntake, isOrderCheckingTask } from "./order-checking.js";
 import {
@@ -1074,6 +1075,15 @@ function messageEmail(env: Env): MessageEmail {
  * origin) for the links in an email; the documents bucket, which keeps
  * each copy sent under `agents/`.
  */
+/** Decision 0759: what Orders to suppliers sends with — Resend, and where the sent email and UBL are kept. */
+function ordersOutDeps(env: Env): OrdersOutDeps {
+  return {
+    email: env.RESEND_API_KEY && env.RESEND_FROM_ADDRESS ? { apiKey: env.RESEND_API_KEY, from: env.RESEND_FROM_ADDRESS } : null,
+    bucket: env.DOCUMENTS ?? null,
+    customerId: env.CUSTOMER_ID ?? null,
+  };
+}
+
 function agentDeps(env: Env, documents: R2Bucket | null | undefined): AgentDeps {
   const appUrl = (env.ALLOWED_ORIGINS ?? "").split(",").map((o) => o.trim()).find(Boolean) ?? null;
   return {
@@ -5548,6 +5558,23 @@ export default {
       return json(result.body, result.status);
     }
     // Decision 0587: the business units a Destination sends for.
+    // Decision 0759: an Orders to suppliers Destination's settings, its latest sends, and starting it.
+    const ordersOutMatch = pathname.match(/^\/route-instances\/([^/]+)\/orders-out(\/start)?$/);
+    if (ordersOutMatch) {
+      const { db } = resolveTenant(request, env);
+      const auth = await requirePermission(db, request, "Admin.Configure", sessionContext(env));
+      if (!auth.authorized) return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
+      const id = decodeURIComponent(ordersOutMatch[1]);
+      const result =
+        ordersOutMatch[2] && request.method === "POST"
+          ? await handleStartOrdersOut(db, id)
+          : !ordersOutMatch[2] && request.method === "GET"
+            ? await handleGetOrdersOut(db, id)
+            : !ordersOutMatch[2] && request.method === "PUT"
+              ? await handlePutOrdersOut(db, id, ((await request.json().catch(() => null)) ?? {}) as Record<string, unknown>)
+              : { status: 405, body: { error: "method not allowed" } };
+      return json(result.body, result.status);
+    }
     const unitsMatch = pathname.match(/^\/route-instances\/([^/]+)\/units$/);
     if (unitsMatch && request.method === "PUT") {
       const { db } = resolveTenant(request, env);
@@ -6800,6 +6827,36 @@ export default {
       return json(result.body, result.status);
     }
 
+    /**
+     * **Send to supplier — decision 0759.** Who the order would go to, and
+     * what was sent, for whoever reads orders; sending by hand for
+     * whoever works them.
+     */
+    const sendMatch = pathname.match(/^\/purchase-orders\/([^/]+)\/send-to-supplier$/);
+    if (sendMatch && sendMatch[1] !== "intake") {
+      const { db } = resolveTenant(request, env);
+      const denied = (status: number) => json({ error: t(status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, status);
+      const orderNumber = decodeURIComponent(sendMatch[1]);
+      if (request.method === "GET") {
+        const auth = await requireAnyPermission(db, request, ["AP.Purchasing", "Admin.Configure", "AP.Validate"], sessionContext(env));
+        if (!auth.authorized) return denied(auth.status);
+        if (!(await orderAccess(db, auth.user.id, orderNumber))) return json({ error: `no purchase order ${orderNumber}` }, 404);
+        const result = await handleGetOrderSending(db, orderNumber);
+        return json(result.body, result.status);
+      }
+      if (request.method === "POST") {
+        const auth = await requireAnyPermission(db, request, ["AP.Purchasing", "Admin.Configure"], sessionContext(env));
+        if (!auth.authorized) return denied(auth.status);
+        const access = await orderAccess(db, auth.user.id, orderNumber);
+        if (!access) return json({ error: `no purchase order ${orderNumber}` }, 404);
+        if (!access.canManage) return denied(403);
+        const body = ((await request.json().catch(() => null)) ?? {}) as Record<string, unknown>;
+        const result = await handleSendOrderToSupplier(db, ordersOutDeps(env), auth.user.id, orderNumber, body);
+        return json(result.body, result.status);
+      }
+      return json({ error: "method not allowed" }, 405);
+    }
+
     const orderMessagesMatch = pathname.match(/^\/purchase-orders\/([^/]+)\/supplier-messages(\/seen)?$/);
     if (orderMessagesMatch && orderMessagesMatch[1] !== "intake") {
       const { db } = resolveTenant(request, env);
@@ -6865,6 +6922,8 @@ export default {
           return json(result.body, result.status);
         }
         const result = await handleReleaseIntake(db, auth.user.id, id, body, settleOrderInstance);
+        // Decision 0759: released, so Orders to suppliers sends it now rather than on the next tick. Never fatal to the release.
+        if (result.released?.length) await runOrderSends(db, ordersOutDeps(env)).catch(() => 0);
         const kind = (result.body as { order?: { kind?: string } }).order?.kind;
         if (result.released?.length && kind !== "cancellation") return json(await withWaitingReceipts(db, result.body, result.released, auth.user.id), result.status);
         return json(result.body, result.status);
@@ -7900,6 +7959,13 @@ export default {
         });
       } catch {
         // Deliberately silent.
+      }
+      // Decision 0759: orders released since the last tick, to their suppliers.
+      try {
+        const { db } = resolveTenant(new Request("https://scheduled-trigger.internal/"), env);
+        await runOrderSends(db, ordersOutDeps(env));
+      } catch {
+        // Deliberately silent: each send records its own outcome.
       }
       // Decision 0622: agents due now, on the same tick and on their own,
       // so a failing agent never holds up a delivery or the other way round.

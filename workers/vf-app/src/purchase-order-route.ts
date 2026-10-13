@@ -178,8 +178,8 @@ export async function storeOrder(
       `INSERT INTO purchase_orders
          (id, order_number, issue_date, order_type_code, currency, seller_party_id, buyer_party_id,
           line_extension_amount, tax_exclusive_amount, tax_inclusive_amount, payable_amount,
-          originator_reference, org_unit_id, status, hold_reason)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+          originator_reference, org_unit_id, status, hold_reason, supplier_email)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .bind(
       id,
@@ -196,7 +196,9 @@ export async function storeOrder(
       parsed.originatorReference ?? null,
       orgUnitId,
       status,
-      holdReason
+      holdReason,
+      // Decision 0759: who at the supplier it is for, as the order says.
+      parsed.sellerContactEmail ?? null
     )
     .run();
 
@@ -356,6 +358,12 @@ export const HEADER_FIELD_SPECS: CsvFieldSpec[] = [
     columns: ["seller_party_id", "seller vat", "seller vat id", "supplier vat", "supplier vat id"],
     required: false,
     description: "The supplier's VAT id — who the order was placed with.",
+  },
+  {
+    key: "supplier_email",
+    columns: ["supplier_email", "supplier email", "seller email", "supplier contact email"],
+    required: false,
+    description: "Who at the supplier the order is for. Orders to suppliers emails it there first, before the supplier's own orders address.",
   },
   {
     key: "buyer_party_id",
@@ -628,6 +636,7 @@ export function readOrdersCsv(csv: string): ReadOrders {
       orderTypeCode: first.order_type_code || undefined,
       currency: first.currency || undefined,
       sellerPartyId: first.seller_party_id || undefined,
+      sellerContactEmail: first.supplier_email || undefined,
       buyerPartyId: first.buyer_party_id || undefined,
       lineExtensionAmount: num(first.line_extension_amount),
       taxExclusiveAmount: num(first.tax_exclusive_amount),

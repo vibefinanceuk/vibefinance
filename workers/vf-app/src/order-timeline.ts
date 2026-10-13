@@ -636,7 +636,9 @@ export async function orderMessages(db: D1Database, orderNumber: string): Promis
       .prepare(
         `SELECT m.id, s.name AS source, m.counterparty AS sender, m.subject, m.received_at
          FROM route_messages m LEFT JOIN sources s ON s.id = m.instance_id
-         WHERE m.id IN (SELECT route_message_id FROM purchase_order_intake WHERE order_number = ? AND route_message_id IS NOT NULL)
+         WHERE m.id IN (SELECT route_message_id FROM purchase_order_intake WHERE order_number = ?1 AND route_message_id IS NOT NULL)
+            -- Decision 0759: and what was emailed to the supplier.
+            OR m.id IN (SELECT message_id FROM purchase_order_sends WHERE order_number = ?1 AND message_id IS NOT NULL)
          ORDER BY m.received_at, m.id`
       )
       .bind(orderNumber)
@@ -650,7 +652,7 @@ export async function orderFiles(db: D1Database, orderNumber: string): Promise<R
   for (const m of await orderMessages(db, orderNumber)) {
     const parts = (
       await db
-        .prepare("SELECT seq, role, filename, content_type, bytes FROM route_message_parts WHERE message_id = ? AND role IN ('original', 'attachment') ORDER BY seq")
+        .prepare("SELECT seq, role, filename, content_type, bytes FROM route_message_parts WHERE message_id = ? AND role IN ('original', 'attachment', 'sent') ORDER BY seq")
         .bind(m.id)
         .all<{ seq: number; role: string; filename: string; content_type: string; bytes: number }>()
     ).results;
@@ -660,11 +662,11 @@ export async function orderFiles(db: D1Database, orderNumber: string): Promise<R
   return files;
 }
 
-/** One received part, if its message is one this order came in by. */
+/** One received or sent part, if its message is one this order came in or went out by. */
 export async function partForOrder(db: D1Database, orderNumber: string, messageId: string, seq: number): Promise<{ r2Key: string; filename: string; contentType: string } | null> {
   if (!(await orderMessages(db, orderNumber)).some((m) => m.id === messageId)) return null;
   const row = await db
-    .prepare("SELECT r2_key, filename, content_type FROM route_message_parts WHERE message_id = ? AND seq = ? AND role IN ('original', 'attachment')")
+    .prepare("SELECT r2_key, filename, content_type FROM route_message_parts WHERE message_id = ? AND seq = ? AND role IN ('original', 'attachment', 'sent')")
     .bind(messageId, seq)
     .first<{ r2_key: string; filename: string; content_type: string }>();
   return row ? { r2Key: row.r2_key, filename: row.filename, contentType: row.content_type } : null;

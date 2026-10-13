@@ -52,6 +52,9 @@ export const AUDITED_FIELDS = [
   "org_unit_id",
   // Decision 0547 — VibeFinance's own setting, set by hand only.
   "project_only",
+  // Decision 0759: where its orders go, and whether VibeFinance sends them.
+  "orders_email",
+  "send_orders",
 ] as const;
 
 export type AuditedField = (typeof AUDITED_FIELDS)[number];

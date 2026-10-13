@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 13 October 2026 (decision 0758). A living document: what
+Last updated 13 October 2026 (decision 0759). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,19 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### Orders to suppliers (0759)
+
+The Purchase Orders process has an *Orders to suppliers* Destination. It emails each released
+order, change and cancellation to the supplier, with the order as Peppol BIS Order 3 UBL,
+automatically on release and by hand from the order.
+
+Who it goes to, in order: the order's own address, the supplier's orders address, then its
+general email. Every send is on the order's Timeline and Attachments, and in the Route monitor.
+
+Slice 4a; the PDF and Document tab (4b) and receipt confirmation (4c) follow.
+
+Full reasoning is in decision 0759.
 
 ### A credit note finds its invoice by the one VAT rule (0758)
 

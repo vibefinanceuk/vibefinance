@@ -40,8 +40,14 @@ export async function handleConnectorLibrary(db: D1Database, library: ConnectorD
       { instanceId: i.id, processId: i.process_id, processName: i.process_name, name: i.name, version, upgradeAvailable: connector.version > version },
     ]);
   }
-  // Decision 0651: connectors carry invoices, so only invoice processes are offered.
-  const processes = (await db.prepare("SELECT id, name FROM processes WHERE subject_type = 'invoice' ORDER BY name").all<{ id: string; name: string }>()).results;
+  /**
+   * Decision 0651: connectors carry invoices, so only invoice processes are
+   * offered — and since 0759, a purchase order process for a connector
+   * that carries orders (its `subject`). Each process says what it moves.
+   */
+  const processes = (
+    await db.prepare("SELECT id, name, subject_type FROM processes WHERE subject_type IN ('invoice', 'purchase_order') ORDER BY name").all<{ id: string; name: string; subject_type: string }>()
+  ).results.map((p) => ({ id: p.id, name: p.name, subjectType: p.subject_type }));
   return {
     status: 200,
     body: {
@@ -64,6 +70,8 @@ export async function handleConnectorLibrary(db: D1Database, library: ConnectorD
         vendorDocs: c.vendorDocs ?? null,
         // Decision 0605: available, not yet proven against the real system.
         maturity: c.maturity ?? null,
+        // Decision 0759: what it carries, where not invoices.
+        subject: c.subject ?? "invoice",
         inUse: used.get(c.id) ?? [],
       })),
       processes,

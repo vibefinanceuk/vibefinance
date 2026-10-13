@@ -97,6 +97,13 @@ export function describeOrderItem(item) {
     }
     case "supplier_opened":
       return t("purchaseorders.tl.supplieropened");
+    // Decision 0759: Orders to suppliers.
+    case "sent_to_supplier":
+      return fill(`purchaseorders.tl.sent.${d.kind ?? "order"}`, { to: (d.to ?? []).join(", "), by });
+    case "send_failed":
+      return fill("purchaseorders.tl.sendfailed", { to: (d.to ?? []).join(", "), error: d.error });
+    case "not_sent":
+      return t(d.reason === "no_address" ? "purchaseorders.tl.notsent.noaddress" : "purchaseorders.tl.notsent.own");
     case "supplier_asked":
       return fill("purchaseorders.tl.supplierasked", { by });
     case "supplier_written":
@@ -131,6 +138,9 @@ export function orderSubs(item) {
     case "goods_received":
     case "goods_returned":
       return [d.pending ? t("purchaseorders.tl.receipt.pending") : null, d.cancelled ? t("purchaseorders.tl.receipt.cancelled") : null];
+    // Decision 0759: which address, and how it went.
+    case "sent_to_supplier":
+      return [t(`ordersout.from.${d.from}`), d.how === "by_hand" ? t("purchaseorders.tl.sent.byhand").replace("{by}", item.by ?? "") : t("purchaseorders.tl.sent.onrelease"), d.ubl ? t("purchaseorders.tl.sent.ubl") : null];
     default:
       return [];
   }

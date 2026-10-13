@@ -5756,3 +5756,9 @@
   .poinsuppliers { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; margin-top: 4px; }
   .poinsuppliers .linkish { background: none; border: 0; padding: 0; color: var(--text-accent); cursor: pointer; font: inherit; text-align: left; }
   .poinsuppliers .linkish:hover { text-decoration: underline; }
+
+/* Decision 0759: Orders to suppliers, on Process routes — its ticks, and who orders go to. */
+.oocheck { display: flex; align-items: flex-start; gap: 8px; margin: 8px 0; cursor: pointer; }
+.oocheck input { margin-top: 3px; }
+.oowho { margin: 4px 0 8px 18px; padding: 0; }
+.oowho li { margin: 2px 0; }

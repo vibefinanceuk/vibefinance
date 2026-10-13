@@ -105,6 +105,11 @@ const COLUMNS: Record<string, string> = {
   email: "email",
   "email address": "email",
   "supplier email": "email",
+  // Where its orders go — decision 0759, apart from its general email.
+  orders_email: "orders_email",
+  "orders email": "orders_email",
+  "po email": "orders_email",
+  "purchase order email": "orders_email",
   // A number to ring — decision 0221.
   phone: "phone",
   telephone: "phone",
@@ -406,8 +411,8 @@ export async function handleLoadSuppliers(
                                 agreed_payment_means, agreed_account_identifier, agreed_account_name,
                                 erp_site_identifier, is_pay_site, is_procurement_site,
                                 address_line, city, postal_code, email, phone, status, loaded_at,
-                                org_unit_id)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', datetime('now'), ?)
+                                org_unit_id, orders_email)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', datetime('now'), ?, ?)
          ON CONFLICT(id) DO UPDATE SET
            -- **The retroactive part.** An adopted row had none.
            erp_identifier = excluded.erp_identifier,
@@ -436,7 +441,9 @@ export async function handleLoadSuppliers(
            phone = excluded.phone,
            status = 'active',
            loaded_at = datetime('now'),
-           org_unit_id = excluded.org_unit_id`
+           org_unit_id = excluded.org_unit_id,
+           -- Decision 0759: a file without an orders address leaves the one set by hand.
+           orders_email = COALESCE(excluded.orders_email, suppliers.orders_email)`
       )
       .bind(
         id,
@@ -464,7 +471,8 @@ export async function handleLoadSuppliers(
         values.postal_code || null,
         values.email || null,
         values.phone || null,
-        orgUnitId
+        orgUnitId,
+        values.orders_email || null
       )
       .run();
 
@@ -828,7 +836,7 @@ export async function handleListSuppliers(
       `SELECT s.id, s.erp_identifier, s.erp_site_identifier, s.name, s.vat_id, s.electronic_address,
               s.country, s.payment_terms, s.on_hold, s.hold_reason, s.match_option, s.status,
               s.is_pay_site, s.is_procurement_site, s.address_line, s.city, s.postal_code, s.email, s.phone,
-              s.org_unit_id, u.name AS org_unit_name, s.project_only
+              s.org_unit_id, u.name AS org_unit_name, s.project_only, s.orders_email, s.send_orders
        FROM suppliers s
        LEFT JOIN org_units u ON u.id = s.org_unit_id
        WHERE 1 = 1 ${clause.sql} ${search_.sql} ${status_.sql}
@@ -859,6 +867,8 @@ export async function handleListSuppliers(
       org_unit_id: string | null;
       org_unit_name: string | null;
       project_only: number;
+      orders_email: string | null;
+      send_orders: number;
     }>();
 
   const load = await db
@@ -892,6 +902,9 @@ export async function handleListSuppliers(
         orgUnitName: r.org_unit_name,
         // Decision 0547.
         projectOnly: r.project_only === 1,
+        // Decision 0759.
+        ordersEmail: r.orders_email,
+        sendOrders: r.send_orders !== 0,
       })),
       /**
        * **Null where nothing was ever loaded**, which a screen must say
@@ -1232,6 +1245,8 @@ const EDITABLE = [
   "postal_code",
   "country",
   "payment_terms",
+  // Decision 0759.
+  "orders_email",
 ] as const;
 
 /**
@@ -1341,6 +1356,20 @@ export async function handleUpdateSupplier(
   }
 
   /**
+   * **Whether VibeFinance emails it its orders — decision 0759.** Like
+   * project-only, VibeFinance's own: no ERP has it, so a load leaves it.
+   */
+  let sendOrdersBefore: number | null = null;
+  if ("sendOrders" in body) {
+    if (typeof body.sendOrders !== "boolean") return { status: 400, body: { error: "sendOrders must be true or false" } };
+    const row = await db.prepare("SELECT send_orders FROM suppliers WHERE id = ?").bind(supplierId).first<{ send_orders: number }>();
+    sendOrdersBefore = row?.send_orders ?? 1;
+    sets.push("send_orders = ?");
+    values.push(body.sendOrders ? 1 : 0);
+    touched.send_orders = body.sendOrders;
+  }
+
+  /**
    * **How its invoices are matched — decision 0643.** `three_way` is
    * what the screens call *Receipting required*: its invoices wait for
    * the goods receipt. Like the fields above it is the ERP's, so the
@@ -1374,6 +1403,7 @@ export async function handleUpdateSupplier(
       {
         ...supplier,
         ...(projectOnlyBefore !== null ? { project_only: projectOnlyBefore } : {}),
+        ...(sendOrdersBefore !== null ? { send_orders: sendOrdersBefore } : {}),
         ...(matchOptionBefore !== undefined ? { match_option: matchOptionBefore } : {}),
       },
       touched

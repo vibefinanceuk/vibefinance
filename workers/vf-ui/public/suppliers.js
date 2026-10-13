@@ -818,6 +818,8 @@ function openSupplier(s) {
     ["vatId", t("suppliers.vat")],
     ["electronicAddress", t("viewer.supplier.endpoint")],
     ["email", t("viewer.supplier.email")],
+    // Decision 0759: where its orders go, before its general email.
+    ["ordersEmail", t("suppliers.ordersemail")],
     ["phone", t("viewer.supplier.phone")],
     ["addressLine", t("viewer.supplier.street")],
     ["city", t("viewer.supplier.city")],
@@ -867,6 +869,17 @@ function openSupplier(s) {
     el("label", { for: "supplierprojectonly" }, [projectOnlyBox, ` ${t("suppliers.projectonly")}`]),
     el("p", { class: "muted sm", text: t("suppliers.projectonly.hint") }),
   ]);
+  /**
+   * **Whether VibeFinance emails it its orders — decision 0759.** Off where
+   * the customer's own procurement system already sends them. Like
+   * project-only, VibeFinance's own: a load leaves it.
+   */
+  const sendOrdersBox = el("input", { type: "checkbox", id: "suppliersendorders" });
+  sendOrdersBox.checked = s.sendOrders !== false;
+  const sendOrdersRow = el("div", { class: "supplierprojectonly" }, [
+    el("label", { for: "suppliersendorders" }, [sendOrdersBox, ` ${t("suppliers.sendorders")}`]),
+    el("p", { class: "muted sm", text: t("suppliers.sendorders.hint") }),
+  ]);
 
   async function send(method, body, onOk) {
     problem.textContent = "";
@@ -903,11 +916,12 @@ function openSupplier(s) {
         Object.entries(fields).map(([k, input]) => [k, input.value.trim() || null])
       );
       body.projectOnly = projectOnlyBox.checked;
+      body.sendOrders = sendOrdersBox.checked;
 
-      // Decision 0547 — only the project-only tick changed: nothing the next load overwrites, so no warning.
+      // Decision 0547 — only the project-only tick changed: nothing the next load overwrites, so no warning (0759: nor the orders tick).
       const detailsChanged = Object.entries(fields).some(([k, input]) => input.value.trim() !== String(s[k] ?? "").trim());
       if (!detailsChanged) {
-        send("PUT", { projectOnly: body.projectOnly }, reload);
+        send("PUT", { projectOnly: body.projectOnly, sendOrders: body.sendOrders }, reload);
         return;
       }
 
@@ -1029,7 +1043,7 @@ function openSupplier(s) {
        * single column it had. Stacked again on a narrow window.
        */
       el("div", { class: "suppliercols" }, [
-        el("div", { class: "suppliermain" }, [form, projectOnlyRow, layoutsSection(s), problem].filter(Boolean)),
+        el("div", { class: "suppliermain" }, [form, projectOnlyRow, sendOrdersRow, layoutsSection(s), problem].filter(Boolean)),
         el("div", { class: "supplierside" }, [portal]),
       ]),
     ].filter(Boolean)

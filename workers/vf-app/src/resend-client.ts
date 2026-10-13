@@ -18,8 +18,11 @@
 
 export interface SendEmailInput {
   from: string;
-  to: string;
-  cc?: string | null;
+  /** Decision 0759: one address, or several (an order to all of a supplier's orders addresses). */
+  to: string | string[];
+  cc?: string | string[] | null;
+  /** Decision 0759: where a reply goes — the order's buyer or Purchasing, not the sending address. */
+  replyTo?: string | null;
   subject: string;
   text: string;
   /** Decision 0622: an HTML body beside the text one, for a report's table. */
@@ -47,8 +50,9 @@ export async function sendEmailViaResend(apiKey: string, input: SendEmailInput):
       },
       body: JSON.stringify({
         from: input.from,
-        to: [input.to],
-        ...(input.cc ? { cc: [input.cc] } : {}),
+        to: Array.isArray(input.to) ? input.to : [input.to],
+        ...(input.cc && (!Array.isArray(input.cc) || input.cc.length) ? { cc: Array.isArray(input.cc) ? input.cc : [input.cc] } : {}),
+        ...(input.replyTo ? { reply_to: input.replyTo } : {}),
         subject: input.subject,
         text: input.text,
         ...(input.html ? { html: input.html } : {}),

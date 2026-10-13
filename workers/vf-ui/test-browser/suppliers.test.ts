@@ -889,7 +889,8 @@ describe("project-only expenditure, per supplier site — decision 0547", () => 
     box.checked = true;
     save();
     await new Promise((r) => setTimeout(r, 0));
-    expect(sent).toEqual([{ method: "PUT", path: "/api/suppliers/s1", body: { projectOnly: true } }]);
+    // Decision 0759: with the orders tick beside it, likewise VibeFinance's own.
+    expect(sent).toEqual([{ method: "PUT", path: "/api/suppliers/s1", body: { projectOnly: true, sendOrders: true } }]);
   });
 
   it("goes with the details when they changed too", async () => {

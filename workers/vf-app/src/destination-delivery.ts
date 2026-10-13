@@ -15,6 +15,7 @@ import {
   routePartKey,
   storeRoutePart,
 } from "./route-messages.js";
+import { DEFAULT_ORDERS_OUT, ORDERS_OUT } from "./orders-out.js";
 
 /**
  * **HTTPS out and the delivery engine — decision 0585**, slice 1 of the
@@ -682,13 +683,25 @@ export async function handleCreateDestination(
   if (!connector || connector.direction !== "destination") {
     return { status: 400, body: { error: `there is no destination connector ${connectorId}`, reason: "unknown_connector" } };
   }
-  if (connector.status !== "available" || (connector.routeId !== HTTPS_OUT && connector.routeId !== "erp-csv" && connector.routeId !== SFTP_OUT)) {
+  if (connector.status !== "available" || (connector.routeId !== HTTPS_OUT && connector.routeId !== "erp-csv" && connector.routeId !== SFTP_OUT && connector.routeId !== ORDERS_OUT)) {
     return { status: 409, body: { error: `${connectorId} is not available yet`, reason: "not_available" } };
   }
   const process = await db.prepare("SELECT id, subject_type FROM processes WHERE id = ?").bind(processId).first<{ id: string; subject_type: string }>();
   if (!process) return { status: 404, body: { error: `process ${processId} does not exist` } };
-  // Decision 0651: a destination sends invoices on, so only an invoice process takes one.
-  if (process.subject_type !== "invoice") return { status: 409, body: { error: `process ${processId} does not send invoices`, reason: "process_not_invoices" } };
+  /**
+   * Decision 0651: a destination sends invoices on, so only an invoice
+   * process takes one — and, since decision 0759, a purchase order
+   * process takes Orders to suppliers, and only that.
+   */
+  const ordersOut = connector.routeId === ORDERS_OUT;
+  if (process.subject_type === "purchase_order" ? !ordersOut : process.subject_type !== "invoice" || ordersOut) {
+    return {
+      status: 409,
+      body: process.subject_type === "purchase_order" || ordersOut
+        ? { error: ordersOut ? `process ${processId} does not move purchase orders` : `process ${processId} sends orders to suppliers only`, reason: ordersOut ? "process_not_orders" : "process_orders_only" }
+        : { error: `process ${processId} does not send invoices`, reason: "process_not_invoices" },
+    };
+  }
   const taken = await db
     .prepare("SELECT 1 FROM route_instances WHERE process_id = ? AND source_id IS NULL AND lower(name) = lower(?) AND (status IS NULL OR status != 'retired')")
     .bind(processId, name)
@@ -700,6 +713,17 @@ export async function handleCreateDestination(
       .bind(processId, connector.routeId)
       .first();
     if (existing) return { status: 409, body: { error: `this process already has ${connectorId}, and has one only`, reason: "one_per_process" } };
+  }
+  if (ordersOut) {
+    // Decision 0759: paused until started; sends what is released from then on.
+    const ordersId = `dest-${crypto.randomUUID().slice(0, 8)}`;
+    await db
+      .prepare(
+        "INSERT INTO route_instances (id, route_id, process_id, name, status, settings_json, created_by, connector_id, connector_version) VALUES (?, ?, ?, ?, 'paused', ?, ?, ?, ?)"
+      )
+      .bind(ordersId, ORDERS_OUT, processId, name, JSON.stringify(DEFAULT_ORDERS_OUT), userId, connector.id, connector.version)
+      .run();
+    return { status: 201, body: { id: ordersId, name, routeId: ORDERS_OUT, connectorId: connector.id, status: "paused" } };
   }
   if (connector.routeId === "erp-csv") {
     // The file is downloaded from the ERP export screen; sending, and its exports, are as 0552–0558.

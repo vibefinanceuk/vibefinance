@@ -307,6 +307,8 @@ const PROXIED_TO_INSTANCE: RegExp[] = [
   /^\/route-instances\/[^/]+\/units$/,
   // Any Destination's deliveries — decision 0586.
   /^\/route-instances\/[^/]+\/deliveries$/,
+  // Decision 0759: an Orders to suppliers Destination's settings, sends and start.
+  /^\/route-instances\/[^/]+\/orders-out(\/start)?$/,
   // Replace a key — decision 0581.
   /^\/sources\/[^/]+\/keys\/[^/]+\/replace$/,
   // Create → Upload documents — decision 0573.
@@ -499,6 +501,8 @@ const PROXIED_TO_INSTANCE: RegExp[] = [
   /^\/purchase-orders\/[^/]+\/supplier-messages(\/seen)?$/,
   // Decision 0754: an order's Timeline and Chat, and its Attachments.
   /^\/purchase-orders\/[^/]+\/(timeline|comments|people|collaborators(\/[^/]+)?|attachments(\/[^/]+\/\d+\/url)?)$/,
+  // Decision 0759: Send to supplier.
+  /^\/purchase-orders\/[^/]+\/send-to-supplier$/,
   // Finding one of our own units, and re-routing (decision 0224).
   /^\/org\/units\/search$/,
   /^\/invoices\/[^/]+\/org$/,

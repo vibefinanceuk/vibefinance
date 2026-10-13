@@ -429,17 +429,25 @@ describe("Process routes — decision 0557", () => {
 });
 
 describe("a process that moves purchase orders — decision 0749", () => {
-  it("says so, takes Orders in and Orders by email, and adds no destination", async () => {
+  it("says so, takes Orders in and Orders by email, and adds Orders to suppliers only (decision 0759)", async () => {
     strings["processroutes.subject.purchase_order"] = "Moves purchase orders";
     strings["processroutes.subject.purchase_order.note"] = "Purchase orders reach this process from Purchase Orders and from procurement systems.";
     stub([], { "/api/process-routes": { ...FLOW, process: { ...FLOW.process, name: "Purchase Orders", subjectType: "purchase_order" }, sources: [], destinations: [] } });
     await openScreen("/process-routes.js");
     expect(text("#pr-subject")).toBe("Moves purchase orders");
     expect(text("#pr-subject-note")).toBe("Purchase orders reach this process from Purchase Orders and from procurement systems.");
-    expect([...document.querySelectorAll(".prpanel .statebuttons button")].map((b) => b.textContent)).toEqual([strings["processroutes.addsource"] ?? "processroutes.addsource"]);
+    expect([...document.querySelectorAll(".prpanel .statebuttons button")].map((b) => b.textContent)).toEqual([
+      strings["processroutes.addsource"] ?? "processroutes.addsource",
+      strings["httpsout.adddestination"] ?? "httpsout.adddestination",
+    ]);
     (document.querySelector(".prpanel .statebuttons button") as HTMLElement).click();
     await settle();
     expect([...document.querySelectorAll(".popout select option")].map((o) => (o as HTMLOptionElement).value)).toEqual(["https", "email"]);
+    document.querySelector(".backdrop")?.remove();
+    // Decision 0759: its one destination, Orders to suppliers.
+    ([...document.querySelectorAll(".prpanel .statebuttons button")][1] as HTMLElement).click();
+    await settle();
+    expect([...document.querySelectorAll("#dest-connector option")].map((o) => (o as HTMLOptionElement).value)).toEqual(["orders-email-out"]);
   });
 });
 

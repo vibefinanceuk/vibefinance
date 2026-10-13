@@ -710,6 +710,20 @@ export async function openPurchaseOrder(summary, { onDone = null } = {}) {
     ask.id = "po-ask-supplier";
     stateButtons.push(ask);
   }
+  /**
+   * **Send to supplier — decision 0759**: where the Purchase Orders process
+   * has Orders to suppliers, whoever works orders sends the order as it
+   * stands (or again), to the address the order of preference finds, or
+   * one given here.
+   */
+  const sending = await fetch(`/api/purchase-orders/${encodeURIComponent(order.order_number)}/send-to-supplier`)
+    .then((r) => (r.ok ? r.json() : null))
+    .catch(() => null);
+  if (sending?.available && (hasMyPermission("AP.Purchasing") || hasMyPermission("Admin.Configure"))) {
+    const send = actionLink("post", { label: t("ordersout.send"), onclick: () => openSendToSupplier(order.order_number, sending, reopen) });
+    send.id = "po-send";
+    stateButtons.push(send);
+  }
   if (order.status !== "closed") {
     if (order.status === "on_hold") {
       const release = actionLink("releasehold", { onclick: () => setStatus({ status: "active" }) });
@@ -757,6 +771,8 @@ export async function openPurchaseOrder(summary, { onDone = null } = {}) {
       order.status === "on_hold" ? el("div", { class: "warn", text: `${t("purchaseorders.hold")}: ${order.hold_reason}` }) : null,
       // Decision 0752: the question waiting on the supplier.
       supplierChat?.query ? el("div", { class: "warn", id: "po-supplierquery", text: supplierQueryText(supplierChat.query) }) : null,
+      // Decision 0759: the last time it was sent to the supplier, or why not.
+      sending?.sends?.length ? sentLine(sending.sends[0]) : null,
       header,
       el("h4", { text: t("purchaseorders.lines") }),
       linesTable,
@@ -825,6 +841,67 @@ export async function openPurchaseOrder(summary, { onDone = null } = {}) {
  * figures and state, and every receipt and return behind them. Left out
  * when it cannot be read; said plainly when nothing has been received.
  */
+/** Decision 0759: the order's latest send, in a line above its details. */
+function sentLine(last) {
+  const words = t(`ordersout.line.${last.status}`)
+    .replace("{to}", (last.to ?? []).join(", "))
+    .replace("{when}", last.at ? new Date(last.at).toLocaleString() : "")
+    .replace("{kind}", t(`ordersout.kind.${last.kind}`))
+    .replace("{error}", last.error ?? "");
+  return el("div", { class: last.status === "sent" ? "muted sm" : "warn", id: "po-sentline", text: words });
+}
+
+/**
+ * **Send to supplier, by hand — decision 0759.** Who it goes to and why
+ * (which of the order of preference found the address), or that there is
+ * none; an address may be given instead. Sent, the order opens again.
+ */
+function openSendToSupplier(orderNumber, sending, onSent) {
+  const problem = el("div", { class: "warn", id: "po-send-problem" });
+  const given = el("input", { type: "text", id: "po-send-to", placeholder: t("ordersout.givehint") });
+  const close = () => backdrop.remove();
+  const go = actionLink("post", {
+    primary: true,
+    label: t("ordersout.sendnow"),
+    onclick: async () => {
+      problem.textContent = "";
+      let response;
+      try {
+        response = await fetch(`/api/purchase-orders/${encodeURIComponent(orderNumber)}/send-to-supplier`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(given.value.trim() ? { to: given.value.trim() } : {}),
+        });
+      } catch {
+        problem.textContent = t("ordersout.failed");
+        return;
+      }
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        problem.textContent = body.reason === "bad_address" ? t("ordersout.badaddress") : body.reason === "no_address" ? t("ordersout.noaddress") : body.error ? `${t("ordersout.failed")} ${body.error}` : t("ordersout.failed");
+        return;
+      }
+      close();
+      await onSent?.();
+    },
+  });
+  go.id = "po-send-go";
+  const to = sending.to?.length
+    ? el("div", { id: "po-send-recipients" }, [el("strong", { text: sending.to.join(", ") }), el("div", { class: "muted sm", text: t(`ordersout.from.${sending.from}`) })])
+    : el("div", { class: "warn", id: "po-send-recipients", text: t("ordersout.noaddress") });
+  const backdrop = el("div", { class: "backdrop", onclick: (e) => e.target === backdrop && close() }, [
+    el("div", { class: "popout", role: "dialog", "aria-label": t("ordersout.send") }, [
+      el("div", { class: "cardhead" }, [el("h3", { text: t("ordersout.sendtitle").replace("{order}", orderNumber) }), el("div", { class: "statebuttons" }, [go, actionLink("close", { onclick: close })])]),
+      el("p", { class: "muted sm", text: t("ordersout.sendnote") }),
+      to,
+      sending.supplierSendsOwn ? el("p", { class: "warn sm", id: "po-send-own", text: t("ordersout.supplierownwarn") }) : null,
+      el("div", { class: "kf" }, [el("label", { for: "po-send-to", text: t("ordersout.give") }), given]),
+      problem,
+    ].filter(Boolean)),
+  ]);
+  document.body.append(backdrop);
+}
+
 async function receiptsSection(orderNumber) {
   let body;
   try {

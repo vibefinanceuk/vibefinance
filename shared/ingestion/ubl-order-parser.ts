@@ -58,6 +58,12 @@ export interface ParsedOrder {
   orderTypeCode?: string;
   currency?: string;
   sellerPartyId?: string;
+  /**
+   * **Who at the supplier the order is for — decision 0759**: the seller's
+   * contact email (`cac:SellerSupplierParty/cac:Party/cac:Contact/
+   * cbc:ElectronicMail`), first in line for Orders to suppliers.
+   */
+  sellerContactEmail?: string;
   buyerPartyId?: string;
   lineExtensionAmount?: number;
   taxExclusiveAmount?: number;
@@ -102,6 +108,14 @@ function partyId(party: unknown): string | undefined {
   const identification = inner?.PartyIdentification;
   const first = Array.isArray(identification) ? identification[0] : identification;
   return getText(asObject(first)?.ID);
+}
+
+/** A party's contact email, from `cac:Party/cac:Contact/cbc:ElectronicMail` — decision 0759. */
+function contactEmail(party: unknown): string | undefined {
+  const inner = asObject(asObject(party)?.Party);
+  const contact = asObject(inner?.Contact);
+  const mail = getText(contact?.ElectronicMail)?.trim();
+  return mail ? mail : undefined;
 }
 
 function parseXml(xml: string): Record<string, unknown> | undefined {
@@ -194,6 +208,7 @@ function orderFrom(order: Record<string, unknown>, orderNumber: string | undefin
     orderTypeCode: getText(order.OrderTypeCode),
     currency: getText(order.DocumentCurrencyCode),
     sellerPartyId: partyId(order.SellerSupplierParty),
+    ...(contactEmail(order.SellerSupplierParty) ? { sellerContactEmail: contactEmail(order.SellerSupplierParty) } : {}),
     buyerPartyId: partyId(order.BuyerCustomerParty),
     // All optional: the spec says AnticipatedMonetaryTotal is an
     // optional class, and an order with no totals is conforming.

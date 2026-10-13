@@ -205,10 +205,14 @@ export async function handleProcessRoutes(
       `SELECT i.id, i.name, i.status, i.route_id, i.started_at, i.unit_ids, i.connector_id, i.connector_version, r.name AS route_name,
               -- Decision 0585: what an HTTPS out Destination has waiting, and what failed.
               (SELECT count(*) FROM destination_deliveries d WHERE d.instance_id = i.id AND d.status IN ('pending', 'retrying')) AS sending,
-              (SELECT count(*) FROM destination_deliveries d WHERE d.instance_id = i.id AND d.status = 'failed') AS failed,
+              (SELECT count(*) FROM destination_deliveries d WHERE d.instance_id = i.id AND d.status = 'failed')
+                -- Decision 0759: an order not sent for want of an address, or refused, is failed for Orders to suppliers.
+                + (SELECT count(*) FROM purchase_order_sends ps WHERE ps.instance_id = i.id AND ps.status IN ('failed', 'no_address')
+                     AND NOT EXISTS (SELECT 1 FROM purchase_order_sends later WHERE later.order_number = ps.order_number AND later.status = 'sent' AND later.created_at > ps.created_at)) AS failed,
               -- Decision 0599: whether it has ever sent, or tried to: a message, or an attempt.
               (SELECT count(*) FROM route_messages m WHERE m.destination_id = i.id)
-                + (SELECT count(*) FROM destination_deliveries d WHERE d.instance_id = i.id AND (d.attempts > 0 OR d.status IN ('delivered', 'failed', 'retrying'))) AS sent
+                + (SELECT count(*) FROM destination_deliveries d WHERE d.instance_id = i.id AND (d.attempts > 0 OR d.status IN ('delivered', 'failed', 'retrying')))
+                + (SELECT count(*) FROM purchase_order_sends ps WHERE ps.instance_id = i.id) AS sent
        FROM route_instances i JOIN routes r ON r.id = i.route_id
        WHERE i.process_id = ? AND i.source_id IS NULL
        -- Decision 0597: a retired Destination stays on the flow, last and dimmed, as a retired Source does.
@@ -433,13 +437,15 @@ export async function handleDeleteDestination(db: D1Database, id: string): Promi
   const row = await destinationRow(db, id);
   if (isResultRow(row)) return row;
   // Decision 0620: SFTP out too.
-  if (row.route_id !== "https-out" && row.route_id !== "sftp-out") return { status: 409, body: { error: "only an HTTPS or SFTP out Destination is deleted", reason: "not_https_out" } };
+  // Decision 0759: and Orders to suppliers, until it has sent or tried to.
+  if (row.route_id !== "https-out" && row.route_id !== "sftp-out" && row.route_id !== "orders-email-out") return { status: 409, body: { error: "only an HTTPS or SFTP out Destination is deleted", reason: "not_https_out" } };
   const sent = await db
     .prepare(
       `SELECT (SELECT count(*) FROM route_messages WHERE destination_id = ?)
-            + (SELECT count(*) FROM destination_deliveries WHERE instance_id = ? AND (attempts > 0 OR status IN ('delivered', 'failed', 'retrying'))) AS n`
+            + (SELECT count(*) FROM destination_deliveries WHERE instance_id = ? AND (attempts > 0 OR status IN ('delivered', 'failed', 'retrying')))
+            + (SELECT count(*) FROM purchase_order_sends WHERE instance_id = ?) AS n`
     )
-    .bind(id, id)
+    .bind(id, id, id)
     .first<{ n: number }>();
   if ((sent?.n ?? 0) > 0) return { status: 409, body: { error: "it has sent, or tried to: retire it instead, so what it sent is kept", reason: "has_sent" } };
   const requested = await db.prepare("SELECT count(*) AS n FROM destination_requests WHERE instance_id = ?").bind(id).first<{ n: number }>();

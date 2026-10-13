@@ -50,6 +50,8 @@ describe("the standard routes", () => {
       ["erp-csv", "destination", "standard", true],
       // Decision 0585.
       ["https-out", "destination", "standard", true],
+      // Decision 0759: Orders to suppliers, by name.
+      ["orders-email-out", "destination", "standard", true],
       // Decision 0620.
       ["sftp-out", "destination", "standard", true],
     ]);

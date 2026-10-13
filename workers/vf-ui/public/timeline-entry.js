@@ -85,6 +85,10 @@ export const EVENTS = {
   order_invoiced: { tone: "info", icon: "documents" },
   order_credited: { tone: "info", icon: "return" },
   supplier_opened: { tone: "info", icon: "suppliers" },
+  // Decision 0759 — an order sent to its supplier, or not.
+  sent_to_supplier: { tone: "ok", icon: "post" },
+  send_failed: { tone: "bad", icon: "alertcircle" },
+  not_sent: { tone: "warn", icon: "systemalert" },
 };
 
 /** The date part of a shown moment, so a card can leave it off when the one before had the same day. */

@@ -90,6 +90,8 @@ export interface ConnectorDefinition {
   vendorDocs?: string;
   /** Decision 0605: available, but not yet proven against the real system. */
   maturity?: "first_version";
+  /** Decision 0759: what it carries, where not invoices — a purchase order process's Destination. */
+  subject?: "purchase_order";
 }
 
 const ALL_AUTH: ConnectorAuthType[] = ["none", "api_key_header", "bearer", "basic", "oauth2_client_credentials"];
@@ -250,6 +252,24 @@ export const STANDARD_CONNECTORS: ConnectorDefinition[] = [
     transport: "sftp",
     formats: ["vf_json", "csv"],
     multiple: true,
+  },
+  /**
+   * **Orders to suppliers — decision 0759.** The Purchase Orders process's
+   * Destination: each released order, change and cancellation emailed to
+   * the supplier, with the order as Peppol BIS Order 3 UBL. One per process.
+   */
+  {
+    id: "orders-email-out",
+    version: 1,
+    direction: "destination",
+    publisher: "standard",
+    status: "available",
+    categories: ["generic"],
+    routeId: "orders-email-out",
+    transport: "email",
+    formats: ["ubl"],
+    multiple: false,
+    subject: "purchase_order",
   },
   // --- Sources ----------------------------------------------------------------------
   { id: "email-in", version: 1, direction: "source", publisher: "standard", status: "available", categories: ["generic"], routeId: "email-in", transport: "email", formats: ["detected"], mechanism: "email", multiple: true },
