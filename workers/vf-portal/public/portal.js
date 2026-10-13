@@ -97,7 +97,7 @@ export async function render() {
           go("documents");
         })
       : current === "order" && opened
-        ? orderPage(opened.body, { statusChip, money, back: () => go("documents") }, handlers)
+        ? orderPage(opened.body, { statusChip, money, back: () => go("documents"), conversation: (body) => conversation(body, opened.inv) }, handlers)
       : current === "receipt" && opened
         ? receiptPage(opened.body, { statusChip, back: () => go("documents"), conversation: (body) => conversation(body, opened.inv) }, handlers)
         : current === "invoice" && opened
@@ -386,6 +386,8 @@ export async function openInvoice(inv) {
   if (inv.documentType === "purchase_order") {
     const { res, body } = await api(`/orders/${encodeURIComponent(inv.linkId)}/${encodeURIComponent(inv.id)}`);
     if (!res.ok) return;
+    // Decision 0752: opening it reads its messages, as a receipt's.
+    if ((inv.messages?.unread ?? 0) > 0) inv.messages = { ...inv.messages, unread: 0 };
     opened = { inv, body };
     current = "order";
     window.scrollTo?.(0, 0);
@@ -455,7 +457,8 @@ export function conversation(body, inv) {
       if (!box.value.trim()) return;
       send.disabled = true;
       // Decision 0740: about a goods receipt, to the receipt.
-      const about = inv.documentType === "goods_receipt" ? "receipts" : "invoices";
+      // Decision 0752: about a purchase order, to the order.
+      const about = inv.documentType === "goods_receipt" ? "receipts" : inv.documentType === "purchase_order" ? "orders" : "invoices";
       const { res } = await api(`/${about}/${encodeURIComponent(inv.linkId)}/${encodeURIComponent(inv.id)}/messages`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },

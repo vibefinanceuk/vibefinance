@@ -189,6 +189,9 @@ describe("replying — decision 0721", () => {
     };
     expect((await reply(d, "good", "pl-acme", "gr1", { body: "You recorded 8?" }, "receipts")).status).toBe(201);
     expect(posted).toEqual(["https://acme.example/portal/receipts/gr1/messages"]);
+    // Decision 0752: and about a purchase order, to the order.
+    expect((await reply(d, "good", "pl-acme", "po1", { body: "Delivery moves to the 22nd." }, "orders")).status).toBe(201);
+    expect(posted.at(-1)).toBe("https://acme.example/portal/orders/po1/messages");
   });
 
   it("not for a link that is not theirs, and signed out for a stale session", async () => {

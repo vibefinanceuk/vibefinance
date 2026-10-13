@@ -351,6 +351,7 @@ import {
 } from "./receipt-timeline.js";
 import { handleHttpsReceipts, receiptsReport, receiptsSource, receiptsUploadSource, receiveReceipts, RECEIPTS_FILE_ROUTE } from "./receipts-in-route.js";
 import { handleGetOrdersProcess, handleHttpsOrders, handleSetUpOrdersProcess, ordersReport, ordersSource, ordersUploadSource, settleOrderInstance, uploadOrders } from "./purchase-orders-in.js";
+import { handleGetOrderSupplierMessages, handlePortalOrderReply, handlePostOrderSupplierMessage, markOrderSeen, orderConversationsFor } from "./order-messages.js";
 import { continueOrderInstance, handleFixIntake, handleGetIntake, handleIntakeSuppliers, handleListIntake, handleRejectIntake, handleReleaseIntake, isOrderCheckingTask } from "./order-checking.js";
 import {
   handleGetApTeamEmail,
@@ -1168,11 +1169,17 @@ export default {
     }
 
     // Decision 0751: a purchase order shared with this supplier, read only.
-    const portalOrderMatch = pathname.match(/^\/portal\/orders\/([^/]+)$/);
-    if (portalOrderMatch && request.method === "GET") {
+    // Decision 0752: and the supplier writes about one.
+    const portalOrderMatch = pathname.match(/^\/portal\/orders\/([^/]+)(\/messages)?$/);
+    if (portalOrderMatch && (portalOrderMatch[2] ? request.method === "POST" : request.method === "GET")) {
       const { db } = resolveTenant(request, env);
       const auth = await portalAuth(db, request, isPublicKeyJwk(env.LICENCE_SIGNING_PUBLIC_KEY) ? env.LICENCE_SIGNING_PUBLIC_KEY : undefined, env.ENVIRONMENT_ID);
       if (!auth.ok) return json(auth.body, auth.status);
+      if (portalOrderMatch[2]) {
+        const body = ((await request.json().catch(() => ({}))) ?? {}) as Record<string, unknown>;
+        const result = await handlePortalOrderReply(db, auth.claims, decodeURIComponent(portalOrderMatch[1]), body, messageEmail(env));
+        return json(result.body, result.status);
+      }
       const result = await getPortalOrder(db, auth.claims, decodeURIComponent(portalOrderMatch[1]));
       return json(result.body, result.status);
     }
@@ -6374,6 +6381,12 @@ export default {
       const auth = await authenticatePerson(db, request, env);
       if (!auth.user) return json({ error: auth.reason }, 401);
       const result = await handleListReceiptConversations(db, auth.user.id);
+      // Decision 0752: and purchase orders whose supplier wrote to this person.
+      const orders = await orderConversationsFor(db, auth.user.id);
+      if (result.status === 200 && orders.length > 0) {
+        const body = result.body as { conversations: { lastAt?: string | null }[] };
+        body.conversations = [...body.conversations, ...orders].sort((a, b) => String(b.lastAt ?? "").localeCompare(String(a.lastAt ?? "")));
+      }
       return json(result.body, result.status);
     }
     const conversationDoneMatch = pathname.match(/^\/receipt-conversations\/([^/]+)\/done$/);
@@ -6730,6 +6743,40 @@ export default {
      * (Admin.Configure). Before `/purchase-orders/:orderNumber`.
      */
     /**
+     * **The conversation with the supplier about an order — decision
+     * 0752.** Read by whoever reads orders or works them; written by
+     * AP.Purchasing or Admin.Configure. Reading it, or `…/seen`, catches the
+     * person up for Conversations.
+     */
+    const orderMessagesMatch = pathname.match(/^\/purchase-orders\/([^/]+)\/supplier-messages(\/seen)?$/);
+    if (orderMessagesMatch && orderMessagesMatch[1] !== "intake") {
+      const { db } = resolveTenant(request, env);
+      const denied = (status: number) => json({ error: t(status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, status);
+      const orderNumber = decodeURIComponent(orderMessagesMatch[1]);
+      const link = env.LICENCE_SERVICE && env.ENVIRONMENT_ID && env.VF_LICENCE_API_KEY ? { service: env.LICENCE_SERVICE, environmentId: env.ENVIRONMENT_ID, apiKey: env.VF_LICENCE_API_KEY } : null;
+      if (request.method === "GET" && !orderMessagesMatch[2]) {
+        const auth = await requireAnyPermission(db, request, ["AP.Purchasing", "Admin.Configure", "AP.Validate"], sessionContext(env));
+        if (!auth.authorized) return denied(auth.status);
+        const result = await handleGetOrderSupplierMessages(db, link, orderNumber, auth.user.id);
+        return json(result.body, result.status);
+      }
+      if (request.method === "POST" && orderMessagesMatch[2]) {
+        const auth = await requireAnyPermission(db, request, ["AP.Purchasing", "Admin.Configure", "AP.Validate"], sessionContext(env));
+        if (!auth.authorized) return denied(auth.status);
+        await markOrderSeen(db, auth.user.id, orderNumber);
+        return json({ done: true }, 200);
+      }
+      if (request.method === "POST") {
+        const auth = await requireAnyPermission(db, request, ["AP.Purchasing", "Admin.Configure"], sessionContext(env));
+        if (!auth.authorized) return denied(auth.status);
+        const body = ((await request.json().catch(() => null)) ?? {}) as Record<string, unknown>;
+        const result = await handlePostOrderSupplierMessage(db, link, orderNumber, { id: auth.user.id, name: auth.user.name }, body, messageEmail(env));
+        return json(result.body, result.status);
+      }
+      return json({ error: "method not allowed" }, 405);
+    }
+
+    /**
      * **Orders on their way in — decision 0750.** Read by whoever works
      * them (AP.Purchasing), configures the process, or reads orders
      * (AP.Validate); worked (fix, release, reject) by AP.Purchasing, once
@@ -6854,7 +6901,8 @@ export default {
     const poMatch = pathname.match(/^\/purchase-orders\/([^/]+)$/);
     if (poMatch && request.method === "GET") {
       const { db } = resolveTenant(request, env);
-      const auth = await requirePermission(db, request, "AP.Validate", sessionContext(env));
+      // Decision 0752: and AP.Purchasing, to open an order from Conversations.
+      const auth = await requireAnyPermission(db, request, ["AP.Validate", "AP.Purchasing"], sessionContext(env));
       if (!auth.authorized) {
         return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
       }

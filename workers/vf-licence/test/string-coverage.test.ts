@@ -3800,6 +3800,10 @@ const KEYS_THE_INTERFACE_USES = [
   // Ask supplier on a receipt, and the supplier in Conversations (decision 0748).
   "receipts.asksupplier.note",
   "receipts.conv.tag.supplier",
+  // The conversation about an order (decision 0752).
+  "purchaseorders.supplierchat",
+  "purchaseorders.asksupplier.note",
+  "purchaseorders.conv.order",
   // Purchase orders shared with suppliers (decision 0751).
   "apsetup.network.orders",
   "apsetup.network.orders.none",

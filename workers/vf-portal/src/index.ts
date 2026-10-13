@@ -108,10 +108,10 @@ export default {
     const oneReceipt = url.pathname.match(/^\/api\/receipts\/([^/]+)\/([^/]+)$/);
     if (oneReceipt && request.method === "GET") return signedOutClears(await receipt(deps, session, decodeURIComponent(oneReceipt[1]), decodeURIComponent(oneReceipt[2])));
     // Decision 0721: replying to a customer about one invoice; 0740, about a goods receipt.
-    const message = url.pathname.match(/^\/api\/(invoices|receipts)\/([^/]+)\/([^/]+)\/messages$/);
+    const message = url.pathname.match(/^\/api\/(invoices|receipts|orders)\/([^/]+)\/([^/]+)\/messages$/);
     if (message && request.method === "POST") {
       const body = await request.json().catch(() => ({}));
-      return signedOutClears(await reply(deps, session, decodeURIComponent(message[2]), decodeURIComponent(message[3]), body, message[1] as "invoices" | "receipts"));
+      return signedOutClears(await reply(deps, session, decodeURIComponent(message[2]), decodeURIComponent(message[3]), body, message[1] as "invoices" | "receipts" | "orders"));
     }
     // Decision 0726: sending an invoice created in the network.
     if (url.pathname === "/api/submission-companies" && request.method === "GET") return signedOutClears(await submissionCompanies(deps, session));

@@ -16,6 +16,10 @@ function mountShell() {
 const STRINGS = {
   locale: "en",
   strings: {
+    // The conversation about an order (decision 0752).
+    "purchaseorders.supplierchat": "The conversation with the supplier",
+    "supplierchat.banner": "Asked {supplier} on {when} ({who}), awaiting their reply",
+    "supplierchat.to": "To {people}",
     // Orders held at Checking (decision 0750).
     "purchaseorders.waiting.heading": "Waiting in the Purchase Orders process: {n}",
     "poin.kind.change": "Change to an order",
@@ -1293,5 +1297,45 @@ describe("orders waiting in the process — decision 0750", () => {
     });
     await openScreen();
     expect(document.getElementById("po-waiting")).toBeNull();
+  });
+});
+
+describe("the conversation with the supplier about an order — decision 0752", () => {
+  const CHAT = {
+    available: true,
+    canWrite: true,
+    supplierName: "Northwind",
+    recipients: ["jo@northwind.example"],
+    awaiting: true,
+    query: { supplierName: "Northwind", askedBy: "Pat", askedAt: "2026-10-12T10:00:00Z" },
+    messages: [{ id: "m1", direction: "from_supplier", kind: "message", authorName: "jo@northwind.example", authorEmail: "jo@northwind.example", body: "Delivery moves to the 22nd.", lines: null, at: "2026-10-12T11:00:00Z", emailed: [], emailError: null }],
+  };
+
+  it("shows it on the order, with the question waiting, at the order's own address", async () => {
+    stubFetch({
+      "/api/purchase-orders": { body: ONE_ORDER },
+      "/api/purchase-orders/PO-500": { body: PO_500_DETAIL },
+      "/api/purchase-orders/PO-500/supplier-messages": { body: CHAT },
+    });
+    await openScreen();
+    (document.querySelector("tbody tr") as HTMLElement)?.click();
+    await vi.waitFor(() => expect(document.getElementById("po-supplier")).not.toBeNull());
+    expect(document.querySelector("#po-supplier h4")?.textContent).toBe("The conversation with the supplier");
+    expect(document.querySelector("#po-supplier .suppliertab")?.textContent).toContain("Delivery moves to the 22nd.");
+    expect(document.getElementById("po-supplierquery")?.textContent).toMatch(/^Asked Northwind on .+ \(Pat\), awaiting their reply$/);
+    // Ask supplier is for whoever works orders; nobody here holds AP.Purchasing or Admin.Configure.
+    expect(document.getElementById("po-ask-supplier")).toBeNull();
+  });
+
+  it("has none when the order is not shared and nothing has been written", async () => {
+    stubFetch({
+      "/api/purchase-orders": { body: ONE_ORDER },
+      "/api/purchase-orders/PO-500": { body: PO_500_DETAIL },
+      "/api/purchase-orders/PO-500/supplier-messages": { body: { ...CHAT, available: false, canWrite: false, recipients: [], messages: [], query: null, awaiting: false } },
+    });
+    await openScreen();
+    (document.querySelector("tbody tr") as HTMLElement)?.click();
+    await vi.waitFor(() => expect(document.querySelector(".popout")?.textContent).toContain("PO-500"));
+    expect(document.getElementById("po-supplier")).toBeNull();
   });
 });

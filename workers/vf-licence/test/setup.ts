@@ -337,6 +337,7 @@ import receiptQuerySql from "../migrations/0346_receipt_query_strings.sql?raw";
 import purchaseOrdersInSql from "../migrations/0347_purchase_orders_in_strings.sql?raw";
 import orderCheckingSql from "../migrations/0348_order_checking_strings.sql?raw";
 import orderSharingSql from "../migrations/0349_order_sharing_strings.sql?raw";
+import orderConversationSql from "../migrations/0350_order_conversation_strings.sql?raw";
 
 function stripSqlComments(sql: string): string {
   return sql
@@ -707,5 +708,6 @@ export async function applyTestSchema(): Promise<void> {
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(purchaseOrdersInSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(orderCheckingSql)));
   await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(orderSharingSql)));
+  await env.CONTROL_DB.exec(toOneStatementPerLine(stripSqlComments(orderConversationSql)));
 
 }

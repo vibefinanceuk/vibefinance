@@ -4,6 +4,7 @@ import { BARE_SQL, bareVat, loadReceiptSharingConfig } from "./receipt-sharing.j
 import { EFFECTIVE_STATUS_CASE, INVOICED_AMOUNTS_JOIN } from "./purchase-order-route.js";
 import { orderFigures, receiptStateJoin } from "./goods-receipts.js";
 import { getOrgMatchingConfig } from "./po-matching.js";
+import { portalView, type MessageRow } from "./supplier-messages.js";
 
 /**
  * **Purchase orders, shared with suppliers in the network — decision
@@ -120,6 +121,9 @@ interface PortalOrderRow {
   org_unit_name: string | null;
   effective_status: string;
   receipt_state: string | null;
+  msg_total: number;
+  msg_unread: number;
+  query_open: number;
 }
 
 async function orderSelect(db: D1Database): Promise<string> {
@@ -127,7 +131,13 @@ async function orderSelect(db: D1Database): Promise<string> {
   return `
     SELECT po.id, po.order_number, po.issue_date, po.currency, po.payable_amount, po.created_at,
            po.org_unit_id, ou.name AS org_unit_name,
-           (${EFFECTIVE_STATUS_CASE}) AS effective_status, rs.state AS receipt_state
+           (${EFFECTIVE_STATUS_CASE}) AS effective_status, rs.state AS receipt_state,
+           -- Decision 0752: its conversation, what this person (the first placeholder, their link) has not read, and a question waiting.
+           (SELECT count(*) FROM purchase_order_messages m WHERE m.order_number = po.order_number) AS msg_total,
+           (SELECT count(*) FROM purchase_order_messages m WHERE m.order_number = po.order_number AND m.direction = 'to_supplier'
+              AND m.created_at > COALESCE((SELECT pr.read_at FROM portal_order_reads pr WHERE pr.link_id = ? AND pr.order_number = po.order_number), '')) AS msg_unread,
+           EXISTS (SELECT 1 FROM purchase_order_messages q WHERE q.order_number = po.order_number AND q.direction = 'to_supplier' AND q.kind = 'question'
+                   AND NOT EXISTS (SELECT 1 FROM purchase_order_messages a WHERE a.order_number = po.order_number AND a.direction = 'from_supplier' AND a.created_at >= q.created_at)) AS query_open
     FROM purchase_orders po
     LEFT JOIN org_units ou ON ou.id = po.org_unit_id
     ${INVOICED_AMOUNTS_JOIN}
@@ -158,10 +168,10 @@ function orderSummary(r: PortalOrderRow) {
     orgUnitId: r.org_unit_id,
     // Sorted among the invoices by the day it was issued, at the time it was loaded.
     receivedAt: `${r.issue_date ?? r.created_at.slice(0, 10)}T${(r.created_at.match(/\d{2}:\d{2}:\d{2}/) ?? ["00:00:00"])[0]}`,
-    status: portalOrderStatus(r.effective_status, r.receipt_state),
+    // Decision 0752: Query raised while the customer's question waits on the supplier, as an invoice's and a receipt's.
+    status: r.query_open ? "query_raised" : portalOrderStatus(r.effective_status, r.receipt_state),
     comment: null,
-    // No conversation about an order yet.
-    messages: { total: 0, unread: 0 },
+    messages: { total: r.msg_total ?? 0, unread: r.msg_unread ?? 0 },
     creditedInvoice: null,
     dueDate: null,
     buyerReference: null,
@@ -176,7 +186,7 @@ export async function listPortalOrders(db: D1Database, claims: PortalAccessClaim
   const rows = (
     await db
       .prepare(`${await orderSelect(db)} WHERE ${scope.sql}${search} ORDER BY po.issue_date DESC, po.created_at DESC, po.id DESC LIMIT ${limit + 1}`)
-      .bind(...scope.binds, ...(q ? [`%${q}%`, `%${q}%`, `%${q}%`] : []))
+      .bind(claims.linkId, ...scope.binds, ...(q ? [`%${q}%`, `%${q}%`, `%${q}%`] : []))
       .all<PortalOrderRow>()
   ).results;
   return { orders: rows.slice(0, limit).map(orderSummary), more: rows.length > limit, shared: true };
@@ -191,8 +201,13 @@ export async function listPortalOrders(db: D1Database, claims: PortalAccessClaim
 export async function getPortalOrder(db: D1Database, claims: PortalAccessClaims, orderId: string): Promise<RouteResult> {
   const scope = await orderScope(db, claims);
   if (!scope) return { status: 404, body: { error: "not found" } };
-  const row = await db.prepare(`${await orderSelect(db)} WHERE po.id = ? AND ${scope.sql}`).bind(orderId, ...scope.binds).first<PortalOrderRow>();
+  const row = await db.prepare(`${await orderSelect(db)} WHERE po.id = ? AND ${scope.sql}`).bind(claims.linkId, orderId, ...scope.binds).first<PortalOrderRow>();
   if (!row) return { status: 404, body: { error: "not found" } };
+  // Decision 0752: opened, so its messages are read, for this person.
+  await db
+    .prepare("INSERT INTO portal_order_reads (link_id, order_number, read_at) VALUES (?, ?, ?) ON CONFLICT (link_id, order_number) DO UPDATE SET read_at = excluded.read_at")
+    .bind(claims.linkId, row.order_number, new Date().toISOString())
+    .run();
   const [figures, poLines] = await Promise.all([
     orderFigures(db, row.order_number),
     db
@@ -217,5 +232,17 @@ export async function getPortalOrder(db: D1Database, claims: PortalAccessClaims,
       outstanding: f?.outstanding ?? null,
     };
   });
-  return { status: 200, body: { order: { ...orderSummary(row), lines } } };
+  const messages = portalView(
+    (await db.prepare("SELECT * FROM purchase_order_messages WHERE order_number = ? ORDER BY created_at, rowid").bind(row.order_number).all<MessageRow>()).results
+  );
+  // The conversation in place of the list's counts, as a receipt's (0740).
+  return { status: 200, body: { order: { ...orderSummary(row), lines, messages } } };
+}
+
+/** Decision 0752: the order's number when this order is one the token's person may see (shared, theirs, their companies), else null. */
+export async function portalMayReadOrder(db: D1Database, claims: PortalAccessClaims, orderId: string): Promise<string | null> {
+  const scope = await orderScope(db, claims);
+  if (!scope) return null;
+  const row = await db.prepare(`SELECT po.order_number FROM purchase_orders po WHERE po.id = ? AND ${scope.sql}`).bind(orderId, ...scope.binds).first<{ order_number: string }>();
+  return row?.order_number ?? null;
 }

@@ -172,9 +172,10 @@ export async function order(deps: Deps, session: string, linkId: string, orderId
 
 /**
  * `POST /api/invoices/:linkId/:invoiceId/messages` — the supplier writes, to the customer that link is for (0721);
- * `POST /api/receipts/:linkId/:receiptId/messages` the same about a goods receipt (decision 0740).
+ * `POST /api/receipts/:linkId/:receiptId/messages` the same about a goods receipt (decision 0740),
+ * and `POST /api/orders/:linkId/:orderId/messages` about a purchase order (decision 0752).
  */
-export async function reply(deps: Deps, session: string, linkId: string, invoiceId: string, body: unknown, about: "invoices" | "receipts" = "invoices"): Promise<Result> {
+export async function reply(deps: Deps, session: string, linkId: string, invoiceId: string, body: unknown, about: "invoices" | "receipts" | "orders" = "invoices"): Promise<Result> {
   const pairs = await linksWithAccess(deps, session);
   if (!pairs) return { status: 401, body: { error: "signed_out" } };
   const pair = pairs.find((p) => p.link.id === linkId);

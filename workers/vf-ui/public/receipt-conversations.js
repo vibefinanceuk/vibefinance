@@ -59,7 +59,47 @@ export async function fill(holder, { navScreen = "tasks" } = {}) {
   holder.hidden = false;
   const refill = () => fill(holder, { navScreen });
 
+  /**
+   * **A purchase order whose supplier wrote — decision 0752.** Open shows
+   * the order on Purchase Orders with its conversation; Done catches up
+   * without it.
+   */
+  const orderRow = (c) => {
+    const title = [words("purchaseorders.conv.order", { number: c.orderNumber }), c.organisation].filter(Boolean).join(" · ");
+    const seen = () => call(`/api/purchase-orders/${encodeURIComponent(c.orderNumber)}/supplier-messages/seen`, { method: "POST" });
+    return el("div", { class: "agentnote receiptconv orderconv", "data-order": c.orderNumber }, [
+      el("div", { class: "agentnotehead" }, [
+        el("div", {}, [
+          el("span", { class: "agentnotename", text: title }),
+          el("span", { class: "rmpill warn agentnotetag receiptconvsupplier", text: t("receipts.conv.tag.supplier") }),
+          el("span", { class: "rmpill bad agentnotetag receiptconvcount", text: words("receipts.conv.newcount", { n: c.newMessages }) }),
+          el("div", { class: "muted sm", text: metaLine(c) }),
+          c.latest ? el("div", { class: "agentnotewhy", text: words("receipts.conv.quote", { by: c.latest.by ?? "—", body: c.latest.body }) }) : null,
+        ]),
+        el("div", { class: "dobuttons" }, [
+          actionLink("expand", {
+            label: t("receipts.conv.open"),
+            onclick: async () => {
+              await seen();
+              const { openPurchaseOrder } = await import("/purchase-orders.js");
+              await openPurchaseOrder({ order_number: c.orderNumber });
+              refill();
+            },
+          }),
+          actionLink("done", {
+            label: t("receipts.conv.done"),
+            onclick: async () => {
+              const done = await seen();
+              if (done.ok) refill();
+            },
+          }),
+        ]),
+      ]),
+    ]);
+  };
+
   const row = (c) => {
+    if (c.kind === "order") return orderRow(c);
     const title = [words("receipts.conv.receipt", { number: c.receiptNumber }), c.organisation].filter(Boolean).join(" · ");
     return el("div", { class: "agentnote receiptconv", "data-receipt": c.receiptId }, [
       el("div", { class: "agentnotehead" }, [

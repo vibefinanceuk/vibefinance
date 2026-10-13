@@ -1058,8 +1058,12 @@ export async function handleGetPurchaseOrder(db: D1Database, orderNumber: string
     return { status: 404, body: { error: `no purchase order ${orderNumber}` } };
   }
 
+  // Decision 0752: whoever works orders (AP.Purchasing) reads them too, in their own companies.
+  const unit = (order.org_unit_id as string | null) ?? null;
   const visible = userId ? await unitsWherePermitted(db, userId, "AP.Validate") : null;
-  if (!isWithinScope({ units: visible }, (order.org_unit_id as string | null) ?? null)) {
+  const purchasing = userId ? await unitsWherePermitted(db, userId, "AP.Purchasing") : null;
+  const inScope = (units: string[] | null) => isWithinScope({ units }, unit) && (units === null || units.length > 0);
+  if (!isWithinScope({ units: visible }, unit) && !(userId && inScope(purchasing))) {
     // Identical to the not-found response above — an order somebody
     // is not permitted to see must not be distinguishable from one
     // that never existed.

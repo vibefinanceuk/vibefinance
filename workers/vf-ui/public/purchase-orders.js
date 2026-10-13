@@ -5,6 +5,7 @@ import { icon } from "/icons.js";
 import { currentOrgId } from "/orgs.js";
 import { donutChart } from "/charts.js";
 import { statePill, figuresTable } from "/goods-receipts.js";
+import { buildSupplierTab, fetchSupplierChat, openAskSupplier, supplierQueryText } from "/supplier-chat.js";
 
 /**
  * Loading, and now browsing, purchase orders — decisions 0371 and 0372.
@@ -564,7 +565,7 @@ function fact(label, value) {
 }
 
 /** The full detail pop-out — decision 0372, on the operator's own request: "all PO and PO Line information." */
-async function openPurchaseOrder(summary) {
+export async function openPurchaseOrder(summary) {
   const backdrop = el("div", { class: "backdrop" }, [
     el("div", { class: "panel muted", text: t("purchaseorders.loading") }),
   ]);
@@ -586,6 +587,13 @@ async function openPurchaseOrder(summary) {
     return;
   }
   const { order, lines } = await response.json();
+  /**
+   * **The conversation with the supplier — decision 0752**, as a goods
+   * receipt's (0740, 0748): offered while the order is shared with its
+   * supplier and someone there is linked, or a conversation exists.
+   */
+  const supplierUrl = `/api/purchase-orders/${encodeURIComponent(order.order_number)}/supplier-messages`;
+  const supplierChat = await fetchSupplierChat(order.order_number, supplierUrl);
 
   const header = el("div", { class: "editgrid" }, [
     ...fact(t("purchaseorders.ordernumber"), order.order_number),
@@ -712,6 +720,26 @@ async function openPurchaseOrder(summary) {
     );
   }
 
+  // Decision 0752: Ask supplier, for whoever works orders, while someone there is linked.
+  if (supplierChat?.canWrite && (hasMyPermission("AP.Purchasing") || hasMyPermission("Admin.Configure"))) {
+    const ask = actionLink("ask_supplier", {
+      onclick: () =>
+        openAskSupplier(order.order_number, supplierChat, lines.map((l) => Number(l.line_number)), {
+          url: supplierUrl,
+          noteKey: "purchaseorders.asksupplier.note",
+          onAsked: async () => {
+            close();
+            await openPurchaseOrder({ order_number: order.order_number });
+          },
+        }),
+    });
+    ask.id = "po-ask-supplier";
+    stateButtons.unshift(ask);
+  }
+  const supplierSection = supplierChat?.available
+    ? el("div", { id: "po-supplier" }, [el("div", { class: "cardhead" }, [el("h4", { text: t("purchaseorders.supplierchat") })]), buildSupplierTab(order.order_number, supplierChat, { url: supplierUrl }).content])
+    : null;
+
   backdrop.replaceChildren(
     el(
       "div",
@@ -722,9 +750,12 @@ async function openPurchaseOrder(summary) {
           el("div", { class: "statebuttons" }, [...stateButtons, actionLink("close", { onclick: close })]),
         ]),
         order.status === "on_hold" ? el("div", { class: "warn", text: `${t("purchaseorders.hold")}: ${order.hold_reason}` }) : null,
+        // Decision 0752: the question waiting on the supplier.
+        supplierChat?.query ? el("div", { class: "warn", id: "po-supplierquery", text: supplierQueryText(supplierChat.query) }) : null,
         header,
         linesTable,
         await receiptsSection(order.order_number),
+        supplierSection,
       ].filter(Boolean)
     )
   );

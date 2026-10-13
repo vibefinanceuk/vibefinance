@@ -6,7 +6,8 @@ import { icon } from "/icons.js";
  * **A purchase order, opened — decision 0751.** Read only, laid out as a
  * goods receipt opened (0738): what the customer ordered from this
  * supplier, at what price, and per line how much has been received (net
- * of returns) and invoiced so far, with what is still to deliver.
+ * of returns) and invoiced so far, with what is still to deliver; and the
+ * conversation with the customer about it on the right (decision 0752).
  */
 
 const dash = (v) => (v === null || v === undefined || v === "" ? "—" : String(v));
@@ -18,8 +19,8 @@ function pair(label, value) {
   return el("div", { class: "sfield" }, [el("span", { class: "slabel", text: label }), value ? el("span", { text: String(value) }) : el("span", { class: "muted", text: "—" })]);
 }
 
-/** The page. `deps` carries what portal.js owns: the status chip, money, and back to Documents. */
-export function orderPage(o, { statusChip, money, back }, handlers) {
+/** The page. `deps` carries what portal.js owns: the status chip, money, back to Documents, and the conversation (0752). */
+export function orderPage(o, { statusChip, money, back, conversation }, handlers) {
   const title = topbar(
     o.invoiceNumber ?? "—",
     t("network.order.subtitle", { customer: o.customer ?? "", company: o.company ?? "", date: o.issueDate ?? "" }),
@@ -33,6 +34,8 @@ export function orderPage(o, { statusChip, money, back }, handlers) {
   const lines = o.lines ?? [];
   const cell = (v, cls = "num") => el("td", { class: cls }, [typeof v === "string" || typeof v === "number" ? String(v) : v]);
   const price = (n) => (typeof n === "number" ? money(n, o.currency) : "—");
+  const chat = conversation ? conversation(o) : null;
+  chat?.classList.add("panel", "netviewchat");
   return el("div", { class: "netinvoiceview netorderview" }, [
     title,
     el("p", { class: "muted sm", text: t("network.order.note", { customer: o.customer ?? "" }) }),
@@ -88,6 +91,7 @@ export function orderPage(o, { statusChip, money, back }, handlers) {
             : el("p", { class: "muted", text: t("network.order.nolines") }),
         ]),
       ]),
-    ]),
+      chat,
+    ].filter(Boolean)),
   ]);
 }

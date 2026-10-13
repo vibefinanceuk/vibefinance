@@ -3,6 +3,7 @@ import receiptsSql from "../../vf-licence/migrations/0288_goods_receipts_strings
 import timelineSql from "../../vf-licence/migrations/0300_receipt_timeline_strings.sql?raw";
 import conversationsSql from "../../vf-licence/migrations/0302_receipt_conversations_strings.sql?raw";
 import receiptQuerySql from "../../vf-licence/migrations/0346_receipt_query_strings.sql?raw";
+import orderConversationSql from "../../vf-licence/migrations/0350_order_conversation_strings.sql?raw";
 
 /**
  * **Conversations on Tasks — decision 0660**, as agreed with Dan against
@@ -12,7 +13,7 @@ import receiptQuerySql from "../../vf-licence/migrations/0346_receipt_query_stri
  */
 
 const strings: Record<string, string> = { "action.close": "Close", "nav.tasks": "Tasks", "nav.goodsreceipts": "Goods Receipts" };
-for (const sql of [receiptsSql, timelineSql, conversationsSql, receiptQuerySql]) {
+for (const sql of [receiptsSql, timelineSql, conversationsSql, receiptQuerySql, orderConversationSql]) {
   for (const m of sql.matchAll(/\('([^']+)', 'en', '((?:[^']|'')*)'\)/g)) strings[m[1]] = m[2].replace(/''/g, "'");
 }
 
@@ -59,6 +60,7 @@ function stub(permissions: string[], conversations: () => unknown[]) {
       if (path === "/api/goods-receipts") return reply(200, { receipts: [], total: 0, page: 1, pageSize: 50 });
       if (path === "/api/receipt-conversations") return reply(200, { conversations: conversations() });
       if (path.startsWith("/api/receipt-conversations/") && method === "POST") return reply(200, { done: true });
+      if (path.endsWith("/supplier-messages/seen") && method === "POST") return reply(200, { done: true });
       return reply(404, {});
     })
   );
@@ -106,6 +108,22 @@ describe("Conversations on Tasks — decision 0660", () => {
     expect([...row.querySelectorAll(".agentnotetag")].map((p) => p.textContent)).toEqual(["New messages", "From the supplier", "New messages: 1"]);
     expect(row.querySelector(".agentnotewhy")?.textContent).toBe("Northwind Packaging: “We sent 10, you recorded 8?”");
     expect(badge("tasks")).toBe("1");
+  });
+
+  it("an order whose supplier wrote: Done catches up at the order's address — decision 0752", async () => {
+    const ORDER = { kind: "order", orderNumber: "PO-1", organisation: "Acme UK Ltd", supplier: "Lager Nord GmbH", orders: [], added: null, newMessages: 2, supplierMessages: 2, latest: { by: "Lager Nord GmbH", body: "Delivery moves to the 22nd.", at: "2026-10-12T10:00:00.000Z" }, lastAt: "2026-10-12T10:00:00.000Z" };
+    let list: unknown[] = [ORDER];
+    const calls = await start(["AP.TaskView", "AP.Purchasing"], () => list);
+    await vi.waitFor(() => expect(document.querySelectorAll(".orderconv").length).toBe(1));
+    const row = document.querySelector(".orderconv")!;
+    expect(row.querySelector(".agentnotename")?.textContent).toBe("Purchase order PO-1 · Acme UK Ltd");
+    expect([...row.querySelectorAll(".agentnotetag")].map((p) => p.textContent)).toEqual(["From the supplier", "New messages: 2"]);
+    expect(row.querySelector(".agentnotewhy")?.textContent).toBe("Lager Nord GmbH: “Delivery moves to the 22nd.”");
+    expect(badge("tasks")).toBe("1");
+    list = [];
+    ([...row.querySelectorAll("button")].find((b) => b.textContent === "Done") as HTMLButtonElement).click();
+    await vi.waitFor(() => expect(document.querySelectorAll(".orderconv").length).toBe(0));
+    expect(calls).toContainEqual({ method: "POST", path: "/api/purchase-orders/PO-1/supplier-messages/seen" });
   });
 
   it("keeps to about four rows high and scrolls past that, so the tasks below stay in view", async () => {
