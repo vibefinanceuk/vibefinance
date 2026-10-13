@@ -1,6 +1,6 @@
 # 0764: The supplier network's order: an alert to confirm, and notes in Messages
 
-**Status: built.**
+**Status: live.**
 
 - vf-app: `order-sharing.ts`: when the order was last invoiced.
 - vf-portal: `order-view.js`, `portal.js`, `portal.css`.

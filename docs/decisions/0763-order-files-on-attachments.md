@@ -1,6 +1,6 @@
 # 0763: An order's PDF, UBL XML and CSV on its Attachments tab
 
-**Status: built.**
+**Status: live.**
 
 - vf-ui: `attachments.js`, `order-document.js`, `purchase-orders.js`, `app.css` (copied to
   vf-portal).
