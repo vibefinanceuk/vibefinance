@@ -1,6 +1,6 @@
 # 0760: A purchase order as a PDF, and its Document tab
 
-**Status: built.**
+**Status: live.**
 
 - vf-app:
   - `order-pdf.ts` (new): the PDF and the CSV;
