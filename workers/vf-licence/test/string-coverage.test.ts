@@ -3806,6 +3806,8 @@ const KEYS_THE_INTERFACE_USES = [
   "purchaseorders.conv.order",
   // A purchase order opened as a page (decision 0753).
   "purchaseorders.supplierchat.none",
+  // An invoice's CSV on Attachments in the supplier network (decision 0772).
+  "network.invoice.file.csv",
   // An invoice's own document in the supplier network (decision 0770).
   "network.invoice.file.generated_rendering",
   "network.invoice.file.pdf",

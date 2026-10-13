@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 13 October 2026 (decision 0771). A living document: what
+Last updated 13 October 2026 (decision 0772). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,13 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### An invoice's CSV on its Attachments tab, in the supplier network (0772)
+
+An invoice's or credit note's CSV moved from the top bar's Download to Attachments, listed with
+the other files as an order's is.
+
+Full reasoning is in decision 0772.
 
 ### No note about what the supplier does not see (0771)
 

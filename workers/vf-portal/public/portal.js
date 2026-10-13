@@ -137,7 +137,7 @@ export async function render() {
               back: () => go("documents"),
               // Decision 0770: the file the customer received, and its downloads.
               document: (i) => buildInvoiceDocumentTab({ ...i, id: opened.inv.id }, opened.inv.linkId),
-              attachments: (i) => buildInvoiceAttachmentsTab({ ...i, id: opened.inv.id }, opened.inv.linkId),
+              attachments: (i, extra) => buildInvoiceAttachmentsTab({ ...i, id: opened.inv.id }, opened.inv.linkId, extra),
               // Decision 0732: a credit note against this invoice, in Create.
               credit: () => {
                 startCreditNote({ ...opened.body, id: opened.inv.id }, opened.inv.linkId, opened.body.customer);

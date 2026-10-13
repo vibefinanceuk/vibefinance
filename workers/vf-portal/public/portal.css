@@ -209,3 +209,4 @@ main#confirm #confirm-problem:empty { display: none; }
 #net-attachments .attachpick { cursor: default; }
 #net-attachments .attachpick:hover .attachname { text-decoration: none; }
 #net-attachments .attachrow a.actionlink { text-decoration: none; }
+#net-attachments .attachrow button.actionlink { flex-direction: row; }

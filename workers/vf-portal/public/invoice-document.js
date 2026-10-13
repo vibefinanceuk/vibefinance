@@ -25,7 +25,7 @@ export function buildInvoiceDocumentTab(inv, linkId) {
   return { content, open };
 }
 
-export function buildInvoiceAttachmentsTab(inv, linkId) {
+export function buildInvoiceAttachmentsTab(inv, linkId, { csv = null, csvName = "invoice.csv" } = {}) {
   const base = `/api/invoices/${encodeURIComponent(linkId)}/${encodeURIComponent(inv.id)}/document`;
   const files = inv.documentFiles ?? [];
   // What each file is, in the supplier's words: their PDF or e-invoice as sent, or the page drawn from it.
@@ -39,9 +39,21 @@ export function buildInvoiceAttachmentsTab(inv, linkId) {
       el("span", { class: "attachpick" }, [el("span", { class: "attachname", text: f.name }), el("span", { class: "attachdetail", text: detail(f) })]),
       el("a", { class: "actionlink", href: `${base}?file=${encodeURIComponent(f.key)}&download=1`, download: "", title: t("action.download") }, [icon("download"), el("span", { text: t("action.download") })]),
     ]);
+  /**
+   * **What the customer read, as a spreadsheet — decision 0772**: the
+   * CSV that was Download in the top bar, made here in the browser from
+   * the page's own figures.
+   */
+  const csvRow = csv
+    ? el("div", { class: "attachrow", "data-file": "csv" }, [
+        el("span", { class: "attachpick" }, [el("span", { class: "attachname", text: csvName }), el("span", { class: "attachdetail", text: t("network.invoice.file.csv") })]),
+        el("button", { class: "actionlink", type: "button", id: "net-attach-csv", title: t("action.download"), onclick: csv }, [icon("download"), el("span", { text: t("action.download") })]),
+      ])
+    : null;
   const content = el("div", { class: "attachpane", id: "net-attachments" }, [
     el("div", { class: "attachlist" }, [
-      el("div", { class: "attachgroup" }, [el("div", { class: "attachhead", text: t("network.invoice.attachhead", { customer: inv.customer ?? "" }) }), ...files.map(row)]),
+      // One list, as an order's (0763): the files as received, then the CSV, named alike.
+      el("div", { class: "attachgroup" }, [el("div", { class: "attachhead", text: t("network.invoice.attachhead", { customer: inv.customer ?? "" }) }), ...files.map(row), csvRow].filter(Boolean)),
     ]),
   ]);
   return { content };

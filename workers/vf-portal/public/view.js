@@ -50,9 +50,11 @@ export function invoiceCsv(inv) {
   return rows.map((r) => r.map(cell).join(",")).join("\r\n") + "\r\n";
 }
 
+const csvName = (inv) => `${(inv.invoiceNumber ?? "invoice").replace(/[^\w.-]+/g, "_")}.csv`;
+
 function download(inv) {
   const blob = new Blob([invoiceCsv(inv)], { type: "text/csv" });
-  const a = el("a", { href: URL.createObjectURL(blob), download: `${(inv.invoiceNumber ?? "invoice").replace(/[^\w.-]+/g, "_")}.csv` });
+  const a = el("a", { href: URL.createObjectURL(blob), download: csvName(inv) });
   document.body.append(a);
   a.click();
   a.remove();
@@ -72,7 +74,6 @@ export function viewPage(inv, { money, statusChip, conversation, back, credit, d
   const buyer = inv.parties?.buyer ?? {};
   const own = [
     el("button", { class: "actionlink", type: "button", title: t("network.view.backtitle"), onclick: back }, [icon("back"), el("span", { text: t("network.view.back") })]),
-    el("button", { class: "actionlink", type: "button", title: t("network.view.downloadtitle"), onclick: () => download(inv) }, [icon("download"), el("span", { text: t("network.view.download") })]),
     inv.mayCredit && credit
       ? el("button", { class: "actionlink", type: "button", title: t("network.credit.raisetitle"), onclick: credit }, [icon("documents"), el("span", { text: t("network.credit.raise") })])
       : null,
@@ -97,11 +98,16 @@ export function viewPage(inv, { money, statusChip, conversation, back, credit, d
   let side = chat;
   const hasDocument = (inv.documentFiles ?? []).length > 0;
   const doc = documentTab && hasDocument ? documentTab(inv) : null;
-  const files = attachmentsTab && hasDocument ? attachmentsTab(inv) : null;
-  if (doc) {
+  /**
+   * **The CSV on Attachments — decision 0772**, as an order's (0763),
+   * rather than Download in the top bar. Always there, so Attachments is
+   * too, with the Document only where there is one.
+   */
+  const files = attachmentsTab ? attachmentsTab(inv, { csv: () => download(inv), csvName: csvName(inv) }) : null;
+  if (files) {
     const panes = [
-      { key: "document", label: t("orderdoc.tab"), pane: doc.content, onSelect: doc.open },
-      ...(files ? [{ key: "attachments", label: t("network.order.attachtab"), pane: files.content }] : []),
+      ...(doc ? [{ key: "document", label: t("orderdoc.tab"), pane: doc.content, onSelect: doc.open }] : []),
+      { key: "attachments", label: t("network.order.attachtab"), pane: files.content },
       { key: "messages", label: t("network.order.messagestab"), pane: chat },
     ];
     for (const p of panes) {
@@ -117,7 +123,8 @@ export function viewPage(inv, { money, statusChip, conversation, back, credit, d
       panes.find((p) => p.key === which)?.onSelect?.();
     };
     for (const p of panes) p.button = el("button", { type: "button", role: "tab", class: "doctab", id: `net-tab-${p.key}`, onclick: () => select(p.key) }, [el("span", { text: p.label })]);
-    select("document");
+    // The Document first where there is one; the conversation otherwise, as before.
+    select(doc ? "document" : "messages");
     side = el("div", { class: "panel netviewchat netsidetabs" }, [el("div", { class: "doctabs receipttabs", role: "tablist" }, panes.map((p) => p.button)), ...panes.map((p) => p.pane)]);
   }
 
