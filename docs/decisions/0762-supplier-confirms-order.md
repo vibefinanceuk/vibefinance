@@ -1,6 +1,6 @@
 # 0762: The supplier confirms it has the order
 
-**Status: built.**
+**Status: live.**
 
 - vf-app:
   - migration 0172;
