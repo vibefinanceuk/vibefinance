@@ -1,6 +1,6 @@
 # 0757: The supplier network shares by the one VAT rule
 
-**Status: built.**
+**Status: live.**
 
 - vf-app: `order-sharing.ts`, `receipt-sharing.ts`, `order-messages.ts`, `receipt-messages.ts`.
 
