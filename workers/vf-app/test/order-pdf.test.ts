@@ -84,6 +84,29 @@ describe("the PDF", () => {
     }
   });
 
+  it("puts the tax on its own line so the totals add up, and says who to talk to — decision 0761", async () => {
+    // An order with its tax totals, emailed in: no buyer named on it.
+    await storeOrder(env.DB, { ...ORDER, taxExclusiveAmount: 1450, taxInclusiveAmount: 1740 }, "acme-uk");
+    await env.DB.prepare("UPDATE org_units SET email = 'ap@acme.example', phone = '020 7946 0000' WHERE id = 'acme-uk'").run();
+    const [page] = await text(await orderPdf((await orderDocument(env.DB, "PO-7"))!, { kind: "order", replyTo: "purchasing@acme.example" }));
+    expect(page).toContain("Net £1,450.00 VAT £290.00 Total £1,740.00");
+    expect(page).not.toContain("Total excluding tax");
+    expect(page).not.toContain("Total including tax");
+    expect(page).toMatch(/BUYER .*Acme UK Ltd purchasing@acme\.example ap@acme\.example 020 7946 0000/);
+
+    // With a buyer on the order: their name and email, in German for a German supplier.
+    await env.DB.prepare("UPDATE purchase_orders SET buyer_user_id = 'u-pat' WHERE order_number = 'PO-7'").run();
+    const [again] = await text(await orderPdf((await orderDocument(env.DB, "PO-7"))!, { kind: "order", replyTo: "purchasing@acme.example", locale: "de" }));
+    expect(again).toMatch(/Acme UK Ltd Ansprechpartner: Pat Lee pat@acme\.example ap@acme\.example/);
+    expect(again).not.toContain("purchasing@acme.example");
+    expect(again).toMatch(/MwSt\. 290,00\s?£/);
+
+    // No tax totals at all: the difference between net and total is the tax.
+    await storeOrder(env.DB, { ...ORDER, orderNumber: "PO-8" }, "acme-uk");
+    const [bare] = await text(await orderPdf((await orderDocument(env.DB, "PO-8"))!, { kind: "order" }));
+    expect(bare).toContain("Net £1,450.00 VAT £290.00 Total £1,740.00");
+  });
+
   it("runs across pages with the table's heading on each, and says which page of how many", async () => {
     const lines = Array.from({ length: 70 }, (_, i) => ({ lineNumber: i + 1, itemName: `Item number ${i + 1}`, quantity: 1, unitCode: "EA", priceAmount: 2, lineExtensionAmount: 2 }));
     await storeOrder(env.DB, { ...ORDER, lines }, "acme-uk");

@@ -473,7 +473,9 @@ export async function orderFile(db: D1Database, orderNumber: string, format: Doc
   if (!doc) return null;
   if (format === "ubl") return { bytes: new TextEncoder().encode(doc.ubl), contentType: "application/xml; charset=utf-8", filename: documentFilename(orderNumber, version.kind, "xml") };
   if (format === "csv") return { bytes: new TextEncoder().encode(orderCsv(doc)), contentType: "text/csv; charset=utf-8", filename: documentFilename(orderNumber, version.kind, "csv") };
-  const pdf = await orderPdf(doc, { kind: version.kind, changes: version.changes, note: version.note, changeReference: version.changeReference });
+  const instance = await ordersOutInstance(db);
+  const replyTo = instance ? settingsOf(instance.settings_json).replyTo : null;
+  const pdf = await orderPdf(doc, { kind: version.kind, changes: version.changes, note: version.note, changeReference: version.changeReference, replyTo });
   return { bytes: pdf, contentType: "application/pdf", filename: documentFilename(orderNumber, version.kind, "pdf") };
 }
 
@@ -546,7 +548,7 @@ export async function sendOrder(
   const filename = `${doc.order.order_number}.xml`.replace(/[^\w.-]+/g, "_");
   // Decision 0760: the order as a PDF, as this version says it (a change's changes marked).
   const version = settings.attachPdf ? await orderVersion(db, params.orderNumber, params.intakeId) : null;
-  const pdf = settings.attachPdf ? await orderPdf(doc, { kind: params.kind, changes: version?.changes ?? null, note: params.note ?? version?.note ?? null, changeReference: version?.changeReference ?? null }) : null;
+  const pdf = settings.attachPdf ? await orderPdf(doc, { kind: params.kind, changes: version?.changes ?? null, note: params.note ?? version?.note ?? null, changeReference: version?.changeReference ?? null, replyTo: settings.replyTo }) : null;
   const pdfName = documentFilename(doc.order.order_number, params.kind, "pdf");
   const messageId = await openOutboundMessage(db, { destinationId: params.instance.id, recipient: to.join(", "), subject: mail.subject, bytes: mail.html.length + (settings.attachUbl ? doc.ubl.length : 0) + (pdf?.length ?? 0), receivedAt: at, actor: params.by ?? undefined, event: "sending" });
   if (messageId && deps.bucket && deps.customerId) {

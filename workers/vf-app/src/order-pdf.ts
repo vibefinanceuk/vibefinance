@@ -47,6 +47,8 @@ const WORDS: Record<Locale, Record<string, string>> = {
     "change.added": "New",
     "change.changed": "Changed",
     net: "Net",
+    tax: "VAT",
+    contact: "Contact",
     taxexcl: "Total excluding tax",
     taxincl: "Total including tax",
     payable: "Total",
@@ -95,6 +97,8 @@ const WORDS: Record<Locale, Record<string, string>> = {
     "change.added": "Neu",
     "change.changed": "Geändert",
     net: "Netto",
+    tax: "MwSt.",
+    contact: "Ansprechpartner",
     taxexcl: "Summe ohne Steuer",
     taxincl: "Summe mit Steuer",
     payable: "Summe",
@@ -254,6 +258,11 @@ export interface PdfOptions {
   note?: string | null;
   changeReference?: string | null;
   locale?: Locale;
+  /**
+   * Where the supplier's questions go when the order names no buyer: the
+   * Destination's reply-to mailbox — decision 0761.
+   */
+  replyTo?: string | null;
 }
 
 /** The order as a PDF. */
@@ -374,7 +383,18 @@ export async function orderPdf(doc: OrderDocument, opts: PdfOptions): Promise<Ui
     s?.vat_id ? `${w.vat} ${s.vat_id}` : doc.order.seller_party_id ? `${w.vat} ${doc.order.seller_party_id}` : null,
     doc.order.supplier_email,
   ].filter((l): l is string => Boolean(l));
-  const buyerLines = [doc.buyer?.name ?? doc.company.name ?? "—", doc.buyer?.email, doc.company.name && doc.buyer?.name ? doc.company.name : null].filter((l): l is string => Boolean(l));
+  // Decision 0761: who at the company to talk to, not just its name. The
+  // order's buyer where it names one; else the Destination's reply-to
+  // mailbox; and the company's own email and phone.
+  const c = doc.company;
+  const contactEmail = doc.buyer?.email ?? opts.replyTo ?? null;
+  const buyerLines = [
+    c.name ?? doc.buyer?.name ?? "—",
+    doc.buyer?.name && c.name ? `${w.contact}: ${doc.buyer.name}` : null,
+    contactEmail,
+    c.email && c.email.toLowerCase() !== contactEmail?.toLowerCase() ? c.email : null,
+    c.phone,
+  ].filter((l): l is string => Boolean(l));
   wr.need(80);
   const half = (width - 20) / 2;
   const endA = partyBlock(w.supplier, supplierLines, M, half);
@@ -442,11 +462,20 @@ export async function orderPdf(doc: OrderDocument, opts: PdfOptions): Promise<Ui
   }
 
   // The totals.
+  // Decision 0761: the tax is its own line, so the totals add up on the page.
+  const o = doc.order;
+  const net = o.line_extension_amount;
+  const excl = o.tax_exclusive_amount ?? net;
+  // An order that gives no tax totals: what lies between its net and its
+  // total is its tax.
+  const incl = o.tax_inclusive_amount ?? o.payable_amount;
+  const tax = typeof excl === "number" && typeof incl === "number" ? Math.round((incl - excl) * 100) / 100 : null;
   const totals = ([
-    [w.net, doc.order.line_extension_amount, false],
-    [w.taxexcl, doc.order.tax_exclusive_amount !== doc.order.line_extension_amount ? doc.order.tax_exclusive_amount : null, false],
-    [w.taxincl, doc.order.tax_inclusive_amount !== doc.order.payable_amount ? doc.order.tax_inclusive_amount : null, false],
-    [w.payable, doc.order.payable_amount, true],
+    [w.net, net, false],
+    [w.taxexcl, typeof excl === "number" && excl !== net ? excl : null, false],
+    [w.tax, tax, false],
+    [w.taxincl, typeof incl === "number" && incl !== o.payable_amount ? incl : null, false],
+    [w.payable, o.payable_amount, true],
   ] as [string, number | null, boolean][]).filter(([, v]) => typeof v === "number");
   if (totals.length) {
     wr.y -= 10;

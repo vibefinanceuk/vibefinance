@@ -1,6 +1,6 @@
 # VibeFinance — Progress and Status
 
-Last updated 13 October 2026 (decision 0760). A living document: what
+Last updated 13 October 2026 (decision 0761). A living document: what
 is built, what is not, and what is known to be uncertain.
 
 The decision records in `docs/decisions/` are the authority on *why*
@@ -2986,6 +2986,14 @@ section for the full reasoning and tests.
   own route-widening. All named later-phase scope by decision 0468,
   untouched here.
 - Full reasoning and verification counts in decision 0469.
+
+### The order PDF shows its tax and who to talk to (0761)
+
+The order PDF's totals now have a VAT line, so Net, VAT and Total add up on the page. Its Buyer
+block names who to talk to: the order's buyer, or the Destination's reply-to mailbox, then the
+company's email and phone.
+
+Full reasoning is in decision 0761.
 
 ### A purchase order as a PDF, and its Document tab (0760)
 
