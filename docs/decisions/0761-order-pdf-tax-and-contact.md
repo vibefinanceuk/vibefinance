@@ -1,6 +1,6 @@
 # 0761: The order PDF shows its tax and who to talk to
 
-**Status: built.**
+**Status: live.**
 
 - vf-app: `order-pdf.ts`, `orders-out.ts`.
 
