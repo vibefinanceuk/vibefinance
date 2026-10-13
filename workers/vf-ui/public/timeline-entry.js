@@ -74,6 +74,17 @@ export const EVENTS = {
   line_repointed: { tone: "act", icon: "rename" },
   collaborator_added: { tone: "act", icon: "newperson" },
   collaborator_removed: { tone: "act", icon: "close" },
+
+  // Decision 0754 — a purchase order's history.
+  order_loaded: { tone: "info", icon: "load" },
+  order_released: { tone: "ok", icon: "tick" },
+  order_changed: { tone: "act", icon: "rename" },
+  order_held: { tone: "warn", icon: "hold" },
+  order_hold_released: { tone: "ok", icon: "releasehold" },
+  order_closed: { tone: "act", icon: "done" },
+  order_invoiced: { tone: "info", icon: "documents" },
+  order_credited: { tone: "info", icon: "return" },
+  supplier_opened: { tone: "info", icon: "suppliers" },
 };
 
 /** The date part of a shown moment, so a card can leave it off when the one before had the same day. */

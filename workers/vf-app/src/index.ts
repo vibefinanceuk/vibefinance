@@ -352,6 +352,7 @@ import {
 import { handleHttpsReceipts, receiptsReport, receiptsSource, receiptsUploadSource, receiveReceipts, RECEIPTS_FILE_ROUTE } from "./receipts-in-route.js";
 import { handleGetOrdersProcess, handleHttpsOrders, handleSetUpOrdersProcess, ordersReport, ordersSource, ordersUploadSource, settleOrderInstance, uploadOrders } from "./purchase-orders-in.js";
 import { handleGetOrderSupplierMessages, handlePortalOrderReply, handlePostOrderSupplierMessage, markOrderSeen, orderConversationsFor } from "./order-messages.js";
+import { handleAddOrderCollaborator, handleGetOrderTimeline, handleOrderAttachments, handlePostOrderComment, handleRemoveOrderCollaborator, handleSearchOrderPeople, orderAccess, ORDER_TOKEN_PREFIX, partForOrder } from "./order-timeline.js";
 import { continueOrderInstance, handleFixIntake, handleGetIntake, handleIntakeSuppliers, handleListIntake, handleRejectIntake, handleReleaseIntake, isOrderCheckingTask } from "./order-checking.js";
 import {
   handleGetApTeamEmail,
@@ -4700,7 +4701,10 @@ export default {
       // Decision 0659: a receipt's file names the receipt, not an invoice.
       const part = verified.invoiceId.startsWith(RECEIPT_TOKEN_PREFIX)
         ? await partForReceipt(db, verified.invoiceId.slice(RECEIPT_TOKEN_PREFIX.length), verified.messageId, verified.seq)
-        : await partForInvoice(db, verified.invoiceId, verified.messageId, verified.seq);
+        : // Decision 0754: an order's file names the order.
+          verified.invoiceId.startsWith(ORDER_TOKEN_PREFIX)
+          ? await partForOrder(db, verified.invoiceId.slice(ORDER_TOKEN_PREFIX.length), verified.messageId, verified.seq)
+          : await partForInvoice(db, verified.invoiceId, verified.messageId, verified.seq);
       const object = part ? await documents.get(part.r2Key) : null;
       if (!part || !object) {
         return json({ error: "this file is no longer retained" }, 404);
@@ -6748,6 +6752,54 @@ export default {
      * AP.Purchasing or Admin.Configure. Reading it, or `…/seen`, catches the
      * person up for Conversations.
      */
+    /**
+     * **An order's Timeline and Chat, and its Attachments — decision
+     * 0754.** Whoever may open the order reads and writes (the handlers
+     * say who: AP.Validate or AP.Purchasing where it is, Admin.Configure,
+     * or added to its conversation); Purchasing and Admin.Configure add
+     * and remove people. Before `/purchase-orders/:orderNumber`.
+     */
+    const orderTimelineMatch = pathname.match(/^\/purchase-orders\/([^/]+)\/(timeline|comments|people|collaborators(?:\/([^/]+))?|attachments(?:\/([^/]+)\/(\d+)\/url)?)$/);
+    if (orderTimelineMatch && orderTimelineMatch[1] !== "intake") {
+      const { db } = resolveTenant(request, env);
+      const auth = await requireAnyPermission(db, request, ["AP.Validate", "AP.Purchasing", "Admin.Configure", "AP.Receive", "Warehouse.Collaborate"], sessionContext(env));
+      if (!auth.authorized) return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
+      const orderNumber = decodeURIComponent(orderTimelineMatch[1]);
+      const what = orderTimelineMatch[2];
+      const deps = () => {
+        const d = agentDeps(env, null);
+        return { email: d.email, appUrl: d.appUrl, defaultLocale: d.defaultLocale ?? null };
+      };
+      const readBody = async () => ((await request.json().catch(() => null)) ?? null) as Record<string, unknown> | null;
+      let result: { status: number; body: unknown } | null = null;
+      if (what === "timeline" && request.method === "GET") result = await handleGetOrderTimeline(db, auth.user.id, orderNumber);
+      else if (what === "people" && request.method === "GET") result = await handleSearchOrderPeople(db, auth.user.id, orderNumber, url.searchParams.get("q"));
+      else if (what === "comments" && request.method === "POST") {
+        const body = await readBody();
+        if (!body) return json({ error: t("invalidJsonBody", resolveLocale(env.LOCALE)) }, 400);
+        result = await handlePostOrderComment(db, auth.user.id, orderNumber, body, deps());
+      } else if (what === "collaborators" && request.method === "POST") {
+        const body = await readBody();
+        if (!body) return json({ error: t("invalidJsonBody", resolveLocale(env.LOCALE)) }, 400);
+        result = await handleAddOrderCollaborator(db, auth.user.id, orderNumber, body, deps());
+      } else if (orderTimelineMatch[3] && request.method === "DELETE") {
+        result = await handleRemoveOrderCollaborator(db, auth.user.id, orderNumber, decodeURIComponent(orderTimelineMatch[3]));
+      } else if (what === "attachments" && request.method === "GET") {
+        result = await handleOrderAttachments(db, auth.user.id, orderNumber);
+      } else if (orderTimelineMatch[4] && request.method === "POST") {
+        if (!(await orderAccess(db, auth.user.id, orderNumber))) return json({ error: "no such purchase order", reason: "not_found" }, 404);
+        if (!env.DOCUMENT_URL_SECRET) return json({ error: "DOCUMENT_URL_SECRET is not configured" }, 500);
+        const messageId = decodeURIComponent(orderTimelineMatch[4]);
+        const seq = Number(orderTimelineMatch[5]);
+        const part = await partForOrder(db, orderNumber, messageId, seq);
+        if (!part) return json({ error: `order ${orderNumber} received no part ${seq} in message ${messageId}` }, 404);
+        const minted = await mintPartToken(env.DOCUMENT_URL_SECRET, `${ORDER_TOKEN_PREFIX}${orderNumber}`, messageId, seq);
+        return json({ url: `${url.origin}/received-files/${minted.token}`, expiresAt: new Date(minted.expiresAt * 1000).toISOString(), contentType: part.contentType, view: viewFor(part.contentType, part.filename) }, 200);
+      }
+      if (!result) return json({ error: "method not allowed" }, 405);
+      return json(result.body, result.status);
+    }
+
     const orderMessagesMatch = pathname.match(/^\/purchase-orders\/([^/]+)\/supplier-messages(\/seen)?$/);
     if (orderMessagesMatch && orderMessagesMatch[1] !== "intake") {
       const { db } = resolveTenant(request, env);
@@ -6761,7 +6813,8 @@ export default {
         return json(result.body, result.status);
       }
       if (request.method === "POST" && orderMessagesMatch[2]) {
-        const auth = await requireAnyPermission(db, request, ["AP.Purchasing", "Admin.Configure", "AP.Validate"], sessionContext(env));
+        // Decision 0754: Done in Conversations, for whoever is in an order's conversation too.
+        const auth = await requireAnyPermission(db, request, ["AP.Purchasing", "Admin.Configure", "AP.Validate", "AP.Receive", "Warehouse.Collaborate"], sessionContext(env));
         if (!auth.authorized) return denied(auth.status);
         await markOrderSeen(db, auth.user.id, orderNumber);
         return json({ done: true }, 200);
@@ -6901,8 +6954,8 @@ export default {
     const poMatch = pathname.match(/^\/purchase-orders\/([^/]+)$/);
     if (poMatch && request.method === "GET") {
       const { db } = resolveTenant(request, env);
-      // Decision 0752: and AP.Purchasing, to open an order from Conversations.
-      const auth = await requireAnyPermission(db, request, ["AP.Validate", "AP.Purchasing"], sessionContext(env));
+      // Decision 0752: and AP.Purchasing, to open an order from Conversations; 0754: and whoever may be added to its conversation (the handler says which orders).
+      const auth = await requireAnyPermission(db, request, ["AP.Validate", "AP.Purchasing", "Admin.Configure", "AP.Receive", "Warehouse.Collaborate"], sessionContext(env));
       if (!auth.authorized) {
         return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
       }
@@ -6920,7 +6973,7 @@ export default {
         return json({ error: t(auth.status === 401 ? "unauthorized" : "forbidden", resolveLocale(env.LOCALE)) }, auth.status);
       }
       const body = (await request.json()) as Record<string, unknown>;
-      const result = await handleSetPurchaseOrderStatus(db, decodeURIComponent(poMatch[1]), body);
+      const result = await handleSetPurchaseOrderStatus(db, decodeURIComponent(poMatch[1]), body, auth.user.id);
       return json(result.body, result.status);
     }
 

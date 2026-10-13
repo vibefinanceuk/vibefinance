@@ -1,6 +1,7 @@
 import type { RouteResult } from "./org-route.js";
 import { parseUblOrder, parseUblOrderCancellation, parseUblOrderChange, ublOrderingDocumentKind, UblOrderParseError, type ParsedOrder, type ParsedOrderLine } from "@vibefinance/shared";
 import { handleCreateProcessInstance, visitCurrentStage } from "./workflow-engine.js";
+import { orderEvent } from "./order-history.js";
 import { admitOrder, isCancelStatus, orderLineProblem, readOrdersCsv, storeOrder, type CandidateOrder, type ReadEntry, type ReadOrders, type ReceiptWarning } from "./purchase-order-route.js";
 import { ensurePurchasingTeam, ORDER_CHECKING_CHECK, PURCHASING_PERMISSION, type IntakeRow } from "./order-checking.js";
 import { addRouteEvent, finishRouteMessage, openRouteMessage, routePartKey, storeRoutePart } from "./route-messages.js";
@@ -461,8 +462,11 @@ export async function releaseOrder(db: D1Database, intakeId: string, now = new D
   if (row.kind === "cancellation") {
     const po = await db.prepare("SELECT id FROM purchase_orders WHERE order_number = ?").bind(row.order_number).first<{ id: string }>();
     if (!po) return null;
+    const was = await db.prepare("SELECT status FROM purchase_orders WHERE id = ?").bind(po.id).first<{ status: string }>();
     await db.batch([
       db.prepare("UPDATE purchase_orders SET status = 'closed', hold_reason = NULL WHERE id = ?").bind(po.id),
+      // Decision 0754: on the order's Timeline, by the cancellation it came by.
+      orderEvent(db, row.order_number, "cancelled", row.released_by ?? null, { from: was?.status ?? null }, now.toISOString(), intakeId),
       db.prepare("UPDATE purchase_order_intake SET status = 'released', released_at = ?, purchase_order_id = ? WHERE id = ? AND status = 'pending'").bind(now.toISOString(), po.id, intakeId),
     ]);
     return { kind: "cancellation", orderNumber: row.order_number, replaced: true, lines: 0, receiptWarnings: [] };
@@ -471,7 +475,7 @@ export async function releaseOrder(db: D1Database, intakeId: string, now = new D
   if (!row.org_unit_id) return null;
   const parsed = JSON.parse(row.order_json) as ParsedOrder;
   const statusOverride = row.status_json ? (JSON.parse(row.status_json) as { status: "active" | "on_hold" | "closed"; holdReason: string | null }) : undefined;
-  const stored = await storeOrder(db, parsed, row.org_unit_id, statusOverride);
+  const stored = await storeOrder(db, parsed, row.org_unit_id, statusOverride, { intakeId, actorId: row.released_by ?? null, at: now.toISOString() });
   await db
     .prepare("UPDATE purchase_order_intake SET status = 'released', released_at = ?, purchase_order_id = ? WHERE id = ? AND status = 'pending'")
     .bind(now.toISOString(), stored.id, intakeId)

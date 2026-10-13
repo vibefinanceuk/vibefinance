@@ -855,6 +855,14 @@ describe("paths the app is allowed to reach (decision 0212)", () => {
     "/purchase-orders/intake/abc/release",
     "/purchase-orders/PO-1/supplier-messages",
     "/purchase-orders/PO-1/supplier-messages/seen",
+    // An order's Timeline and Chat, and its Attachments — decision 0754.
+    "/purchase-orders/PO-1/timeline",
+    "/purchase-orders/PO-1/comments",
+    "/purchase-orders/PO-1/people",
+    "/purchase-orders/PO-1/collaborators",
+    "/purchase-orders/PO-1/collaborators/c-1",
+    "/purchase-orders/PO-1/attachments",
+    "/purchase-orders/PO-1/attachments/MSG-7A86-7670-F2A5/1/url",
     // The pages behind a multi-page scan — decision 0381.
     "/invoices/inv-1/pages",
     "/invoices/inv-1/pages/1/document-url",

@@ -1558,6 +1558,16 @@ export async function start() {
       .then((m) => m.openReceipt(receiptLink))
       .catch(() => {});
   }
+  // Decision 0754: "Open the order" from an order conversation's email.
+  const orderLink = new URLSearchParams(location.search).get("order");
+  if (orderLink) {
+    const clean = new URL(location.href);
+    clean.searchParams.delete("order");
+    history.replaceState(null, "", `${clean.pathname}${clean.search}${clean.hash}`);
+    await import("/purchase-orders.js")
+      .then((m) => m.openPurchaseOrder({ order_number: orderLink }))
+      .catch(() => {});
+  }
   // Decision 0629: "Open these invoices in Documents" from an agent's email.
   const agentDocs = new URLSearchParams(location.search).get("agentdocs");
   if (agentDocs) {

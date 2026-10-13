@@ -60,9 +60,9 @@ export async function fill(holder, { navScreen = "tasks" } = {}) {
   const refill = () => fill(holder, { navScreen });
 
   /**
-   * **A purchase order whose supplier wrote — decision 0752.** Open shows
-   * the order on Purchase Orders with its conversation; Done catches up
-   * without it.
+   * **A purchase order whose supplier wrote — decision 0752**, or whose
+   * conversation here has something new (0754). Open shows the order with
+   * its conversations; Done catches up without it.
    */
   const orderRow = (c) => {
     const title = [words("purchaseorders.conv.order", { number: c.orderNumber }), c.organisation].filter(Boolean).join(" · ");
@@ -71,8 +71,11 @@ export async function fill(holder, { navScreen = "tasks" } = {}) {
       el("div", { class: "agentnotehead" }, [
         el("div", {}, [
           el("span", { class: "agentnotename", text: title }),
-          el("span", { class: "rmpill warn agentnotetag receiptconvsupplier", text: t("receipts.conv.tag.supplier") }),
-          el("span", { class: "rmpill bad agentnotetag receiptconvcount", text: words("receipts.conv.newcount", { n: c.newMessages }) }),
+          // Decision 0754: added to the order's conversation, or new there, as a receipt's.
+          c.added ? el("span", { class: "rmpill q agentnotetag", text: t("receipts.conv.tag.added") }) : null,
+          c.supplierMessages > 0 ? el("span", { class: "rmpill warn agentnotetag receiptconvsupplier", text: t("receipts.conv.tag.supplier") }) : null,
+          !c.added && !(c.supplierMessages > 0) ? el("span", { class: "rmpill warn agentnotetag", text: t("receipts.conv.tag.new") }) : null,
+          c.newMessages > 0 ? el("span", { class: "rmpill bad agentnotetag receiptconvcount", text: words("receipts.conv.newcount", { n: c.newMessages }) }) : null,
           el("div", { class: "muted sm", text: metaLine(c) }),
           c.latest ? el("div", { class: "agentnotewhy", text: words("receipts.conv.quote", { by: c.latest.by ?? "—", body: c.latest.body }) }) : null,
         ]),
@@ -82,7 +85,7 @@ export async function fill(holder, { navScreen = "tasks" } = {}) {
             onclick: async () => {
               await seen();
               const { openPurchaseOrder } = await import("/purchase-orders.js");
-              await openPurchaseOrder({ order_number: c.orderNumber });
+              await openPurchaseOrder({ order_number: c.orderNumber }, { onDone: refill });
               refill();
             },
           }),

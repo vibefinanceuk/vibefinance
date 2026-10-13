@@ -38,9 +38,9 @@ const initials = (name) =>
 /** "7 Oct 2026, 09:12", in the browser's own time. */
 
 /** A refusal in words: the reason's own, where there is one. */
-function refused(body, fallbackKey) {
+function refused(body, fallbackKey, errorPrefix = "receipts.error") {
   if (body?.reason) {
-    const key = `receipts.error.${body.reason}`;
+    const key = `${errorPrefix}.${body.reason}`;
     const words = t(key);
     if (words !== key) return words.split("{name}").join(body.name ?? "");
   }
@@ -94,17 +94,25 @@ export function describe(item) {
 }
 
 /**
- * The Timeline and Chat for one receipt, loaded at once. `canWrite` is
- * false only where the page knows the person cannot post (never today:
- * whoever can open a receipt may write in it).
+ * The Timeline and Chat for one receipt, loaded at once. Whoever can open
+ * a receipt may write in it.
+ *
+ * **And for a purchase order — decision 0754**, drawn the same: `base` is
+ * where it is read and written, `prefix` names its elements, `describeItem`
+ * and `subsOf` say what each thing that happened was, and `words` gives
+ * the few sentences that differ (who may be added, who is in it).
  */
-export function buildReceiptTimeline(receiptId, { countBadge = null } = {}) {
-  const root = el("div", { class: "receipttimeline", id: "receipt-timeline" });
+export function buildReceiptTimeline(
+  receiptId,
+  { countBadge = null, base: basePath = null, prefix = "receipt", describeItem = describe, subsOf = () => [], cardKey = (item) => RECEIPT_EVENT[item.kind] ?? item.kind, words = {} } = {}
+) {
+  const w = { nobody: "receipts.tl.nobody", nobodyhint: "receipts.tl.nobodyhint", needspermission: "receipts.tl.needspermission", errorPrefix: "receipts.error", ...words };
+  const root = el("div", { class: "receipttimeline", id: `${prefix}-timeline` });
   const s = { loading: true, error: null, items: [], collaborators: [], canManage: false, posting: false, sentNote: null, addOpen: false, problem: null, results: null, generation: 0 };
-  const box = el("textarea", { id: "receipt-chat-input", placeholder: t("receipts.tl.placeholder") });
-  const search = el("input", { type: "text", id: "receipt-people-search", placeholder: t("receipts.tl.searchpeople") });
-  const results = el("div", { class: "collabsearchresultswrap", id: "receipt-people-results" });
-  const base = `/goods-receipts/${encodeURIComponent(receiptId)}`;
+  const box = el("textarea", { id: `${prefix}-chat-input`, placeholder: t("receipts.tl.placeholder") });
+  const search = el("input", { type: "text", id: `${prefix}-people-search`, placeholder: t("receipts.tl.searchpeople") });
+  const results = el("div", { class: "collabsearchresultswrap", id: `${prefix}-people-results` });
+  const base = basePath ?? `/goods-receipts/${encodeURIComponent(receiptId)}`;
 
   async function load() {
     const r = await call(`${base}/timeline`);
@@ -121,7 +129,7 @@ export function buildReceiptTimeline(receiptId, { countBadge = null } = {}) {
     const r = await send(`${base}/comments`, "POST", { body: text });
     s.posting = false;
     if (!r.ok) {
-      s.problem = refused(r.body, "receipts.tl.postfailed");
+      s.problem = refused(r.body, "receipts.tl.postfailed", w.errorPrefix);
       render();
       return;
     }
@@ -134,7 +142,7 @@ export function buildReceiptTimeline(receiptId, { countBadge = null } = {}) {
   async function add(who) {
     const r = await send(`${base}/collaborators`, "POST", who);
     if (!r.ok) {
-      s.problem = refused(r.body, "receipts.tl.addfailed");
+      s.problem = refused(r.body, "receipts.tl.addfailed", w.errorPrefix);
       render();
       return;
     }
@@ -149,7 +157,7 @@ export function buildReceiptTimeline(receiptId, { countBadge = null } = {}) {
   async function remove(c) {
     const r = await send(`${base}/collaborators/${encodeURIComponent(c.id)}`, "DELETE");
     if (!r.ok) {
-      s.problem = refused(r.body, "receipts.tl.removefailed");
+      s.problem = refused(r.body, "receipts.tl.removefailed", w.errorPrefix);
       render();
       return;
     }
@@ -185,7 +193,7 @@ export function buildReceiptTimeline(receiptId, { countBadge = null } = {}) {
         el("button", { type: "button", class: "collabsearchresult", "data-user": u.id, ...(u.canSee ? { onclick: () => add({ userId: u.id }) } : { disabled: "disabled" }) }, [
           el("div", { text: u.name }),
           // Someone who could not open the receipt is shown, but not offered: they need Warehouse.Collaborate first.
-          el("div", { class: "muted", text: u.canSee ? u.email : t("receipts.tl.needspermission") }),
+          el("div", { class: "muted", text: u.canSee ? u.email : t(w.needspermission) }),
         ])
       ),
     ];
@@ -204,7 +212,7 @@ export function buildReceiptTimeline(receiptId, { countBadge = null } = {}) {
   // Decision 0675: drawn the shared way, as the Document viewer's.
   function row(item, index, all) {
     if (item.kind === "comment") return chatBubble({ name: item.by, body: item.body, at: item.at, mine: item.mine === true });
-    return systemCard(RECEIPT_EVENT[item.kind] ?? item.kind, { text: describe(item), at: item.at, prevAt: index > 0 ? all[index - 1].at : null, kind: item.kind });
+    return systemCard(cardKey(item), { text: describeItem(item), subs: subsOf(item), at: item.at, prevAt: index > 0 ? all[index - 1].at : null, kind: item.kind });
   }
 
   function render() {
@@ -214,25 +222,25 @@ export function buildReceiptTimeline(receiptId, { countBadge = null } = {}) {
       countBadge.hidden = s.loading;
     }
     const addButton = s.canManage
-      ? el("button", { type: "button", class: "collabaddbtn", id: "receipt-addpeople", onclick: () => {
+      ? el("button", { type: "button", class: "collabaddbtn", id: `${prefix}-addpeople`, onclick: () => {
           s.addOpen = !s.addOpen;
           render();
           if (s.addOpen) search.focus();
         } }, [icon("newperson"), el("span", { text: t("receipts.tl.addpeople") })])
       : null;
-    const postButton = el("button", { type: "button", id: "receipt-chat-post", class: "activitypost", onclick: post }, [icon("post"), el("span", { text: t("receipts.tl.post") })]);
+    const postButton = el("button", { type: "button", id: `${prefix}-chat-post`, class: "activitypost", onclick: post }, [icon("post"), el("span", { text: t("receipts.tl.post") })]);
     root.replaceChildren(
       ...[
         el("div", { class: "collabbar" }, [
-          el("div", { class: "collabchips" }, s.collaborators.length ? s.collaborators.map(chip) : [el("span", { class: "muted sm", text: t(s.canManage ? "receipts.tl.nobodyhint" : "receipts.tl.nobody") })]),
+          el("div", { class: "collabchips" }, s.collaborators.length ? s.collaborators.map(chip) : [el("span", { class: "muted sm", text: t(s.canManage ? w.nobodyhint : w.nobody) })]),
           addButton,
           s.addOpen ? el("div", { class: "collabsearch" }, [search, results]) : null,
         ]),
-        s.problem ? el("div", { class: "warn sm", id: "receipt-timeline-problem", text: s.problem }) : null,
+        s.problem ? el("div", { class: "warn sm", id: `${prefix}-timeline-problem`, text: s.problem }) : null,
         s.error ? el("div", { class: "warn sm", text: s.error }) : null,
         el("div", { class: "activityfeed tlfeed" }, s.loading ? [el("div", { class: "muted", text: t("receipts.tl.loading") })] : s.items.length ? s.items.map(row) : [el("div", { class: "muted", text: t("receipts.tl.empty") })]),
         el("div", { class: "activityinput" }, [box, postButton]),
-        s.sentNote ? el("div", { class: "muted sm", id: "receipt-chat-sent", text: s.sentNote }) : null,
+        s.sentNote ? el("div", { class: "muted sm", id: `${prefix}-chat-sent`, text: s.sentNote }) : null,
       ].filter(Boolean)
     );
   }

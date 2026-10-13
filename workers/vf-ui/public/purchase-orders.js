@@ -6,6 +6,8 @@ import { currentOrgId } from "/orgs.js";
 import { donutChart } from "/charts.js";
 import { statePill, figuresTable } from "/goods-receipts.js";
 import { buildSupplierTab, fetchSupplierChat, openAskSupplier, supplierQueryText } from "/supplier-chat.js";
+import { buildAttachmentsTab } from "/attachments.js";
+import { buildOrderTimeline } from "/order-timeline.js";
 
 /**
  * Loading, and now browsing, purchase orders — decisions 0371 and 0372.
@@ -763,21 +765,41 @@ export async function openPurchaseOrder(summary, { onDone = null } = {}) {
   );
 
   /**
-   * **The conversation on the right — decision 0753**, as a receipt's
-   * Supplier tab (0741): laid out as Timeline / Chat's, its box to write
-   * in at the bottom. While there is none to have, the panel says why.
+   * **The panel on the right — decisions 0753 and 0754**, as a goods
+   * receipt's (0659, 0741): Attachments (what the order, its changes and
+   * any cancellation came in), Timeline / Chat (its history, line by line,
+   * and the conversation here), and Supplier (the conversation with them,
+   * 0752). Timeline / Chat is shown first. While there is no conversation
+   * with the supplier to have, its tab says why.
    */
   const supplierTab = supplierChat?.available ? buildSupplierTab(order.order_number, supplierChat, { url: supplierUrl }) : null;
-  const tabButton = el("button", { type: "button", role: "tab", class: "doctab on", id: "po-tab-supplier", "aria-selected": "true" }, [
-    el("span", { text: t("viewer.suppliertab") }),
-    supplierTab?.countBadge ?? null,
-  ].filter(Boolean));
-  const side = el("aside", { class: "receiptside" }, [
-    el("div", { class: "doctabs receipttabs", role: "tablist" }, [tabButton]),
-    supplierTab
-      ? el("div", { class: "vtimeline receipttimeline receiptsupplier", id: "po-supplier" }, [supplierTab.content])
-      : el("div", { class: "muted posupplierempty", id: "po-supplier-none", text: t("purchaseorders.supplierchat.none") }),
-  ]);
+  const countBadge = el("span", { class: "activitycount", hidden: "hidden" });
+  const attachments = buildAttachmentsTab(order.order_number, { base: `/api/purchase-orders/${encodeURIComponent(order.order_number)}`, id: "po-attachments", subject: "order" });
+  const tabs = [
+    { key: "attachments", label: t("viewer.attachmentstab"), pane: attachments.content, onSelect: attachments.open },
+    { key: "timeline", label: t("activity.timelinetab"), pane: buildOrderTimeline(order.order_number, { countBadge }), badge: countBadge },
+    {
+      key: "supplier",
+      label: t("viewer.suppliertab"),
+      pane: supplierTab
+        ? el("div", { class: "vtimeline receipttimeline receiptsupplier", id: "po-supplier" }, [supplierTab.content])
+        : el("div", { class: "muted posupplierempty", id: "po-supplier-none", text: t("purchaseorders.supplierchat.none") }),
+      badge: supplierTab?.countBadge ?? null,
+    },
+  ];
+  const select = (which) => {
+    for (const tab of tabs) {
+      tab.button.className = tab.key === which ? "doctab on" : "doctab";
+      tab.button.setAttribute("aria-selected", String(tab.key === which));
+      tab.pane.hidden = tab.key !== which;
+    }
+    tabs.find((tab) => tab.key === which)?.onSelect?.();
+  };
+  for (const tab of tabs) {
+    tab.button = el("button", { type: "button", role: "tab", class: "doctab", id: `po-tab-${tab.key}`, onclick: () => select(tab.key) }, [el("span", { text: tab.label }), tab.badge].filter(Boolean));
+  }
+  select("timeline");
+  const side = el("aside", { class: "receiptside" }, [el("div", { class: "doctabs receipttabs", role: "tablist" }, tabs.map((tab) => tab.button)), ...tabs.map((tab) => tab.pane)]);
 
   const page = frame(
     el("div", { class: "receiptview poview" }, [

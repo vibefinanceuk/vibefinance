@@ -106,7 +106,7 @@ export function buildAttachmentsTab(invoiceId, { base = `/api/invoices/${encodeU
     }
     const url = await linkFor(file);
     if (state.selected !== keyOf(file)) return;
-    holder.replaceChildren(url ? refreshingFrame(url, () => linkFor(file), nameOf(file)) : el("div", { class: "vthumb", text: t(state.subject === "receipt" ? "receipts.attach.nofile" : "viewer.nodocument") }));
+    holder.replaceChildren(url ? refreshingFrame(url, () => linkFor(file), nameOf(file)) : el("div", { class: "vthumb", text: t(state.subject === "receipt" ? "receipts.attach.nofile" : state.subject === "order" ? "purchaseorders.attach.nofile" : "viewer.nodocument") }));
   }
 
   /**
@@ -161,7 +161,7 @@ export function buildAttachmentsTab(invoiceId, { base = `/api/invoices/${encodeU
       return;
     }
     if (state.files.length === 0) {
-      content.replaceChildren(el("div", { class: "vthumb", text: t(state.subject === "receipt" ? "receipts.attach.empty" : "attachments.empty") }));
+      content.replaceChildren(el("div", { class: "vthumb", text: t(state.subject === "receipt" ? "receipts.attach.empty" : state.subject === "order" ? "purchaseorders.attach.empty" : "attachments.empty") }));
       return;
     }
     const groups = [];

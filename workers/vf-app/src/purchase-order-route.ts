@@ -3,6 +3,8 @@ import type { RouteResult } from "./org-route.js";
 import { getOrgMatchingConfig, poShareSql } from "./po-matching.js";
 import { heldByLine, receiptStateJoin, RECEIPT_STATES } from "./goods-receipts.js";
 import { parseUblOrder, UblOrderParseError, type ParsedOrder } from "@vibefinance/shared";
+import { diffOrders, orderEvent, snapshotOfParsed, snapshotOfStored } from "./order-history.js";
+import { orderAccess } from "./order-timeline.js";
 import { parseCsv } from "./load-suppliers.js";
 import { matchLegalEntity } from "./derive-org.js";
 import { scopedToChosenOrg, unitClause, unitsWherePermitted, isWithinScope } from "./enforce.js";
@@ -113,12 +115,18 @@ export async function storeOrder(
   db: D1Database,
   parsed: ParsedOrder,
   orgUnitId: string,
-  statusOverride?: { status: "active" | "on_hold" | "closed"; holdReason: string | null }
+  statusOverride?: { status: "active" | "on_hold" | "closed"; holdReason: string | null },
+  /** Decision 0754: what the Timeline records of this load — the order on its way in it came by, and who. */
+  history: { intakeId?: string | null; actorId?: string | null; at?: string } = {}
 ): Promise<StoredOrderResult> {
   const existing = await db
-    .prepare("SELECT id, status, hold_reason FROM purchase_orders WHERE order_number = ?")
+    .prepare("SELECT * FROM purchase_orders WHERE order_number = ?")
     .bind(parsed.orderNumber)
-    .first<{ id: string; status: string; hold_reason: string | null }>();
+    .first<{ id: string; status: string; hold_reason: string | null } & Record<string, unknown>>();
+  // Decision 0754: the order as it was, to say what this load changed.
+  const before = existing
+    ? snapshotOfStored(existing, (await db.prepare("SELECT * FROM purchase_order_lines WHERE purchase_order_id = ? ORDER BY line_number").bind(existing.id).all<Record<string, unknown>>()).results)
+    : null;
 
   const id = existing?.id ?? crypto.randomUUID();
 
@@ -219,6 +227,23 @@ export async function storeOrder(
       )
     );
   }
+
+  /**
+   * **Decision 0754: the load on the order's Timeline**, with what it
+   * changed — header facts, lines added, removed or changed, and the
+   * status where the load set a different one.
+   */
+  const diff = before ? diffOrders(before, snapshotOfParsed(parsed)) : null;
+  if (diff && existing && existing.status !== status) diff.status = { from: existing.status, to: status };
+  await orderEvent(
+    db,
+    parsed.orderNumber,
+    existing ? "changed" : "loaded",
+    history.actorId ?? null,
+    existing ? { ...diff, receiptWarnings } : { lines: parsed.lines.length, status },
+    history.at ?? new Date().toISOString(),
+    history.intakeId ?? null
+  ).run();
 
   return { id, orderNumber: parsed.orderNumber, lines: parsed.lines.length, replaced: existing !== null, receiptWarnings };
 }
@@ -828,7 +853,10 @@ export async function handleGetPurchaseOrderStatusCounts(
 export async function handleSetPurchaseOrderStatus(
   db: D1Database,
   orderNumber: string,
-  body: { status?: unknown; holdReason?: unknown }
+  body: { status?: unknown; holdReason?: unknown },
+  /** Decision 0754: who, for the order's Timeline. */
+  actorId: string | null = null,
+  now = new Date()
 ): Promise<RouteResult> {
   const requested = typeof body.status === "string" ? body.status : "";
   if (!["active", "on_hold", "closed"].includes(requested)) {
@@ -839,9 +867,9 @@ export async function handleSetPurchaseOrderStatus(
   }
 
   const existing = await db
-    .prepare("SELECT id, status FROM purchase_orders WHERE order_number = ?")
+    .prepare("SELECT id, status, hold_reason FROM purchase_orders WHERE order_number = ?")
     .bind(orderNumber)
-    .first<{ id: string; status: string }>();
+    .first<{ id: string; status: string; hold_reason: string | null }>();
   if (!existing) {
     return { status: 404, body: { error: `no purchase order ${orderNumber}` } };
   }
@@ -850,10 +878,12 @@ export async function handleSetPurchaseOrderStatus(
   }
 
   const holdReason = requested === "on_hold" ? (body.holdReason as string).trim() : null;
-  await db
-    .prepare("UPDATE purchase_orders SET status = ?, hold_reason = ? WHERE id = ?")
-    .bind(requested, holdReason, existing.id)
-    .run();
+  // Decision 0754: Hold, Release hold and Close on the order's Timeline, by whom.
+  const kind = requested === "on_hold" ? "held" : requested === "closed" ? "closed" : existing.status === "on_hold" ? "hold_released" : null;
+  await db.batch([
+    db.prepare("UPDATE purchase_orders SET status = ?, hold_reason = ? WHERE id = ?").bind(requested, holdReason, existing.id),
+    ...(kind ? [orderEvent(db, orderNumber, kind, actorId, { from: existing.status, reason: holdReason ?? (kind === "hold_released" ? existing.hold_reason : null) }, now.toISOString())] : []),
+  ]);
 
   return { status: 200, body: { orderNumber, status: requested, holdReason } };
 }
@@ -1063,7 +1093,8 @@ export async function handleGetPurchaseOrder(db: D1Database, orderNumber: string
   const visible = userId ? await unitsWherePermitted(db, userId, "AP.Validate") : null;
   const purchasing = userId ? await unitsWherePermitted(db, userId, "AP.Purchasing") : null;
   const inScope = (units: string[] | null) => isWithinScope({ units }, unit) && (units === null || units.length > 0);
-  if (!isWithinScope({ units: visible }, unit) && !(userId && inScope(purchasing))) {
+  // Decision 0754: and whoever was added to its conversation, able to open orders at all.
+  if (!isWithinScope({ units: visible }, unit) && !(userId && inScope(purchasing)) && !(userId && (await orderAccess(db, userId, orderNumber)))) {
     // Identical to the not-found response above — an order somebody
     // is not permitted to see must not be distinguishable from one
     // that never existed.

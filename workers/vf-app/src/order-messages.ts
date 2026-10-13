@@ -5,6 +5,7 @@ import { MAX_BODY, portalView, readLines, recipientsFor, send, unitAndAbove, vie
 import { openQuery } from "./receipt-messages.js";
 import { BARE_SQL } from "./receipt-sharing.js";
 import { ordersSharedWith, portalMayReadOrder } from "./order-sharing.js";
+import { orderChatNews } from "./order-timeline.js";
 
 /**
  * **The conversation with a supplier about a purchase order — decision
@@ -248,43 +249,56 @@ export async function handlePortalOrderReply(
 /**
  * **Orders in Conversations — decision 0752**, beside receipts (0660,
  * 0748): those whose supplier wrote to this person (they were emailed)
- * since they last caught up.
+ * since they last caught up — and, since decision 0754, those whose own
+ * conversation here has something new for them: they were added, or
+ * others wrote. One row an order, the latest of either quoted.
  */
 export async function orderConversationsFor(db: D1Database, userId: string) {
   const email = ((await db.prepare("SELECT email FROM org_users WHERE id = ?").bind(userId).first<{ email: string | null }>())?.email ?? "").toLowerCase();
-  if (!email) return [];
-  const rows = (
-    await db
-      .prepare(
-        `SELECT m.order_number, count(*) AS n, max(m.created_at) AS last_at
-         FROM purchase_order_messages m
-         LEFT JOIN purchase_order_reads r ON r.order_number = m.order_number AND r.user_id = ?1
-         WHERE m.direction = 'from_supplier' AND (r.seen_at IS NULL OR m.created_at > r.seen_at)
-           AND EXISTS (SELECT 1 FROM json_each(m.emailed_json) e WHERE lower(e.value) = ?2)
-         GROUP BY m.order_number`
-      )
-      .bind(userId, email)
-      .all<{ order_number: string; n: number; last_at: string }>()
-  ).results;
+  const rows = email
+    ? (
+        await db
+          .prepare(
+            `SELECT m.order_number, count(*) AS n, max(m.created_at) AS last_at
+             FROM purchase_order_messages m
+             LEFT JOIN purchase_order_reads r ON r.order_number = m.order_number AND r.user_id = ?1
+             WHERE m.direction = 'from_supplier' AND (r.seen_at IS NULL OR m.created_at > r.seen_at)
+               AND EXISTS (SELECT 1 FROM json_each(m.emailed_json) e WHERE lower(e.value) = ?2)
+             GROUP BY m.order_number`
+          )
+          .bind(userId, email)
+          .all<{ order_number: string; n: number; last_at: string }>()
+      ).results
+    : [];
+  const supplier = new Map(rows.map((r) => [r.order_number, r]));
+  const chat = await orderChatNews(db, userId);
   const out = [];
-  for (const r of rows) {
-    const order = await orderOf(db, r.order_number);
+  for (const orderNumber of [...new Set([...supplier.keys(), ...chat.keys()])]) {
+    const order = await orderOf(db, orderNumber);
     if (!order) continue;
-    const latest = await db
-      .prepare("SELECT body, created_at FROM purchase_order_messages WHERE order_number = ? AND direction = 'from_supplier' ORDER BY created_at DESC, rowid DESC LIMIT 1")
-      .bind(r.order_number)
-      .first<{ body: string; created_at: string }>();
+    const s = supplier.get(orderNumber) ?? null;
+    const c = chat.get(orderNumber) ?? null;
+    const latestSupplier = s
+      ? await db
+          .prepare("SELECT body, created_at FROM purchase_order_messages WHERE order_number = ? AND direction = 'from_supplier' ORDER BY created_at DESC, rowid DESC LIMIT 1")
+          .bind(orderNumber)
+          .first<{ body: string; created_at: string }>()
+      : null;
+    const quoted =
+      latestSupplier && (!c?.latest || latestSupplier.created_at > c.latest.at)
+        ? { by: order.supplier_name, body: latestSupplier.body, at: latestSupplier.created_at }
+        : c?.latest ?? null;
     out.push({
       kind: "order" as const,
-      orderNumber: r.order_number,
+      orderNumber,
       organisation: order.company_name,
       supplier: order.supplier_name,
       orders: [],
-      added: null,
-      newMessages: r.n,
-      supplierMessages: r.n,
-      latest: latest ? { by: order.supplier_name, body: latest.body.length > 280 ? `${latest.body.slice(0, 279)}…` : latest.body, at: latest.created_at } : null,
-      lastAt: r.last_at,
+      added: c?.added ?? null,
+      newMessages: (s?.n ?? 0) + (c?.fresh ?? 0),
+      supplierMessages: s?.n ?? 0,
+      latest: quoted ? { by: quoted.by, body: quoted.body.length > 280 ? `${quoted.body.slice(0, 279)}…` : quoted.body, at: quoted.at } : null,
+      lastAt: [s?.last_at, c?.latest?.at, c?.added?.at].filter(Boolean).sort().at(-1) ?? null,
     });
   }
   return out;
